@@ -38,6 +38,7 @@ import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.timeline.TimelineMath
+import com.localcut.editor.ui.editor.TimelineEditBounds
 import kotlin.math.max
 
 private const val US_PER_SECOND = 1_000_000.0
@@ -167,7 +168,8 @@ private fun TrackLane(
                             val deltaDp = with(density) { bodyDragPx.toDp().value }
                             val deltaUs = (deltaDp / dpPerSecond * US_PER_SECOND).toLong()
                             bodyDragPx = 0f
-                            onMoveClip(clip.id, (clip.startUs + deltaUs).coerceAtLeast(0L))
+                            val requested = (clip.startUs + deltaUs).coerceAtLeast(0L)
+                            onMoveClip(clip.id, TimelineEditBounds.clampMove(track, clip.id, requested))
                         },
                     ),
             ) {
@@ -186,7 +188,8 @@ private fun TrackLane(
                         onFinished = { deltaPx ->
                             val deltaDp = with(density) { deltaPx.toDp().value }
                             val deltaUs = (deltaDp / dpPerSecond * US_PER_SECOND).toLong()
-                            onTrimLeft(clip.id, (clip.startUs + deltaUs).coerceAtLeast(0L))
+                            val requested = (clip.startUs + deltaUs).coerceAtLeast(0L)
+                            onTrimLeft(clip.id, TimelineEditBounds.clampLeft(track, clip.id, requested))
                         },
                     )
                     TrimHandle(
@@ -195,7 +198,8 @@ private fun TrackLane(
                         onFinished = { deltaPx ->
                             val deltaDp = with(density) { deltaPx.toDp().value }
                             val deltaUs = (deltaDp / dpPerSecond * US_PER_SECOND).toLong()
-                            onTrimRight(clip.id, (clip.startUs + clip.durationUs + deltaUs).coerceAtLeast(0L))
+                            val requested = (clip.startUs + clip.durationUs + deltaUs).coerceAtLeast(0L)
+                            onTrimRight(clip.id, TimelineEditBounds.clampRight(track, clip.id, requested))
                         },
                     )
                 }

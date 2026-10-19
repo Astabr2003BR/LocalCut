@@ -1,100 +1,13 @@
 name: Android Debug APK
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  paused:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Verify LocalCut source archive
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -s localcut-source-full.zip
-          echo "7187b55f6f5f9d3d6757a4f577f47996d1b58e85fcaf169542b399d6c24dcc7a  localcut-source-full.zip" | sha256sum -c -
-          unzip -tq localcut-source-full.zip
-
-      - name: Unpack verified LocalCut snapshot
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf work
-          mkdir -p work
-          unzip -q localcut-source-full.zip -d work
-          test -f work/settings.gradle.kts
-          test -f work/app/build.gradle.kts
-
-      - name: Apply verified Compose import fix
-        shell: bash
-        run: |
-          set -euo pipefail
-          FILE="work/app/src/main/java/com/localcut/editor/ui/editor/EditorScreen.kt"
-          test -f "$FILE"
-          sed -i '/import androidx\.compose\.foundation\.layout\.weight/d' "$FILE"
-          sed -i 's/import androidx\.compose\.runtime\.rememberScrollState/import androidx.compose.foundation.rememberScrollState/' "$FILE"
-          grep -F 'import androidx.compose.foundation.rememberScrollState' "$FILE"
-          ! grep -F 'import androidx.compose.runtime.rememberScrollState' "$FILE"
-
-      - name: Apply empty-project preview crash fix
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("work/app/src/main/java/com/localcut/editor/media/PreviewController.kt")
-          text = path.read_text()
-
-          old_start = """        ticker.stop()\n        ticker.start(::pollPosition)\n"""
-          new_start = """        ticker.stop()\n        if (loaded.durationUs > 0L) ticker.start(::pollPosition)\n"""
-          if old_start not in text:
-              raise SystemExit("expected ticker start block not found")
-          text = text.replace(old_start, new_start, 1)
-
-          old_poll = """    private fun pollPosition() {\n        val seekTarget = transport.onPlayerPosition(engine.currentPositionUs())\n        if (seekTarget != null) engine.seekToUs(seekTarget)\n        publishTransportState()\n    }\n"""
-          new_poll = """    private fun pollPosition() {\n        val positionUs = try {\n            engine.currentPositionUs()\n        } catch (error: Throwable) {\n            ticker.stop()\n            transport.pause()\n            mutableState.value = mutableState.value.copy(\n                playing = false,\n                errorMessage = error.message ?: error::class.simpleName ?: \"preview polling failed\",\n            )\n            return\n        }\n        val seekTarget = transport.onPlayerPosition(positionUs)\n        if (seekTarget != null) engine.seekToUs(seekTarget)\n        publishTransportState()\n    }\n"""
-          if old_poll not in text:
-              raise SystemExit("expected pollPosition block not found")
-          text = text.replace(old_poll, new_poll, 1)
-          path.write_text(text)
-          PY
-          grep -F 'if (loaded.durationUs > 0L) ticker.start(::pollPosition)' work/app/src/main/java/com/localcut/editor/media/PreviewController.kt
-          grep -F 'errorMessage = error.message' work/app/src/main/java/com/localcut/editor/media/PreviewController.kt
-
-      - name: Set up Gradle 9.5.0
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '9.5.0'
-          cache-provider: basic
-
-      - name: Run Android unit tests and assemble debug APK
-        shell: bash
-        run: gradle --no-daemon -p work testDebugUnitTest assembleDebug
-
-      - name: Verify debug APK exists
-        shell: bash
-        run: test -s work/app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: localcut-debug-apk
-          path: work/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 14
+      - run: echo "Preparing LocalCut Build 9 source overrides"

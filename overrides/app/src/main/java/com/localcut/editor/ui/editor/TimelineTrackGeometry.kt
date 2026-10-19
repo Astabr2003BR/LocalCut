@@ -19,10 +19,13 @@ data class TimelineTrackLayout(
 }
 
 object TimelineTrackGeometry {
+    const val DEFAULT_ROW_HEIGHT_DP: Float = 58f
+    const val DEFAULT_ROW_GAP_DP: Float = 6f
+
     fun layout(
         tracks: List<Track>,
-        rowHeightDp: Float,
-        rowGapDp: Float,
+        rowHeightDp: Float = DEFAULT_ROW_HEIGHT_DP,
+        rowGapDp: Float = DEFAULT_ROW_GAP_DP,
     ): TimelineTrackLayout {
         require(rowHeightDp.isFinite() && rowHeightDp > 0f) { "rowHeightDp must be finite and positive" }
         require(rowGapDp.isFinite() && rowGapDp >= 0f) { "rowGapDp must be finite and non-negative" }

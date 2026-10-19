@@ -8,9 +8,12 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -36,9 +39,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.Track
+import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.timeline.TimelineMath
 import com.localcut.editor.ui.editor.TimelineEditBounds
+import com.localcut.editor.ui.editor.TimelineTrackGeometry
 import kotlin.math.max
 
 private const val US_PER_SECOND = 1_000_000.0
@@ -57,25 +62,32 @@ fun TimelinePane(
     modifier: Modifier = Modifier,
     dpPerSecond: Float = DEFAULT_DP_PER_SECOND,
 ) {
-    val scroll = rememberScrollState()
+    val horizontalScroll = rememberScrollState()
+    val verticalScroll = rememberScrollState()
     val durationUs = max(TimelineMath.durationUs(project), 1_000_000L)
     val timelineWidth = max(360f, durationUs / US_PER_SECOND.toFloat() * dpPerSecond).dp
     val assetNames = project.assets.associate { it.id to it.displayName }
+    val tracksById = project.tracks.associateBy { it.id }
+    val trackLayout = TimelineTrackGeometry.layout(project.tracks)
 
-    Column(modifier = modifier.fillMaxWidth()) {
-        project.tracks.sortedBy { it.order }.forEach { track ->
+    Column(
+        modifier = modifier.fillMaxWidth().verticalScroll(verticalScroll),
+        verticalArrangement = Arrangement.spacedBy(TimelineTrackGeometry.DEFAULT_ROW_GAP_DP.dp),
+    ) {
+        trackLayout.rows.forEach { rowGeometry ->
+            val track = tracksById.getValue(rowGeometry.trackId)
             Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                modifier = Modifier.fillMaxWidth().height(TimelineTrackGeometry.DEFAULT_ROW_HEIGHT_DP.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Surface(
-                    modifier = Modifier.width(76.dp).height(58.dp),
+                    modifier = Modifier.width(76.dp).fillMaxHeight(),
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     shape = MaterialTheme.shapes.small,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
-                            text = trackLabel(track.type),
+                            text = trackLabel(track),
                             maxLines = 1,
                             overflow = TextOverflow.Clip,
                             style = MaterialTheme.typography.labelMedium,
@@ -84,7 +96,7 @@ fun TimelinePane(
                         )
                     }
                 }
-                Box(modifier = Modifier.weight(1f).horizontalScroll(scroll).padding(start = 6.dp)) {
+                Box(modifier = Modifier.weight(1f).horizontalScroll(horizontalScroll).padding(start = 6.dp)) {
                     TrackLane(
                         track = track,
                         selectedClipId = selectedClipId,
@@ -249,7 +261,8 @@ private fun TrimHandle(
     }
 }
 
-private fun trackLabel(type: TrackType): String = when (type) {
-    TrackType.VISUAL -> "VÍDEO"
-    TrackType.AUDIO -> "ÁUDIO"
+private fun trackLabel(track: Track): String = when {
+    track.type == TrackType.VISUAL && track.collisionPolicy == TrackCollisionPolicy.OVERLAY -> "OVERLAY"
+    track.type == TrackType.VISUAL -> "VÍDEO"
+    else -> "ÁUDIO"
 }

@@ -22,12 +22,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle 9.5
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '9.5'
-          cache-provider: basic
-
       - name: Unpack verified LocalCut snapshot
         shell: bash
         run: |
@@ -37,6 +31,12 @@ jobs:
           unzip -q localcut-source.zip -d work
           test -f work/settings.gradle.kts
           test -f work/app/build.gradle.kts
+
+      - name: Set up Gradle 9.5
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.5'
+          cache-provider: basic
 
       - name: Run Android unit tests and assemble debug APK
         shell: bash

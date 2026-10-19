@@ -108,6 +108,27 @@ jobs:
             exit 1
           fi
 
+      - name: Verify all legacy regression harnesses actually ran
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPORT='work/app/build/test-results/testDebugUnitTest/TEST-com.localcut.editor.LegacyHarnessRegressionTest.xml'
+          test -s "$REPORT"
+          python3 - <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          report = 'work/app/build/test-results/testDebugUnitTest/TEST-com.localcut.editor.LegacyHarnessRegressionTest.xml'
+          root = ET.parse(report).getroot()
+          tests = int(root.attrib.get('tests', '0'))
+          failures = int(root.attrib.get('failures', '0'))
+          errors = int(root.attrib.get('errors', '0'))
+          skipped = int(root.attrib.get('skipped', '0'))
+          print(f'Legacy harnesses: tests={tests} failures={failures} errors={errors} skipped={skipped}')
+          if (tests, failures, errors, skipped) != (23, 0, 0, 0):
+              sys.exit('Expected exactly 23 passing legacy harnesses')
+          PY
+
       - name: Verify debug APK exists
         shell: bash
         run: test -s work/app/build/outputs/apk/debug/app-debug.apk

@@ -46,7 +46,28 @@ jobs:
           test -f work/app/build.gradle.kts
           test -f work/localcut-debug.jks
 
-      - name: Stage sanitized source audit
+      - name: Apply current LocalCut overrides
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d overrides/app
+          cp -R overrides/app/. work/app/
+
+          while IFS= read -r -d '' source; do
+            relative="${source#overrides/app/}"
+            target="work/app/$relative"
+            test -f "$target"
+            cmp -s "$source" "$target"
+          done < <(find overrides/app -type f -print0)
+
+          grep -F 'PickMultipleVisualMedia' work/app/src/main/java/com/localcut/editor/MainActivity.kt
+          grep -F 'Text("Dividir")' work/app/src/main/java/com/localcut/editor/ui/editor/EditorScreen.kt
+          grep -F 'TimelineEditBounds.clampLeft' work/app/src/main/java/com/localcut/editor/ui/editor/components/TimelinePane.kt
+          grep -F 'TimelineEditBounds.clampRight' work/app/src/main/java/com/localcut/editor/ui/editor/components/TimelinePane.kt
+          grep -F 'TimelineEditBounds.clampMove' work/app/src/main/java/com/localcut/editor/ui/editor/components/TimelinePane.kt
+          grep -F 'fun leftTrimCannotCrossPreviousSplitClip()' work/app/src/test/java/com/localcut/editor/ui/editor/TimelineDragPlannerTestMain.kt
+
+      - name: Stage sanitized assembled source audit
         shell: bash
         run: |
           set -euo pipefail
@@ -61,22 +82,6 @@ jobs:
             echo 'Sensitive signing/config file found in source audit' >&2
             exit 1
           fi
-
-      - name: Apply current LocalCut overrides
-        shell: bash
-        run: |
-          set -euo pipefail
-          cp overrides/app/src/main/java/com/localcut/editor/MainActivity.kt work/app/src/main/java/com/localcut/editor/MainActivity.kt
-          cp overrides/app/src/main/java/com/localcut/editor/ui/editor/EditorScreen.kt work/app/src/main/java/com/localcut/editor/ui/editor/EditorScreen.kt
-          cp overrides/app/src/main/java/com/localcut/editor/ui/editor/TimelineDragPlanner.kt work/app/src/main/java/com/localcut/editor/ui/editor/TimelineDragPlanner.kt
-          cp overrides/app/src/main/java/com/localcut/editor/ui/editor/components/TimelinePane.kt work/app/src/main/java/com/localcut/editor/ui/editor/components/TimelinePane.kt
-          cp overrides/app/src/test/java/com/localcut/editor/ui/editor/TimelineDragPlannerTestMain.kt work/app/src/test/java/com/localcut/editor/ui/editor/TimelineDragPlannerTestMain.kt
-          grep -F 'PickMultipleVisualMedia' work/app/src/main/java/com/localcut/editor/MainActivity.kt
-          grep -F 'Text("Dividir")' work/app/src/main/java/com/localcut/editor/ui/editor/EditorScreen.kt
-          grep -F 'TimelineEditBounds.clampLeft' work/app/src/main/java/com/localcut/editor/ui/editor/components/TimelinePane.kt
-          grep -F 'TimelineEditBounds.clampRight' work/app/src/main/java/com/localcut/editor/ui/editor/components/TimelinePane.kt
-          grep -F 'TimelineEditBounds.clampMove' work/app/src/main/java/com/localcut/editor/ui/editor/components/TimelinePane.kt
-          grep -F 'fun leftTrimCannotCrossPreviousSplitClip()' work/app/src/test/java/com/localcut/editor/ui/editor/TimelineDragPlannerTestMain.kt
 
       - name: Set up Gradle 9.5.0
         uses: gradle/actions/setup-gradle@v6

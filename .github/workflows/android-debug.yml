@@ -3,6 +3,11 @@ name: Android Debug APK
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -41,6 +46,22 @@ jobs:
           test -f work/app/build.gradle.kts
           test -f work/localcut-debug.jks
 
+      - name: Stage sanitized source audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf source-audit
+          mkdir -p source-audit/app
+          cp -R work/app/src source-audit/app/src
+          {
+            echo '# LocalCut build configuration summary'
+            grep -nE 'compileSdk|minSdk|targetSdk|applicationId|versionCode|versionName|testImplementation|androidTestImplementation' work/app/build.gradle.kts || true
+          } > source-audit/build-config-summary.txt
+          if find source-audit -type f \( -name '*.jks' -o -name '*.keystore' -o -name 'local.properties' \) | grep -q .; then
+            echo 'Sensitive signing/config file found in source audit' >&2
+            exit 1
+          fi
+
       - name: Apply current LocalCut overrides
         shell: bash
         run: |
@@ -71,10 +92,33 @@ jobs:
         shell: bash
         run: test -s work/app/build/outputs/apk/debug/app-debug.apk
 
+      - name: Read APK version metadata
+        id: apk_meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          META='work/app/build/outputs/apk/debug/output-metadata.json'
+          test -s "$META"
+          VERSION_CODE="$(python3 -c 'import json; d=json.load(open("work/app/build/outputs/apk/debug/output-metadata.json")); print(d["elements"][0]["versionCode"])')"
+          VERSION_NAME="$(python3 -c 'import json; d=json.load(open("work/app/build/outputs/apk/debug/output-metadata.json")); print(d["elements"][0]["versionName"])')"
+          test -n "$VERSION_CODE"
+          test -n "$VERSION_NAME"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "APK versionName=$VERSION_NAME versionCode=$VERSION_CODE"
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v7
         with:
-          name: localcut-debug-apk-build12
+          name: localcut-debug-apk-v${{ steps.apk_meta.outputs.version_name }}-code${{ steps.apk_meta.outputs.version_code }}
           path: work/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload sanitized source audit
+        uses: actions/upload-artifact@v7
+        with:
+          name: localcut-source-audit-run-${{ github.run_number }}
+          path: source-audit
+          if-no-files-found: error
+          retention-days: 2

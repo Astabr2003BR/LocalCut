@@ -97,7 +97,8 @@ fun EditorScreen(
                     ) {
                         Column(Modifier.padding(10.dp)) {
                             SectionTitle("Linha do tempo")
-                            TimelineForState(session, preview.positionUs, viewModel, Modifier.fillMaxSize())
+                            SelectedClipActions(session, preview.positionUs, viewModel)
+                            TimelineForState(session, preview.positionUs, viewModel, Modifier.weight(1f).fillMaxWidth())
                         }
                     }
                 }
@@ -130,6 +131,7 @@ fun EditorScreen(
                         TimelineForState(session, preview.positionUs, viewModel, Modifier.fillMaxWidth())
                     }
                 }
+                SelectedClipActions(session, preview.positionUs, viewModel)
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
                 Surface(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -192,6 +194,46 @@ private fun EditorToolbar(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectedClipActions(
+    session: com.localcut.editor.session.ProjectSessionState,
+    playheadUs: Long,
+    viewModel: EditorViewModel,
+) {
+    val clip = session.selectedClipId?.let(session.project::findClip) ?: return
+    val canSplit = playheadUs > clip.startUs && playheadUs < clip.startUs + clip.durationUs
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
+            Text(
+                text = "Arraste as bordas roxas para cortar",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                FilledTonalButton(
+                    onClick = { viewModel.dispatch(EditorAction.SplitSelected(playheadUs)) },
+                    enabled = canSplit,
+                ) { Text("Dividir") }
+                Button(onClick = { viewModel.dispatch(EditorAction.DeleteSelected) }) { Text("Excluir") }
+                OutlinedButton(
+                    onClick = { viewModel.dispatch(EditorAction.Undo) },
+                    enabled = session.canUndo,
+                ) { Text("Desfazer") }
+                OutlinedButton(
+                    onClick = { viewModel.dispatch(EditorAction.Redo) },
+                    enabled = session.canRedo,
+                ) { Text("Refazer") }
             }
         }
     }

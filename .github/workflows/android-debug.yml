@@ -40,6 +40,17 @@ jobs:
           test -f work/settings.gradle.kts
           test -f work/app/build.gradle.kts
 
+      - name: Apply verified Compose import fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="work/app/src/main/java/com/localcut/editor/ui/editor/EditorScreen.kt"
+          test -f "$FILE"
+          sed -i '/import androidx\.compose\.foundation\.layout\.weight/d' "$FILE"
+          sed -i 's/import androidx\.compose\.runtime\.rememberScrollState/import androidx.compose.foundation.rememberScrollState/' "$FILE"
+          grep -F 'import androidx.compose.foundation.rememberScrollState' "$FILE"
+          ! grep -F 'import androidx.compose.runtime.rememberScrollState' "$FILE"
+
       - name: Set up Gradle 9.5.0
         uses: gradle/actions/setup-gradle@v6
         with:

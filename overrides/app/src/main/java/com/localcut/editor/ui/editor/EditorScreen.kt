@@ -225,6 +225,7 @@ private fun SelectedClipActions(
                     onClick = { viewModel.dispatch(EditorAction.SplitSelected(playheadUs)) },
                     enabled = canSplit,
                 ) { Text("Dividir") }
+                FilledTonalButton(onClick = { viewModel.dispatch(EditorAction.DuplicateSelected) }) { Text("Duplicar") }
                 Button(onClick = { viewModel.dispatch(EditorAction.DeleteSelected) }) { Text("Excluir") }
                 OutlinedButton(
                     onClick = { viewModel.dispatch(EditorAction.Undo) },

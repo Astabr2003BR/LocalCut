@@ -76,7 +76,7 @@ jobs:
           grep -F 'TimelineEditBounds.clampLeft' work/app/src/main/java/com/localcut/editor/ui/editor/components/TimelinePane.kt
           grep -F 'TimelineEditBounds.clampRight' work/app/src/main/java/com/localcut/editor/ui/editor/components/TimelinePane.kt
           grep -F 'TimelineEditBounds.clampMove' work/app/src/main/java/com/localcut/editor/ui/editor/components/TimelinePane.kt
-          grep -F 'left trim cannot cross previous split clip' work/app/src/test/java/com/localcut/editor/ui/editor/TimelineDragPlannerTestMain.kt
+          grep -F 'fun leftTrimCannotCrossPreviousSplitClip()' work/app/src/test/java/com/localcut/editor/ui/editor/TimelineDragPlannerTestMain.kt
 
       - name: Set up Gradle 9.5.0
         uses: gradle/actions/setup-gradle@v6
@@ -87,6 +87,21 @@ jobs:
       - name: Run Android unit tests and assemble debug APK
         shell: bash
         run: gradle --no-daemon -p work testDebugUnitTest assembleDebug
+
+      - name: Verify overlap-safe JUnit tests actually ran
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPORT='work/app/build/test-results/testDebugUnitTest/TEST-com.localcut.editor.ui.editor.TimelineDragPlannerTest.xml'
+          test -s "$REPORT"
+          grep -F 'name="leftTrimCannotCrossPreviousSplitClip"' "$REPORT"
+          grep -F 'name="rightTrimCannotCrossNextSplitClip"' "$REPORT"
+          grep -F 'name="moveCannotCrossAdjacentClips"' "$REPORT"
+          grep -F 'name="missingClipIsRejected"' "$REPORT"
+          if grep -F '<failure' "$REPORT"; then
+            echo 'TimelineDragPlannerTest contains failures' >&2
+            exit 1
+          fi
 
       - name: Verify debug APK exists
         shell: bash

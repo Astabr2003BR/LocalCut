@@ -1,5 +1,6 @@
 package com.localcut.editor.data.project
 
+import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.timeline.ProjectIssueCode
 import com.localcut.editor.domain.timeline.TimelineValidator
 import org.junit.Assert.assertEquals
@@ -40,8 +41,16 @@ class ProjectModelV2MigrationTest {
 
     @Test
     fun exclusiveTrackRejectsOverlapWhileOverlayTrackAllowsIt() {
-        val exclusive = ProjectJson.decode(v2OverlapFixture("EXCLUSIVE"))
         val overlay = ProjectJson.decode(v2OverlapFixture("OVERLAY"))
+        val exclusive = overlay.copy(
+            tracks = overlay.tracks.map { track ->
+                if (track.id == "visual-1") {
+                    track.copy(collisionPolicy = TrackCollisionPolicy.EXCLUSIVE)
+                } else {
+                    track
+                }
+            },
+        )
 
         assertTrue(
             TimelineValidator.validate(exclusive).any { it.code == ProjectIssueCode.OVERLAPPING_CLIPS },

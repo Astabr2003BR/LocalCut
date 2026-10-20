@@ -55,5 +55,28 @@ class TextOverlayRenderSpecCompilerTest {
         assertEquals(15.0f, spec.rotationDegrees, 0.0001f)
     }
 
+    @Test
+    fun textScaleTracksAdaptivePreviewOrExportOutputSize() {
+        val project = baseProject().copy(
+            textOverlays = listOf(
+                TextOverlay(
+                    id = "scaled",
+                    startUs = 0L,
+                    durationUs = 1_000_000L,
+                    text = "Text",
+                    style = TextStyle(fontSizePx = 100.0),
+                ),
+            ),
+        )
+
+        val full = TextOverlayRenderSpecCompiler.compile(project).single()
+        val half = TextOverlayRenderSpecCompiler.compile(project, outputWidth = 540, outputHeight = 960).single()
+
+        assertEquals(1.0f, full.textScale, 0.0001f)
+        assertEquals(0.5f, half.textScale, 0.0001f)
+        assertEquals(full.backgroundAnchorX, half.backgroundAnchorX, 0.0001f)
+        assertEquals(full.backgroundAnchorY, half.backgroundAnchorY, 0.0001f)
+    }
+
     private fun baseProject(): Project = Project.create("Text render", 1080, 1920, 30)
 }

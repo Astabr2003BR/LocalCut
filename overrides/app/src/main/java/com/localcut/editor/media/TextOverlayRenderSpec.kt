@@ -2,7 +2,9 @@ package com.localcut.editor.media
 
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.TextHorizontalAlignment
+import com.localcut.editor.domain.model.TextOverlay
 import com.localcut.editor.domain.model.TextStyle
+import kotlin.math.min
 
 data class TextOverlayRenderSpec(
     val id: String,
@@ -26,12 +28,24 @@ data class TextOverlayRenderSpec(
 }
 
 object TextOverlayRenderSpecCompiler {
-    fun compile(project: Project): List<TextOverlayRenderSpec> =
-        project.textOverlays
-            .sortedWith(compareBy<com.localcut.editor.domain.model.TextOverlay> { it.zIndex }.thenBy { it.id })
+    fun compile(
+        project: Project,
+        outputWidth: Int = project.width,
+        outputHeight: Int = project.height,
+    ): List<TextOverlayRenderSpec> {
+        require(project.width > 0 && project.height > 0) { "project dimensions must be > 0" }
+        require(outputWidth > 0 && outputHeight > 0) { "output dimensions must be > 0" }
+
+        val outputScale = min(
+            outputWidth.toDouble() / project.width.toDouble(),
+            outputHeight.toDouble() / project.height.toDouble(),
+        )
+        val halfWidth = project.width / 2.0
+        val halfHeight = project.height / 2.0
+
+        return project.textOverlays
+            .sortedWith(compareBy<TextOverlay> { it.zIndex }.thenBy { it.id })
             .map { overlay ->
-                val halfWidth = project.width / 2.0
-                val halfHeight = project.height / 2.0
                 val anchorX = (overlay.transform.x / halfWidth).toFloat().coerceIn(-1f, 1f)
                 val anchorY = (-overlay.transform.y / halfHeight).toFloat().coerceIn(-1f, 1f)
                 TextOverlayRenderSpec(
@@ -43,12 +57,17 @@ object TextOverlayRenderSpecCompiler {
                     alignment = overlay.style.alignment,
                     backgroundAnchorX = anchorX,
                     backgroundAnchorY = anchorY,
-                    textScale = ((overlay.style.fontSizePx / BASE_TEXT_SIZE_PX) * overlay.transform.scale).toFloat(),
+                    textScale = (
+                        (overlay.style.fontSizePx / BASE_TEXT_SIZE_PX) *
+                            overlay.transform.scale *
+                            outputScale
+                    ).toFloat(),
                     rotationDegrees = overlay.transform.rotationDeg.toFloat(),
                     opacity = overlay.opacity.toFloat(),
                     zIndex = overlay.zIndex,
                 )
             }
+    }
 
     private const val BASE_TEXT_SIZE_PX = 100.0
 }

@@ -81,8 +81,16 @@ jobs:
           test -x "$ADB"
           test -x "$EMULATOR"
 
+          AVD_HOME="$RUNNER_TEMP/localcut-avd"
+          rm -rf "$AVD_HOME"
+          mkdir -p "$AVD_HOME"
+          export ANDROID_AVD_HOME="$AVD_HOME"
           echo no | "$AVDMANAGER" create avd --force --name localcut-ci --package "$SYSTEM_IMAGE"
+          test -f "$AVD_HOME/localcut-ci.ini"
+          test -d "$AVD_HOME/localcut-ci.avd"
+          "$EMULATOR" -list-avds | grep -Fx 'localcut-ci'
 
+          echo "ANDROID_AVD_HOME=$AVD_HOME" >> "$GITHUB_ENV"
           echo "LOCALCUT_ADB=$ADB" >> "$GITHUB_ENV"
           echo "LOCALCUT_EMULATOR=$EMULATOR" >> "$GITHUB_ENV"
 
@@ -92,8 +100,12 @@ jobs:
           set -euo pipefail
           ADB="${LOCALCUT_ADB:?LOCALCUT_ADB missing}"
           EMULATOR="${LOCALCUT_EMULATOR:?LOCALCUT_EMULATOR missing}"
+          AVD_HOME="${ANDROID_AVD_HOME:?ANDROID_AVD_HOME missing}"
           test -x "$ADB"
           test -x "$EMULATOR"
+          test -f "$AVD_HOME/localcut-ci.ini"
+          test -d "$AVD_HOME/localcut-ci.avd"
+          "$EMULATOR" -list-avds | grep -Fx 'localcut-ci'
 
           if [ -e /dev/kvm ]; then
             sudo chmod 666 /dev/kvm

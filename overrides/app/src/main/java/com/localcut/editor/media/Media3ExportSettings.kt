@@ -8,6 +8,9 @@ data class Media3ExportSettings(
     val outputSettings: RenderOutputSettings,
     val videoMimeType: String,
     val usedCodecFallback: Boolean,
+    val requestedVideoBitrateBitsPerSecond: Int,
+    val enableEncoderFallback: Boolean,
+    val enableFormatFallback: Boolean,
 )
 
 object Media3ExportSettingsResolver {
@@ -25,6 +28,9 @@ object Media3ExportSettingsResolver {
                 ExportVideoCodec.HEVC -> MimeTypes.VIDEO_H265
             },
             usedCodecFallback = resolved.usedCodecFallback,
+            requestedVideoBitrateBitsPerSecond = effective.videoBitrateBitsPerSecond,
+            enableEncoderFallback = false,
+            enableFormatFallback = false,
         )
     }
 }

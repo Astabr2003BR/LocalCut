@@ -24,19 +24,31 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.localcut.editor.audio.AndroidWaveformDecoder
+import com.localcut.editor.audio.WaveformCache
+import com.localcut.editor.audio.WaveformCacheKey
+import com.localcut.editor.audio.WaveformData
+import com.localcut.editor.audio.WaveformRepository
+import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackCollisionPolicy
@@ -44,10 +56,14 @@ import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.timeline.TimelineMath
 import com.localcut.editor.ui.editor.TimelineEditBounds
 import com.localcut.editor.ui.editor.TimelineTrackGeometry
+import java.util.concurrent.Executors
+import kotlinx.coroutines.launch
 import kotlin.math.max
 
 private const val US_PER_SECOND = 1_000_000.0
 private const val DEFAULT_DP_PER_SECOND = 84f
+private const val WAVEFORM_BUCKETS = 96
+private const val WAVEFORM_CACHE_SAMPLES = 16_384
 
 @Composable
 fun TimelinePane(
@@ -61,6 +77,8 @@ fun TimelinePane(
     onTrimRight: (String, Long) -> Unit,
     modifier: Modifier = Modifier,
     dpPerSecond: Float = DEFAULT_DP_PER_SECOND,
+    onSetTrackMuted: (String, Boolean) -> Unit = { _, _ -> },
+    onSetTrackSolo: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     val horizontalScroll = rememberScrollState()
     val verticalScroll = rememberScrollState()
@@ -69,6 +87,60 @@ fun TimelinePane(
     val assetNames = project.assets.associate { it.id to it.displayName }
     val tracksById = project.tracks.associateBy { it.id }
     val trackLayout = TimelineTrackGeometry.layout(project.tracks)
+    val waveforms = remember { mutableStateMapOf<String, WaveformData>() }
+    val requestedWaveforms = remember { mutableMapOf<String, WaveformCacheKey>() }
+    val context = LocalContext.current.applicationContext
+    val waveformExecutor = remember { Executors.newFixedThreadPool(2) }
+    val waveformRepository = remember(context, waveformExecutor) {
+        WaveformRepository(
+            cache = WaveformCache(WAVEFORM_CACHE_SAMPLES),
+            decoder = AndroidWaveformDecoder(context.contentResolver),
+            executor = waveformExecutor,
+        )
+    }
+    val scope = rememberCoroutineScope()
+
+    DisposableEffect(waveformExecutor) {
+        onDispose { waveformExecutor.shutdownNow() }
+    }
+
+    LaunchedEffect(project) {
+        val assets = project.assets.associateBy { it.id }
+        val desired = project.tracks
+            .filter { it.type == TrackType.AUDIO }
+            .flatMap { track -> track.clips }
+            .mapNotNull { clip ->
+                val asset = assets[clip.assetId] ?: return@mapNotNull null
+                if (asset.type != AssetType.AUDIO) return@mapNotNull null
+                clip to asset
+            }
+        val desiredIds = desired.mapTo(mutableSetOf()) { it.first.id }
+        waveforms.keys.filterNot(desiredIds::contains).forEach(waveforms::remove)
+        requestedWaveforms.keys.filterNot(desiredIds::contains).forEach(requestedWaveforms::remove)
+
+        desired.forEach { (clip, asset) ->
+            val key = WaveformCacheKey(
+                assetFingerprint = asset.fingerprint,
+                sourceInUs = clip.sourceInUs,
+                sourceOutUs = clip.sourceOutUs,
+                bucketCount = WAVEFORM_BUCKETS,
+            )
+            if (requestedWaveforms[clip.id] == key) return@forEach
+            requestedWaveforms[clip.id] = key
+            waveforms.remove(clip.id)
+            waveformRepository.request(key, asset.uri) { result ->
+                scope.launch {
+                    if (requestedWaveforms[clip.id] != key) return@launch
+                    result.onSuccess { waveform ->
+                        waveforms[clip.id] = waveform
+                    }.onFailure {
+                        requestedWaveforms.remove(clip.id)
+                        waveforms.remove(clip.id)
+                    }
+                }
+            }
+        }
+    }
 
     Column(
         modifier = modifier.fillMaxWidth().verticalScroll(verticalScroll),
@@ -80,22 +152,11 @@ fun TimelinePane(
                 modifier = Modifier.fillMaxWidth().height(TimelineTrackGeometry.DEFAULT_ROW_HEIGHT_DP.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Surface(
-                    modifier = Modifier.width(76.dp).fillMaxHeight(),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = MaterialTheme.shapes.small,
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = trackLabel(track),
-                            maxLines = 1,
-                            overflow = TextOverflow.Clip,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                TrackHeader(
+                    track = track,
+                    onSetMuted = onSetTrackMuted,
+                    onSetSolo = onSetTrackSolo,
+                )
                 Box(modifier = Modifier.weight(1f).horizontalScroll(horizontalScroll).padding(start = 6.dp)) {
                     TrackLane(
                         track = track,
@@ -104,6 +165,7 @@ fun TimelinePane(
                         timelineWidth = timelineWidth,
                         dpPerSecond = dpPerSecond,
                         assetNames = assetNames,
+                        waveforms = waveforms,
                         onSelectClip = onSelectClip,
                         onMoveClip = onMoveClip,
                         onSeek = onSeek,
@@ -117,6 +179,79 @@ fun TimelinePane(
 }
 
 @Composable
+private fun TrackHeader(
+    track: Track,
+    onSetMuted: (String, Boolean) -> Unit,
+    onSetSolo: (String, Boolean) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.width(76.dp).fillMaxHeight(),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        if (track.type != TrackType.AUDIO) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = trackLabel(track),
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = "ÁUDIO ${track.order}",
+                    maxLines = 1,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                    AudioTrackToggle(
+                        label = "M",
+                        active = track.muted,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        onClick = { onSetMuted(track.id, !track.muted) },
+                    )
+                    AudioTrackToggle(
+                        label = "S",
+                        active = track.solo,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        onClick = { onSetSolo(track.id, !track.solo) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AudioTrackToggle(
+    label: String,
+    active: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    val background = if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.28f) else MaterialTheme.colorScheme.surfaceVariant
+    Box(
+        modifier = modifier.background(background).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
 private fun TrackLane(
     track: Track,
     selectedClipId: String?,
@@ -124,6 +259,7 @@ private fun TrackLane(
     timelineWidth: androidx.compose.ui.unit.Dp,
     dpPerSecond: Float,
     assetNames: Map<String, String>,
+    waveforms: Map<String, WaveformData>,
     onSelectClip: (String?) -> Unit,
     onMoveClip: (String, Long) -> Unit,
     onSeek: (Long) -> Unit,
@@ -162,6 +298,8 @@ private fun TrackLane(
             var bodyDragPx by remember(clip.id, clip.startUs) { mutableFloatStateOf(0f) }
             val selected = clip.id == selectedClipId
             val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+            val waveform = if (track.type == TrackType.AUDIO) waveforms[clip.id] else null
+            val waveformColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.52f)
 
             Box(
                 modifier = Modifier
@@ -170,6 +308,23 @@ private fun TrackLane(
                     .height(46.dp)
                     .graphicsLayer { translationX = bodyDragPx }
                     .background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.small)
+                    .drawBehind {
+                        val peaks = waveform?.peaks.orEmpty()
+                        if (peaks.isNotEmpty()) {
+                            val centerY = size.height / 2f
+                            val xStep = size.width / peaks.size.toFloat()
+                            peaks.forEachIndexed { index, peak ->
+                                val amplitude = peak.coerceIn(0f, 1f) * centerY * 0.82f
+                                val xPx = (index + 0.5f) * xStep
+                                drawLine(
+                                    color = waveformColor,
+                                    start = Offset(xPx, centerY - amplitude),
+                                    end = Offset(xPx, centerY + amplitude),
+                                    strokeWidth = max(1f, xStep * 0.28f),
+                                )
+                            }
+                        }
+                    }
                     .border(if (selected) 3.dp else 1.dp, borderColor, MaterialTheme.shapes.small)
                     .clickable { onSelectClip(clip.id) }
                     .draggable(

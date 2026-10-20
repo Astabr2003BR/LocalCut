@@ -31,6 +31,9 @@ class ProjectRenderPlanMultitrackTest {
         assertEquals("base-clip", baseMedia.clipId)
         assertEquals("overlay-clip", overlayMedia.clipId)
         assertEquals(plan.visualLayers.first(), plan.visual)
+        assertEquals("base-track", plan.visualLayers[0].sourceTrackId)
+        assertEquals("overlay-track", plan.visualLayers[1].sourceTrackId)
+        assertEquals(TrackCollisionPolicy.OVERLAY, plan.visualLayers[1].sourceCollisionPolicy)
 
         assertEquals(
             listOf(1_000_000L, 2_000_000L, 1_000_000L),
@@ -38,6 +41,36 @@ class ProjectRenderPlanMultitrackTest {
         )
         assertTrue(plan.visualLayers[1].segments.first() is RenderSegment.Gap)
         assertTrue(plan.visualLayers[1].segments.last() is RenderSegment.Gap)
+    }
+
+    @Test
+    fun overlappingClipsOnOneOverlayTrackArePartitionedIntoDeterministicLinearLanes() {
+        val base = twoVisualTrackProject()
+        val project = base.copy(
+            tracks = base.tracks.map { track ->
+                if (track.id == "overlay-track") {
+                    track.copy(
+                        clips = listOf(
+                            Clip("overlay-a", "overlay", 500_000L, 2_000_000L, 0L, 2_000_000L),
+                            Clip("overlay-b", "overlay", 1_000_000L, 2_000_000L, 0L, 2_000_000L),
+                        ),
+                    )
+                } else {
+                    track
+                }
+            },
+        )
+
+        val plan = ProjectRenderPlanCompiler.compile(project, RenderMode.EXPORT, resolver).getOrThrow()
+        val overlayLayers = plan.visualLayers.filter { it.sourceTrackId == "overlay-track" }
+
+        assertEquals(2, overlayLayers.size)
+        assertEquals(listOf(0, 1), overlayLayers.map { it.laneIndex })
+        assertEquals(
+            listOf("overlay-a", "overlay-b"),
+            overlayLayers.map { layer -> layer.segments.filterIsInstance<RenderSegment.Media>().single().clipId },
+        )
+        assertTrue(overlayLayers.all { it.sourceCollisionPolicy == TrackCollisionPolicy.OVERLAY })
     }
 
     @Test

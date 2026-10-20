@@ -2,6 +2,7 @@ package com.localcut.editor.media
 
 import androidx.annotation.OptIn
 import androidx.media3.common.C
+import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.DefaultGainProvider
@@ -37,13 +38,13 @@ class ProjectCompositionCompiler(
             Media3CompositionSupportPolicy.validate(plan, mode).getOrThrow()
             toComposition(
                 blueprint = Media3CompositionBlueprintCompiler.compile(plan),
-                sourceProjectFps = project.fps,
+                project = project,
             )
         }
 
     private fun toComposition(
         blueprint: Media3CompositionBlueprint,
-        sourceProjectFps: Int,
+        project: Project,
     ): Composition {
         val sequences = buildList {
             Media3VisualLayerOrder.toInputOrder(blueprint.visualLayers).forEach { layer ->
@@ -57,10 +58,19 @@ class ProjectCompositionCompiler(
         }
         require(sequences.isNotEmpty()) { "Composition requires at least one sequence" }
 
-        val compositionVideoEffects = Media3FrameRatePolicy.effectsFor(
-            sourceProjectFps = sourceProjectFps,
-            targetFps = blueprint.fps,
-        )
+        val compositionVideoEffects = buildList<Effect> {
+            addAll(
+                Media3FrameRatePolicy.effectsFor(
+                    sourceProjectFps = project.fps,
+                    targetFps = blueprint.fps,
+                )
+            )
+            Media3TextOverlayEffectFactory.create(
+                project = project,
+                outputWidth = blueprint.width,
+                outputHeight = blueprint.height,
+            )?.let(::add)
+        }
         val builder = Composition.Builder(sequences)
         if (compositionVideoEffects.isNotEmpty()) {
             builder.setEffects(Effects(emptyList(), compositionVideoEffects))

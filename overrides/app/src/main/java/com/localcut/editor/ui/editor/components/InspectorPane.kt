@@ -105,25 +105,23 @@ fun InspectorPane(
                 mutableFloatStateOf((clip.fadeOutUs / 1_000_000f).coerceIn(0f, durationSeconds))
             }
             val maxFadeIn = max(0f, durationSeconds - fadeOutDraft)
-            if (fadeInDraft > maxFadeIn) fadeInDraft = maxFadeIn
             val maxFadeOut = max(0f, durationSeconds - fadeInDraft)
-            if (fadeOutDraft > maxFadeOut) fadeOutDraft = maxFadeOut
 
             Text("Fade in ${"%.2f".format(fadeInDraft)}s", style = MaterialTheme.typography.labelLarge)
             Slider(
-                value = fadeInDraft,
+                value = fadeInDraft.coerceIn(0f, max(0.001f, maxFadeIn)),
                 onValueChange = { fadeInDraft = min(it, durationSeconds - fadeOutDraft) },
                 onValueChangeFinished = {
-                    onAudioFades((fadeInDraft * 1_000_000L).toLong(), (fadeOutDraft * 1_000_000L).toLong())
+                    onAudioFades((fadeInDraft * 1_000_000f).toLong(), (fadeOutDraft * 1_000_000f).toLong())
                 },
                 valueRange = 0f..max(0.001f, maxFadeIn),
             )
             Text("Fade out ${"%.2f".format(fadeOutDraft)}s", style = MaterialTheme.typography.labelLarge)
             Slider(
-                value = fadeOutDraft,
+                value = fadeOutDraft.coerceIn(0f, max(0.001f, maxFadeOut)),
                 onValueChange = { fadeOutDraft = min(it, durationSeconds - fadeInDraft) },
                 onValueChangeFinished = {
-                    onAudioFades((fadeInDraft * 1_000_000L).toLong(), (fadeOutDraft * 1_000_000L).toLong())
+                    onAudioFades((fadeInDraft * 1_000_000f).toLong(), (fadeOutDraft * 1_000_000f).toLong())
                 },
                 valueRange = 0f..max(0.001f, maxFadeOut),
             )

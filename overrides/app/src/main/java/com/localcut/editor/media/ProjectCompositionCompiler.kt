@@ -3,6 +3,7 @@ package com.localcut.editor.media
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.DefaultGainProvider
 import androidx.media3.common.audio.GainProcessor
 import androidx.media3.common.util.UnstableApi
@@ -94,10 +95,28 @@ class ProjectCompositionCompiler(
             )
         }
 
-        val audioProcessors = if (item.volume == 1.0) {
-            emptyList()
-        } else {
-            listOf(GainProcessor(DefaultGainProvider.Builder(item.volume.toFloat()).build()))
+        val audioProcessors = buildList<AudioProcessor> {
+            if (item.volume != 1.0) {
+                add(GainProcessor(DefaultGainProvider.Builder(item.volume.toFloat()).build()))
+            }
+            if (item.fadeInUs > 0L || item.fadeOutUs > 0L) {
+                val envelope = DefaultGainProvider.Builder(1f)
+                if (item.fadeInUs > 0L) {
+                    envelope.addFadeAt(
+                        0L,
+                        item.fadeInUs,
+                        DefaultGainProvider.FADE_IN_LINEAR,
+                    )
+                }
+                if (item.fadeOutUs > 0L) {
+                    envelope.addFadeAt(
+                        item.presentationDurationUs - item.fadeOutUs,
+                        item.fadeOutUs,
+                        DefaultGainProvider.FADE_OUT_LINEAR,
+                    )
+                }
+                add(GainProcessor(envelope.build()))
+            }
         }
         val videoEffects = if (item.outputTracks == Media3OutputTracks.AUDIO_ONLY) {
             emptyList()

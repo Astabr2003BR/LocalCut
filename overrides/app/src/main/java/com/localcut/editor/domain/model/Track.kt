@@ -12,5 +12,6 @@ data class Track(
     val muted: Boolean = false,
     val hidden: Boolean = false,
     val locked: Boolean = false,
-    val clips: List<Clip> = emptyList()
+    val clips: List<Clip> = emptyList(),
+    val solo: Boolean = false,
 )

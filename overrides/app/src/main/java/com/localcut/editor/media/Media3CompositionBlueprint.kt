@@ -15,13 +15,23 @@ data class Media3CompositionBlueprint(
     val transformSpaceHeight: Int,
     val fps: Int,
     val durationUs: Long,
-    val visual: Media3SequenceBlueprint,
-    val audio: Media3SequenceBlueprint,
-)
+    val visualLayers: List<Media3SequenceBlueprint>,
+    val audioLayers: List<Media3SequenceBlueprint>,
+) {
+    val visual: Media3SequenceBlueprint
+        get() = visualLayers.firstOrNull() ?: Media3SequenceBlueprint(TrackType.VISUAL, emptyList())
+
+    val audio: Media3SequenceBlueprint
+        get() = audioLayers.firstOrNull() ?: Media3SequenceBlueprint(TrackType.AUDIO, emptyList())
+}
 
 data class Media3SequenceBlueprint(
     val type: TrackType,
     val items: List<Media3BlueprintItem>,
+    val sourceTrackId: String? = null,
+    val sourceTrackOrder: Int = 0,
+    val sourceCollisionPolicy: TrackCollisionPolicy = TrackCollisionPolicy.EXCLUSIVE,
+    val laneIndex: Int = 0,
 )
 
 sealed interface Media3BlueprintItem {
@@ -49,18 +59,8 @@ sealed interface Media3BlueprintItem {
 
 object Media3CompositionBlueprintCompiler {
     fun compile(plan: RenderPlan): Media3CompositionBlueprint {
-        require(plan.visualLayers.size == 1) {
-            "Media3 V0 blueprint does not support multiple visual layers"
-        }
-        require(plan.audioLayers.size == 1) {
-            "Media3 V0 blueprint does not support multiple audio layers"
-        }
-        require(plan.visualLayers.single().sourceCollisionPolicy == TrackCollisionPolicy.EXCLUSIVE) {
-            "Media3 V0 blueprint does not support OVERLAY visual tracks"
-        }
-        require(plan.audioLayers.single().sourceCollisionPolicy == TrackCollisionPolicy.EXCLUSIVE) {
-            "Media3 V0 blueprint does not support OVERLAY audio tracks"
-        }
+        require(plan.visualLayers.isNotEmpty()) { "Media3 composition requires at least one visual layer" }
+        require(plan.audioLayers.size == 1) { "Media3 audio mixing is not enabled yet" }
         return Media3CompositionBlueprint(
             width = plan.width,
             height = plan.height,
@@ -68,8 +68,8 @@ object Media3CompositionBlueprintCompiler {
             transformSpaceHeight = plan.transformSpaceHeight,
             fps = plan.fps,
             durationUs = plan.durationUs,
-            visual = compileSequence(plan.visual),
-            audio = compileSequence(plan.audio),
+            visualLayers = plan.visualLayers.map(::compileSequence),
+            audioLayers = plan.audioLayers.map(::compileSequence),
         )
     }
 
@@ -101,5 +101,9 @@ object Media3CompositionBlueprintCompiler {
                     )
                 }
             },
+            sourceTrackId = sequence.sourceTrackId,
+            sourceTrackOrder = sequence.sourceTrackOrder,
+            sourceCollisionPolicy = sequence.sourceCollisionPolicy,
+            laneIndex = sequence.laneIndex,
         )
 }

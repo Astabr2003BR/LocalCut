@@ -17,18 +17,22 @@ object ProjectRenderPlanCompiler {
         val audioTracks = project.tracks
             .filter { it.type == TrackType.AUDIO }
             .sortedWith(compareBy<Track> { it.order }.thenBy { it.id })
-        if (visualTracks.isEmpty() || audioTracks.size != 1) {
+        if (visualTracks.isEmpty()) {
             throw RenderPlanException(
                 RenderPlanErrorCode.UNSUPPORTED_TRACK_LAYOUT,
-                "render plan requires at least one visual track and exactly one audio track",
+                "render plan requires at least one visual track",
             )
         }
-        val audioTrack = audioTracks.single()
-        if (audioTrack.collisionPolicy != TrackCollisionPolicy.EXCLUSIVE) {
+        val unsupportedAudioTrack = audioTracks.firstOrNull { it.collisionPolicy != TrackCollisionPolicy.EXCLUSIVE }
+        if (unsupportedAudioTrack != null) {
             throw RenderPlanException(
                 RenderPlanErrorCode.UNSUPPORTED_TRACK_LAYOUT,
-                "audio mixing is not enabled yet; the audio track must remain EXCLUSIVE",
+                "audio mixing supports multiple EXCLUSIVE tracks; overlay audio within one track is not enabled yet: ${unsupportedAudioTrack.id}",
             )
+        }
+        val hasSoloAudio = audioTracks.any { it.solo }
+        val audibleAudioTracks = audioTracks.filter { track ->
+            !track.muted && (!hasSoloAudio || track.solo)
         }
         val durationUs = TimelineMath.durationUs(project)
         val (width, height) = outputSize(project.width, project.height, mode)
@@ -44,7 +48,9 @@ object ProjectRenderPlanCompiler {
             fps = project.fps,
             durationUs = durationUs,
             visualLayers = visualLayers,
-            audioLayers = listOf(buildSequence(audioTrack, durationUs, project.fps, assets, resolver)),
+            audioLayers = audibleAudioTracks.map { track ->
+                buildSequence(track, durationUs, project.fps, assets, resolver)
+            },
         )
     }
 
@@ -116,7 +122,9 @@ object ProjectRenderPlanCompiler {
                 opacity = clip.opacity,
                 volume = clip.volume,
                 keyframes = clip.keyframes,
-                imageFrameRate = if (asset.type == AssetType.IMAGE) fps else null
+                imageFrameRate = if (asset.type == AssetType.IMAGE) fps else null,
+                fadeInUs = clip.fadeInUs,
+                fadeOutUs = clip.fadeOutUs,
             )
             cursorUs = Math.addExact(clip.startUs, clip.durationUs)
         }

@@ -36,7 +36,11 @@ data class RenderPlan(
 
 data class RenderSequencePlan(
     val type: TrackType,
-    val segments: List<RenderSegment>
+    val segments: List<RenderSegment>,
+    val sourceTrackId: String? = null,
+    val sourceTrackOrder: Int = 0,
+    val sourceCollisionPolicy: TrackCollisionPolicy = TrackCollisionPolicy.EXCLUSIVE,
+    val laneIndex: Int = 0,
 )
 
 sealed interface RenderSegment {

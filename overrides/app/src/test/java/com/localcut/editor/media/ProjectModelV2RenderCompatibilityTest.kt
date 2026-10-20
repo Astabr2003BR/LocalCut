@@ -8,11 +8,12 @@ import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 class ProjectModelV2RenderCompatibilityTest {
     @Test
-    fun v0RendererRejectsOverlayTrackUntilCompositorSupportsIt() {
+    fun renderPlanAcceptsOverlayButMedia3V0BlueprintStillRejectsIt() {
         val asset = Asset(
             id = "video",
             type = AssetType.VIDEO,
@@ -41,10 +42,18 @@ class ProjectModelV2RenderCompatibilityTest {
         )
         val resolver = RenderAssetResolver { Result.success(it.uri) }
 
-        val result = ProjectRenderPlanCompiler.compile(project, RenderMode.EXPORT, resolver)
+        val planResult = ProjectRenderPlanCompiler.compile(project, RenderMode.EXPORT, resolver)
 
-        assertTrue(result.isFailure)
-        val error = result.exceptionOrNull() as RenderPlanException
-        assertEquals(RenderPlanErrorCode.UNSUPPORTED_TRACK_LAYOUT, error.code)
+        assertTrue(planResult.isSuccess)
+        val plan = planResult.getOrThrow()
+        assertEquals(2, plan.visualLayers.size)
+        assertTrue(plan.visualLayers.all { it.sourceCollisionPolicy == TrackCollisionPolicy.OVERLAY })
+
+        try {
+            Media3CompositionBlueprintCompiler.compile(plan)
+            fail("Media3 V0 blueprint must reject layered/OVERLAY visual plans")
+        } catch (error: IllegalArgumentException) {
+            assertTrue(error.message.orEmpty().contains("Media3 V0 blueprint"))
+        }
     }
 }

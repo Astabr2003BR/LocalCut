@@ -1,17 +1,16 @@
 package com.localcut.editor.media
 
 import com.localcut.editor.domain.model.Project
-import java.io.File
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ExportControllerProfileCompatibilityTest {
     @Test
-    fun profileOverloadDefaultsToLegacyExportImplementation() = runTest {
+    fun profileOverloadDefaultsToLegacyExportImplementation() = runBlocking {
         val controller = LegacyExportController()
         val project = Project.create("Compatibility", 1080, 1920, 30)
         val destination = ExportDestination { Result.success(Unit) }

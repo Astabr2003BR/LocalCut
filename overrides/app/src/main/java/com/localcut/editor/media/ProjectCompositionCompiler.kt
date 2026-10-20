@@ -13,6 +13,11 @@ import androidx.media3.transformer.Effects
 import com.localcut.editor.data.assets.AssetUriResolver
 import com.localcut.editor.domain.model.Project
 
+internal object Media3VisualLayerOrder {
+    fun toInputOrder(layers: List<Media3SequenceBlueprint>): List<Media3SequenceBlueprint> =
+        layers.asReversed()
+}
+
 @OptIn(UnstableApi::class)
 class ProjectCompositionCompiler(
     private val assetUriResolver: AssetUriResolver,
@@ -29,7 +34,7 @@ class ProjectCompositionCompiler(
 
     private fun toComposition(blueprint: Media3CompositionBlueprint): Composition {
         val sequences = buildList {
-            blueprint.visualLayers.forEach { layer ->
+            Media3VisualLayerOrder.toInputOrder(blueprint.visualLayers).forEach { layer ->
                 if (layer.items.isNotEmpty()) add(buildVisualSequence(layer, blueprint))
             }
             blueprint.audioLayers.forEach { layer ->

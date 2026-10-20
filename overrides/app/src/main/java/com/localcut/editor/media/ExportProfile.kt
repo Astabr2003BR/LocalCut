@@ -109,6 +109,12 @@ object ExportProfileResolver {
 object ExportRequestValidator {
     fun validate(project: Project, profile: ExportProfile): Result<Unit> = runCatching {
         ExportProfileResolver.validate(profile)
+        if (profile.fps > project.fps) {
+            throw ExportProfileException(
+                ExportProfileErrorCode.INVALID_FPS,
+                "export fps ${profile.fps} cannot exceed project fps ${project.fps} without frame interpolation",
+            )
+        }
         val durationUs = TimelineMath.durationUs(project)
         val hasVisualMedia = project.tracks
             .asSequence()

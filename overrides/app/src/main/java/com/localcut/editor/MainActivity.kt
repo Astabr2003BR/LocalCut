@@ -25,7 +25,9 @@ import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.timeline.TimelineMath
+import com.localcut.editor.media.AndroidExportCapabilitiesProvider
 import com.localcut.editor.media.ExportEvent
+import com.localcut.editor.media.ExportProfile
 import com.localcut.editor.media.FinalPreviewRenderer
 import com.localcut.editor.media.Media3ExportController
 import com.localcut.editor.media.Media3PreviewController
@@ -66,6 +68,7 @@ class MainActivity : ComponentActivity() {
     private val exportUiState = MutableStateFlow(ExportUiState())
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var lastFinalPreviewFile: File? = null
+    private var pendingExportProfile: ExportProfile? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -83,8 +86,15 @@ class MainActivity : ComponentActivity() {
 
         val importer = AndroidAssetImporter(contentResolver)
         val compositionCompiler = ProjectCompositionCompiler(AssetUriResolver(contentResolver))
+        val exportCapabilitiesProvider = AndroidExportCapabilitiesProvider(this)
+        val exportCapabilities = exportCapabilitiesProvider.current()
         previewController = Media3PreviewController(this, compositionCompiler)
-        exportController = Media3ExportController(this, compositionCompiler, cacheDir)
+        exportController = Media3ExportController(
+            this,
+            compositionCompiler,
+            cacheDir,
+            capabilitiesProvider = exportCapabilitiesProvider,
+        )
         finalPreviewRenderer = FinalPreviewRenderer(exportController, File(cacheDir, "final-previews"))
         autosaveScheduler = ExecutorDelayScheduler()
         autosave = DebouncedProjectSaver(activeStore, autosaveScheduler, 450L)
@@ -112,7 +122,15 @@ class MainActivity : ComponentActivity() {
         }
 
         val exportLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { uri ->
-            if (uri != null) startExport(uri)
+            val profile = pendingExportProfile
+            pendingExportProfile = null
+            if (uri != null) {
+                if (profile == null) {
+                    showError("Configuração de exportação expirada. Tente novamente.")
+                } else {
+                    startExport(uri, profile)
+                }
+            }
         }
 
         setContent {
@@ -139,14 +157,16 @@ class MainActivity : ComponentActivity() {
                     viewModel = editorViewModel,
                     previewController = previewController,
                     exportState = exportState,
+                    exportCapabilities = exportCapabilities,
                     onImportRequested = {
                         visualImportLauncher.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
                         )
                     },
                     onImportAudioRequested = { audioImportLauncher.launch(arrayOf("audio/*")) },
-                    onExportRequested = {
+                    onExportRequested = { profile ->
                         if (!exportUiState.value.running) {
+                            pendingExportProfile = profile
                             exportLauncher.launch("LocalCut-${System.currentTimeMillis()}.mp4")
                         }
                     },
@@ -205,7 +225,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startExport(destinationUri: Uri) {
+    private fun startExport(destinationUri: Uri, profile: ExportProfile) {
         if (exportUiState.value.running) return
         val project = editorViewModel.sessionState.value.project
         if (TimelineMath.durationUs(project) <= 0L) {
@@ -215,7 +235,11 @@ class MainActivity : ComponentActivity() {
         exportUiState.value = ExportUiState(running = true, progressPercent = 0, message = "Exportando…")
         activityScope.launch {
             try {
-                exportController.export(project, SafExportDestination(contentResolver, destinationUri)).collect(::onExportEvent)
+                exportController.export(
+                    project,
+                    SafExportDestination(contentResolver, destinationUri),
+                    profile,
+                ).collect(::onExportEvent)
             } catch (error: Throwable) {
                 exportUiState.value = ExportUiState(message = error.message ?: "Falha ao exportar")
             }

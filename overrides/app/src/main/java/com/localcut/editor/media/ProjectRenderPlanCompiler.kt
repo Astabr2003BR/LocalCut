@@ -11,25 +11,31 @@ object ProjectRenderPlanCompiler {
         if (issues.isNotEmpty()) {
             throw RenderPlanException(RenderPlanErrorCode.INVALID_PROJECT, "invalid project: ${issues.first()}")
         }
-        val visualTracks = project.tracks.filter { it.type == TrackType.VISUAL }
-        val audioTracks = project.tracks.filter { it.type == TrackType.AUDIO }
-        if (visualTracks.size != 1 || audioTracks.size != 1) {
-            throw RenderPlanException(RenderPlanErrorCode.UNSUPPORTED_TRACK_LAYOUT, "V0 requires exactly one visual and one audio track")
-        }
-        val visualTrack = visualTracks.single()
-        val audioTrack = audioTracks.single()
-        if (
-            visualTrack.collisionPolicy != TrackCollisionPolicy.EXCLUSIVE ||
-            audioTrack.collisionPolicy != TrackCollisionPolicy.EXCLUSIVE
-        ) {
+        val visualTracks = project.tracks
+            .filter { it.type == TrackType.VISUAL }
+            .sortedWith(compareBy<Track> { it.order }.thenBy { it.id })
+        val audioTracks = project.tracks
+            .filter { it.type == TrackType.AUDIO }
+            .sortedWith(compareBy<Track> { it.order }.thenBy { it.id })
+        if (visualTracks.isEmpty() || audioTracks.size != 1) {
             throw RenderPlanException(
                 RenderPlanErrorCode.UNSUPPORTED_TRACK_LAYOUT,
-                "V0 renderer supports only EXCLUSIVE tracks",
+                "render plan requires at least one visual track and exactly one audio track",
+            )
+        }
+        val audioTrack = audioTracks.single()
+        if (audioTrack.collisionPolicy != TrackCollisionPolicy.EXCLUSIVE) {
+            throw RenderPlanException(
+                RenderPlanErrorCode.UNSUPPORTED_TRACK_LAYOUT,
+                "audio mixing is not enabled yet; the audio track must remain EXCLUSIVE",
             )
         }
         val durationUs = TimelineMath.durationUs(project)
         val (width, height) = outputSize(project.width, project.height, mode)
         val assets = project.assets.associateBy { it.id }
+        val visualLayers = visualTracks.flatMap { track ->
+            buildVisualLayers(track, durationUs, project.fps, assets, resolver)
+        }
         RenderPlan(
             width = width,
             height = height,
@@ -37,9 +43,46 @@ object ProjectRenderPlanCompiler {
             transformSpaceHeight = project.height,
             fps = project.fps,
             durationUs = durationUs,
-            visual = buildSequence(visualTrack, durationUs, project.fps, assets, resolver),
-            audio = buildSequence(audioTrack, durationUs, project.fps, assets, resolver)
+            visualLayers = visualLayers,
+            audioLayers = listOf(buildSequence(audioTrack, durationUs, project.fps, assets, resolver)),
         )
+    }
+
+    private fun buildVisualLayers(
+        track: Track,
+        totalDurationUs: Long,
+        fps: Int,
+        assets: Map<String, Asset>,
+        resolver: RenderAssetResolver,
+    ): List<RenderSequencePlan> {
+        if (track.collisionPolicy == TrackCollisionPolicy.EXCLUSIVE || track.clips.size <= 1) {
+            return listOf(buildSequence(track, totalDurationUs, fps, assets, resolver))
+        }
+
+        val lanes = mutableListOf<MutableList<Clip>>()
+        val laneEnds = mutableListOf<Long>()
+        val sortedClips = track.clips.sortedWith(compareBy<Clip> { it.startUs }.thenBy { it.id })
+        for (clip in sortedClips) {
+            val laneIndex = laneEnds.indexOfFirst { laneEndUs -> laneEndUs <= clip.startUs }
+            val clipEndUs = Math.addExact(clip.startUs, clip.durationUs)
+            if (laneIndex >= 0) {
+                lanes[laneIndex] += clip
+                laneEnds[laneIndex] = clipEndUs
+            } else {
+                lanes += mutableListOf(clip)
+                laneEnds += clipEndUs
+            }
+        }
+
+        return lanes.map { laneClips ->
+            buildSequence(
+                track.copy(collisionPolicy = TrackCollisionPolicy.EXCLUSIVE, clips = laneClips),
+                totalDurationUs,
+                fps,
+                assets,
+                resolver,
+            )
+        }
     }
 
     private fun buildSequence(
@@ -51,7 +94,7 @@ object ProjectRenderPlanCompiler {
     ): RenderSequencePlan {
         val segments = mutableListOf<RenderSegment>()
         var cursorUs = 0L
-        for (clip in track.clips.sortedBy { it.startUs }) {
+        for (clip in track.clips.sortedWith(compareBy<Clip> { it.startUs }.thenBy { it.id })) {
             if (clip.startUs > cursorUs) segments += RenderSegment.Gap(clip.startUs - cursorUs)
             val asset = assets[clip.assetId]
                 ?: throw RenderPlanException(RenderPlanErrorCode.INVALID_PROJECT, "missing asset ${clip.assetId}", clip.assetId)

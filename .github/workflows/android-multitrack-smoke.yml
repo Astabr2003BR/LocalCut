@@ -115,9 +115,35 @@ jobs:
           }
           trap cleanup EXIT
 
-          "$ADB" wait-for-device
+          device_ready=''
+          for _ in $(seq 1 60); do
+            if ! kill -0 "$EMULATOR_PID" >/dev/null 2>&1; then
+              echo 'Android emulator process exited before ADB became ready' >&2
+              cat "$EMULATOR_LOG" >&2 || true
+              wait "$EMULATOR_PID" || true
+              exit 1
+            fi
+            if [ "$("$ADB" get-state 2>/dev/null || true)" = 'device' ]; then
+              device_ready='1'
+              break
+            fi
+            sleep 2
+          done
+          if [ "$device_ready" != '1' ]; then
+            echo 'Android emulator did not appear in ADB within 120 seconds' >&2
+            "$ADB" devices -l >&2 || true
+            cat "$EMULATOR_LOG" >&2 || true
+            exit 1
+          fi
+
           booted=''
           for _ in $(seq 1 120); do
+            if ! kill -0 "$EMULATOR_PID" >/dev/null 2>&1; then
+              echo 'Android emulator process exited before boot completed' >&2
+              cat "$EMULATOR_LOG" >&2 || true
+              wait "$EMULATOR_PID" || true
+              exit 1
+            fi
             booted="$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
             if [ "$booted" = '1' ]; then
               break
@@ -125,8 +151,9 @@ jobs:
             sleep 2
           done
           if [ "$booted" != '1' ]; then
+            "$ADB" devices -l >&2 || true
             cat "$EMULATOR_LOG" >&2 || true
-            echo 'Android emulator did not finish booting' >&2
+            echo 'Android emulator did not finish booting within 240 seconds' >&2
             exit 1
           fi
 

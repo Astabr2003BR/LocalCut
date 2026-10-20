@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -32,6 +33,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
+import com.localcut.editor.media.ExportCapabilities
+import com.localcut.editor.media.ExportProfile
+import com.localcut.editor.media.ExportSettingsState
+import com.localcut.editor.media.ExportVideoCodec
 import com.localcut.editor.media.Media3PreviewController
 import com.localcut.editor.session.EditorAction
 import com.localcut.editor.ui.editor.components.InspectorPane
@@ -51,9 +56,10 @@ fun EditorScreen(
     viewModel: EditorViewModel,
     previewController: Media3PreviewController,
     exportState: ExportUiState,
+    exportCapabilities: ExportCapabilities,
     onImportRequested: () -> Unit,
     onImportAudioRequested: () -> Unit,
-    onExportRequested: () -> Unit,
+    onExportRequested: (ExportProfile) -> Unit,
     onCancelExport: () -> Unit,
     onFinalPreviewRequested: () -> Unit,
     modifier: Modifier = Modifier,
@@ -62,6 +68,27 @@ fun EditorScreen(
     val preview by viewModel.previewState.collectAsState()
     val configuration = LocalConfiguration.current
     var loopEnabled by remember { mutableStateOf(false) }
+    var showExportSettings by remember { mutableStateOf(false) }
+    var exportSettings by remember(
+        session.project.width,
+        session.project.height,
+        session.project.fps,
+        exportCapabilities,
+    ) {
+        mutableStateOf(ExportSettingsState.from(session.project, exportCapabilities))
+    }
+
+    if (showExportSettings) {
+        ExportSettingsDialog(
+            state = exportSettings,
+            onStateChange = { exportSettings = it },
+            onDismiss = { showExportSettings = false },
+            onConfirm = {
+                showExportSettings = false
+                onExportRequested(exportSettings.toProfile())
+            },
+        )
+    }
 
     Surface(
         modifier = modifier.fillMaxSize().safeDrawingPadding(),
@@ -71,7 +98,7 @@ fun EditorScreen(
             Column(Modifier.fillMaxSize()) {
                 EditorToolbar(
                     session.canUndo, session.canRedo, loopEnabled, exportState,
-                    onImportRequested, onImportAudioRequested, onExportRequested, onCancelExport, onFinalPreviewRequested, viewModel
+                    onImportRequested, onImportAudioRequested, { showExportSettings = true }, onCancelExport, onFinalPreviewRequested, viewModel
                 ) {
                     loopEnabled = it
                     viewModel.setLoopRange(0L, if (it && preview.durationUs > 0) preview.durationUs else null)
@@ -107,7 +134,7 @@ fun EditorScreen(
             Column(Modifier.fillMaxSize()) {
                 EditorToolbar(
                     session.canUndo, session.canRedo, loopEnabled, exportState,
-                    onImportRequested, onImportAudioRequested, onExportRequested, onCancelExport, onFinalPreviewRequested, viewModel
+                    onImportRequested, onImportAudioRequested, { showExportSettings = true }, onCancelExport, onFinalPreviewRequested, viewModel
                 ) {
                     loopEnabled = it
                     viewModel.setLoopRange(0L, if (it && preview.durationUs > 0) preview.durationUs else null)
@@ -194,6 +221,86 @@ private fun EditorToolbar(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExportSettingsDialog(
+    state: ExportSettingsState,
+    onStateChange: (ExportSettingsState) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Exportar vídeo") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ExportChoiceRow(
+                    label = "Resolução",
+                    options = state.resolutionOptions,
+                    selected = state.selectedResolution,
+                    optionLabel = { "${it.width}×${it.height}" },
+                    onSelect = { onStateChange(state.selectResolution(it)) },
+                )
+                ExportChoiceRow(
+                    label = "FPS",
+                    options = state.fpsOptions,
+                    selected = state.selectedFps,
+                    optionLabel = { "$it fps" },
+                    onSelect = { onStateChange(state.selectFps(it)) },
+                )
+                ExportChoiceRow(
+                    label = "Bitrate",
+                    options = state.bitrateOptions,
+                    selected = state.selectedBitrateBitsPerSecond,
+                    optionLabel = { "${it / 1_000_000} Mbps" },
+                    onSelect = { onStateChange(state.selectBitrate(it)) },
+                )
+                ExportChoiceRow(
+                    label = "Codec",
+                    options = state.codecOptions,
+                    selected = state.selectedCodec,
+                    optionLabel = { if (it == ExportVideoCodec.HEVC) "HEVC" else "H.264" },
+                    onSelect = { onStateChange(state.selectCodec(it)) },
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) { Text("Escolher arquivo") }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) { Text("Cancelar") }
+        },
+    )
+}
+
+@Composable
+private fun <T> ExportChoiceRow(
+    label: String,
+    options: List<T>,
+    selected: T,
+    optionLabel: (T) -> String,
+    onSelect: (T) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            options.forEach { option ->
+                if (option == selected) {
+                    FilledTonalButton(onClick = { onSelect(option) }) { Text(optionLabel(option)) }
+                } else {
+                    OutlinedButton(onClick = { onSelect(option) }) { Text(optionLabel(option)) }
+                }
             }
         }
     }

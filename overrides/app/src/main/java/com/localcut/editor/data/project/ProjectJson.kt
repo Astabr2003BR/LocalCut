@@ -62,6 +62,7 @@ object ProjectJson {
         field("id", jsonString(t.id)); comma(); field("type", jsonString(t.type.name)); comma(); field("order", t.order.toString()); comma()
         field("collisionPolicy", jsonString(t.collisionPolicy.name)); comma()
         field("muted", t.muted.toString()); comma(); field("hidden", t.hidden.toString()); comma(); field("locked", t.locked.toString()); comma()
+        field("solo", t.solo.toString()); comma()
         append("\"clips\":[")
         t.clips.forEachIndexed { i, clip -> if (i > 0) comma(); appendClip(clip) }
         append("]}")
@@ -73,6 +74,7 @@ object ProjectJson {
         field("durationUs", c.durationUs.toString()); comma(); field("sourceInUs", c.sourceInUs.toString()); comma(); field("sourceOutUs", c.sourceOutUs.toString()); comma()
         append("\"transform\":"); appendTransform(c.transform); comma()
         field("opacity", c.opacity.toString()); comma(); field("volume", c.volume.toString()); comma()
+        field("fadeInUs", c.fadeInUs.toString()); comma(); field("fadeOutUs", c.fadeOutUs.toString()); comma()
         append("\"keyframes\":[")
         c.keyframes.forEachIndexed { i, k -> if (i > 0) comma(); appendKeyframe(k) }
         append("]}")
@@ -112,7 +114,8 @@ object ProjectJson {
         muted = o.required("muted").asBoolean(),
         hidden = o.required("hidden").asBoolean(),
         locked = o.required("locked").asBoolean(),
-        clips = o.required("clips").asArray().values.map { decodeClip(it.asObject()) }
+        clips = o.required("clips").asArray().values.map { decodeClip(it.asObject()) },
+        solo = o.optional("solo")?.asBoolean() ?: false,
     )
 
     private fun decodeClip(o: JObject): Clip = Clip(
@@ -128,7 +131,9 @@ object ProjectJson {
         keyframes = o.required("keyframes").asArray().values.map { k ->
             val ko = k.asObject()
             TransformKeyframe(ko.required("offsetUs").asLong(), decodeTransform(ko.required("value").asObject()))
-        }
+        },
+        fadeInUs = o.optional("fadeInUs").nullableLong() ?: 0L,
+        fadeOutUs = o.optional("fadeOutUs").nullableLong() ?: 0L,
     )
 
     private fun decodeTransform(o: JObject): TransformValue = TransformValue(

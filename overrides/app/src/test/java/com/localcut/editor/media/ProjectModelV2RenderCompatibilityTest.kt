@@ -7,8 +7,8 @@ import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFailsWith
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 class ProjectModelV2RenderCompatibilityTest {
@@ -49,9 +49,11 @@ class ProjectModelV2RenderCompatibilityTest {
         assertEquals(2, plan.visualLayers.size)
         assertTrue(plan.visualLayers.all { it.sourceCollisionPolicy == TrackCollisionPolicy.OVERLAY })
 
-        val error = assertFailsWith<IllegalArgumentException> {
+        try {
             Media3CompositionBlueprintCompiler.compile(plan)
+            fail("Media3 V0 blueprint must reject layered/OVERLAY visual plans")
+        } catch (error: IllegalArgumentException) {
+            assertTrue(error.message.orEmpty().contains("Media3 V0 blueprint"))
         }
-        assertTrue(error.message.orEmpty().contains("Media3 V0 blueprint"))
     }
 }

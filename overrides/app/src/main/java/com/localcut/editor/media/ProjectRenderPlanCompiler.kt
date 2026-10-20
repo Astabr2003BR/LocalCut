@@ -74,13 +74,14 @@ object ProjectRenderPlanCompiler {
             }
         }
 
-        return lanes.map { laneClips ->
+        return lanes.mapIndexed { laneIndex, laneClips ->
             buildSequence(
-                track.copy(collisionPolicy = TrackCollisionPolicy.EXCLUSIVE, clips = laneClips),
+                track.copy(clips = laneClips),
                 totalDurationUs,
                 fps,
                 assets,
                 resolver,
+                laneIndex = laneIndex,
             )
         }
     }
@@ -90,7 +91,8 @@ object ProjectRenderPlanCompiler {
         totalDurationUs: Long,
         fps: Int,
         assets: Map<String, Asset>,
-        resolver: RenderAssetResolver
+        resolver: RenderAssetResolver,
+        laneIndex: Int = 0,
     ): RenderSequencePlan {
         val segments = mutableListOf<RenderSegment>()
         var cursorUs = 0L
@@ -119,7 +121,14 @@ object ProjectRenderPlanCompiler {
             cursorUs = Math.addExact(clip.startUs, clip.durationUs)
         }
         if (cursorUs < totalDurationUs) segments += RenderSegment.Gap(totalDurationUs - cursorUs)
-        return RenderSequencePlan(track.type, segments)
+        return RenderSequencePlan(
+            type = track.type,
+            segments = segments,
+            sourceTrackId = track.id,
+            sourceTrackOrder = track.order,
+            sourceCollisionPolicy = track.collisionPolicy,
+            laneIndex = laneIndex,
+        )
     }
 
     private fun outputSize(width: Int, height: Int, mode: RenderMode): Pair<Int, Int> {

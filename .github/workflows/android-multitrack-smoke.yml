@@ -1,0 +1,131 @@
+name: Android Multitrack Export Smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-multitrack-smoke.yml'
+      - 'overrides/app/src/main/java/com/localcut/editor/media/**'
+      - 'overrides/app/src/androidTest/**'
+      - 'localcut-source-full-build9.zip'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-multitrack-smoke.yml'
+      - 'overrides/app/src/main/java/com/localcut/editor/media/**'
+      - 'overrides/app/src/androidTest/**'
+      - 'localcut-source-full-build9.zip'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  multitrack-export-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Verify LocalCut source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s localcut-source-full-build9.zip
+          echo "b2610e666f4b1df80b8813e48f95809fa0406094b831cd1ab49baa07fa8b6878  localcut-source-full-build9.zip" | sha256sum -c -
+          unzip -tq localcut-source-full-build9.zip
+
+      - name: Assemble source with overrides
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf work
+          mkdir -p work
+          unzip -q localcut-source-full-build9.zip -d work
+          test -d overrides/app
+          cp -R overrides/app/. work/app/
+          test -f work/app/src/androidTest/java/com/localcut/editor/media/MultitrackExportSmokeTest.kt
+
+      - name: Set up Gradle 9.5.0
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.5.0'
+          cache-provider: basic
+
+      - name: Install Android emulator system image
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v sdkmanager
+          command -v avdmanager
+          command -v adb
+          SYSTEM_IMAGE='system-images;android-35;google_apis;x86_64'
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "$SYSTEM_IMAGE" 'platform-tools' 'emulator'
+          echo no | avdmanager create avd --force --name localcut-ci --package "$SYSTEM_IMAGE" --device 'pixel_6'
+
+      - name: Run real multitrack export on emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -e /dev/kvm ]; then
+            sudo chmod 666 /dev/kvm
+          fi
+          EMULATOR_LOG="$RUNNER_TEMP/localcut-emulator.log"
+          "$ANDROID_HOME/emulator/emulator" \
+            -avd localcut-ci \
+            -no-window \
+            -no-audio \
+            -no-boot-anim \
+            -no-snapshot \
+            -no-metrics \
+            -gpu swiftshader_indirect \
+            >"$EMULATOR_LOG" 2>&1 &
+          EMULATOR_PID=$!
+          cleanup() {
+            adb emu kill >/dev/null 2>&1 || true
+            kill "$EMULATOR_PID" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          adb wait-for-device
+          booted=''
+          for _ in $(seq 1 120); do
+            booted="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
+            if [ "$booted" = '1' ]; then
+              break
+            fi
+            sleep 2
+          done
+          if [ "$booted" != '1' ]; then
+            cat "$EMULATOR_LOG" >&2 || true
+            echo 'Android emulator did not finish booting' >&2
+            exit 1
+          fi
+
+          adb shell settings put global window_animation_scale 0
+          adb shell settings put global transition_animation_scale 0
+          adb shell settings put global animator_duration_scale 0
+          adb shell input keyevent 82 || true
+
+          gradle --no-daemon -p work connectedDebugAndroidTest \
+            -Pandroid.testInstrumentationRunnerArguments.class=com.localcut.editor.media.MultitrackExportSmokeTest
+
+      - name: Upload instrumentation reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: localcut-multitrack-smoke-failure-${{ github.run_number }}
+          path: |
+            work/app/build/reports/androidTests
+            work/app/build/outputs/androidTest-results
+            ${{ runner.temp }}/localcut-emulator.log
+          if-no-files-found: warn
+          retention-days: 3

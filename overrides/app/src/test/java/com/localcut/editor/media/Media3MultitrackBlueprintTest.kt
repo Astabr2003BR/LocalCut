@@ -3,11 +3,39 @@ package com.localcut.editor.media
 import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class Media3MultitrackBlueprintTest {
     @Test
     fun layeredRenderPlanCompilesToOrderedMedia3VisualSequences() {
+        val blueprint = Media3CompositionBlueprintCompiler.compile(layeredPlan())
+
+        assertEquals(2, blueprint.visualLayers.size)
+        assertEquals(1, blueprint.audioLayers.size)
+        assertEquals(blueprint.visualLayers.first(), blueprint.visual)
+        assertEquals(blueprint.audioLayers.first(), blueprint.audio)
+        assertEquals(listOf(TrackType.VISUAL, TrackType.VISUAL), blueprint.visualLayers.map { it.type })
+    }
+
+    @Test
+    fun layeredPlanIsAllowedForExportButBlockedForPreviewUntilCompositionPlayerIsReliable() {
+        val plan = layeredPlan()
+
+        assertTrue(Media3CompositionSupportPolicy.validate(plan, RenderMode.EXPORT).isSuccess)
+
+        val fastPreview = Media3CompositionSupportPolicy.validate(plan, RenderMode.FAST_PREVIEW)
+        assertTrue(fastPreview.isFailure)
+        val fastError = fastPreview.exceptionOrNull() as RenderPlanException
+        assertEquals(RenderPlanErrorCode.UNSUPPORTED_TRACK_LAYOUT, fastError.code)
+
+        val fullPreview = Media3CompositionSupportPolicy.validate(plan, RenderMode.FULL_PREVIEW)
+        assertTrue(fullPreview.isFailure)
+        val fullError = fullPreview.exceptionOrNull() as RenderPlanException
+        assertEquals(RenderPlanErrorCode.UNSUPPORTED_TRACK_LAYOUT, fullError.code)
+    }
+
+    private fun layeredPlan(): RenderPlan {
         val base = RenderSequencePlan(
             type = TrackType.VISUAL,
             segments = listOf(RenderSegment.Gap(4_000_000L)),
@@ -30,7 +58,7 @@ class Media3MultitrackBlueprintTest {
             sourceTrackId = "audio",
             sourceTrackOrder = 2,
         )
-        val plan = RenderPlan(
+        return RenderPlan(
             width = 1080,
             height = 1920,
             transformSpaceWidth = 1080,
@@ -40,13 +68,5 @@ class Media3MultitrackBlueprintTest {
             visualLayers = listOf(base, overlay),
             audioLayers = listOf(audio),
         )
-
-        val blueprint = Media3CompositionBlueprintCompiler.compile(plan)
-
-        assertEquals(2, blueprint.visualLayers.size)
-        assertEquals(1, blueprint.audioLayers.size)
-        assertEquals(blueprint.visualLayers.first(), blueprint.visual)
-        assertEquals(blueprint.audioLayers.first(), blueprint.audio)
-        assertEquals(listOf(TrackType.VISUAL, TrackType.VISUAL), blueprint.visualLayers.map { it.type })
     }
 }

@@ -1,5 +1,7 @@
 package com.localcut.editor.media
 
+import android.app.Instrumentation
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.media.MediaMetadataRetriever
@@ -19,6 +21,8 @@ import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.TextOverlay
+import com.localcut.editor.domain.model.TextStyle
 import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
@@ -42,47 +46,8 @@ class MultitrackExportSmokeTest {
         try {
             val baseFile = createSolidPng(File(testDir, "base.png"), Color.RED)
             val overlayFile = createSolidPng(File(testDir, "overlay.png"), Color.BLUE)
-            val outputFile = File(testDir, "output.mp4")
             val project = projectFor(baseFile, overlayFile)
-            val compiler = ProjectCompositionCompiler(AssetUriResolver(context.contentResolver))
-            val composition = compiler.compile(project, RenderMode.EXPORT).getOrThrow()
-
-            val completed = CountDownLatch(1)
-            val failure = AtomicReference<Throwable?>(null)
-            instrumentation.runOnMainSync {
-                val transformer = Transformer.Builder(context)
-                    .setVideoMimeType(MimeTypes.VIDEO_H264)
-                    .setAudioMimeType(MimeTypes.AUDIO_AAC)
-                    .addListener(object : Transformer.Listener {
-                        override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                            completed.countDown()
-                        }
-
-                        override fun onError(
-                            composition: Composition,
-                            exportResult: ExportResult,
-                            exportException: ExportException,
-                        ) {
-                            failure.set(exportException)
-                            completed.countDown()
-                        }
-                    })
-                    .build()
-                transformer.start(composition, outputFile.absolutePath)
-            }
-
-            assertTrue("Transformer export timed out", completed.await(120, TimeUnit.SECONDS))
-            failure.get()?.let { throw AssertionError("Transformer export failed", it) }
-            assertTrue("Exported MP4 is missing or empty", outputFile.isFile && outputFile.length() > 0L)
-
-            val retriever = MediaMetadataRetriever()
-            val frame = try {
-                retriever.setDataSource(outputFile.absolutePath)
-                retriever.getFrameAtTime(500_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                    ?: error("Unable to decode exported frame")
-            } finally {
-                retriever.release()
-            }
+            val frame = exportFrame(project, File(testDir, "output.mp4"), instrumentation, context)
             try {
                 val center = frame.getPixel(frame.width / 2, frame.height / 2)
                 val corner = frame.getPixel(frame.width / 12, frame.height / 12)
@@ -93,6 +58,119 @@ class MultitrackExportSmokeTest {
             }
         } finally {
             testDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun exportsTextOverlayIntoRenderedPixels() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val testDir = File(context.cacheDir, "text-overlay-smoke-${System.nanoTime()}").apply { mkdirs() }
+        try {
+            val baseFile = createSolidPng(File(testDir, "base-black.png"), Color.BLACK)
+            val baseAsset = imageAsset("text-base", baseFile)
+            val project = Project(
+                id = "text-overlay-smoke",
+                schemaVersion = BuildContract.PROJECT_SCHEMA_VERSION,
+                title = "Text overlay smoke",
+                width = WIDTH,
+                height = HEIGHT,
+                fps = 30,
+                assets = listOf(baseAsset),
+                tracks = listOf(
+                    Track(
+                        id = "visual-base",
+                        type = TrackType.VISUAL,
+                        order = 0,
+                        collisionPolicy = TrackCollisionPolicy.EXCLUSIVE,
+                        clips = listOf(
+                            Clip(
+                                id = "base-clip",
+                                assetId = baseAsset.id,
+                                startUs = 0L,
+                                durationUs = DURATION_US,
+                                sourceInUs = 0L,
+                                sourceOutUs = DURATION_US,
+                            ),
+                        ),
+                    ),
+                    Track(
+                        id = "audio-1",
+                        type = TrackType.AUDIO,
+                        order = 1,
+                        collisionPolicy = TrackCollisionPolicy.EXCLUSIVE,
+                    ),
+                ),
+                textOverlays = listOf(
+                    TextOverlay(
+                        id = "title",
+                        startUs = 0L,
+                        durationUs = DURATION_US,
+                        text = "LOCALCUT",
+                        style = TextStyle(fontSizePx = 72.0, fillArgb = Color.WHITE),
+                        zIndex = 10,
+                    ),
+                ),
+            )
+
+            val frame = exportFrame(project, File(testDir, "text-output.mp4"), instrumentation, context)
+            try {
+                val brightPixels = countBrightPixels(frame)
+                assertTrue(
+                    "exported frame must contain visible text pixels; brightPixels=$brightPixels",
+                    brightPixels >= 120,
+                )
+            } finally {
+                frame.recycle()
+            }
+        } finally {
+            testDir.deleteRecursively()
+        }
+    }
+
+    private fun exportFrame(
+        project: Project,
+        outputFile: File,
+        instrumentation: Instrumentation,
+        context: Context,
+    ): Bitmap {
+        val compiler = ProjectCompositionCompiler(AssetUriResolver(context.contentResolver))
+        val composition = compiler.compile(project, RenderMode.EXPORT).getOrThrow()
+        val completed = CountDownLatch(1)
+        val failure = AtomicReference<Throwable?>(null)
+        instrumentation.runOnMainSync {
+            val transformer = Transformer.Builder(context)
+                .setVideoMimeType(MimeTypes.VIDEO_H264)
+                .setAudioMimeType(MimeTypes.AUDIO_AAC)
+                .addListener(object : Transformer.Listener {
+                    override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                        completed.countDown()
+                    }
+
+                    override fun onError(
+                        composition: Composition,
+                        exportResult: ExportResult,
+                        exportException: ExportException,
+                    ) {
+                        failure.set(exportException)
+                        completed.countDown()
+                    }
+                })
+                .build()
+            transformer.start(composition, outputFile.absolutePath)
+        }
+
+        assertTrue("Transformer export timed out", completed.await(120, TimeUnit.SECONDS))
+        failure.get()?.let { throw AssertionError("Transformer export failed", it) }
+        assertTrue("Exported MP4 is missing or empty", outputFile.isFile && outputFile.length() > 0L)
+
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(outputFile.absolutePath)
+            retriever.getFrameAtTime(500_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: error("Unable to decode exported frame")
+        } finally {
+            retriever.release()
         }
     }
 
@@ -170,6 +248,19 @@ class MultitrackExportSmokeTest {
         }
         bitmap.recycle()
         return file
+    }
+
+    private fun countBrightPixels(frame: Bitmap): Int {
+        var count = 0
+        for (y in 0 until frame.height) {
+            for (x in 0 until frame.width) {
+                val color = frame.getPixel(x, y)
+                if (Color.red(color) >= 190 && Color.green(color) >= 190 && Color.blue(color) >= 190) {
+                    count += 1
+                }
+            }
+        }
+        return count
     }
 
     private fun assertDominantBlue(color: Int, message: String) {

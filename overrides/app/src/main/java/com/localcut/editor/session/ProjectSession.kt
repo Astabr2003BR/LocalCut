@@ -32,6 +32,7 @@ data class ProjectSessionState(
     val issues: List<SessionIssue> = emptyList(),
     val lastError: String? = null,
     val selectedClipId: String? = null,
+    val selectedTrackId: String? = null,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false
 )
@@ -40,6 +41,7 @@ sealed interface EditorAction {
     data class Execute(val command: EditorCommand) : EditorAction
     data class AddImportedClip(val trackId: String, val asset: Asset, val clip: Clip) : EditorAction
     data class SelectClip(val clipId: String?) : EditorAction
+    data class SelectTrack(val trackId: String?) : EditorAction
     data class MoveSelected(val newStartUs: Long) : EditorAction
     data class SetSelectedTransform(val transform: TransformValue) : EditorAction
     data class SetSelectedVolume(val volume: Double) : EditorAction
@@ -75,10 +77,14 @@ class ProjectSession(
             is EditorAction.AddImportedClip -> {
                 execute(InsertAssetClipCommand(action.trackId, action.asset, action.clip))
                 if (state.project.findClip(action.clip.id) != null) {
-                    state = state.copy(selectedClipId = action.clip.id)
+                    state = state.copy(
+                        selectedClipId = action.clip.id,
+                        selectedTrackId = action.trackId,
+                    )
                 }
             }
             is EditorAction.SelectClip -> selectClip(action.clipId)
+            is EditorAction.SelectTrack -> selectTrack(action.trackId)
             is EditorAction.MoveSelected -> withSelected { execute(MoveClipCommand(it, action.newStartUs)) }
             is EditorAction.SetSelectedTransform -> withSelected { execute(SetTransformCommand(it, action.transform)) }
             is EditorAction.SetSelectedVolume -> withSelected { execute(SetVolumeCommand(it, action.volume)) }
@@ -146,12 +152,48 @@ class ProjectSession(
             state = state.copy(selectedClipId = null, lastError = null)
             return
         }
-        if (state.project.findClip(clipId) == null) {
-            state = state.copy(selectedClipId = null, lastError = "clip $clipId not found")
+        val trackId = trackIdForClip(state.project, clipId)
+        if (trackId == null) {
+            state = state.copy(
+                selectedClipId = null,
+                selectedTrackId = null,
+                lastError = "clip $clipId not found",
+            )
             return
         }
-        state = state.copy(selectedClipId = clipId, lastError = null)
+        state = state.copy(
+            selectedClipId = clipId,
+            selectedTrackId = trackId,
+            lastError = null,
+        )
     }
+
+    private fun selectTrack(trackId: String?) {
+        if (trackId == null) {
+            state = state.copy(
+                selectedClipId = null,
+                selectedTrackId = null,
+                lastError = null,
+            )
+            return
+        }
+        if (state.project.tracks.none { it.id == trackId }) {
+            state = state.copy(
+                selectedClipId = null,
+                selectedTrackId = null,
+                lastError = "track $trackId not found",
+            )
+            return
+        }
+        state = state.copy(
+            selectedClipId = null,
+            selectedTrackId = trackId,
+            lastError = null,
+        )
+    }
+
+    private fun trackIdForClip(project: Project, clipId: String): String? =
+        project.tracks.firstOrNull { track -> track.clips.any { it.id == clipId } }?.id
 
     private fun nextDuplicateClipId(project: Project, clipId: String): String {
         var suffix = 1L
@@ -176,11 +218,14 @@ class ProjectSession(
 
     private fun commitEditedState() {
         val project = history.project
-        val selected = state.selectedClipId?.takeIf { project.findClip(it) != null }
+        val selectedClip = state.selectedClipId?.takeIf { project.findClip(it) != null }
+        val selectedTrack = selectedClip?.let { trackIdForClip(project, it) }
+            ?: state.selectedTrackId?.takeIf { selectedId -> project.tracks.any { it.id == selectedId } }
         state = state.copy(
             project = project,
             lastError = null,
-            selectedClipId = selected,
+            selectedClipId = selectedClip,
+            selectedTrackId = selectedTrack,
             canUndo = history.canUndo,
             canRedo = history.canRedo
         )

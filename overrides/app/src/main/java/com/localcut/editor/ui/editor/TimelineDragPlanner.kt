@@ -3,6 +3,7 @@ package com.localcut.editor.ui.editor
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.Track
+import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.session.EditorAction
 
 data class TimelineDragContext(
@@ -17,6 +18,10 @@ data class TimelineDragContext(
 
 object TimelineEditBounds {
     fun clampLeft(track: Track, clipId: String, requestedStartUs: Long): Long {
+        if (track.collisionPolicy == TrackCollisionPolicy.OVERLAY) {
+            val clip = findClip(track, clipId)
+            return requestedStartUs.coerceIn(0L, endUs(clip) - 1L)
+        }
         val (clip, previous, _) = neighbours(track, clipId)
         val previousEndUs = previous?.let(::endUs) ?: 0L
         val latestStartUs = endUs(clip) - 1L
@@ -24,6 +29,10 @@ object TimelineEditBounds {
     }
 
     fun clampRight(track: Track, clipId: String, requestedEndUs: Long): Long {
+        if (track.collisionPolicy == TrackCollisionPolicy.OVERLAY) {
+            val clip = findClip(track, clipId)
+            return requestedEndUs.coerceAtLeast(clip.startUs + 1L)
+        }
         val (clip, _, next) = neighbours(track, clipId)
         val earliestEndUs = clip.startUs + 1L
         val latestEndUs = next?.startUs ?: Long.MAX_VALUE
@@ -31,6 +40,10 @@ object TimelineEditBounds {
     }
 
     fun clampMove(track: Track, clipId: String, requestedStartUs: Long): Long {
+        if (track.collisionPolicy == TrackCollisionPolicy.OVERLAY) {
+            findClip(track, clipId)
+            return requestedStartUs.coerceAtLeast(0L)
+        }
         val (clip, previous, next) = neighbours(track, clipId)
         val earliestStartUs = previous?.let(::endUs) ?: 0L
         val latestStartUs = next?.let { (it.startUs - clip.durationUs).coerceAtLeast(earliestStartUs) } ?: Long.MAX_VALUE
@@ -38,6 +51,14 @@ object TimelineEditBounds {
     }
 
     fun bounds(track: Track, clipId: String, region: TimelineHitRegion): LongRange {
+        if (track.collisionPolicy == TrackCollisionPolicy.OVERLAY) {
+            val clip = findClip(track, clipId)
+            return when (region) {
+                TimelineHitRegion.BODY -> 0L..Long.MAX_VALUE
+                TimelineHitRegion.LEFT_HANDLE -> 0L..(endUs(clip) - 1L)
+                TimelineHitRegion.RIGHT_HANDLE -> (clip.startUs + 1L)..Long.MAX_VALUE
+            }
+        }
         val (clip, previous, next) = neighbours(track, clipId)
         return when (region) {
             TimelineHitRegion.BODY -> {
@@ -58,6 +79,10 @@ object TimelineEditBounds {
     }
 
     private data class Neighbours(val clip: Clip, val previous: Clip?, val next: Clip?)
+
+    private fun findClip(track: Track, clipId: String): Clip =
+        track.clips.firstOrNull { it.id == clipId }
+            ?: throw IllegalArgumentException("clip $clipId not found in track ${track.id}")
 
     private fun neighbours(track: Track, clipId: String): Neighbours {
         val sorted = track.clips.sortedBy { it.startUs }

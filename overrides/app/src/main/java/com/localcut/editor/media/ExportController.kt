@@ -60,13 +60,13 @@ class ExportLifecycleCoordinator(
             if (state != State.RENDERING) return
             state = State.COMMITTING
         }
-        val result = destination.commitFrom(tempFile)
+        val result = runCatching { destination.commitFrom(tempFile).getOrThrow() }
         synchronized(this) {
             if (state != State.COMMITTING) return
             if (result.isSuccess) {
                 emit(ExportEvent.Completed)
             } else {
-                destination.discard()
+                discardDestinationSafely()
                 emit(ExportEvent.Failed("Unable to commit export destination", result.exceptionOrNull()))
             }
             terminalCleanup()
@@ -76,7 +76,7 @@ class ExportLifecycleCoordinator(
     @Synchronized
     fun renderFailed(error: Throwable) {
         if (state != State.RENDERING) return
-        destination.discard()
+        discardDestinationSafely()
         emit(ExportEvent.Failed(error.message ?: "Media3 export failed", error))
         terminalCleanup()
     }
@@ -84,13 +84,17 @@ class ExportLifecycleCoordinator(
     @Synchronized
     fun cancel() {
         if (state != State.NEW && state != State.RENDERING) return
-        destination.discard()
+        discardDestinationSafely()
         emit(ExportEvent.Cancelled)
         terminalCleanup()
     }
 
     @Synchronized
     fun isTerminal(): Boolean = state == State.TERMINAL
+
+    private fun discardDestinationSafely() {
+        runCatching { destination.discard().getOrThrow() }
+    }
 
     private fun terminalCleanup() {
         runCatching { tempFile.delete() }

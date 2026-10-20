@@ -54,13 +54,14 @@ sealed interface Media3BlueprintItem {
         val volume: Double,
         val keyframes: List<TransformKeyframe>,
         val imageFrameRate: Int?,
+        val fadeInUs: Long = 0L,
+        val fadeOutUs: Long = 0L,
     ) : Media3BlueprintItem
 }
 
 object Media3CompositionBlueprintCompiler {
     fun compile(plan: RenderPlan): Media3CompositionBlueprint {
         require(plan.visualLayers.isNotEmpty()) { "Media3 composition requires at least one visual layer" }
-        require(plan.audioLayers.size == 1) { "Media3 audio mixing is not enabled yet" }
         return Media3CompositionBlueprint(
             width = plan.width,
             height = plan.height,
@@ -98,6 +99,8 @@ object Media3CompositionBlueprintCompiler {
                         volume = segment.volume,
                         keyframes = segment.keyframes,
                         imageFrameRate = segment.imageFrameRate,
+                        fadeInUs = segment.fadeInUs,
+                        fadeOutUs = segment.fadeOutUs,
                     )
                 }
             },

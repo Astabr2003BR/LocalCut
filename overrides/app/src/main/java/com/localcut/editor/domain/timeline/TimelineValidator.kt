@@ -25,6 +25,7 @@ enum class ProjectIssueCode {
     INVALID_OPACITY,
     INVALID_VOLUME,
     INVALID_AUDIO_FADE,
+    INVALID_TRANSITION,
 }
 
 data class ProjectIssue(val code: ProjectIssueCode, val subjectId: String? = null, val detail: String? = null)
@@ -92,7 +93,45 @@ object TimelineValidator {
                 }
             }
         }
+
+        validateTransitions(project, issues)
         return issues
+    }
+
+    private fun validateTransitions(project: Project, issues: MutableList<ProjectIssue>) {
+        data class ClipLocation(val track: Track, val clip: Clip, val index: Int)
+
+        val locations = mutableMapOf<String, ClipLocation>()
+        project.tracks.forEach { track ->
+            track.clips.sortedBy { it.startUs }.forEachIndexed { index, clip ->
+                locations[clip.id] = ClipLocation(track, clip, index)
+            }
+        }
+
+        project.transitions.forEach { transition ->
+            val from = locations[transition.fromClipId]
+            val to = locations[transition.toClipId]
+            val valid = if (from == null || to == null) {
+                false
+            } else {
+                val sameTrack = from.track.id == to.track.id
+                val sequentialVisualTrack = from.track.type == TrackType.VISUAL &&
+                    from.track.collisionPolicy == TrackCollisionPolicy.EXCLUSIVE
+                val adjacent = sameTrack && to.index == from.index + 1
+                val fromEnd = try {
+                    Math.addExact(from.clip.startUs, from.clip.durationUs)
+                } catch (_: ArithmeticException) {
+                    Long.MIN_VALUE
+                }
+                val exactBoundary = adjacent && fromEnd == to.clip.startUs
+                val validDuration = transition.durationUs > 0L &&
+                    transition.durationUs <= minOf(from.clip.durationUs, to.clip.durationUs)
+                sameTrack && sequentialVisualTrack && adjacent && exactBoundary && validDuration
+            }
+            if (!valid) {
+                issues += ProjectIssue(ProjectIssueCode.INVALID_TRANSITION, transition.id)
+            }
+        }
     }
 
     private fun validAudioFades(clip: Clip): Boolean {

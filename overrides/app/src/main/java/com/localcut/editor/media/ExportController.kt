@@ -17,6 +17,10 @@ fun interface ExportDestination {
     fun discard(): Result<Unit> = Result.success(Unit)
 }
 
+internal fun discardExportDestinationSafely(destination: ExportDestination) {
+    runCatching { destination.discard().getOrThrow() }
+}
+
 interface ExportController {
     fun export(project: Project, destination: ExportDestination): Flow<ExportEvent>
 
@@ -66,7 +70,7 @@ class ExportLifecycleCoordinator(
             if (result.isSuccess) {
                 emit(ExportEvent.Completed)
             } else {
-                discardDestinationSafely()
+                discardExportDestinationSafely(destination)
                 emit(ExportEvent.Failed("Unable to commit export destination", result.exceptionOrNull()))
             }
             terminalCleanup()
@@ -76,7 +80,7 @@ class ExportLifecycleCoordinator(
     @Synchronized
     fun renderFailed(error: Throwable) {
         if (state != State.RENDERING) return
-        discardDestinationSafely()
+        discardExportDestinationSafely(destination)
         emit(ExportEvent.Failed(error.message ?: "Media3 export failed", error))
         terminalCleanup()
     }
@@ -84,17 +88,13 @@ class ExportLifecycleCoordinator(
     @Synchronized
     fun cancel() {
         if (state != State.NEW && state != State.RENDERING) return
-        discardDestinationSafely()
+        discardExportDestinationSafely(destination)
         emit(ExportEvent.Cancelled)
         terminalCleanup()
     }
 
     @Synchronized
     fun isTerminal(): Boolean = state == State.TERMINAL
-
-    private fun discardDestinationSafely() {
-        runCatching { destination.discard().getOrThrow() }
-    }
 
     private fun terminalCleanup() {
         runCatching { tempFile.delete() }

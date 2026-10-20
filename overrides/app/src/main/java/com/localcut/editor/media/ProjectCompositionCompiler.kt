@@ -18,17 +18,28 @@ import com.localcut.editor.domain.model.Project
 class ProjectCompositionCompiler(
     private val assetUriResolver: AssetUriResolver,
 ) {
-    fun compile(project: Project, mode: RenderMode): Result<Composition> =
+    fun compile(
+        project: Project,
+        mode: RenderMode,
+        outputSettings: RenderOutputSettings = RenderOutputSettings(),
+    ): Result<Composition> =
         ProjectRenderPlanCompiler.compile(
-            project,
-            mode,
-            RenderAssetResolver { asset -> assetUriResolver.resolve(asset).map { it.toString() } },
+            project = project,
+            mode = mode,
+            resolver = RenderAssetResolver { asset -> assetUriResolver.resolve(asset).map { it.toString() } },
+            outputSettings = outputSettings,
         ).mapCatching { plan ->
             Media3CompositionSupportPolicy.validate(plan, mode).getOrThrow()
-            toComposition(Media3CompositionBlueprintCompiler.compile(plan))
+            toComposition(
+                blueprint = Media3CompositionBlueprintCompiler.compile(plan),
+                sourceProjectFps = project.fps,
+            )
         }
 
-    private fun toComposition(blueprint: Media3CompositionBlueprint): Composition {
+    private fun toComposition(
+        blueprint: Media3CompositionBlueprint,
+        sourceProjectFps: Int,
+    ): Composition {
         val sequences = buildList {
             blueprint.visualLayers.forEach { layer ->
                 if (layer.items.isNotEmpty()) add(buildVisualSequence(layer, blueprint))
@@ -40,7 +51,16 @@ class ProjectCompositionCompiler(
             }
         }
         require(sequences.isNotEmpty()) { "Composition requires at least one sequence" }
-        return Composition.Builder(sequences).build()
+
+        val compositionVideoEffects = Media3FrameRatePolicy.effectsFor(
+            sourceProjectFps = sourceProjectFps,
+            targetFps = blueprint.fps,
+        )
+        val builder = Composition.Builder(sequences)
+        if (compositionVideoEffects.isNotEmpty()) {
+            builder.setEffects(Effects(emptyList(), compositionVideoEffects))
+        }
+        return builder.build()
     }
 
     private fun buildVisualSequence(

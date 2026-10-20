@@ -1,0 +1,122 @@
+package com.localcut.editor.media
+
+import androidx.annotation.OptIn
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.audio.DefaultGainProvider
+import androidx.media3.common.audio.GainProcessor
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
+import androidx.media3.transformer.Effects
+import com.localcut.editor.data.assets.AssetUriResolver
+import com.localcut.editor.domain.model.Project
+
+@OptIn(UnstableApi::class)
+class ProjectCompositionCompiler(
+    private val assetUriResolver: AssetUriResolver,
+) {
+    fun compile(project: Project, mode: RenderMode): Result<Composition> =
+        ProjectRenderPlanCompiler.compile(
+            project,
+            mode,
+            RenderAssetResolver { asset -> assetUriResolver.resolve(asset).map { it.toString() } },
+        ).mapCatching { plan ->
+            Media3CompositionSupportPolicy.validate(plan, mode).getOrThrow()
+            toComposition(Media3CompositionBlueprintCompiler.compile(plan))
+        }
+
+    private fun toComposition(blueprint: Media3CompositionBlueprint): Composition {
+        val sequences = buildList {
+            blueprint.visualLayers.forEach { layer ->
+                if (layer.items.isNotEmpty()) add(buildVisualSequence(layer, blueprint))
+            }
+            blueprint.audioLayers.forEach { layer ->
+                if (layer.items.any { it is Media3BlueprintItem.Media }) {
+                    add(buildAudioSequence(layer, blueprint))
+                }
+            }
+        }
+        require(sequences.isNotEmpty()) { "Composition requires at least one sequence" }
+        return Composition.Builder(sequences).build()
+    }
+
+    private fun buildVisualSequence(
+        sequence: Media3SequenceBlueprint,
+        blueprint: Media3CompositionBlueprint,
+    ): EditedMediaItemSequence {
+        val hasEmbeddedAudio = sequence.items
+            .filterIsInstance<Media3BlueprintItem.Media>()
+            .any { it.outputTracks == Media3OutputTracks.AUDIO_VIDEO }
+        val trackTypes = if (hasEmbeddedAudio) {
+            setOf(C.TRACK_TYPE_VIDEO, C.TRACK_TYPE_AUDIO)
+        } else {
+            setOf(C.TRACK_TYPE_VIDEO)
+        }
+        val builder = EditedMediaItemSequence.Builder(trackTypes)
+        sequence.items.forEach { item ->
+            when (item) {
+                is Media3BlueprintItem.Gap -> builder.addGap(item.presentationDurationUs)
+                is Media3BlueprintItem.Media -> builder.addItem(buildMediaItem(item, blueprint))
+            }
+        }
+        return builder.build()
+    }
+
+    private fun buildAudioSequence(
+        sequence: Media3SequenceBlueprint,
+        blueprint: Media3CompositionBlueprint,
+    ): EditedMediaItemSequence {
+        val builder = EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO))
+        sequence.items.forEach { item ->
+            when (item) {
+                is Media3BlueprintItem.Gap -> builder.addGap(item.presentationDurationUs)
+                is Media3BlueprintItem.Media -> builder.addItem(buildMediaItem(item, blueprint))
+            }
+        }
+        return builder.build()
+    }
+
+    private fun buildMediaItem(
+        item: Media3BlueprintItem.Media,
+        blueprint: Media3CompositionBlueprint,
+    ): EditedMediaItem {
+        val mediaBuilder = MediaItem.Builder().setUri(item.uri)
+        if (item.assetType == com.localcut.editor.domain.model.AssetType.IMAGE) {
+            mediaBuilder.setImageDurationMs(item.presentationDurationUs / 1_000L)
+        } else if (item.sourceInUs != 0L || item.sourceOutUs != item.sourceMediaDurationUs) {
+            mediaBuilder.setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionUs(item.sourceInUs)
+                    .setEndPositionUs(item.sourceOutUs)
+                    .build()
+            )
+        }
+
+        val audioProcessors = if (item.volume == 1.0) {
+            emptyList()
+        } else {
+            listOf(GainProcessor(DefaultGainProvider.Builder(item.volume.toFloat()).build()))
+        }
+        val videoEffects = if (item.outputTracks == Media3OutputTracks.AUDIO_ONLY) {
+            emptyList()
+        } else {
+            TransformEffectFactory.create(
+                transform = item.transform,
+                keyframes = item.keyframes,
+                opacity = item.opacity,
+                outputWidth = blueprint.width,
+                outputHeight = blueprint.height,
+                transformSpaceWidth = blueprint.transformSpaceWidth,
+                transformSpaceHeight = blueprint.transformSpaceHeight,
+            )
+        }
+
+        val edited = EditedMediaItem.Builder(mediaBuilder.build())
+            .setDurationUs(item.sourceMediaDurationUs)
+            .setEffects(Effects(audioProcessors, videoEffects))
+        if (item.imageFrameRate != null) edited.setFrameRate(item.imageFrameRate)
+        return edited.build()
+    }
+}

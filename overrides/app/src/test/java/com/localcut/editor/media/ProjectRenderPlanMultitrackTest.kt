@@ -74,7 +74,7 @@ class ProjectRenderPlanMultitrackTest {
     }
 
     @Test
-    fun multipleAudioTracksRemainRejectedUntilAudioMixingStage() {
+    fun multipleExclusiveAudioTracksCompileIntoOrderedMixingLayers() {
         val base = twoVisualTrackProject()
         val extraAudio = Track(
             id = "audio-2",
@@ -83,6 +83,21 @@ class ProjectRenderPlanMultitrackTest {
             collisionPolicy = TrackCollisionPolicy.EXCLUSIVE,
         )
         val project = base.copy(tracks = base.tracks + extraAudio)
+
+        val plan = ProjectRenderPlanCompiler.compile(project, RenderMode.EXPORT, resolver).getOrThrow()
+
+        assertEquals(listOf("audio-1", "audio-2"), plan.audioLayers.map { it.sourceTrackId })
+        assertTrue(plan.audioLayers.all { it.sourceCollisionPolicy == TrackCollisionPolicy.EXCLUSIVE })
+    }
+
+    @Test
+    fun overlayAudioInsideOneTrackRemainsRejectedUntilLaneMixingIsDefined() {
+        val base = twoVisualTrackProject()
+        val project = base.copy(
+            tracks = base.tracks.map { track ->
+                if (track.id == "audio-1") track.copy(collisionPolicy = TrackCollisionPolicy.OVERLAY) else track
+            },
+        )
 
         val result = ProjectRenderPlanCompiler.compile(project, RenderMode.EXPORT, resolver)
 

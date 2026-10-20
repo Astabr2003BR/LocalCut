@@ -23,7 +23,8 @@ enum class ProjectIssueCode {
     DURATION_SOURCE_MISMATCH,
     INVALID_TRANSFORM,
     INVALID_OPACITY,
-    INVALID_VOLUME
+    INVALID_VOLUME,
+    INVALID_AUDIO_FADE,
 }
 
 data class ProjectIssue(val code: ProjectIssueCode, val subjectId: String? = null, val detail: String? = null)
@@ -64,6 +65,9 @@ object TimelineValidator {
                     if (asset.sourceDurationUs != null && clip.sourceOutUs > asset.sourceDurationUs) {
                         issues += ProjectIssue(ProjectIssueCode.SOURCE_RANGE_OUT_OF_BOUNDS, clip.id)
                     }
+                    if (asset.type == AssetType.IMAGE && (clip.fadeInUs != 0L || clip.fadeOutUs != 0L)) {
+                        issues += ProjectIssue(ProjectIssueCode.INVALID_AUDIO_FADE, clip.id, "image clips cannot have audio fades")
+                    }
                 }
                 if (clip.durationUs <= 0) issues += ProjectIssue(ProjectIssueCode.NON_POSITIVE_DURATION, clip.id)
                 if (clip.startUs < 0) issues += ProjectIssue(ProjectIssueCode.NEGATIVE_START, clip.id)
@@ -75,6 +79,7 @@ object TimelineValidator {
                 if (!validTransform(clip.transform)) issues += ProjectIssue(ProjectIssueCode.INVALID_TRANSFORM, clip.id)
                 if (!clip.opacity.isFinite() || clip.opacity !in 0.0..1.0) issues += ProjectIssue(ProjectIssueCode.INVALID_OPACITY, clip.id)
                 if (!clip.volume.isFinite() || clip.volume < 0.0) issues += ProjectIssue(ProjectIssueCode.INVALID_VOLUME, clip.id)
+                if (!validAudioFades(clip)) issues += ProjectIssue(ProjectIssueCode.INVALID_AUDIO_FADE, clip.id)
                 if (clip.durationUs > 0 && clip.startUs > Long.MAX_VALUE - clip.durationUs) {
                     issues += ProjectIssue(ProjectIssueCode.TIMELINE_OVERFLOW, clip.id)
                 }
@@ -88,6 +93,12 @@ object TimelineValidator {
             }
         }
         return issues
+    }
+
+    private fun validAudioFades(clip: Clip): Boolean {
+        if (clip.fadeInUs < 0L || clip.fadeOutUs < 0L || clip.durationUs <= 0L) return false
+        if (clip.fadeInUs > clip.durationUs || clip.fadeOutUs > clip.durationUs) return false
+        return clip.fadeInUs <= clip.durationUs - clip.fadeOutUs
     }
 
     private fun validTransform(v: TransformValue): Boolean =

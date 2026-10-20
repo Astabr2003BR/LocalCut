@@ -61,7 +61,9 @@ sealed interface RenderSegment {
         val opacity: Double,
         val volume: Double,
         val keyframes: List<TransformKeyframe>,
-        val imageFrameRate: Int?
+        val imageFrameRate: Int?,
+        val fadeInUs: Long = 0L,
+        val fadeOutUs: Long = 0L,
     ) : RenderSegment {
         val isImage: Boolean get() = assetType == AssetType.IMAGE
     }

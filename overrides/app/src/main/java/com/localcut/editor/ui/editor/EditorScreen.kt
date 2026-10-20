@@ -276,6 +276,12 @@ private fun TimelineForState(
             viewModel.dispatch(EditorAction.SelectClip(clipId))
             viewModel.dispatch(EditorAction.TrimSelectedRightEdge(newEnd))
         },
+        onSetTrackMuted = { trackId, muted ->
+            viewModel.dispatch(EditorAction.SetTrackMuted(trackId, muted))
+        },
+        onSetTrackSolo = { trackId, solo ->
+            viewModel.dispatch(EditorAction.SetTrackSolo(trackId, solo))
+        },
         modifier = modifier,
     )
 }
@@ -295,6 +301,9 @@ private fun InspectorForState(
         onSplit = { viewModel.dispatch(EditorAction.SplitSelected(it)) },
         onTransform = { viewModel.dispatch(EditorAction.SetSelectedTransform(it)) },
         onVolume = { viewModel.dispatch(EditorAction.SetSelectedVolume(it)) },
+        onAudioFades = { fadeInUs, fadeOutUs ->
+            viewModel.dispatch(EditorAction.SetSelectedAudioFades(fadeInUs, fadeOutUs))
+        },
         modifier = modifier,
     )
     session.lastError?.let { Text("Erro: $it", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) }

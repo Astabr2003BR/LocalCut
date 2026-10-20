@@ -10,6 +10,9 @@ import com.localcut.editor.domain.history.TrimClipRightEdgeCommand
 import com.localcut.editor.domain.history.SplitClipCommand
 import com.localcut.editor.domain.history.SetTransformCommand
 import com.localcut.editor.domain.history.SetVolumeCommand
+import com.localcut.editor.domain.history.SetAudioFadesCommand
+import com.localcut.editor.domain.history.SetTrackMutedCommand
+import com.localcut.editor.domain.history.SetTrackSoloCommand
 import com.localcut.editor.domain.history.SetKeyframesCommand
 import com.localcut.editor.domain.history.DeleteClipCommand
 import com.localcut.editor.domain.history.DuplicateClipCommand
@@ -45,6 +48,9 @@ sealed interface EditorAction {
     data class MoveSelected(val newStartUs: Long) : EditorAction
     data class SetSelectedTransform(val transform: TransformValue) : EditorAction
     data class SetSelectedVolume(val volume: Double) : EditorAction
+    data class SetSelectedAudioFades(val fadeInUs: Long, val fadeOutUs: Long) : EditorAction
+    data class SetTrackMuted(val trackId: String, val muted: Boolean) : EditorAction
+    data class SetTrackSolo(val trackId: String, val solo: Boolean) : EditorAction
     data class SetSelectedKeyframes(val keyframes: List<TransformKeyframe>) : EditorAction
     data class TrimSelected(val newSourceInUs: Long, val newSourceOutUs: Long) : EditorAction
     data class TrimSelectedLeftEdge(val newProjectStartUs: Long) : EditorAction
@@ -88,6 +94,9 @@ class ProjectSession(
             is EditorAction.MoveSelected -> withSelected { execute(MoveClipCommand(it, action.newStartUs)) }
             is EditorAction.SetSelectedTransform -> withSelected { execute(SetTransformCommand(it, action.transform)) }
             is EditorAction.SetSelectedVolume -> withSelected { execute(SetVolumeCommand(it, action.volume)) }
+            is EditorAction.SetSelectedAudioFades -> withSelected { execute(SetAudioFadesCommand(it, action.fadeInUs, action.fadeOutUs)) }
+            is EditorAction.SetTrackMuted -> execute(SetTrackMutedCommand(action.trackId, action.muted))
+            is EditorAction.SetTrackSolo -> execute(SetTrackSoloCommand(action.trackId, action.solo))
             is EditorAction.SetSelectedKeyframes -> withSelected { execute(SetKeyframesCommand(it, action.keyframes)) }
             is EditorAction.TrimSelected -> withSelected { execute(TrimClipCommand(it, action.newSourceInUs, action.newSourceOutUs)) }
             is EditorAction.TrimSelectedLeftEdge -> withSelected { execute(TrimClipLeftEdgeCommand(it, action.newProjectStartUs)) }

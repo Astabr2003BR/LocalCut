@@ -7,7 +7,6 @@ import com.localcut.editor.bridge.security.AndroidKeystoreBridgeCredentialStore
 import com.localcut.editor.bridge.security.AndroidKeystoreDeviceIdentityStore
 import com.localcut.editor.bridge.security.BridgeCredentialStore
 import com.localcut.editor.bridge.transport.BridgeConnectionObserver
-import com.localcut.editor.bridge.transport.BridgeEndpointConfig
 import com.localcut.editor.bridge.transport.OkHttpBridgePairingClient
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
@@ -27,10 +26,12 @@ class LocalCutBridgeControl(
 ) {
     private val appContext = context.applicationContext
     private val pairingRunning = AtomicBoolean(false)
+    private val endpointPreference = BridgeEndpointPreference(settingsStore, credentialStore)
     private val mutableState = MutableStateFlow(
         BridgeUiState(
             paired = credentialStore.load() != null,
             alwaysConnected = settingsStore.alwaysConnected,
+            relayBaseUrl = settingsStore.relayBaseUrl,
         ),
     )
     val state: StateFlow<BridgeUiState> = mutableState.asStateFlow()
@@ -53,15 +54,30 @@ class LocalCutBridgeControl(
         }
     }
 
+    fun setRelayBaseUrl(rawBaseUrl: String) {
+        endpointPreference.save(rawBaseUrl)
+            .onSuccess { endpoint ->
+                update(BridgeUiEvent.RelayBaseUrlChanged(endpoint.httpsBaseUrl))
+            }
+            .onFailure { error ->
+                val message = if (error.message == "PAIRING_MUST_BE_REVOKED_BEFORE_ENDPOINT_CHANGE") {
+                    "Revogue o pareamento atual antes de trocar o servidor Relay."
+                } else {
+                    "Use um endereço HTTPS válido do Relay, sem caminho, usuário, consulta ou fragmento."
+                }
+                update(BridgeUiEvent.Error(message))
+            }
+    }
+
     fun connect() {
-        if (!BridgeEndpointConfig.isConfigured()) {
-            update(BridgeUiEvent.Error("Bridge ainda não possui endpoint de produção configurado"))
+        val endpoint = endpointPreference.current().getOrElse {
+            update(BridgeUiEvent.Error("Configure um endereço HTTPS válido do Relay antes de conectar."))
             return
         }
         if (!pairingRunning.compareAndSet(false, true)) return
         scope.launch {
             try {
-                val client = OkHttpBridgePairingClient(BridgeEndpointConfig.HTTPS_BASE_URL)
+                val client = OkHttpBridgePairingClient(endpoint.httpsBaseUrl)
                 var credential = credentialStore.load()
                 if (credential != null && credential.expiresAtEpochMs <= nowEpochMs()) {
                     credential = credential.refreshToken?.let { refresh ->
@@ -109,14 +125,14 @@ class LocalCutBridgeControl(
     }
 
     fun revokePairing() {
-        if (!BridgeEndpointConfig.isConfigured()) {
-            update(BridgeUiEvent.Error("Bridge ainda não possui endpoint de produção configurado"))
+        val endpoint = endpointPreference.current().getOrElse {
+            update(BridgeUiEvent.Error("O Relay configurado não é válido; restaure o servidor usado no pareamento antes de revogar."))
             return
         }
         if (!pairingRunning.compareAndSet(false, true)) return
         scope.launch {
             try {
-                val client = OkHttpBridgePairingClient(BridgeEndpointConfig.HTTPS_BASE_URL)
+                val client = OkHttpBridgePairingClient(endpoint.httpsBaseUrl)
                 val coordinator = BridgeUnpairCoordinator(
                     client = client,
                     credentialStore = credentialStore,

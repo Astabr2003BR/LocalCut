@@ -32,22 +32,13 @@ jobs:
         with:
           node-version: '24.12.0'
           cache: npm
-          cache-dependency-path: bridge/controller/package.json
+          cache-dependency-path: bridge/controller/package-lock.json
 
-      - name: Install pinned dependencies
-        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Run controller tests
         run: npm test
 
       - name: Typecheck controller
         run: npm run typecheck
-
-      - name: Upload generated lockfile
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: localcut-bridge-package-lock-${{ github.run_number }}
-          path: bridge/controller/package-lock.json
-          if-no-files-found: warn
-          retention-days: 3

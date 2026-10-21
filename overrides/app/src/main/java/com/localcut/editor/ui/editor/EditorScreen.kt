@@ -69,6 +69,8 @@ fun EditorScreen(
     val configuration = LocalConfiguration.current
     var loopEnabled by remember { mutableStateOf(false) }
     var showExportSettings by remember { mutableStateOf(false) }
+    var showTextManager by remember { mutableStateOf(false) }
+    var textEditor by remember { mutableStateOf<TextOverlayEditorModel?>(null) }
     var exportSettings by remember(
         session.project.width,
         session.project.height,
@@ -90,6 +92,41 @@ fun EditorScreen(
         )
     }
 
+    if (showTextManager) {
+        TextOverlayManagerDialog(
+            project = session.project,
+            playheadUs = preview.positionUs,
+            onEditRequested = { editor ->
+                showTextManager = false
+                textEditor = editor
+            },
+            onDeleteRequested = { overlayId ->
+                viewModel.dispatch(EditorAction.DeleteTextOverlay(overlayId))
+            },
+            onDismiss = { showTextManager = false },
+        )
+    }
+
+    textEditor?.let { editor ->
+        TextOverlayEditorDialog(
+            project = session.project,
+            model = editor,
+            onModelChange = { textEditor = it },
+            onSave = { overlay, isNew ->
+                viewModel.dispatch(
+                    if (isNew) EditorAction.AddTextOverlay(overlay)
+                    else EditorAction.UpdateTextOverlay(overlay),
+                )
+                textEditor = null
+                showTextManager = true
+            },
+            onDismiss = {
+                textEditor = null
+                showTextManager = true
+            },
+        )
+    }
+
     Surface(
         modifier = modifier.fillMaxSize().safeDrawingPadding(),
         color = MaterialTheme.colorScheme.background,
@@ -98,7 +135,7 @@ fun EditorScreen(
             Column(Modifier.fillMaxSize()) {
                 EditorToolbar(
                     session.canUndo, session.canRedo, loopEnabled, exportState,
-                    onImportRequested, onImportAudioRequested, { showExportSettings = true }, onCancelExport, onFinalPreviewRequested, viewModel
+                    onImportRequested, onImportAudioRequested, { showTextManager = true }, { showExportSettings = true }, onCancelExport, onFinalPreviewRequested, viewModel
                 ) {
                     loopEnabled = it
                     viewModel.setLoopRange(0L, if (it && preview.durationUs > 0) preview.durationUs else null)
@@ -134,7 +171,7 @@ fun EditorScreen(
             Column(Modifier.fillMaxSize()) {
                 EditorToolbar(
                     session.canUndo, session.canRedo, loopEnabled, exportState,
-                    onImportRequested, onImportAudioRequested, { showExportSettings = true }, onCancelExport, onFinalPreviewRequested, viewModel
+                    onImportRequested, onImportAudioRequested, { showTextManager = true }, { showExportSettings = true }, onCancelExport, onFinalPreviewRequested, viewModel
                 ) {
                     loopEnabled = it
                     viewModel.setLoopRange(0L, if (it && preview.durationUs > 0) preview.durationUs else null)
@@ -182,6 +219,7 @@ private fun EditorToolbar(
     exportState: ExportUiState,
     onImportRequested: () -> Unit,
     onImportAudioRequested: () -> Unit,
+    onTextRequested: () -> Unit,
     onExportRequested: () -> Unit,
     onCancelExport: () -> Unit,
     onFinalPreviewRequested: () -> Unit,
@@ -202,6 +240,7 @@ private fun EditorToolbar(
                 )
                 Button(onClick = onImportRequested, enabled = !exportState.running) { Text("Mídia") }
                 FilledTonalButton(onClick = onImportAudioRequested, enabled = !exportState.running) { Text("Áudio") }
+                FilledTonalButton(onClick = onTextRequested, enabled = !exportState.running) { Text("Texto") }
                 FilledTonalButton(onClick = onExportRequested, enabled = !exportState.running) { Text("Exportar") }
                 FilledTonalButton(onClick = onFinalPreviewRequested, enabled = !exportState.running) { Text("Prévia final") }
                 if (exportState.running) {

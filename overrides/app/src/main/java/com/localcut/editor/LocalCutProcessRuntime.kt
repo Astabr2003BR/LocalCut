@@ -11,6 +11,7 @@ import com.localcut.editor.bridge.agent.BridgeCommandExecutor
 import com.localcut.editor.bridge.agent.BridgeJobRegistry
 import com.localcut.editor.bridge.agent.BridgeMessageProcessor
 import com.localcut.editor.bridge.agent.BridgePlaybackPort
+import com.localcut.editor.bridge.agent.LocalCutBridgeControl
 import com.localcut.editor.bridge.agent.Media3BridgeExportPort
 import com.localcut.editor.bridge.security.AndroidKeystoreDeviceIdentityStore
 import com.localcut.editor.bridge.transport.BridgeInboundMessageHandler
@@ -56,6 +57,7 @@ class LocalCutProcessRuntime private constructor(context: Context) {
     val bridgeJobs = BridgeJobRegistry()
     val bridgeMessageProcessor: BridgeMessageProcessor
     val bridgeInboundMessageHandler: BridgeInboundMessageHandler
+    val bridgeControl: LocalCutBridgeControl
     val loadWarning: String?
 
     init {
@@ -151,6 +153,7 @@ class LocalCutProcessRuntime private constructor(context: Context) {
                 bridgeMessageProcessor.process(text)?.let(reply)
             }
         }
+        bridgeControl = LocalCutBridgeControl(appContext, processScope)
     }
 
     fun flushAutosave() {

@@ -58,7 +58,7 @@ export function createLocalCutMcpServer(
         description: descriptionFor(capability),
         inputSchema,
       },
-      async input => {
+      async (input: unknown) => {
         const parsed = inputSchema.parse(input);
         const now = Date.now();
         const command: BridgeCommandEnvelope = {

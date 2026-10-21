@@ -2,6 +2,7 @@ package com.localcut.editor.mobile
 
 import com.localcut.editor.bridge.protocol.BridgeCapability
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -48,6 +49,29 @@ class MobileHandoffParserTest {
         assertEquals(null, result.capability)
         assertEquals(MobileHandoffReturnTarget.CHATGPT, result.returnTarget)
         assertTrue(result.description.contains("105223"))
+    }
+
+    @Test
+    fun parsesHttpsImportUrlWithoutTurningItIntoAnEditorCommand() {
+        val mediaUrl = "https://cdn.example/media/video.mp4"
+        val result = MobileHandoffParser.parse(
+            "https://localcut-bridge-v1.onrender.com/open?action=import_url&url=https%3A%2F%2Fcdn.example%2Fmedia%2Fvideo.mp4&returnTo=chatgpt",
+        ).getOrThrow()
+
+        assertEquals(mediaUrl, result.remoteMediaUrl)
+        assertNull(result.capability)
+        assertNull(result.mobilePairingCode)
+        assertEquals(MobileHandoffReturnTarget.CHATGPT, result.returnTarget)
+        assertEquals("Baixar e importar mídia remota no LocalCut", result.description)
+    }
+
+    @Test
+    fun rejectsHttpImportUrl() {
+        val result = MobileHandoffParser.parse(
+            "localcut://command?action=import_url&url=http%3A%2F%2Fexample.com%2Fvideo.mp4&returnTo=chatgpt",
+        )
+
+        assertTrue(result.isFailure)
     }
 
     @Test

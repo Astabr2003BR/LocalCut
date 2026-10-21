@@ -15,6 +15,7 @@ import com.localcut.editor.bridge.agent.LocalCutBridgeControl
 import com.localcut.editor.bridge.agent.Media3BridgeExportPort
 import com.localcut.editor.bridge.security.AndroidKeystoreDeviceIdentityStore
 import com.localcut.editor.bridge.transport.BridgeInboundMessageHandler
+import com.localcut.editor.data.assets.AndroidAssetImporter
 import com.localcut.editor.data.assets.AssetUriResolver
 import com.localcut.editor.data.project.AtomicProjectStore
 import com.localcut.editor.data.project.ProjectStoreErrorCode
@@ -27,6 +28,7 @@ import com.localcut.editor.media.Media3PreviewController
 import com.localcut.editor.media.ProjectCompositionCompiler
 import com.localcut.editor.media.RenderPlanErrorCode
 import com.localcut.editor.media.RenderPlanException
+import com.localcut.editor.mobile.MediaIngestCoordinator
 import com.localcut.editor.session.DebouncedProjectSaver
 import com.localcut.editor.session.ExecutorDelayScheduler
 import com.localcut.editor.session.PreviewErrorCode
@@ -54,6 +56,7 @@ class LocalCutProcessRuntime private constructor(context: Context) {
     val finalPreviewRenderer: FinalPreviewRenderer
     val session: ProjectSession
     val editorViewModel: EditorViewModel
+    val mediaIngestCoordinator: MediaIngestCoordinator
     val bridgeJobs = BridgeJobRegistry()
     val bridgeCommandExecutor: BridgeCommandExecutor
     val bridgeMessageProcessor: BridgeMessageProcessor
@@ -120,6 +123,10 @@ class LocalCutProcessRuntime private constructor(context: Context) {
             revisionClock = SharedPreferencesProjectRevisionClock(appContext),
         )
         editorViewModel = EditorViewModel(session, previewController)
+        mediaIngestCoordinator = MediaIngestCoordinator(
+            importer = AndroidAssetImporter(appContext.contentResolver),
+            editorViewModel = editorViewModel,
+        )
         previewController.load(initialProject)
 
         val playbackPort = object : BridgePlaybackPort {

@@ -126,6 +126,18 @@ export function createControllerServer(options: ControllerServerOptions): Contro
         }
       }
 
+      if (url.pathname === "/v1/device/unpair-self") {
+        const token = bearerToken(req);
+        const session = token ? options.sessions.authenticateAccess(token, nowEpochMs()) : null;
+        if (!session) {
+          return sendJson(res, 401, { code: "AUTH_REQUIRED" });
+        }
+        options.pairing.unpairDevice(session.deviceId, nowEpochMs());
+        options.sessions.revoke(session.deviceId);
+        registry.get(session.deviceId)?.close("device_unpaired");
+        return sendJson(res, 200, { unpaired: true, deviceId: session.deviceId });
+      }
+
       if (url.pathname === "/v1/device/revoke") {
         if (!isControllerAuthorized(req, options.controllerApiToken)) {
           return sendJson(res, 401, { code: "AUTH_REQUIRED" });

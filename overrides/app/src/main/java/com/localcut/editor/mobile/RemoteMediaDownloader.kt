@@ -4,7 +4,10 @@ import java.io.File
 import java.net.InetAddress
 import java.net.URI
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.Dns
 import okhttp3.OkHttpClient
@@ -31,20 +34,33 @@ class RemoteMediaDownloader(
     private val maxRedirects: Int = 3,
 ) {
     suspend fun download(rawUrl: String): Result<DownloadedRemoteMedia> = withContext(Dispatchers.IO) {
-        runCatching { downloadBlocking(rawUrl) }
+        val coroutineContext = currentCoroutineContext()
+        try {
+            Result.success(
+                downloadBlocking(rawUrl) {
+                    coroutineContext.ensureActive()
+                },
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            Result.failure(error)
+        }
     }
 
-    private fun downloadBlocking(rawUrl: String): DownloadedRemoteMedia {
+    private fun downloadBlocking(rawUrl: String, ensureNotCancelled: () -> Unit): DownloadedRemoteMedia {
         require(maxRedirects >= 0) { "REMOTE_MEDIA_REDIRECT_LIMIT_INVALID" }
         var current = RemoteMediaUrlPolicy.parseAndValidate(rawUrl).getOrThrow()
         var redirects = 0
 
         while (true) {
+            ensureNotCancelled()
             val host = current.host ?: error("REMOTE_MEDIA_URL_HOST_INVALID")
             val addresses = addressResolver.resolve(host)
             addressValidator(addresses).getOrThrow()
 
             val pinnedDns = Dns { hostname ->
+                ensureNotCancelled()
                 if (hostname.equals(host, ignoreCase = true)) addresses
                 else addressResolver.resolve(hostname).also { addressValidator(it).getOrThrow() }
             }
@@ -55,7 +71,9 @@ class RemoteMediaDownloader(
                 .build()
             val request = Request.Builder().url(current.toASCIIString()).get().build()
 
+            ensureNotCancelled()
             client.newCall(request).execute().use { response ->
+                ensureNotCancelled()
                 if (response.code in REDIRECT_CODES) {
                     require(redirects < maxRedirects) { "REMOTE_MEDIA_TOO_MANY_REDIRECTS" }
                     val location = response.header("Location")
@@ -79,6 +97,7 @@ class RemoteMediaDownloader(
                             partial.outputStream().buffered().use { output ->
                                 val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                                 while (true) {
+                                    ensureNotCancelled()
                                     val read = input.read(buffer)
                                     if (read < 0) break
                                     total += read.toLong()

@@ -1,6 +1,9 @@
 package com.localcut.editor
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -8,11 +11,18 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
 import com.localcut.editor.data.assets.AndroidAssetImporter
@@ -29,6 +39,7 @@ import com.localcut.editor.media.Media3ExportController
 import com.localcut.editor.media.Media3PreviewController
 import com.localcut.editor.media.SafExportDestination
 import com.localcut.editor.session.EditorAction
+import com.localcut.editor.ui.editor.BridgePanel
 import com.localcut.editor.ui.editor.EditorScreen
 import com.localcut.editor.ui.editor.EditorViewModel
 import com.localcut.editor.ui.editor.ExportUiState
@@ -100,8 +111,28 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        val notificationPermissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestPermission(),
+        ) { granted ->
+            if (granted) {
+                runtime.bridgeControl.connect()
+            } else {
+                showError("Permita notificações para manter o ChatGPT Bridge ativo em segundo plano.")
+            }
+        }
+        val connectBridge = {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                runtime.bridgeControl.connect()
+            }
+        }
+
         setContent {
             val exportState by exportUiState.collectAsState()
+            val bridgeState by runtime.bridgeControl.state.collectAsState()
             MaterialTheme(
                 colorScheme = darkColorScheme(
                     primary = Color(0xFF9B8CFF),
@@ -120,31 +151,43 @@ class MainActivity : ComponentActivity() {
                     onErrorContainer = Color(0xFFFFDADD),
                 )
             ) {
-                EditorScreen(
-                    viewModel = editorViewModel,
-                    previewController = previewController,
-                    exportState = exportState,
-                    exportCapabilities = exportCapabilities,
-                    onImportRequested = {
-                        visualImportLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                Column(modifier = Modifier.fillMaxSize()) {
+                    BridgePanel(
+                        state = bridgeState,
+                        onConnect = connectBridge,
+                        onDisconnect = runtime.bridgeControl::disconnect,
+                        onAlwaysConnectedChange = runtime.bridgeControl::setAlwaysConnected,
+                        onRevokePairing = runtime.bridgeControl::revokePairing,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    )
+                    Box(modifier = Modifier.weight(1f)) {
+                        EditorScreen(
+                            viewModel = editorViewModel,
+                            previewController = previewController,
+                            exportState = exportState,
+                            exportCapabilities = exportCapabilities,
+                            onImportRequested = {
+                                visualImportLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                )
+                            },
+                            onImportAudioRequested = { audioImportLauncher.launch(arrayOf("audio/*")) },
+                            onImportOverlayRequested = {
+                                overlayImportLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                )
+                            },
+                            onExportRequested = { profile ->
+                                if (!exportUiState.value.running) {
+                                    pendingExportProfile = profile
+                                    exportLauncher.launch("LocalCut-${System.currentTimeMillis()}.mp4")
+                                }
+                            },
+                            onCancelExport = { exportController.cancel() },
+                            onFinalPreviewRequested = ::startFinalPreview,
                         )
-                    },
-                    onImportAudioRequested = { audioImportLauncher.launch(arrayOf("audio/*")) },
-                    onImportOverlayRequested = {
-                        overlayImportLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                        )
-                    },
-                    onExportRequested = { profile ->
-                        if (!exportUiState.value.running) {
-                            pendingExportProfile = profile
-                            exportLauncher.launch("LocalCut-${System.currentTimeMillis()}.mp4")
-                        }
-                    },
-                    onCancelExport = { exportController.cancel() },
-                    onFinalPreviewRequested = ::startFinalPreview,
-                )
+                    }
+                }
             }
         }
     }

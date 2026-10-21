@@ -17,6 +17,10 @@ on:
       - 'localcut-source-full-build9.zip'
   workflow_dispatch:
 
+concurrency:
+  group: localcut-android-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

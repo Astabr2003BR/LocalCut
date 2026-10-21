@@ -54,6 +54,7 @@ jobs:
           test -f work/app/src/androidTest/java/com/localcut/editor/media/MultitrackExportSmokeTest.kt
           test -f work/app/src/androidTest/java/com/localcut/editor/media/FadeToBlackExportSmokeTest.kt
           test -f work/app/src/androidTest/java/com/localcut/editor/media/KeyframeExportSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/bridge/security/AndroidKeystoreDeviceIdentitySmokeTest.kt
 
       - name: Set up Gradle 9.5.0
         uses: gradle/actions/setup-gradle@v6
@@ -96,7 +97,7 @@ jobs:
           echo "LOCALCUT_ADB=$ADB" >> "$GITHUB_ENV"
           echo "LOCALCUT_EMULATOR=$EMULATOR" >> "$GITHUB_ENV"
 
-      - name: Run real multitrack export on emulator
+      - name: Run real multitrack export and bridge security smoke on emulator
         shell: bash
         run: |
           set -euo pipefail
@@ -177,7 +178,7 @@ jobs:
           "$ADB" shell input keyevent 82 || true
 
           gradle --no-daemon -p work connectedDebugAndroidTest \
-            -Pandroid.testInstrumentationRunnerArguments.class=com.localcut.editor.media.MultitrackExportSmokeTest,com.localcut.editor.media.FadeToBlackExportSmokeTest,com.localcut.editor.media.KeyframeExportSmokeTest
+            -Pandroid.testInstrumentationRunnerArguments.class=com.localcut.editor.media.MultitrackExportSmokeTest,com.localcut.editor.media.FadeToBlackExportSmokeTest,com.localcut.editor.media.KeyframeExportSmokeTest,com.localcut.editor.bridge.security.AndroidKeystoreDeviceIdentitySmokeTest
 
       - name: Upload instrumentation reports on failure
         if: failure()

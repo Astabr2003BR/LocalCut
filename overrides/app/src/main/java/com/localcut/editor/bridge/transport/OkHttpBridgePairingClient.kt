@@ -17,7 +17,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 
 class OkHttpBridgePairingClient(
     baseUrl: String,
-    private val client: OkHttpClient = OkHttpClient(),
+    private val client: OkHttpClient = BridgePairingHttpClientPolicy.newClient(),
 ) : BridgePairingClient {
     private val baseUrl = baseUrl.trimEnd('/').also {
         require(it.startsWith("https://")) { "bridge pairing baseUrl must use https://" }

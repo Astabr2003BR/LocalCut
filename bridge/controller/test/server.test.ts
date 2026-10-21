@@ -129,3 +129,36 @@ test("session refresh endpoint rotates credential and rejects unknown refresh to
   const invalid = await post(fx.baseUrl, "/v1/session/refresh", { refreshToken: "not-valid" });
   assert.equal(invalid.status, 401);
 });
+
+test("device self-unpair requires its access token, invalidates sessions, and permits later re-pair", async t => {
+  const fx = await fixture();
+  t.after(() => fx.runtime.close());
+  fx.store.upsertDevice({
+    deviceId: "lc_device",
+    publicKeySpkiBase64: "AQID",
+    controllerId: "controller-1",
+    revokedAtEpochMs: null,
+  });
+  const issued = fx.sessions.issue("lc_device", 1_000);
+
+  const unauthorized = await post(fx.baseUrl, "/v1/device/unpair-self", {});
+  assert.equal(unauthorized.status, 401);
+
+  const unpaired = await post(
+    fx.baseUrl,
+    "/v1/device/unpair-self",
+    {},
+    issued.accessToken,
+  );
+  assert.equal(unpaired.status, 200);
+  assert.deepEqual(await unpaired.json(), { unpaired: true, deviceId: "lc_device" });
+
+  const device = fx.store.getDevice("lc_device");
+  assert.equal(device?.controllerId, null);
+  assert.equal(device?.revokedAtEpochMs, null, "self-unpair must not permanently revoke the device identity");
+  assert.equal(fx.sessions.authenticateAccess(issued.accessToken, 1_000), null);
+  assert.throws(() => fx.sessions.refresh(issued.refreshToken, 1_000), /REFRESH_TOKEN_INVALID/);
+
+  const restarted = fx.pairing.start("lc_device", "AQID", 2_000);
+  assert.equal(restarted.deviceId, "lc_device");
+});

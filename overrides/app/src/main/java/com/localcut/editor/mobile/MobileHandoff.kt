@@ -21,6 +21,7 @@ data class MobileHandoffCommand(
     val description: String,
     val returnTarget: MobileHandoffReturnTarget = MobileHandoffReturnTarget.EDITOR,
     val mobilePairingCode: String? = null,
+    val remoteMediaUrl: String? = null,
 )
 
 object MobileHandoffParser {
@@ -61,6 +62,16 @@ object MobileHandoffParser {
                     payloadJson = "{}",
                     description = "Autorizar o pareamento do LocalCut com o ChatGPT usando o código $code",
                     mobilePairingCode = code,
+                )
+            }
+            "import_url" -> {
+                val rawUrl = requiredText(params, "url", 4_096)
+                val mediaUri = RemoteMediaUrlPolicy.parseAndValidate(rawUrl).getOrThrow()
+                MobileHandoffCommand(
+                    capability = null,
+                    payloadJson = "{}",
+                    description = "Baixar e importar mídia remota no LocalCut",
+                    remoteMediaUrl = mediaUri.toASCIIString(),
                 )
             }
             "seek" -> {

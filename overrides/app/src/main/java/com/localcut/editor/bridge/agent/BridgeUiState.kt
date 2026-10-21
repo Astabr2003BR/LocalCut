@@ -14,6 +14,7 @@ data class BridgeUiState(
     val phase: BridgeUiPhase = BridgeUiPhase.OFFLINE,
     val paired: Boolean = false,
     val alwaysConnected: Boolean = false,
+    val relayBaseUrl: String = "",
     val pairingCode: String? = null,
     val exportProgressPercent: Int? = null,
     val message: String? = null,
@@ -64,9 +65,15 @@ data class BridgeUiState(
             phase = BridgeUiPhase.OFFLINE,
             paired = false,
             alwaysConnected = false,
+            relayBaseUrl = relayBaseUrl,
         )
 
         is BridgeUiEvent.AlwaysConnectedChanged -> copy(alwaysConnected = event.enabled)
+
+        is BridgeUiEvent.RelayBaseUrlChanged -> copy(
+            relayBaseUrl = event.value,
+            message = null,
+        )
 
         is BridgeUiEvent.Error -> copy(
             phase = BridgeUiPhase.ERROR,
@@ -85,6 +92,7 @@ sealed interface BridgeUiEvent {
     data object Disconnected : BridgeUiEvent
     data object PairingRevoked : BridgeUiEvent
     data class AlwaysConnectedChanged(val enabled: Boolean) : BridgeUiEvent
+    data class RelayBaseUrlChanged(val value: String) : BridgeUiEvent
     data class Error(val message: String) : BridgeUiEvent
 }
 

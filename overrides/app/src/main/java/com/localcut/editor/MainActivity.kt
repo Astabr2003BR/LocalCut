@@ -43,6 +43,7 @@ import com.localcut.editor.session.PreviewErrorCode
 import com.localcut.editor.session.PreviewLoadException
 import com.localcut.editor.session.ProjectPreviewLoader
 import com.localcut.editor.session.ProjectSession
+import com.localcut.editor.session.SharedPreferencesProjectRevisionClock
 import com.localcut.editor.ui.editor.EditorScreen
 import com.localcut.editor.ui.editor.EditorViewModel
 import com.localcut.editor.ui.editor.ExportUiState
@@ -108,7 +109,13 @@ class MainActivity : ComponentActivity() {
                 throw PreviewLoadException(PreviewErrorCode.PREVIEW_FAILED, null, error.message ?: "preview failed", error)
             }
         }
-        val session = ProjectSession(initialProject, previewLoader, autosave, activeStore)
+        val session = ProjectSession(
+            initialProject = initialProject,
+            preview = previewLoader,
+            autosave = autosave,
+            store = activeStore,
+            revisionClock = SharedPreferencesProjectRevisionClock(this),
+        )
         editorViewModel = EditorViewModel(session, previewController)
         previewController.load(initialProject)
 

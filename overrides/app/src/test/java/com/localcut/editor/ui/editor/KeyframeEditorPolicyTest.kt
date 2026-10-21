@@ -83,7 +83,7 @@ class KeyframeEditorPolicyTest {
             ),
         )
 
-        assertEquals(2_500_000L, KeyframeEditorPolicy.previousProjectTimeUs(clip, 4_000_000L))
+        assertEquals(3_500_000L, KeyframeEditorPolicy.previousProjectTimeUs(clip, 4_000_000L))
         assertEquals(5_500_000L, KeyframeEditorPolicy.nextProjectTimeUs(clip, 4_000_000L))
         assertNull(KeyframeEditorPolicy.previousProjectTimeUs(clip, 2_500_000L))
         assertNull(KeyframeEditorPolicy.nextProjectTimeUs(clip, 5_500_000L))

@@ -43,6 +43,21 @@ object TransitionRenderSpecCompiler {
                 )
             }
         }
+
+        val clipsById = project.tracks
+            .asSequence()
+            .flatMap { it.clips.asSequence() }
+            .associateBy { it.id }
+        specs.values.forEach { spec ->
+            val clip = requireNotNull(clipsById[spec.clipId]) { "transition clip ${spec.clipId} not found" }
+            require(spec.fadeInUs <= clip.durationUs && spec.fadeOutUs <= clip.durationUs) {
+                "transition fade exceeds clip ${spec.clipId} duration"
+            }
+            require(spec.fadeInUs <= clip.durationUs - spec.fadeOutUs) {
+                "transition fade windows overlap on clip ${spec.clipId}"
+            }
+        }
+
         specs.toMap()
     }
 }

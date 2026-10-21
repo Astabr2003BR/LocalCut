@@ -19,7 +19,7 @@ import com.localcut.editor.domain.history.SetAudioFadesCommand
 import com.localcut.editor.domain.history.SetTrackMutedCommand
 import com.localcut.editor.domain.history.SetTrackSoloCommand
 import com.localcut.editor.domain.history.SetKeyframesCommand
-import com.localcut.editor.domain.history.DeleteClipCommand
+import com.localcut.editor.domain.history.DeleteClipWithTransitionsCommand
 import com.localcut.editor.domain.history.DuplicateClipCommand
 import com.localcut.editor.domain.history.UpdateTextOverlayCommand
 import com.localcut.editor.domain.history.UpdateClipTransitionCommand
@@ -141,7 +141,7 @@ class ProjectSession(
                 }
             }
             EditorAction.DeleteSelected -> withSelected { clipId ->
-                execute(DeleteClipCommand(clipId))
+                execute(DeleteClipWithTransitionsCommand(clipId))
                 if (state.project.findClip(clipId) == null) state = state.copy(selectedClipId = null)
             }
             EditorAction.Undo -> applyHistoryChange { history.undo() }

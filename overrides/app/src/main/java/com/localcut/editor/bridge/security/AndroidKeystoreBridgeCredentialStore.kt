@@ -67,7 +67,7 @@ class AndroidKeystoreBridgeCredentialStore(context: Context) : BridgeCredentialS
         DataOutputStream(output).use { data ->
             data.writeSizedUtf8(credential.accessToken)
             data.writeBoolean(credential.refreshToken != null)
-            credential.refreshToken?.let(data::writeSizedUtf8)
+            credential.refreshToken?.let { refreshToken -> data.writeSizedUtf8(refreshToken) }
             data.writeLong(credential.expiresAtEpochMs)
         }
         return output.toByteArray()

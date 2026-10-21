@@ -41,6 +41,7 @@ data class SessionIssue(
 
 data class ProjectSessionState(
     val project: Project,
+    val revision: Long = 0L,
     val issues: List<SessionIssue> = emptyList(),
     val lastError: String? = null,
     val selectedClipId: String? = null,
@@ -83,14 +84,18 @@ class ProjectSession(
     private val preview: ProjectPreviewLoader,
     private val autosave: DebouncedProjectSaver,
     private val store: ProjectStore? = null,
-    historyLimit: Int = 100
+    historyLimit: Int = 100,
+    private val revisionClock: ProjectRevisionClock = InMemoryProjectRevisionClock(),
 ) {
     private val historyLimit = historyLimit
     private var history = HistoryManager(initialProject, historyLimit)
     private var restoreAttempted = false
     private var restoreResult: Result<Unit>? = null
 
-    var state: ProjectSessionState = ProjectSessionState(initialProject)
+    var state: ProjectSessionState = ProjectSessionState(
+        project = initialProject,
+        revision = revisionClock.current(initialProject.id),
+    )
         private set
 
     fun dispatch(action: EditorAction) {
@@ -165,7 +170,10 @@ class ProjectSession(
         }
         val project = loaded.getOrThrow()
         history = HistoryManager(project, historyLimit)
-        state = ProjectSessionState(project)
+        state = ProjectSessionState(
+            project = project,
+            revision = revisionClock.current(project.id),
+        )
         refreshPreview(project)
         return Result.success(Unit).also { restoreResult = it }
     }

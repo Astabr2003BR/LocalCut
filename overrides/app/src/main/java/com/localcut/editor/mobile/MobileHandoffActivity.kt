@@ -34,9 +34,9 @@ class MobileHandoffActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Executar no LocalCut?")
             .setMessage(command.description)
-            .setNegativeButton("Cancelar") { _, _ -> openEditorAndFinish() }
+            .setNegativeButton("Cancelar") { _, _ -> returnAfterHandoff(command.returnTarget) }
             .setPositiveButton("Executar") { _, _ -> execute(command) }
-            .setOnCancelListener { openEditorAndFinish() }
+            .setOnCancelListener { returnAfterHandoff(command.returnTarget) }
             .show()
     }
 
@@ -67,7 +67,24 @@ class MobileHandoffActivity : Activity() {
             result.code?.wireName ?: "Falha ao executar comando"
         }
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        returnAfterHandoff(command.returnTarget)
+    }
+
+    private fun returnAfterHandoff(target: MobileHandoffReturnTarget) {
+        if (target == MobileHandoffReturnTarget.CHATGPT && openChatGptAndFinish()) {
+            return
+        }
         openEditorAndFinish()
+    }
+
+    private fun openChatGptAndFinish(): Boolean {
+        val launchIntent = packageManager.getLaunchIntentForPackage(CHATGPT_PACKAGE) ?: return false
+        return runCatching {
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            startActivity(launchIntent)
+            finish()
+            true
+        }.getOrDefault(false)
     }
 
     private fun openEditorAndFinish() {
@@ -76,5 +93,9 @@ class MobileHandoffActivity : Activity() {
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
         )
         finish()
+    }
+
+    companion object {
+        private const val CHATGPT_PACKAGE = "com.openai.chatgpt"
     }
 }

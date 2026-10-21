@@ -18,4 +18,6 @@ interface BridgePairingClient {
     fun start(identity: DevicePublicIdentity): Result<BridgePairingStart>
     fun status(code: String, signatureBase64: String? = null): Result<BridgePairingStatus>
     fun refresh(refreshToken: String): Result<BridgeStoredCredential>
+    fun unpair(accessToken: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Bridge self-unpair is not implemented"))
 }

@@ -55,6 +55,7 @@ class LocalCutProcessRuntime private constructor(context: Context) {
     val session: ProjectSession
     val editorViewModel: EditorViewModel
     val bridgeJobs = BridgeJobRegistry()
+    val bridgeCommandExecutor: BridgeCommandExecutor
     val bridgeMessageProcessor: BridgeMessageProcessor
     val bridgeInboundMessageHandler: BridgeInboundMessageHandler
     val bridgeControl: LocalCutBridgeControl
@@ -134,7 +135,7 @@ class LocalCutProcessRuntime private constructor(context: Context) {
             scope = processScope,
             targetFactory = AndroidMediaStoreBridgeExportTargetFactory(appContext.contentResolver),
         )
-        val commandExecutor = BridgeCommandExecutor(
+        bridgeCommandExecutor = BridgeCommandExecutor(
             session = session,
             playback = playbackPort,
             jobs = bridgeJobs,
@@ -145,7 +146,7 @@ class LocalCutProcessRuntime private constructor(context: Context) {
             .deviceId
         bridgeMessageProcessor = BridgeMessageProcessor(
             deviceId = deviceId,
-            executor = commandExecutor,
+            executor = bridgeCommandExecutor,
             onExecuted = editorViewModel::refreshSnapshot,
         )
         bridgeInboundMessageHandler = BridgeInboundMessageHandler { text, reply ->

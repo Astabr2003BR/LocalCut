@@ -12,6 +12,7 @@ import com.localcut.editor.LocalCutProcessRuntime
 import com.localcut.editor.MainActivity
 import com.localcut.editor.bridge.protocol.BridgeCommandEnvelope
 import java.util.UUID
+import kotlinx.coroutines.launch
 
 @UnstableApi
 @OptIn(ExperimentalApi::class)
@@ -50,6 +51,24 @@ class MobileHandoffActivity : Activity() {
                     onFailure = { it.message ?: "Falha ao autorizar pareamento" },
                 )
                 Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                returnAfterHandoff(command.returnTarget)
+            }
+            return
+        }
+
+        val remoteMediaUrl = command.remoteMediaUrl
+        if (remoteMediaUrl != null) {
+            runtime.processScope.launch {
+                val result = RemoteMediaImportExecutor(
+                    context = applicationContext,
+                    mediaIngestCoordinator = runtime.mediaIngestCoordinator,
+                ).importUrl(remoteMediaUrl)
+                runtime.editorViewModel.refreshSnapshot()
+                val message = result.fold(
+                    onSuccess = { "Mídia importada no LocalCut" },
+                    onFailure = { it.message ?: "Falha ao importar mídia remota" },
+                )
+                Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
                 returnAfterHandoff(command.returnTarget)
             }
             return

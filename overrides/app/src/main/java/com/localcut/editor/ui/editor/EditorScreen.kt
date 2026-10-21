@@ -518,6 +518,8 @@ private fun InspectorForState(
         onDelete = { viewModel.dispatch(EditorAction.DeleteSelected) },
         onSplit = { viewModel.dispatch(EditorAction.SplitSelected(it)) },
         onTransform = { viewModel.dispatch(EditorAction.SetSelectedTransform(it)) },
+        onSetKeyframes = { viewModel.dispatch(EditorAction.SetSelectedKeyframes(it)) },
+        onSeek = viewModel::seekToUs,
         onVolume = { viewModel.dispatch(EditorAction.SetSelectedVolume(it)) },
         onAudioFades = { fadeInUs, fadeOutUs ->
             viewModel.dispatch(EditorAction.SetSelectedAudioFades(fadeInUs, fadeOutUs))

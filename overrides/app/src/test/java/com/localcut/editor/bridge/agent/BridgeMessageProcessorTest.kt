@@ -46,9 +46,9 @@ class BridgeMessageProcessorTest {
     @Test
     fun expiredAndReusedNonceAreRejectedBeforeExecutorMutation() {
         val fixture = fixture()
-        val expired = command("expired", "nonce-expired", expiresAt = 1_000L)
+        val expired = command("expired", "nonce-expired", expiresAt = 1_500L)
         val expiredResult = BridgeCodec.decodeResult(
-            requireNotNull(fixture.processor.process(BridgeCodec.encodeCommand(expired), nowEpochMs = 1_001L)),
+            requireNotNull(fixture.processor.process(BridgeCodec.encodeCommand(expired), nowEpochMs = 1_501L)),
         )
         assertEquals(BridgeErrorCode.COMMAND_EXPIRED, expiredResult.code)
 

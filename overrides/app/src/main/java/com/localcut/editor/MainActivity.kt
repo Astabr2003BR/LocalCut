@@ -18,6 +18,7 @@ import androidx.media3.common.util.UnstableApi
 import com.localcut.editor.data.assets.AndroidAssetImporter
 import com.localcut.editor.data.assets.AssetUriResolver
 import com.localcut.editor.data.assets.ImportedClipFactory
+import com.localcut.editor.data.assets.VisualOverlayImportPolicy
 import com.localcut.editor.data.project.AtomicProjectStore
 import com.localcut.editor.data.project.ProjectStoreErrorCode
 import com.localcut.editor.data.project.ProjectStoreException
@@ -117,6 +118,12 @@ class MainActivity : ComponentActivity() {
             if (uris.isNotEmpty()) importUris(uris, importer)
         }
 
+        val overlayImportLauncher = registerForActivityResult(
+            ActivityResultContracts.PickMultipleVisualMedia(maxItems = 20)
+        ) { uris ->
+            if (uris.isNotEmpty()) importOverlayUris(uris, importer)
+        }
+
         val audioImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) importUris(listOf(uri), importer)
         }
@@ -164,6 +171,11 @@ class MainActivity : ComponentActivity() {
                         )
                     },
                     onImportAudioRequested = { audioImportLauncher.launch(arrayOf("audio/*")) },
+                    onImportOverlayRequested = {
+                        overlayImportLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                        )
+                    },
                     onExportRequested = { profile ->
                         if (!exportUiState.value.running) {
                             pendingExportProfile = profile
@@ -221,6 +233,49 @@ class MainActivity : ComponentActivity() {
                 Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
             } else if (failedCount == 0) {
                 showError("Nenhuma mídia selecionada")
+            }
+        }
+    }
+
+    private fun importOverlayUris(uris: List<Uri>, importer: AndroidAssetImporter) {
+        activityScope.launch {
+            var importedCount = 0
+            var failedCount = 0
+
+            for (uri in uris) {
+                val importResult = withContext(Dispatchers.IO) { importer.import(uri) }
+                if (importResult.isFailure) {
+                    failedCount += 1
+                    showError(importResult.exceptionOrNull()?.message ?: "Não foi possível importar o overlay")
+                    continue
+                }
+                val asset = importResult.getOrThrow()
+                val project = editorViewModel.sessionState.value.project
+                val clipResult = VisualOverlayImportPolicy.create(
+                    project = project,
+                    asset = asset,
+                    clipId = UUID.randomUUID().toString(),
+                    playheadUs = editorViewModel.previewState.value.positionUs,
+                )
+                clipResult.onSuccess { clip ->
+                    editorViewModel.dispatch(EditorAction.AddImportedOverlayClip(asset, clip))
+                    if (editorViewModel.sessionState.value.project.findClip(clip.id) != null) {
+                        importedCount += 1
+                    } else {
+                        failedCount += 1
+                        showError(editorViewModel.sessionState.value.lastError ?: "Não foi possível inserir o overlay")
+                    }
+                }.onFailure { error ->
+                    failedCount += 1
+                    showError(error.message ?: "Não foi possível criar o overlay")
+                }
+            }
+
+            if (importedCount > 0) {
+                val message = if (importedCount == 1) "1 overlay importado" else "$importedCount overlays importados"
+                Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
+            } else if (failedCount == 0) {
+                showError("Nenhum overlay selecionado")
             }
         }
     }

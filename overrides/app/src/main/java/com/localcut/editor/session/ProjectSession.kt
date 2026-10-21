@@ -1,5 +1,7 @@
 package com.localcut.editor.session
 
+import com.localcut.editor.domain.history.AddTextOverlayCommand
+import com.localcut.editor.domain.history.DeleteTextOverlayCommand
 import com.localcut.editor.domain.history.EditorCommand
 import com.localcut.editor.domain.history.InsertAssetClipCommand
 import com.localcut.editor.domain.history.HistoryManager
@@ -16,9 +18,11 @@ import com.localcut.editor.domain.history.SetTrackSoloCommand
 import com.localcut.editor.domain.history.SetKeyframesCommand
 import com.localcut.editor.domain.history.DeleteClipCommand
 import com.localcut.editor.domain.history.DuplicateClipCommand
+import com.localcut.editor.domain.history.UpdateTextOverlayCommand
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.TextOverlay
 import com.localcut.editor.domain.model.TransformKeyframe
 import com.localcut.editor.domain.model.TransformValue
 
@@ -43,6 +47,9 @@ data class ProjectSessionState(
 sealed interface EditorAction {
     data class Execute(val command: EditorCommand) : EditorAction
     data class AddImportedClip(val trackId: String, val asset: Asset, val clip: Clip) : EditorAction
+    data class AddTextOverlay(val overlay: TextOverlay) : EditorAction
+    data class UpdateTextOverlay(val overlay: TextOverlay) : EditorAction
+    data class DeleteTextOverlay(val overlayId: String) : EditorAction
     data class SelectClip(val clipId: String?) : EditorAction
     data class SelectTrack(val trackId: String?) : EditorAction
     data class MoveSelected(val newStartUs: Long) : EditorAction
@@ -89,6 +96,9 @@ class ProjectSession(
                     )
                 }
             }
+            is EditorAction.AddTextOverlay -> execute(AddTextOverlayCommand(action.overlay))
+            is EditorAction.UpdateTextOverlay -> execute(UpdateTextOverlayCommand(action.overlay))
+            is EditorAction.DeleteTextOverlay -> execute(DeleteTextOverlayCommand(action.overlayId))
             is EditorAction.SelectClip -> selectClip(action.clipId)
             is EditorAction.SelectTrack -> selectTrack(action.trackId)
             is EditorAction.MoveSelected -> withSelected { execute(MoveClipCommand(it, action.newStartUs)) }

@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import com.localcut.editor.MainActivity
+import com.localcut.editor.R
 
 class BridgeNotificationFactory(private val context: Context) {
     private val manager = context.getSystemService(NotificationManager::class.java)
@@ -53,7 +54,7 @@ class BridgeNotificationFactory(private val context: Context) {
             Notification.Builder(context)
         }
         return builder
-            .setSmallIcon(context.applicationInfo.icon)
+            .setSmallIcon(R.drawable.ic_localcut_bridge_notification)
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_SERVICE)
     }

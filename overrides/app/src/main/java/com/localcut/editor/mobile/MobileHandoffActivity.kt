@@ -42,6 +42,24 @@ class MobileHandoffActivity : Activity() {
 
     private fun execute(command: MobileHandoffCommand) {
         val runtime = LocalCutProcessRuntime.get(this)
+        val pairingCode = command.mobilePairingCode
+        if (pairingCode != null) {
+            runtime.bridgeControl.claimPendingPairingFromMobile(pairingCode) { result ->
+                val message = result.fold(
+                    onSuccess = { "Pareamento autorizado; concluindo conexão…" },
+                    onFailure = { it.message ?: "Falha ao autorizar pareamento" },
+                )
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                returnAfterHandoff(command.returnTarget)
+            }
+            return
+        }
+
+        val capability = command.capability ?: run {
+            Toast.makeText(this, "HANDOFF_ACTION_INVALID", Toast.LENGTH_LONG).show()
+            returnAfterHandoff(command.returnTarget)
+            return
+        }
         val now = System.currentTimeMillis()
         val project = runtime.session.state.project
         val result = runtime.bridgeCommandExecutor.execute(
@@ -51,11 +69,11 @@ class MobileHandoffActivity : Activity() {
                 kind = "command",
                 deviceId = "local-android-handoff",
                 projectId = project.id,
-                expectedRevision = if (command.capability.requiresRevision) runtime.session.state.revision else null,
+                expectedRevision = if (capability.requiresRevision) runtime.session.state.revision else null,
                 issuedAtEpochMs = now,
                 expiresAtEpochMs = now + 60_000L,
                 nonce = UUID.randomUUID().toString(),
-                capability = command.capability,
+                capability = capability,
                 payloadJson = command.payloadJson,
             ),
         )

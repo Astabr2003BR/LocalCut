@@ -39,6 +39,27 @@ class MobileHandoffParserTest {
     }
 
     @Test
+    fun parsesMobilePairingHandoffWithoutTurningItIntoAnEditorCommand() {
+        val result = MobileHandoffParser.parse(
+            "https://localcut-bridge-v1.onrender.com/open?action=pair_mobile&code=105223&returnTo=chatgpt",
+        ).getOrThrow()
+
+        assertEquals("105223", result.mobilePairingCode)
+        assertEquals(null, result.capability)
+        assertEquals(MobileHandoffReturnTarget.CHATGPT, result.returnTarget)
+        assertTrue(result.description.contains("105223"))
+    }
+
+    @Test
+    fun rejectsMobilePairingCodeThatIsNotExactlySixDigits() {
+        val result = MobileHandoffParser.parse(
+            "localcut://command?action=pair_mobile&code=12345&returnTo=chatgpt",
+        )
+
+        assertTrue(result.isFailure)
+    }
+
+    @Test
     fun rejectsUntrustedHttpsHost() {
         val result = MobileHandoffParser.parse(
             "https://evil.example/open?action=undo",

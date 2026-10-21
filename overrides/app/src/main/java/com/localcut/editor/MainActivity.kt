@@ -16,14 +16,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
 import com.localcut.editor.data.assets.AndroidAssetImporter
-import com.localcut.editor.data.assets.AssetUriResolver
 import com.localcut.editor.data.assets.ImportedClipFactory
 import com.localcut.editor.data.assets.VisualOverlayImportPolicy
-import com.localcut.editor.data.project.AtomicProjectStore
-import com.localcut.editor.data.project.ProjectStoreErrorCode
-import com.localcut.editor.data.project.ProjectStoreException
 import com.localcut.editor.domain.model.AssetType
-import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.timeline.TimelineMath
 import com.localcut.editor.media.AndroidExportCapabilitiesProvider
@@ -32,18 +27,8 @@ import com.localcut.editor.media.ExportProfile
 import com.localcut.editor.media.FinalPreviewRenderer
 import com.localcut.editor.media.Media3ExportController
 import com.localcut.editor.media.Media3PreviewController
-import com.localcut.editor.media.ProjectCompositionCompiler
-import com.localcut.editor.media.RenderPlanErrorCode
-import com.localcut.editor.media.RenderPlanException
 import com.localcut.editor.media.SafExportDestination
-import com.localcut.editor.session.DebouncedProjectSaver
 import com.localcut.editor.session.EditorAction
-import com.localcut.editor.session.ExecutorDelayScheduler
-import com.localcut.editor.session.PreviewErrorCode
-import com.localcut.editor.session.PreviewLoadException
-import com.localcut.editor.session.ProjectPreviewLoader
-import com.localcut.editor.session.ProjectSession
-import com.localcut.editor.session.SharedPreferencesProjectRevisionClock
 import com.localcut.editor.ui.editor.EditorScreen
 import com.localcut.editor.ui.editor.EditorViewModel
 import com.localcut.editor.ui.editor.ExportUiState
@@ -61,12 +46,11 @@ import kotlinx.coroutines.withContext
 @UnstableApi
 @OptIn(ExperimentalApi::class)
 class MainActivity : ComponentActivity() {
+    private lateinit var runtime: LocalCutProcessRuntime
     private lateinit var editorViewModel: EditorViewModel
     private lateinit var previewController: Media3PreviewController
     private lateinit var exportController: Media3ExportController
     private lateinit var finalPreviewRenderer: FinalPreviewRenderer
-    private lateinit var autosave: DebouncedProjectSaver
-    private lateinit var autosaveScheduler: ExecutorDelayScheduler
     private val exportUiState = MutableStateFlow(ExportUiState())
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var lastFinalPreviewFile: File? = null
@@ -75,49 +59,18 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val primaryStore = AtomicProjectStore(filesDir.toPath().resolve("projects/default"))
-        val loadResult = primaryStore.load()
-        val loadError = loadResult.exceptionOrNull() as? ProjectStoreException
-        val activeStore = if (loadResult.isSuccess || loadError?.code == ProjectStoreErrorCode.NOT_FOUND) {
-            primaryStore
-        } else {
-            Toast.makeText(this, "Projeto anterior preservado; abrindo recuperação.", Toast.LENGTH_LONG).show()
-            AtomicProjectStore(filesDir.toPath().resolve("projects/recovery-${System.currentTimeMillis()}"))
+        runtime = LocalCutProcessRuntime.get(this)
+        runtime.loadWarning?.let { warning ->
+            Toast.makeText(this, warning, Toast.LENGTH_LONG).show()
         }
-        val initialProject = loadResult.getOrNull() ?: Project.create("Meu projeto", 1080, 1920, 30)
+        previewController = runtime.previewController
+        exportController = runtime.exportController
+        finalPreviewRenderer = runtime.finalPreviewRenderer
+        editorViewModel = runtime.editorViewModel
 
         val importer = AndroidAssetImporter(contentResolver)
-        val compositionCompiler = ProjectCompositionCompiler(AssetUriResolver(contentResolver))
         val exportCapabilitiesProvider = AndroidExportCapabilitiesProvider(this)
         val exportCapabilities = exportCapabilitiesProvider.current()
-        previewController = Media3PreviewController(this, compositionCompiler)
-        exportController = Media3ExportController(
-            this,
-            compositionCompiler,
-            cacheDir,
-            capabilitiesProvider = exportCapabilitiesProvider,
-        )
-        finalPreviewRenderer = FinalPreviewRenderer(exportController, File(cacheDir, "final-previews"))
-        autosaveScheduler = ExecutorDelayScheduler()
-        autosave = DebouncedProjectSaver(activeStore, autosaveScheduler, 450L)
-
-        val previewLoader = object : ProjectPreviewLoader {
-            override fun load(project: Project): Result<Unit> = previewController.load(project).recoverCatching { error ->
-                if (error is RenderPlanException && error.code == RenderPlanErrorCode.ASSET_UNAVAILABLE) {
-                    throw PreviewLoadException(PreviewErrorCode.ASSET_UNAVAILABLE, error.assetId, error.message ?: "asset unavailable", error)
-                }
-                throw PreviewLoadException(PreviewErrorCode.PREVIEW_FAILED, null, error.message ?: "preview failed", error)
-            }
-        }
-        val session = ProjectSession(
-            initialProject = initialProject,
-            preview = previewLoader,
-            autosave = autosave,
-            store = activeStore,
-            revisionClock = SharedPreferencesProjectRevisionClock(this),
-        )
-        editorViewModel = EditorViewModel(session, previewController)
-        previewController.load(initialProject)
 
         val visualImportLauncher = registerForActivityResult(
             ActivityResultContracts.PickMultipleVisualMedia(maxItems = 50)
@@ -346,12 +299,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        if (::exportController.isInitialized) exportController.cancel()
         activityScope.cancel()
         lastFinalPreviewFile?.delete()
-        if (::autosave.isInitialized) autosave.flushNow()
-        if (::editorViewModel.isInitialized) editorViewModel.close()
-        if (::autosaveScheduler.isInitialized) autosaveScheduler.close()
+        if (::runtime.isInitialized) runtime.flushAutosave()
         super.onDestroy()
     }
 

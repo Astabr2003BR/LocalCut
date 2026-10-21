@@ -133,10 +133,10 @@ object BridgeCodec {
     }
 
     private fun encodeValue(value: JValue): String = when (value) {
-        is JObject -> value.fields.entries.joinToString(prefix = "{", postfix = "}") { (key, item) ->
+        is JObject -> value.fields.entries.joinToString(separator = ",", prefix = "{", postfix = "}") { (key, item) ->
             "${jsonString(key)}:${encodeValue(item)}"
         }
-        is JArray -> value.values.joinToString(prefix = "[", postfix = "]") { encodeValue(it) }
+        is JArray -> value.values.joinToString(separator = ",", prefix = "[", postfix = "]") { encodeValue(it) }
         is JString -> jsonString(value.value)
         is JNumber -> value.raw
         is JBool -> value.value.toString()

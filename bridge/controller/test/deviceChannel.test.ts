@@ -61,7 +61,10 @@ test("unknown or malformed device messages do not resolve another command", asyn
   const channel = new WebSocketDeviceChannel(socket);
   const pending = channel.send(command("msg-1"));
   let settled = false;
-  pending.finally(() => { settled = true; });
+  void pending.then(
+    () => { settled = true; },
+    () => { settled = true; },
+  );
 
   socket.emit("message", Buffer.from("not-json"));
   socket.emit("message", Buffer.from(JSON.stringify({ messageId: "other", success: true })));
@@ -70,6 +73,7 @@ test("unknown or malformed device messages do not resolve another command", asyn
 
   channel.close();
   await assert.rejects(pending, /DEVICE_CHANNEL_CLOSED/);
+  assert.equal(settled, true);
 });
 
 test("socket close rejects all pending commands", async () => {

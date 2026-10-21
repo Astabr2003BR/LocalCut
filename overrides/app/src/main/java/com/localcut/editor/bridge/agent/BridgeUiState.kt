@@ -71,6 +71,7 @@ data class BridgeUiState(
         is BridgeUiEvent.AlwaysConnectedChanged -> copy(alwaysConnected = event.enabled)
 
         is BridgeUiEvent.RelayBaseUrlChanged -> copy(
+            phase = if (phase == BridgeUiPhase.ERROR) BridgeUiPhase.OFFLINE else phase,
             relayBaseUrl = event.value,
             message = null,
         )

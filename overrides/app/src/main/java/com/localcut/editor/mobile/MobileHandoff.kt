@@ -16,15 +16,17 @@ enum class MobileHandoffReturnTarget {
 }
 
 data class MobileHandoffCommand(
-    val capability: BridgeCapability,
+    val capability: BridgeCapability?,
     val payloadJson: String,
     val description: String,
     val returnTarget: MobileHandoffReturnTarget = MobileHandoffReturnTarget.EDITOR,
+    val mobilePairingCode: String? = null,
 )
 
 object MobileHandoffParser {
     private const val MAX_URI_LENGTH = 8_192
     private const val HTTPS_HOST = "localcut-bridge-v1.onrender.com"
+    private val PAIRING_CODE_REGEX = Regex("^[0-9]{6}$")
 
     fun parse(rawUri: String?): Result<MobileHandoffCommand> = runCatching {
         require(!rawUri.isNullOrBlank()) { "HANDOFF_URI_MISSING" }
@@ -51,6 +53,16 @@ object MobileHandoffParser {
         }
         val action = params["action"]?.lowercase() ?: error("HANDOFF_ACTION_MISSING")
         val command = when (action) {
+            "pair_mobile" -> {
+                val code = requiredText(params, "code", 6)
+                require(PAIRING_CODE_REGEX.matches(code)) { "HANDOFF_CODE_INVALID" }
+                MobileHandoffCommand(
+                    capability = null,
+                    payloadJson = "{}",
+                    description = "Autorizar o pareamento do LocalCut com o ChatGPT usando o código $code",
+                    mobilePairingCode = code,
+                )
+            }
             "seek" -> {
                 val positionUs = requiredLong(params, "positionUs", min = 0L)
                 MobileHandoffCommand(

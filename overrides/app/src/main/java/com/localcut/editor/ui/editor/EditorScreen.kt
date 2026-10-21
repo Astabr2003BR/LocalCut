@@ -59,6 +59,7 @@ fun EditorScreen(
     exportCapabilities: ExportCapabilities,
     onImportRequested: () -> Unit,
     onImportAudioRequested: () -> Unit,
+    onImportOverlayRequested: () -> Unit,
     onExportRequested: (ExportProfile) -> Unit,
     onCancelExport: () -> Unit,
     onFinalPreviewRequested: () -> Unit,
@@ -135,7 +136,7 @@ fun EditorScreen(
             Column(Modifier.fillMaxSize()) {
                 EditorToolbar(
                     session.canUndo, session.canRedo, loopEnabled, exportState,
-                    onImportRequested, onImportAudioRequested, { showTextManager = true }, { showExportSettings = true }, onCancelExport, onFinalPreviewRequested, viewModel
+                    onImportRequested, onImportAudioRequested, onImportOverlayRequested, { showTextManager = true }, { showExportSettings = true }, onCancelExport, onFinalPreviewRequested, viewModel
                 ) {
                     loopEnabled = it
                     viewModel.setLoopRange(0L, if (it && preview.durationUs > 0) preview.durationUs else null)
@@ -171,7 +172,7 @@ fun EditorScreen(
             Column(Modifier.fillMaxSize()) {
                 EditorToolbar(
                     session.canUndo, session.canRedo, loopEnabled, exportState,
-                    onImportRequested, onImportAudioRequested, { showTextManager = true }, { showExportSettings = true }, onCancelExport, onFinalPreviewRequested, viewModel
+                    onImportRequested, onImportAudioRequested, onImportOverlayRequested, { showTextManager = true }, { showExportSettings = true }, onCancelExport, onFinalPreviewRequested, viewModel
                 ) {
                     loopEnabled = it
                     viewModel.setLoopRange(0L, if (it && preview.durationUs > 0) preview.durationUs else null)
@@ -219,6 +220,7 @@ private fun EditorToolbar(
     exportState: ExportUiState,
     onImportRequested: () -> Unit,
     onImportAudioRequested: () -> Unit,
+    onImportOverlayRequested: () -> Unit,
     onTextRequested: () -> Unit,
     onExportRequested: () -> Unit,
     onCancelExport: () -> Unit,
@@ -240,6 +242,7 @@ private fun EditorToolbar(
                 )
                 Button(onClick = onImportRequested, enabled = !exportState.running) { Text("Mídia") }
                 FilledTonalButton(onClick = onImportAudioRequested, enabled = !exportState.running) { Text("Áudio") }
+                FilledTonalButton(onClick = onImportOverlayRequested, enabled = !exportState.running) { Text("Overlay") }
                 FilledTonalButton(onClick = onTextRequested, enabled = !exportState.running) { Text("Texto") }
                 FilledTonalButton(onClick = onExportRequested, enabled = !exportState.running) { Text("Exportar") }
                 FilledTonalButton(onClick = onFinalPreviewRequested, enabled = !exportState.running) { Text("Prévia final") }

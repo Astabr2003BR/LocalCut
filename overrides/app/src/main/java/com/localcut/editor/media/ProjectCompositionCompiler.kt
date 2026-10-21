@@ -36,19 +36,22 @@ class ProjectCompositionCompiler(
             outputSettings = outputSettings,
         ).mapCatching { plan ->
             Media3CompositionSupportPolicy.validate(plan, mode).getOrThrow()
+            val transitionSpecs = TransitionRenderSpecCompiler.compile(project).getOrThrow()
             toComposition(
                 blueprint = Media3CompositionBlueprintCompiler.compile(plan),
                 project = project,
+                transitionSpecs = transitionSpecs,
             )
         }
 
     private fun toComposition(
         blueprint: Media3CompositionBlueprint,
         project: Project,
+        transitionSpecs: Map<String, ClipTransitionRenderSpec>,
     ): Composition {
         val sequences = buildList {
             Media3VisualLayerOrder.toInputOrder(blueprint.visualLayers).forEach { layer ->
-                if (layer.items.isNotEmpty()) add(buildVisualSequence(layer, blueprint))
+                if (layer.items.isNotEmpty()) add(buildVisualSequence(layer, blueprint, transitionSpecs))
             }
             blueprint.audioLayers.forEach { layer ->
                 if (layer.items.any { it is Media3BlueprintItem.Media }) {
@@ -81,6 +84,7 @@ class ProjectCompositionCompiler(
     private fun buildVisualSequence(
         sequence: Media3SequenceBlueprint,
         blueprint: Media3CompositionBlueprint,
+        transitionSpecs: Map<String, ClipTransitionRenderSpec>,
     ): EditedMediaItemSequence {
         val hasEmbeddedAudio = sequence.items
             .filterIsInstance<Media3BlueprintItem.Media>()
@@ -94,7 +98,9 @@ class ProjectCompositionCompiler(
         sequence.items.forEach { item ->
             when (item) {
                 is Media3BlueprintItem.Gap -> builder.addGap(item.presentationDurationUs)
-                is Media3BlueprintItem.Media -> builder.addItem(buildMediaItem(item, blueprint))
+                is Media3BlueprintItem.Media -> builder.addItem(
+                    buildMediaItem(item, blueprint, transitionSpecs[item.clipId]),
+                )
             }
         }
         return builder.build()
@@ -108,7 +114,7 @@ class ProjectCompositionCompiler(
         sequence.items.forEach { item ->
             when (item) {
                 is Media3BlueprintItem.Gap -> builder.addGap(item.presentationDurationUs)
-                is Media3BlueprintItem.Media -> builder.addItem(buildMediaItem(item, blueprint))
+                is Media3BlueprintItem.Media -> builder.addItem(buildMediaItem(item, blueprint, null))
             }
         }
         return builder.build()
@@ -117,6 +123,7 @@ class ProjectCompositionCompiler(
     private fun buildMediaItem(
         item: Media3BlueprintItem.Media,
         blueprint: Media3CompositionBlueprint,
+        transitionSpec: ClipTransitionRenderSpec?,
     ): EditedMediaItem {
         val mediaBuilder = MediaItem.Builder().setUri(item.uri)
         if (item.assetType == com.localcut.editor.domain.model.AssetType.IMAGE) {
@@ -156,15 +163,23 @@ class ProjectCompositionCompiler(
         val videoEffects = if (item.outputTracks == Media3OutputTracks.AUDIO_ONLY) {
             emptyList()
         } else {
-            TransformEffectFactory.create(
-                transform = item.transform,
-                keyframes = item.keyframes,
-                opacity = item.opacity,
-                outputWidth = blueprint.width,
-                outputHeight = blueprint.height,
-                transformSpaceWidth = blueprint.transformSpaceWidth,
-                transformSpaceHeight = blueprint.transformSpaceHeight,
-            )
+            buildList<Effect> {
+                addAll(
+                    TransformEffectFactory.create(
+                        transform = item.transform,
+                        keyframes = item.keyframes,
+                        opacity = item.opacity,
+                        outputWidth = blueprint.width,
+                        outputHeight = blueprint.height,
+                        transformSpaceWidth = blueprint.transformSpaceWidth,
+                        transformSpaceHeight = blueprint.transformSpaceHeight,
+                    )
+                )
+                FadeToBlackEffectFactory.create(
+                    durationUs = item.presentationDurationUs,
+                    spec = transitionSpec,
+                )?.let(::add)
+            }
         }
 
         val edited = EditedMediaItem.Builder(mediaBuilder.build())

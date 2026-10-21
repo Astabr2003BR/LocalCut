@@ -67,14 +67,16 @@ class BridgeExportCommandTest {
     }
 
     @Test
-    fun unsupportedSilentDestinationRequiresLocalInteraction() {
+    fun unsupportedSilentDestinationFailsExplicitlyWithoutPermissionEscalation() {
         val fixture = fixture()
-        fixture.exportPort.startFailure = BridgeLocalInteractionRequiredException("Android 10+ required for unattended shared export")
+        fixture.exportPort.startFailure = BridgeLocalInteractionRequiredException("Android 10+ required for unattended shared export; open LocalCut to export")
 
         val result = fixture.executor.execute(exportCommand("msg-export-legacy"))
 
         assertFalse(result.success)
-        assertEquals(BridgeErrorCode.LOCAL_INTERACTION_REQUIRED, result.code)
+        assertEquals(BridgeErrorCode.EXPORT_FAILED, result.code)
+        assertTrue(result.resultJson.contains("Android 10+ required"))
+        assertTrue(result.resultJson.contains("open LocalCut"))
     }
 
     private data class Fixture(

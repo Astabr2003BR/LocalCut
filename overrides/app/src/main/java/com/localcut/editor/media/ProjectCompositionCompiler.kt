@@ -49,9 +49,11 @@ class ProjectCompositionCompiler(
         project: Project,
         transitionSpecs: Map<String, ClipTransitionRenderSpec>,
     ): Composition {
+        val visualInputLayers = Media3VisualLayerOrder.toInputOrder(blueprint.visualLayers)
+            .filter { it.items.isNotEmpty() }
         val sequences = buildList {
-            Media3VisualLayerOrder.toInputOrder(blueprint.visualLayers).forEach { layer ->
-                if (layer.items.isNotEmpty()) add(buildVisualSequence(layer, blueprint, transitionSpecs))
+            visualInputLayers.forEach { layer ->
+                add(buildVisualSequence(layer, blueprint, transitionSpecs))
             }
             blueprint.audioLayers.forEach { layer ->
                 if (layer.items.any { it is Media3BlueprintItem.Media }) {
@@ -75,6 +77,9 @@ class ProjectCompositionCompiler(
             )?.let(::add)
         }
         val builder = Composition.Builder(sequences)
+        if (Media3SequenceOpacityResolver.requiresCustomAlpha(visualInputLayers)) {
+            builder.setVideoCompositorSettings(KeyframeVideoCompositorSettings(visualInputLayers))
+        }
         if (compositionVideoEffects.isNotEmpty()) {
             builder.setEffects(Effects(emptyList(), compositionVideoEffects))
         }
@@ -181,6 +186,7 @@ class ProjectCompositionCompiler(
                         outputHeight = blueprint.height,
                         transformSpaceWidth = blueprint.transformSpaceWidth,
                         transformSpaceHeight = blueprint.transformSpaceHeight,
+                        presentationStartUs = presentationStartUs,
                     )
                 )
                 FadeToBlackEffectFactory.create(

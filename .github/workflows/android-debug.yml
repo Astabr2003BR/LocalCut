@@ -10,6 +10,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: localcut-android-debug-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -147,9 +151,11 @@ jobs:
               'com.localcut.editor.bridge.protocol.BridgeProtocolTest',
               'com.localcut.editor.bridge.security.ReplayGuardTest',
               'com.localcut.editor.bridge.security.DeviceIdentityContractTest',
+              'com.localcut.editor.bridge.transport.BridgeEndpointConfigTest',
               'com.localcut.editor.bridge.transport.BridgeConnectionCoordinatorTest',
               'com.localcut.editor.bridge.transport.BridgeReconnectPolicyTest',
               'com.localcut.editor.bridge.transport.BridgeSessionProviderTest',
+              'com.localcut.editor.bridge.agent.BridgeEndpointPreferenceTest',
               'com.localcut.editor.bridge.agent.BridgeCommandExecutorTest',
               'com.localcut.editor.bridge.agent.BridgeAdvancedEditCommandsTest',
               'com.localcut.editor.bridge.agent.BridgeExportCommandTest',

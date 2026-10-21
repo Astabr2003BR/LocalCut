@@ -109,11 +109,31 @@ class LocalCutBridgeControl(
     }
 
     fun revokePairing() {
-        credentialStore.clear()
-        settingsStore.sessionEnabled = false
-        settingsStore.alwaysConnected = false
-        startBridgeService(BridgeConnectionService.ACTION_DISCONNECT, foreground = false)
-        update(BridgeUiEvent.PairingRevoked)
+        if (!BridgeEndpointConfig.isConfigured()) {
+            update(BridgeUiEvent.Error("Bridge ainda não possui endpoint de produção configurado"))
+            return
+        }
+        if (!pairingRunning.compareAndSet(false, true)) return
+        scope.launch {
+            try {
+                val client = OkHttpBridgePairingClient(BridgeEndpointConfig.HTTPS_BASE_URL)
+                val coordinator = BridgeUnpairCoordinator(
+                    client = client,
+                    credentialStore = credentialStore,
+                    settingsStore = settingsStore,
+                    nowEpochMs = nowEpochMs,
+                )
+                val result = withContext(Dispatchers.IO) { coordinator.unpair() }
+                result.onSuccess {
+                    startBridgeService(BridgeConnectionService.ACTION_DISCONNECT, foreground = false)
+                    update(BridgeUiEvent.PairingRevoked)
+                }.onFailure { error ->
+                    update(BridgeUiEvent.Error(error.message ?: "Não foi possível revogar o pareamento"))
+                }
+            } finally {
+                pairingRunning.set(false)
+            }
+        }
     }
 
     private fun update(event: BridgeUiEvent) {

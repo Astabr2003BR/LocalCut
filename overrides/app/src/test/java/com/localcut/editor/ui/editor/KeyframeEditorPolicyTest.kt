@@ -93,4 +93,21 @@ class KeyframeEditorPolicyTest {
         assertEquals(clip.keyframes, KeyframeEditorPolicy.deleteAtProjectTime(clip, 3_500_001L))
         assertNull(KeyframeEditorPolicy.deleteAtProjectTime(clip, 7_000_000L))
     }
+
+    @Test
+    fun markerFractionsAreNormalizedClampedAndSorted() {
+        val clip = clip(
+            listOf(
+                TransformKeyframe(4_000_000L, TransformValue()),
+                TransformKeyframe(2_000_000L, TransformValue()),
+                TransformKeyframe(0L, TransformValue()),
+                TransformKeyframe(5_000_000L, TransformValue()),
+            ),
+        )
+        assertEquals(
+            listOf(0f, 0.5f, 1f, 1f),
+            KeyframeEditorPolicy.markerFractions(clip),
+        )
+        assertEquals(emptyList<Float>(), KeyframeEditorPolicy.markerFractions(clip.copy(durationUs = 0L)))
+    }
 }

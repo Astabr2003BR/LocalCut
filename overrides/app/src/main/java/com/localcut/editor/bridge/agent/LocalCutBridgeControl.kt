@@ -6,6 +6,8 @@ import android.os.Build
 import com.localcut.editor.bridge.security.AndroidKeystoreBridgeCredentialStore
 import com.localcut.editor.bridge.security.AndroidKeystoreDeviceIdentityStore
 import com.localcut.editor.bridge.security.BridgeCredentialStore
+import com.localcut.editor.bridge.security.BridgeMobilePairingProofFactory
+import com.localcut.editor.bridge.security.DeviceIdentityStore
 import com.localcut.editor.bridge.transport.BridgeConnectionObserver
 import com.localcut.editor.bridge.transport.OkHttpBridgePairingClient
 import java.util.concurrent.atomic.AtomicBoolean
@@ -22,6 +24,7 @@ class LocalCutBridgeControl(
     private val scope: CoroutineScope,
     private val settingsStore: BridgeSettingsStore = SharedPreferencesBridgeSettingsStore(context),
     private val credentialStore: BridgeCredentialStore = AndroidKeystoreBridgeCredentialStore(context),
+    private val identityStore: DeviceIdentityStore = AndroidKeystoreDeviceIdentityStore(),
     private val nowEpochMs: () -> Long = System::currentTimeMillis,
 ) {
     private val appContext = context.applicationContext
@@ -93,7 +96,7 @@ class LocalCutBridgeControl(
                 if (credential == null) {
                     val pairing = BridgePairingCoordinator(
                         client = client,
-                        identityStore = AndroidKeystoreDeviceIdentityStore(),
+                        identityStore = identityStore,
                         credentialStore = credentialStore,
                         settingsStore = settingsStore,
                         nowEpochMs = nowEpochMs,
@@ -110,6 +113,33 @@ class LocalCutBridgeControl(
             } finally {
                 pairingRunning.set(false)
             }
+        }
+    }
+
+    fun claimPendingPairingFromMobile(code: String, onComplete: (Result<Unit>) -> Unit) {
+        if (!matchesPendingPairing(code)) {
+            onComplete(Result.failure(IllegalStateException("PAIRING_CODE_MISMATCH")))
+            return
+        }
+        val endpoint = endpointPreference.current().getOrElse { error ->
+            onComplete(Result.failure(error))
+            return
+        }
+        scope.launch {
+            val result = runCatching {
+                check(matchesPendingPairing(code)) { "PAIRING_CODE_MISMATCH" }
+                val proof = BridgeMobilePairingProofFactory(
+                    identityStore = identityStore,
+                    nowEpochMs = nowEpochMs,
+                ).create(code)
+                withContext(Dispatchers.IO) {
+                    OkHttpBridgePairingClient(endpoint.httpsBaseUrl)
+                        .mobileClaim(proof)
+                        .getOrThrow()
+                }
+                Unit
+            }
+            onComplete(result)
         }
     }
 
@@ -150,6 +180,11 @@ class LocalCutBridgeControl(
                 pairingRunning.set(false)
             }
         }
+    }
+
+    private fun matchesPendingPairing(code: String): Boolean {
+        val current = mutableState.value
+        return current.phase == BridgeUiPhase.PAIRING && current.pairingCode == code
     }
 
     private fun update(event: BridgeUiEvent) {

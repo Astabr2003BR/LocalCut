@@ -21,19 +21,13 @@ object BridgeServiceRuntime {
     fun createCoordinator(context: Context, settingsStore: BridgeSettingsStore): BridgeConnectionCoordinator {
         val appContext = context.applicationContext
         coordinatorFactory?.let { return it(appContext, settingsStore) }
-        if (!BridgeEndpointConfig.isConfigured()) {
-            return BridgeConnectionCoordinator(
-                socketClient = UnavailableBridgeSocketClient,
-                sessionProvider = BridgeSessionProvider { null },
-                settingsStore = settingsStore,
-                scheduler = AndroidHandlerBridgeReconnectScheduler(),
-            )
-        }
+        val endpoint = BridgeEndpointConfig.resolve(settingsStore.relayBaseUrl).getOrNull()
+            ?: return unavailableCoordinator(settingsStore)
 
         val editorRuntime = LocalCutProcessRuntime.get(appContext)
         val socketClient = OkHttpBridgeSocketClient()
         val sessionProvider = StoredBridgeSessionProvider(
-            relayUrl = BridgeEndpointConfig.WSS_URL,
+            relayUrl = endpoint.wssUrl,
             identityStore = AndroidKeystoreDeviceIdentityStore(),
             credentialStore = AndroidKeystoreBridgeCredentialStore(appContext),
         )
@@ -46,6 +40,14 @@ object BridgeServiceRuntime {
             observer = editorRuntime.bridgeControl.connectionObserver,
         )
     }
+
+    private fun unavailableCoordinator(settingsStore: BridgeSettingsStore): BridgeConnectionCoordinator =
+        BridgeConnectionCoordinator(
+            socketClient = UnavailableBridgeSocketClient,
+            sessionProvider = BridgeSessionProvider { null },
+            settingsStore = settingsStore,
+            scheduler = AndroidHandlerBridgeReconnectScheduler(),
+        )
 
     private object UnavailableBridgeSocketClient : BridgeSocketClient {
         override fun connect(session: BridgeSession, listener: BridgeSocketListener): Result<Unit> =

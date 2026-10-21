@@ -39,7 +39,26 @@ export function createControllerServer(options: ControllerServerOptions): Contro
   const registry = options.registry ?? new DeviceRegistry();
   const router = options.router ?? new CommandRouter(options.store, registry);
   const wss = new WebSocketServer({ noServer: true, clientTracking: false });
-  const mcpHandler = createMcpHandler(() => createLocalCutMcpServer(router, options.controllerId));
+  const mcpHandler = createMcpHandler(() => createLocalCutMcpServer(
+    router,
+    options.controllerId,
+    {
+      claimPairing(code) {
+        const claimed = options.pairing.claim(code, options.controllerId, nowEpochMs());
+        return {
+          claimed: true,
+          deviceId: claimed.deviceId,
+          expiresAtEpochMs: claimed.expiresAtEpochMs,
+        };
+      },
+      revokeDevice(deviceId) {
+        options.pairing.revokeDevice(deviceId, nowEpochMs());
+        options.sessions.revoke(deviceId);
+        registry.get(deviceId)?.close("device_revoked");
+        return { revoked: true, deviceId };
+      },
+    },
+  ));
   const nodeMcpHandler = toNodeHandler(mcpHandler);
 
   const server = createServer(async (req, res) => {

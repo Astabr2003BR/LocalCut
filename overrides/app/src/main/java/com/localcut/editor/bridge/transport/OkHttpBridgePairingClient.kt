@@ -1,5 +1,6 @@
 package com.localcut.editor.bridge.transport
 
+import com.localcut.editor.bridge.security.BridgeMobilePairingProof
 import com.localcut.editor.bridge.security.BridgeStoredCredential
 import com.localcut.editor.bridge.security.DevicePublicIdentity
 import com.localcut.editor.data.project.JNull
@@ -58,6 +59,18 @@ class OkHttpBridgePairingClient(
             """{"refreshToken":${jsonString(refreshToken)}}""",
         )
         credentialFrom(root)
+    }
+
+    override fun mobileClaim(proof: BridgeMobilePairingProof): Result<BridgeMobilePairingClaim> = runCatching {
+        val root = post(
+            "/v1/pair/mobile-claim",
+            """{"code":${jsonString(proof.code)},"issuedAtEpochMs":${proof.issuedAtEpochMs},"nonceBase64":${jsonString(proof.nonceBase64)},"signatureBase64":${jsonString(proof.signatureBase64)}}""",
+        )
+        BridgeMobilePairingClaim(
+            deviceId = root.required("deviceId").asString(),
+            challengeBase64 = root.required("challengeBase64").asString(),
+            expiresAtEpochMs = root.required("expiresAtEpochMs").asLong(),
+        )
     }
 
     override fun unpair(accessToken: String): Result<Unit> = runCatching {

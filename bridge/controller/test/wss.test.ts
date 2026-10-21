@@ -74,6 +74,11 @@ function openSocket(url: string, token: string): Promise<WebSocket> {
   });
 }
 
+function waitForSocketClose(ws: WebSocket): Promise<void> {
+  if (ws.readyState === WebSocket.CLOSED) return Promise.resolve();
+  return new Promise(resolve => ws.once("close", () => resolve()));
+}
+
 test("authenticated WSS device receives routed command and returns result", async t => {
   const fx = await fixture();
   t.after(() => fx.runtime.close());
@@ -119,4 +124,21 @@ test("revoking device closes active route and rejects later controller commands"
   const result = await fx.router.execute("controller-1", command("after-revoke"));
   assert.equal(result.success, false);
   assert.equal(result.code, "AUTH_REQUIRED");
+});
+
+test("controller shutdown closes an active device socket without waiting for client cleanup", async () => {
+  const fx = await fixture();
+  const ws = await openSocket(fx.wsUrl, fx.issued.accessToken);
+  const socketClosed = waitForSocketClose(ws);
+
+  await Promise.race([
+    fx.runtime.close(),
+    new Promise<never>((_resolve, reject) => {
+      setTimeout(() => reject(new Error("CONTROLLER_SHUTDOWN_TIMEOUT")), 1_000);
+    }),
+  ]);
+  await socketClosed;
+
+  assert.equal(ws.readyState, WebSocket.CLOSED);
+  assert.equal(fx.registry.get("lc_device"), null);
 });

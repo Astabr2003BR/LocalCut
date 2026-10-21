@@ -45,6 +45,8 @@ class RemoteMediaValidatorSmokeTest {
         val context = instrumentation.targetContext
         val remoteDir = File(context.cacheDir, "remote-import").apply { mkdirs() }
         val testDir = File(remoteDir, "validator-${System.nanoTime()}").apply { mkdirs() }
+        val persistentDir = File(context.filesDir, "remote-media").apply { mkdirs() }
+        val providerFile = File(persistentDir, "provider-${System.nanoTime()}.png")
         try {
             val png = createSolidPng(File(testDir, "image.png"))
             val wav = createPcmWav(File(testDir, "audio.wav"))
@@ -62,29 +64,48 @@ class RemoteMediaValidatorSmokeTest {
             assertTrue(RemoteMediaValidator.validate(spoof, "video/mp4").isFailure)
             assertTrue(RemoteMediaValidator.validate(png, "video/mp4").isFailure)
 
+            png.copyTo(providerFile, overwrite = true)
             val allowedUri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.remote-media",
-                png,
+                providerFile,
             )
             assertEquals("content", allowedUri.scheme)
 
-            val outside = File(context.cacheDir, "outside-remote-provider.txt").apply { writeText("private") }
+            val cacheFile = File(context.cacheDir, "outside-remote-provider.png").apply {
+                png.copyTo(this, overwrite = true)
+            }
+            val siblingPrivateFile = File(context.filesDir, "outside-remote-provider.png").apply {
+                png.copyTo(this, overwrite = true)
+            }
             try {
                 assertTrue(
+                    "cache download files must not be exposed by the persistent provider",
                     runCatching {
                         FileProvider.getUriForFile(
                             context,
                             "${context.packageName}.remote-media",
-                            outside,
+                            cacheFile,
+                        )
+                    }.isFailure,
+                )
+                assertTrue(
+                    "unrelated private files must not be exposed by the provider",
+                    runCatching {
+                        FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.remote-media",
+                            siblingPrivateFile,
                         )
                     }.isFailure,
                 )
             } finally {
-                outside.delete()
+                cacheFile.delete()
+                siblingPrivateFile.delete()
             }
         } finally {
             testDir.deleteRecursively()
+            providerFile.delete()
         }
     }
 

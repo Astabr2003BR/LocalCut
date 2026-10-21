@@ -61,45 +61,43 @@ class RemoteMediaDownloader(
                     val location = response.header("Location")
                         ?: error("REMOTE_MEDIA_REDIRECT_LOCATION_MISSING")
                     current = resolveRedirect(current, location)
-                    RemoteMediaUrlPolicy.parseAndValidate(current.toASCIIString()).getOrThrow()
                     redirects += 1
-                    continue
-                }
+                } else {
+                    require(response.isSuccessful) { "REMOTE_MEDIA_HTTP_${response.code}" }
+                    val body = response.body ?: error("REMOTE_MEDIA_BODY_MISSING")
+                    val declaredContentType = normalizeContentType(response.header("Content-Type"))
+                    val limit = provisionalLimitBytes(declaredContentType)
+                    require(limit > 0L) { "REMOTE_MEDIA_LIMIT_INVALID" }
+                    val contentLength = body.contentLength()
+                    require(contentLength < 0L || contentLength <= limit) { "REMOTE_MEDIA_TOO_LARGE" }
 
-                require(response.isSuccessful) { "REMOTE_MEDIA_HTTP_${response.code}" }
-                val body = response.body ?: error("REMOTE_MEDIA_BODY_MISSING")
-                val declaredContentType = normalizeContentType(response.header("Content-Type"))
-                val limit = provisionalLimitBytes(declaredContentType)
-                require(limit > 0L) { "REMOTE_MEDIA_LIMIT_INVALID" }
-                val contentLength = body.contentLength()
-                require(contentLength < 0L || contentLength <= limit) { "REMOTE_MEDIA_TOO_LARGE" }
-
-                val remoteDir = File(cacheDir, REMOTE_DIR_NAME).apply { mkdirs() }
-                val partial = File(remoteDir, "${UUID.randomUUID()}.part")
-                try {
-                    var total = 0L
-                    body.byteStream().use { input ->
-                        partial.outputStream().buffered().use { output ->
-                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                            while (true) {
-                                val read = input.read(buffer)
-                                if (read < 0) break
-                                total += read.toLong()
-                                require(total <= limit) { "REMOTE_MEDIA_TOO_LARGE" }
-                                output.write(buffer, 0, read)
+                    val remoteDir = File(cacheDir, REMOTE_DIR_NAME).apply { mkdirs() }
+                    val partial = File(remoteDir, "${UUID.randomUUID()}.part")
+                    try {
+                        var total = 0L
+                        body.byteStream().use { input ->
+                            partial.outputStream().buffered().use { output ->
+                                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                                while (true) {
+                                    val read = input.read(buffer)
+                                    if (read < 0) break
+                                    total += read.toLong()
+                                    require(total <= limit) { "REMOTE_MEDIA_TOO_LARGE" }
+                                    output.write(buffer, 0, read)
+                                }
                             }
                         }
+                        require(total > 0L) { "REMOTE_MEDIA_EMPTY" }
+                        return DownloadedRemoteMedia(
+                            file = partial,
+                            declaredContentType = declaredContentType,
+                            byteCount = total,
+                        )
+                    } catch (error: Throwable) {
+                        partial.delete()
+                        deleteDirectoryIfEmpty(remoteDir)
+                        throw error
                     }
-                    require(total > 0L) { "REMOTE_MEDIA_EMPTY" }
-                    return DownloadedRemoteMedia(
-                        file = partial,
-                        declaredContentType = declaredContentType,
-                        byteCount = total,
-                    )
-                } catch (error: Throwable) {
-                    partial.delete()
-                    deleteDirectoryIfEmpty(remoteDir)
-                    throw error
                 }
             }
         }

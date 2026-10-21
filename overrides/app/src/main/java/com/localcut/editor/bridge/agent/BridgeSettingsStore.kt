@@ -5,6 +5,7 @@ import android.content.Context
 interface BridgeSettingsStore {
     var sessionEnabled: Boolean
     var alwaysConnected: Boolean
+    var relayBaseUrl: String
 
     fun shouldRecoverAfterBoot(): Boolean = sessionEnabled && alwaysConnected
 
@@ -16,6 +17,7 @@ interface BridgeSettingsStore {
 class InMemoryBridgeSettingsStore(
     override var sessionEnabled: Boolean = false,
     override var alwaysConnected: Boolean = false,
+    override var relayBaseUrl: String = "",
 ) : BridgeSettingsStore
 
 class SharedPreferencesBridgeSettingsStore(context: Context) : BridgeSettingsStore {
@@ -40,9 +42,18 @@ class SharedPreferencesBridgeSettingsStore(context: Context) : BridgeSettingsSto
             }
         }
 
+    override var relayBaseUrl: String
+        get() = preferences.getString(KEY_RELAY_BASE_URL, "").orEmpty()
+        set(value) {
+            check(preferences.edit().putString(KEY_RELAY_BASE_URL, value).commit()) {
+                "failed to persist bridge relayBaseUrl"
+            }
+        }
+
     companion object {
         const val PREFERENCES_NAME = "localcut.bridge.settings.v1"
         private const val KEY_SESSION_ENABLED = "session_enabled"
         private const val KEY_ALWAYS_CONNECTED = "always_connected"
+        private const val KEY_RELAY_BASE_URL = "relay_base_url"
     }
 }

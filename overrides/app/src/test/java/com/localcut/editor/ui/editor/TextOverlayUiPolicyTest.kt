@@ -5,8 +5,10 @@ import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.TextOverlay
+import com.localcut.editor.domain.model.TextStyle
 import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackType
+import com.localcut.editor.domain.model.TransformValue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -54,6 +56,34 @@ class TextOverlayUiPolicyTest {
         assertEquals("text-3", overlay.id)
         assertEquals(9, overlay.zIndex)
         assertEquals(3_000_000L, overlay.durationUs)
+    }
+
+    @Test
+    fun editedDurationClampsToRemainingTimelineWithoutChangingOtherProperties() {
+        val project = projectWithDuration(5_000_000L)
+        val original = TextOverlay(
+            id = "title",
+            startUs = 4_500_000L,
+            durationUs = 500_000L,
+            text = "Título",
+            style = TextStyle(fontSizePx = 80.0, fillArgb = 0xFFFFFF00.toInt()),
+            transform = TransformValue(x = 10.0, y = 20.0, scale = 1.5, rotationDeg = 5.0),
+            opacity = 0.7,
+            zIndex = 9,
+        )
+
+        val updated = TextOverlayUiPolicy.withDuration(project, original, 3_000_000L)!!
+
+        assertEquals(500_000L, updated.durationUs)
+        assertEquals(original.copy(durationUs = 500_000L), updated)
+    }
+
+    @Test
+    fun invalidRequestedDurationDoesNotProduceInvalidOverlay() {
+        val project = projectWithDuration(5_000_000L)
+        val original = TextOverlay("title", 0L, 1_000_000L, "Título")
+
+        assertNull(TextOverlayUiPolicy.withDuration(project, original, 0L))
     }
 
     @Test

@@ -169,6 +169,7 @@ export function createControllerServer(options: ControllerServerOptions): Contro
     });
   });
 
+  let closePromise: Promise<void> | null = null;
   return {
     server,
     listen(port: number, host = "0.0.0.0") {
@@ -187,10 +188,13 @@ export function createControllerServer(options: ControllerServerOptions): Contro
       });
     },
     close() {
-      return new Promise<void>((resolve, reject) => {
-        wss.close();
+      if (closePromise) return closePromise;
+      registry.closeAll("controller_shutdown");
+      wss.close();
+      closePromise = new Promise<void>((resolve, reject) => {
         server.close(error => error ? reject(error) : resolve());
       });
+      return closePromise;
     },
     address() {
       return server.address();

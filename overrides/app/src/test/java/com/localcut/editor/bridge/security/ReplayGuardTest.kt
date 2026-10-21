@@ -48,18 +48,39 @@ class ReplayGuardTest {
     }
 
     @Test
-    fun boundedCacheEvictsOldCompletedEntries() {
+    fun cachePressureNeverEvictsUnexpiredCompletedMessage() {
         val guard = ReplayGuard(maxEntries = 2)
-        fun complete(messageId: String, nonce: String, revision: Long) {
-            assertTrue(guard.validateAndReserve(messageId, nonce, 10_000L, 1_000L) is ReplayDecision.Reserved)
-            guard.complete(messageId, BridgeResultEnvelope(messageId, true, null, revision, "{}", false))
-        }
+        complete(guard, "msg-1", "nonce-1", expiresAtEpochMs = 10_000L, nowEpochMs = 1_000L, revision = 1L)
+        complete(guard, "msg-2", "nonce-2", expiresAtEpochMs = 10_000L, nowEpochMs = 1_000L, revision = 2L)
 
-        complete("msg-1", "nonce-1", 1L)
-        complete("msg-2", "nonce-2", 2L)
-        complete("msg-3", "nonce-3", 3L)
+        val pressure = guard.validateAndReserve("msg-3", "nonce-3", 10_000L, 2_000L)
+        assertEquals(BridgeErrorCode.RATE_LIMITED, (pressure as ReplayDecision.Rejected).code)
 
-        val evicted = guard.validateAndReserve("msg-1", "nonce-1", 10_000L, 2_000L)
-        assertTrue(evicted is ReplayDecision.Reserved)
+        val retry = guard.validateAndReserve("msg-1", "nonce-1", 10_000L, 2_100L)
+        assertTrue(retry is ReplayDecision.Completed)
+    }
+
+    @Test
+    fun expiredCompletedEntriesAreEvictedBeforeCapacityCheck() {
+        val guard = ReplayGuard(maxEntries = 2)
+        complete(guard, "msg-1", "nonce-1", expiresAtEpochMs = 1_500L, nowEpochMs = 1_000L, revision = 1L)
+        complete(guard, "msg-2", "nonce-2", expiresAtEpochMs = 10_000L, nowEpochMs = 1_000L, revision = 2L)
+
+        val fresh = guard.validateAndReserve("msg-3", "nonce-3", 10_000L, 2_000L)
+        assertTrue(fresh is ReplayDecision.Reserved)
+    }
+
+    private fun complete(
+        guard: ReplayGuard,
+        messageId: String,
+        nonce: String,
+        expiresAtEpochMs: Long,
+        nowEpochMs: Long,
+        revision: Long,
+    ) {
+        assertTrue(
+            guard.validateAndReserve(messageId, nonce, expiresAtEpochMs, nowEpochMs) is ReplayDecision.Reserved
+        )
+        guard.complete(messageId, BridgeResultEnvelope(messageId, true, null, revision, "{}", false))
     }
 }

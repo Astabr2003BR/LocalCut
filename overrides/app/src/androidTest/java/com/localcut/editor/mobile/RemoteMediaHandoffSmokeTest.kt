@@ -5,6 +5,7 @@ import android.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.localcut.editor.LocalCutProcessRuntime
+import com.localcut.editor.data.assets.AssetUriResolver
 import com.localcut.editor.domain.model.TrackType
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
@@ -24,7 +25,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class RemoteMediaHandoffSmokeTest {
     @Test
-    fun remoteImageFlowsThroughFileProviderIntoTimelineAndCleansTempFile() = runBlocking {
+    fun remoteImageFlowsThroughFileProviderIntoTimelineAndKeepsPersistentBacking() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         lateinit var runtime: LocalCutProcessRuntime
@@ -32,6 +33,9 @@ class RemoteMediaHandoffSmokeTest {
             runtime = LocalCutProcessRuntime.get(context)
         }
         val before = visualClipCount(runtime)
+        val beforeAssetIds = runtime.session.state.project.assets.map { it.id }.toSet()
+        val persistentDir = File(context.filesDir, "remote-media").apply { mkdirs() }
+        val persistentBefore = persistentDir.listFiles().orEmpty().map { it.name }.toSet()
         val remoteDir = File(context.cacheDir, "remote-import").apply { mkdirs() }
         val partial = createPng(File(remoteDir, "remote-handoff-${System.nanoTime()}.part"))
 
@@ -60,19 +64,35 @@ class RemoteMediaHandoffSmokeTest {
         assertEquals(before + 1, visualClipCount(runtime))
         assertFalse("downloaded partial must be removed after ingest", partial.exists())
         assertTrue(
-            "no promoted temporary media should remain",
+            "download cache must not keep promoted media",
             remoteDir.listFiles().orEmpty().none { it.name.startsWith("remote-handoff-") },
+        )
+
+        val newAssets = runtime.session.state.project.assets.filter { it.id !in beforeAssetIds }
+        assertEquals(1, newAssets.size)
+        val newAsset = newAssets.single()
+        assertTrue(
+            "asset URI must still resolve after temporary download cleanup",
+            AssetUriResolver(context.contentResolver).resolve(newAsset).isSuccess,
+        )
+        val persistentAfter = persistentDir.listFiles().orEmpty().map { it.name }.toSet()
+        assertEquals(
+            "exactly one persistent private backing file must be retained",
+            1,
+            (persistentAfter - persistentBefore).size,
         )
     }
 
     @Test
-    fun cancellationPropagatesAndStillCleansDownloadedTempFile() = runBlocking {
+    fun cancellationPropagatesCleansDownloadAndDoesNotPersistMedia() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         lateinit var runtime: LocalCutProcessRuntime
         instrumentation.runOnMainSync {
             runtime = LocalCutProcessRuntime.get(context)
         }
+        val persistentDir = File(context.filesDir, "remote-media").apply { mkdirs() }
+        val persistentBefore = persistentDir.listFiles().orEmpty().map { it.name }.toSet()
         val remoteDir = File(context.cacheDir, "remote-import").apply { mkdirs() }
         val partial = createPng(File(remoteDir, "remote-cancel-${System.nanoTime()}.part"))
         val validationStarted = CompletableDeferred<Unit>()
@@ -105,6 +125,12 @@ class RemoteMediaHandoffSmokeTest {
         assertTrue("caller coroutine must remain cancelled", job.isCancelled)
         assertNull("cancellation must not be converted into a normal Result", returnedResult)
         assertFalse("downloaded partial must be removed after cancellation", partial.exists())
+        val persistentAfter = persistentDir.listFiles().orEmpty().map { it.name }.toSet()
+        assertEquals(
+            "cancelled import must not retain persistent media",
+            persistentBefore,
+            persistentAfter,
+        )
     }
 
     private fun visualClipCount(runtime: LocalCutProcessRuntime): Int =

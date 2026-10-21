@@ -181,6 +181,7 @@ class ProjectCompositionCompiler(
                         outputHeight = blueprint.height,
                         transformSpaceWidth = blueprint.transformSpaceWidth,
                         transformSpaceHeight = blueprint.transformSpaceHeight,
+                        presentationStartUs = presentationStartUs,
                     )
                 )
                 FadeToBlackEffectFactory.create(

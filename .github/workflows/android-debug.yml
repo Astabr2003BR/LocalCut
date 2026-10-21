@@ -74,6 +74,10 @@ jobs:
           rm -rf source-audit
           mkdir -p source-audit/app
           cp -R work/app/src source-audit/app/src
+          unzip -p localcut-source-full-build9.zip app/build.gradle.kts > source-audit/baseline-build.gradle.kts
+          unzip -p localcut-source-full-build9.zip app/src/main/AndroidManifest.xml > source-audit/baseline-AndroidManifest.xml
+          test -s source-audit/baseline-build.gradle.kts
+          test -s source-audit/baseline-AndroidManifest.xml
           {
             echo '# LocalCut build configuration summary'
             grep -nE 'compileSdk|minSdk|targetSdk|applicationId|versionCode|versionName|testImplementation|androidTestImplementation' work/app/build.gradle.kts || true

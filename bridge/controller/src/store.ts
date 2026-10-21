@@ -21,6 +21,7 @@ export interface BridgeStore {
   upsertDevice(device: DeviceRecord): void;
   revokeDevice(deviceId: string, nowEpochMs: number): void;
   bindDevice(deviceId: string, controllerId: string): void;
+  unbindDevice(deviceId: string): void;
   getPairing(code: string): PairingRecord | null;
   createPairing(pairing: PairingRecord): void;
   updatePairing(pairing: PairingRecord): void;
@@ -51,6 +52,13 @@ export class InMemoryBridgeStore implements BridgeStore {
     const current = this.devices.get(deviceId);
     if (!current) throw new Error("DEVICE_NOT_FOUND");
     this.devices.set(deviceId, { ...current, controllerId });
+  }
+
+  unbindDevice(deviceId: string): void {
+    const current = this.devices.get(deviceId);
+    if (!current) throw new Error("DEVICE_NOT_FOUND");
+    if (current.revokedAtEpochMs != null) throw new Error("DEVICE_REVOKED");
+    this.devices.set(deviceId, { ...current, controllerId: null });
   }
 
   getPairing(code: string): PairingRecord | null {
@@ -147,6 +155,12 @@ export class SqliteBridgeStore implements BridgeStore {
   bindDevice(deviceId: string, controllerId: string): void {
     const result = this.db.prepare("UPDATE devices SET controller_id = ? WHERE device_id = ? AND revoked_at_epoch_ms IS NULL")
       .run(controllerId, deviceId);
+    if (Number(result.changes) !== 1) throw new Error("DEVICE_NOT_FOUND_OR_REVOKED");
+  }
+
+  unbindDevice(deviceId: string): void {
+    const result = this.db.prepare("UPDATE devices SET controller_id = NULL WHERE device_id = ? AND revoked_at_epoch_ms IS NULL")
+      .run(deviceId);
     if (Number(result.changes) !== 1) throw new Error("DEVICE_NOT_FOUND_OR_REVOKED");
   }
 

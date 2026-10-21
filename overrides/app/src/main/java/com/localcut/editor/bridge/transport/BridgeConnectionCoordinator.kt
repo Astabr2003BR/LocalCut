@@ -14,6 +14,12 @@ fun interface BridgeInboundMessageHandler {
     fun handle(text: String, reply: (String) -> Unit)
 }
 
+interface BridgeConnectionObserver {
+    fun onConnected() = Unit
+    fun onDisconnected(code: Int?, reason: String?) = Unit
+    fun onFailure(message: String) = Unit
+}
+
 class BridgeConnectionCoordinator(
     private val socketClient: BridgeSocketClient,
     private val sessionProvider: BridgeSessionProvider,
@@ -22,6 +28,7 @@ class BridgeConnectionCoordinator(
     private val scheduler: BridgeReconnectScheduler,
     private val randomUnit: () -> Double = Math::random,
     private val inboundMessageHandler: BridgeInboundMessageHandler = BridgeInboundMessageHandler { _, _ -> },
+    private val observer: BridgeConnectionObserver = object : BridgeConnectionObserver {},
 ) : BridgeSocketListener {
     private var reconnectAttempt = 0
     private var scheduledReconnect: BridgeScheduledTask? = null
@@ -59,6 +66,7 @@ class BridgeConnectionCoordinator(
     override fun onConnected() {
         reconnectAttempt = 0
         cancelScheduledReconnect()
+        observer.onConnected()
     }
 
     override fun onTextMessage(text: String) {
@@ -71,11 +79,13 @@ class BridgeConnectionCoordinator(
 
     @Synchronized
     override fun onDisconnected(code: Int?, reason: String?) {
+        observer.onDisconnected(code, reason)
         scheduleReconnectIfAllowed()
     }
 
     @Synchronized
     override fun onFailure(message: String) {
+        observer.onFailure(message)
         scheduleReconnectIfAllowed()
     }
 
@@ -89,7 +99,10 @@ class BridgeConnectionCoordinator(
         val session = sessionProvider.currentSession()
             ?: return Result.failure(IllegalStateException("paired bridge session is unavailable or expired"))
         val result = socketClient.connect(session, this)
-        if (result.isFailure && scheduleOnTransportFailure) scheduleReconnectIfAllowed()
+        if (result.isFailure && scheduleOnTransportFailure) {
+            observer.onFailure(result.exceptionOrNull()?.message ?: "bridge connect failed")
+            scheduleReconnectIfAllowed()
+        }
         return result
     }
 

@@ -43,6 +43,7 @@ object BridgeServiceRuntime {
             settingsStore = settingsStore,
             scheduler = AndroidHandlerBridgeReconnectScheduler(),
             inboundMessageHandler = editorRuntime.bridgeInboundMessageHandler,
+            observer = editorRuntime.bridgeControl.connectionObserver,
         )
     }
 

@@ -133,6 +133,55 @@ jobs:
               sys.exit('Expected exactly 23 passing legacy harnesses')
           PY
 
+      - name: Verify critical Bridge unit regressions actually ran
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib
+          import sys
+          import xml.etree.ElementTree as ET
+
+          root = pathlib.Path('work/app/build/test-results/testDebugUnitTest')
+          required = [
+              'com.localcut.editor.bridge.protocol.BridgeProtocolTest',
+              'com.localcut.editor.bridge.security.ReplayGuardTest',
+              'com.localcut.editor.bridge.security.DeviceIdentityContractTest',
+              'com.localcut.editor.bridge.transport.BridgeConnectionCoordinatorTest',
+              'com.localcut.editor.bridge.transport.BridgeReconnectPolicyTest',
+              'com.localcut.editor.bridge.transport.BridgeSessionProviderTest',
+              'com.localcut.editor.bridge.agent.BridgeCommandExecutorTest',
+              'com.localcut.editor.bridge.agent.BridgeAdvancedEditCommandsTest',
+              'com.localcut.editor.bridge.agent.BridgeExportCommandTest',
+              'com.localcut.editor.bridge.agent.BridgeJobRegistryTest',
+              'com.localcut.editor.bridge.agent.BridgeMessageProcessorTest',
+              'com.localcut.editor.bridge.agent.BridgePairingCoordinatorTest',
+              'com.localcut.editor.bridge.agent.BridgeSettingsStoreTest',
+              'com.localcut.editor.bridge.agent.BridgeUiStateTest',
+              'com.localcut.editor.bridge.agent.Media3BridgeExportPortTest',
+              'com.localcut.editor.bridge.agent.MediaStoreExportNamingPolicyTest',
+          ]
+          total = failures = errors = skipped = 0
+          for class_name in required:
+              report = root / f'TEST-{class_name}.xml'
+              if not report.is_file() or report.stat().st_size == 0:
+                  sys.exit(f'Missing Bridge test report: {report}')
+              suite = ET.parse(report).getroot()
+              tests = int(suite.attrib.get('tests', '0'))
+              suite_failures = int(suite.attrib.get('failures', '0'))
+              suite_errors = int(suite.attrib.get('errors', '0'))
+              suite_skipped = int(suite.attrib.get('skipped', '0'))
+              if tests <= 0:
+                  sys.exit(f'Bridge suite executed zero tests: {class_name}')
+              total += tests
+              failures += suite_failures
+              errors += suite_errors
+              skipped += suite_skipped
+          print(f'Bridge unit suites={len(required)} tests={total} failures={failures} errors={errors} skipped={skipped}')
+          if failures or errors or skipped:
+              sys.exit('Bridge unit regression gate failed')
+          PY
+
       - name: Verify debug APK exists
         shell: bash
         run: test -s work/app/build/outputs/apk/debug/app-debug.apk

@@ -8,10 +8,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -25,9 +30,12 @@ fun BridgePanel(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onAlwaysConnectedChange: (Boolean) -> Unit,
+    onRelayEndpointSave: (String) -> Unit,
     onRevokePairing: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var relayDraft by remember(state.relayBaseUrl) { mutableStateOf(state.relayBaseUrl) }
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -51,10 +59,43 @@ fun BridgePanel(
                     )
                 }
                 if (state.phase == BridgeUiPhase.OFFLINE || state.phase == BridgeUiPhase.ERROR) {
-                    Button(onClick = onConnect) { Text("Conectar") }
+                    Button(
+                        onClick = onConnect,
+                        enabled = state.relayBaseUrl.isNotBlank(),
+                    ) { Text("Conectar") }
                 } else {
                     OutlinedButton(onClick = onDisconnect) { Text("Desconectar") }
                 }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = relayDraft,
+                    onValueChange = { relayDraft = it },
+                    modifier = Modifier.weight(1f),
+                    enabled = !state.paired,
+                    singleLine = true,
+                    label = { Text("Relay HTTPS") },
+                    placeholder = { Text("https://relay.exemplo.com") },
+                )
+                OutlinedButton(
+                    onClick = { onRelayEndpointSave(relayDraft) },
+                    enabled = !state.paired && relayDraft.isNotBlank(),
+                ) {
+                    Text("Salvar")
+                }
+            }
+
+            if (state.paired) {
+                Text(
+                    "Revogue o pareamento antes de trocar o servidor Relay.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             state.pairingCode?.let { code ->

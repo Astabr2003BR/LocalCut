@@ -130,6 +130,11 @@ export class PairingService {
     return { state, deviceId: pairing.deviceId, expiresAtEpochMs: pairing.expiresAtEpochMs };
   }
 
+  unpairDevice(deviceId: string, nowEpochMs: number): void {
+    this.store.unbindDevice(deviceId);
+    this.store.appendAudit("device_unpaired", deviceId, "{}", nowEpochMs);
+  }
+
   revokeDevice(deviceId: string, nowEpochMs: number): void {
     this.store.revokeDevice(deviceId, nowEpochMs);
     this.store.appendAudit("device_revoked", deviceId, "{}", nowEpochMs);

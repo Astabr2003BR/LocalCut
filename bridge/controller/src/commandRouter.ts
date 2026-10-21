@@ -26,6 +26,12 @@ export class DeviceRegistry {
   get(deviceId: string): DeviceChannel | null {
     return this.channels.get(deviceId) ?? null;
   }
+
+  closeAll(reason = "registry_shutdown"): void {
+    const uniqueChannels = new Set(this.channels.values());
+    this.channels.clear();
+    for (const channel of uniqueChannels) channel.close(reason);
+  }
 }
 
 export type CommandRouterOptions = {

@@ -26,6 +26,13 @@ class MobileHandoffIntentFilterSmokeTest {
         )
     }
 
+    @Test
+    fun androidSharedMediaActuallyImportsIntoTimeline() {
+        val smoke = SharedMediaImportSmokeTest()
+        smoke.importsOneSharedImageOnColdStart()
+        smoke.warmActivityImportsOnlyTheNewShareOnce()
+    }
+
     private fun assertResolves(uri: String) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {

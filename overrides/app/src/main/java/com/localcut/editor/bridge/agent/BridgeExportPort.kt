@@ -2,6 +2,8 @@ package com.localcut.editor.bridge.agent
 
 import com.localcut.editor.domain.model.Project
 
+class BridgeLocalInteractionRequiredException(message: String) : IllegalStateException(message)
+
 interface BridgeExportListener {
     fun onStarted()
     fun onProgress(percent: Int)

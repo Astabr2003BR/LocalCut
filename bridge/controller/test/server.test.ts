@@ -162,3 +162,47 @@ test("device self-unpair requires its access token, invalidates sessions, and pe
   const restarted = fx.pairing.start("lc_device", "AQID", 2_000);
   assert.equal(restarted.deviceId, "lc_device");
 });
+
+test("Android handoff endpoint redirects HTTPS links to the LocalCut custom scheme", async t => {
+  const fx = await fixture();
+  t.after(() => fx.runtime.close());
+
+  const response = await fetch(
+    `${fx.baseUrl}/open?action=add_text&id=t1&text=Oi%20mundo&startUs=5000000&durationUs=3000000`,
+    { redirect: "manual" },
+  );
+
+  assert.equal(response.status, 302);
+  assert.equal(
+    response.headers.get("location"),
+    "localcut://command?action=add_text&id=t1&text=Oi%20mundo&startUs=5000000&durationUs=3000000",
+  );
+  assert.equal(response.headers.get("cache-control"), "no-store");
+});
+
+test("Android asset links publish the stable LocalCut signing certificate", async t => {
+  const fx = await fixture();
+  t.after(() => fx.runtime.close());
+
+  const response = await fetch(`${fx.baseUrl}/.well-known/assetlinks.json`);
+  assert.equal(response.status, 200);
+  const body = await response.json() as Array<{
+    relation: string[];
+    target: {
+      namespace: string;
+      package_name: string;
+      sha256_cert_fingerprints: string[];
+    };
+  }>;
+
+  assert.deepEqual(body, [{
+    relation: ["delegate_permission/common.handle_all_urls"],
+    target: {
+      namespace: "android_app",
+      package_name: "com.localcut.editor",
+      sha256_cert_fingerprints: [
+        "B7:C1:27:CE:71:09:BF:4B:BB:CD:A3:96:EB:93:75:EA:99:DF:28:0F:75:95:FB:ED:98:37:73:4E:B8:47:6F:91",
+      ],
+    },
+  }]);
+});

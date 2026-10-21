@@ -56,6 +56,7 @@ jobs:
           test -f work/app/src/androidTest/java/com/localcut/editor/media/KeyframeExportSmokeTest.kt
           test -f work/app/src/androidTest/java/com/localcut/editor/bridge/security/AndroidKeystoreDeviceIdentitySmokeTest.kt
           test -f work/app/src/androidTest/java/com/localcut/editor/bridge/agent/MediaStoreBridgeExportSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/bridge/agent/BridgeConnectionServiceSmokeTest.kt
 
       - name: Set up Gradle 9.5.0
         uses: gradle/actions/setup-gradle@v6
@@ -98,7 +99,7 @@ jobs:
           echo "LOCALCUT_ADB=$ADB" >> "$GITHUB_ENV"
           echo "LOCALCUT_EMULATOR=$EMULATOR" >> "$GITHUB_ENV"
 
-      - name: Run real multitrack export, Bridge MediaStore, and security smoke on emulator
+      - name: Run real multitrack export, Bridge MediaStore, security, and background-service smoke on emulator
         shell: bash
         run: |
           set -euo pipefail
@@ -179,7 +180,7 @@ jobs:
           "$ADB" shell input keyevent 82 || true
 
           gradle --no-daemon -p work connectedDebugAndroidTest \
-            -Pandroid.testInstrumentationRunnerArguments.class=com.localcut.editor.media.MultitrackExportSmokeTest,com.localcut.editor.media.FadeToBlackExportSmokeTest,com.localcut.editor.media.KeyframeExportSmokeTest,com.localcut.editor.bridge.security.AndroidKeystoreDeviceIdentitySmokeTest,com.localcut.editor.bridge.agent.MediaStoreBridgeExportSmokeTest
+            -Pandroid.testInstrumentationRunnerArguments.class=com.localcut.editor.media.MultitrackExportSmokeTest,com.localcut.editor.media.FadeToBlackExportSmokeTest,com.localcut.editor.media.KeyframeExportSmokeTest,com.localcut.editor.bridge.security.AndroidKeystoreDeviceIdentitySmokeTest,com.localcut.editor.bridge.agent.MediaStoreBridgeExportSmokeTest,com.localcut.editor.bridge.agent.BridgeConnectionServiceSmokeTest
 
       - name: Upload instrumentation reports on failure
         if: failure()

@@ -16,18 +16,7 @@ object TextOverlayUiPolicy {
     ): TextOverlay? {
         if (text.isBlank() || project.fps <= 0) return null
 
-        val timelineDurationUs = project.tracks
-            .asSequence()
-            .flatMap { it.clips.asSequence() }
-            .mapNotNull { clip ->
-                if (clip.durationUs <= 0L || clip.startUs < 0L || clip.startUs > Long.MAX_VALUE - clip.durationUs) {
-                    null
-                } else {
-                    clip.startUs + clip.durationUs
-                }
-            }
-            .maxOrNull()
-            ?: 0L
+        val timelineDurationUs = timelineDurationUs(project)
         if (timelineDurationUs <= 0L) return null
 
         val frameUs = (MICROS_PER_SECOND / project.fps.toLong()).coerceAtLeast(1L)
@@ -45,6 +34,31 @@ object TextOverlayUiPolicy {
             zIndex = nextZIndex(project),
         )
     }
+
+    fun withDuration(
+        project: Project,
+        overlay: TextOverlay,
+        requestedDurationUs: Long,
+    ): TextOverlay? {
+        if (requestedDurationUs <= 0L) return null
+        val timelineDurationUs = timelineDurationUs(project)
+        if (timelineDurationUs <= 0L || overlay.startUs < 0L || overlay.startUs >= timelineDurationUs) return null
+        val remainingUs = timelineDurationUs - overlay.startUs
+        return overlay.copy(durationUs = minOf(requestedDurationUs, remainingUs))
+    }
+
+    private fun timelineDurationUs(project: Project): Long = project.tracks
+        .asSequence()
+        .flatMap { it.clips.asSequence() }
+        .mapNotNull { clip ->
+            if (clip.durationUs <= 0L || clip.startUs < 0L || clip.startUs > Long.MAX_VALUE - clip.durationUs) {
+                null
+            } else {
+                clip.startUs + clip.durationUs
+            }
+        }
+        .maxOrNull()
+        ?: 0L
 
     private fun nextId(project: Project): String {
         val used = project.textOverlays.asSequence().map { it.id }.toHashSet()

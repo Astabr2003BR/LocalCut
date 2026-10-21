@@ -5,6 +5,7 @@ import androidx.core.content.FileProvider
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
 class RemoteMediaImportExecutor(
@@ -45,7 +46,7 @@ class RemoteMediaImportExecutor(
         } catch (error: Throwable) {
             Result.failure(error)
         } finally {
-            withContext(Dispatchers.IO) {
+            withContext(NonCancellable + Dispatchers.IO) {
                 promotedFile?.delete()
                 downloadedFile?.delete()
                 cleanupRemoteDirectory()

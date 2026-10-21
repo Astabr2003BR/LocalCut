@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { bridgeCapabilities } from "../src/protocol.ts";
-import { buildToolInputSchema, controllerToolNames } from "../src/mcp.ts";
+import {
+  buildToolInputSchema,
+  controllerManagementToolNames,
+  controllerToolNames,
+} from "../src/mcp.ts";
 
-test("MCP exposes only allowlisted LocalCut capability tools", () => {
+test("MCP exposes only allowlisted LocalCut edit tools plus explicit management tools", () => {
   assert.deepEqual(controllerToolNames().sort(), [...bridgeCapabilities].sort());
+  assert.deepEqual(controllerManagementToolNames().sort(), ["claim_pairing", "revoke_device"].sort());
 });
 
 test("project writes and export require expectedRevision", () => {

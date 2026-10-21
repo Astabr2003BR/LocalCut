@@ -66,6 +66,17 @@ class BridgeExportCommandTest {
         assertEquals(2, fixture.exportPort.startCalls)
     }
 
+    @Test
+    fun unsupportedSilentDestinationRequiresLocalInteraction() {
+        val fixture = fixture()
+        fixture.exportPort.startFailure = BridgeLocalInteractionRequiredException("Android 10+ required for unattended shared export")
+
+        val result = fixture.executor.execute(exportCommand("msg-export-legacy"))
+
+        assertFalse(result.success)
+        assertEquals(BridgeErrorCode.LOCAL_INTERACTION_REQUIRED, result.code)
+    }
+
     private data class Fixture(
         val executor: BridgeCommandExecutor,
         val exportPort: FakeExportPort,
@@ -111,10 +122,13 @@ class BridgeExportCommandTest {
     private class FakeExportPort : BridgeExportPort {
         var startCalls = 0
         var listener: BridgeExportListener? = null
+        var startFailure: Throwable? = null
 
-        override fun start(project: Project, listener: BridgeExportListener): Result<Unit> = runCatching {
+        override fun start(project: Project, listener: BridgeExportListener): Result<Unit> {
             startCalls += 1
+            startFailure?.let { return Result.failure(it) }
             this.listener = listener
+            return Result.success(Unit)
         }
 
         override fun cancel(): Result<Unit> = Result.success(Unit)

@@ -36,6 +36,7 @@ class BridgeCommandExecutor(
     private val session: ProjectSession,
     private val playback: BridgePlaybackPort,
     private val jobs: BridgeJobRegistry = BridgeJobRegistry(),
+    private val exportPort: BridgeExportPort = UnavailableBridgeExportPort,
 ) {
     private val reader = BridgeProjectReader(session, playback, jobs)
 
@@ -89,7 +90,7 @@ class BridgeCommandExecutor(
                     "preview frame port not attached",
                     retryable = true,
                 )
-                BridgeCapability.EXPORT_PROJECT -> executeExportReservation(command)
+                BridgeCapability.EXPORT_PROJECT -> executeExport(command)
                 BridgeCapability.CANCEL_EXPORT -> executeCancelExport(command)
                 BridgeCapability.SET_KEYFRAMES,
                 BridgeCapability.ADD_TEXT,
@@ -213,17 +214,63 @@ class BridgeCommandExecutor(
         }
     }
 
-    private fun executeExportReservation(command: BridgeCommandEnvelope): BridgeResultEnvelope = when (val reservation = jobs.reserveExport(command.messageId)) {
-        is BridgeJobReservation.Started -> success(command, jobJson(reservation.job))
+    private fun executeExport(command: BridgeCommandEnvelope): BridgeResultEnvelope = when (val reservation = jobs.reserveExport(command.messageId)) {
         is BridgeJobReservation.Existing -> success(command, jobJson(reservation.job))
-        is BridgeJobReservation.Busy -> error(command, BridgeErrorCode.EXPORT_BUSY, "another export is active", true, jobJson(reservation.activeJob))
+        is BridgeJobReservation.Busy -> error(
+            command,
+            BridgeErrorCode.EXPORT_BUSY,
+            "another export is active",
+            retryable = true,
+            detailsJson = jobJson(reservation.activeJob),
+        )
+        is BridgeJobReservation.Started -> {
+            val jobId = reservation.job.jobId
+            val listener = object : BridgeExportListener {
+                override fun onStarted() {
+                    jobs.markRunning(jobId)
+                }
+
+                override fun onProgress(percent: Int) {
+                    jobs.updateProgress(jobId, percent.coerceIn(0, 100))
+                }
+
+                override fun onCompleted(resultJson: String) {
+                    jobs.succeed(jobId, resultJson)
+                }
+
+                override fun onFailed(message: String) {
+                    jobs.fail(jobId, BridgeErrorCode.EXPORT_FAILED, sanitize(message))
+                }
+
+                override fun onCancelled() {
+                    jobs.cancel(jobId)
+                }
+            }
+            val started = exportPort.start(session.state.project, listener)
+            if (started.isFailure) {
+                val message = started.exceptionOrNull()?.message ?: "export could not start"
+                jobs.fail(jobId, BridgeErrorCode.EXPORT_FAILED, sanitize(message))
+                error(command, BridgeErrorCode.EXPORT_FAILED, message, retryable = true)
+            } else {
+                success(command, jobJson(requireNotNull(jobs.get(jobId))))
+            }
+        }
     }
 
     private fun executeCancelExport(command: BridgeCommandEnvelope): BridgeResultEnvelope {
         val jobId = payload(command).requiredString("jobId")
         val job = jobs.get(jobId) ?: return error(command, BridgeErrorCode.INVALID_ARGUMENT, "job not found", false)
+        val cancelled = exportPort.cancel()
+        if (cancelled.isFailure) {
+            return error(
+                command,
+                BridgeErrorCode.EXPORT_FAILED,
+                cancelled.exceptionOrNull()?.message ?: "export cancellation failed",
+                retryable = true,
+            )
+        }
         jobs.cancel(jobId)
-        return success(command, jobJson(jobs.get(job.jobId)!!))
+        return success(command, jobJson(requireNotNull(jobs.get(job.jobId))))
     }
 
     private fun dispatchWrite(command: BridgeCommandEnvelope, action: EditorAction): BridgeResultEnvelope {

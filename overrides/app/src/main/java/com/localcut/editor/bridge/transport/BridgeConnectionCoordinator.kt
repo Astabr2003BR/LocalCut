@@ -10,6 +10,10 @@ fun interface BridgeReconnectScheduler {
     fun schedule(delayMs: Long, action: () -> Unit): BridgeScheduledTask
 }
 
+fun interface BridgeInboundMessageHandler {
+    fun handle(text: String, reply: (String) -> Unit)
+}
+
 class BridgeConnectionCoordinator(
     private val socketClient: BridgeSocketClient,
     private val sessionProvider: BridgeSessionProvider,
@@ -17,6 +21,7 @@ class BridgeConnectionCoordinator(
     private val reconnectPolicy: BridgeReconnectPolicy = BridgeReconnectPolicy(),
     private val scheduler: BridgeReconnectScheduler,
     private val randomUnit: () -> Double = Math::random,
+    private val inboundMessageHandler: BridgeInboundMessageHandler = BridgeInboundMessageHandler { _, _ -> },
 ) : BridgeSocketListener {
     private var reconnectAttempt = 0
     private var scheduledReconnect: BridgeScheduledTask? = null
@@ -56,7 +61,13 @@ class BridgeConnectionCoordinator(
         cancelScheduledReconnect()
     }
 
-    override fun onTextMessage(text: String) = Unit
+    override fun onTextMessage(text: String) {
+        inboundMessageHandler.handle(text) { response ->
+            socketClient.send(response).onFailure {
+                onFailure(it.message ?: "bridge reply failed")
+            }
+        }
+    }
 
     @Synchronized
     override fun onDisconnected(code: Int?, reason: String?) {

@@ -54,6 +54,7 @@ import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.timeline.TimelineMath
+import com.localcut.editor.ui.editor.KeyframeEditorPolicy
 import com.localcut.editor.ui.editor.TimelineEditBounds
 import com.localcut.editor.ui.editor.TimelineTrackGeometry
 import java.util.concurrent.Executors
@@ -300,6 +301,8 @@ private fun TrackLane(
             val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
             val waveform = if (track.type == TrackType.AUDIO) waveforms[clip.id] else null
             val waveformColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.52f)
+            val keyframeMarkerColor = MaterialTheme.colorScheme.tertiary
+            val keyframeFractions = KeyframeEditorPolicy.markerFractions(clip)
 
             Box(
                 modifier = Modifier
@@ -323,6 +326,13 @@ private fun TrackLane(
                                     strokeWidth = max(1f, xStep * 0.28f),
                                 )
                             }
+                        }
+                        keyframeFractions.forEach { fraction ->
+                            drawCircle(
+                                color = keyframeMarkerColor,
+                                radius = 4f,
+                                center = Offset(size.width * fraction, 7f),
+                            )
                         }
                     }
                     .border(if (selected) 3.dp else 1.dp, borderColor, MaterialTheme.shapes.small)

@@ -23,7 +23,10 @@ class SharedMediaImportSmokeTest {
     fun importsOneSharedImageOnColdStart() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        val runtime = LocalCutProcessRuntime.get(context)
+        lateinit var runtime: LocalCutProcessRuntime
+        instrumentation.runOnMainSync {
+            runtime = LocalCutProcessRuntime.get(context)
+        }
         val before = visualClipCount(runtime)
         val uri = createPngFixture()
 
@@ -48,7 +51,10 @@ class SharedMediaImportSmokeTest {
     fun warmActivityImportsOnlyTheNewShareOnce() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        val runtime = LocalCutProcessRuntime.get(context)
+        lateinit var runtime: LocalCutProcessRuntime
+        instrumentation.runOnMainSync {
+            runtime = LocalCutProcessRuntime.get(context)
+        }
         val activity = instrumentation.startActivitySync(
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         ) as MainActivity

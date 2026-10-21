@@ -1,0 +1,53 @@
+name: Bridge Controller CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'bridge/controller/**'
+      - '.github/workflows/bridge-controller.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'bridge/controller/**'
+      - '.github/workflows/bridge-controller.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: bridge/controller
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24.12.0'
+          cache: npm
+          cache-dependency-path: bridge/controller/package.json
+
+      - name: Install pinned dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Run controller tests
+        run: npm test
+
+      - name: Typecheck controller
+        run: npm run typecheck
+
+      - name: Upload generated lockfile
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: localcut-bridge-package-lock-${{ github.run_number }}
+          path: bridge/controller/package-lock.json
+          if-no-files-found: warn
+          retention-days: 3

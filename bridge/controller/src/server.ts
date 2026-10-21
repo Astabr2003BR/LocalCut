@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { createPublicKey, timingSafeEqual, verify } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { pathToFileURL } from "node:url";
 import { createMcpHandler } from "@modelcontextprotocol/server";
@@ -13,6 +13,8 @@ import { SqliteBridgeStore, type BridgeStore } from "./store.ts";
 
 const MAX_JSON_BODY_BYTES = 64 * 1024;
 const MAX_HANDOFF_QUERY_BYTES = 8 * 1024;
+const MOBILE_CLAIM_MAX_AGE_MS = 60 * 1_000;
+const MOBILE_CLAIM_PREFIX = "LOCALCUT_MOBILE_CLAIM_V1";
 const ANDROID_ASSET_LINKS = [{
   relation: ["delegate_permission/common.handle_all_urls"],
   target: {
@@ -49,6 +51,7 @@ export function createControllerServer(options: ControllerServerOptions): Contro
   const nowEpochMs = options.nowEpochMs ?? Date.now;
   const registry = options.registry ?? new DeviceRegistry();
   const router = options.router ?? new CommandRouter(options.store, registry);
+  const mobileClaimNonces = new Map<string, number>();
   const wss = new WebSocketServer({ noServer: true, clientTracking: false });
   const mcpHandler = createMcpHandler(() => createLocalCutMcpServer(
     router,
@@ -121,6 +124,57 @@ export function createControllerServer(options: ControllerServerOptions): Contro
         const code = requiredString(body, "code", 32);
         const result = options.pairing.claim(code, options.controllerId, nowEpochMs());
         return sendJson(res, 200, result);
+      }
+
+      if (url.pathname === "/v1/pair/mobile-claim") {
+        const body = await readJson(req);
+        const code = requiredString(body, "code", 32);
+        const issuedAtEpochMs = requiredInteger(body, "issuedAtEpochMs");
+        const nonceBase64 = requiredString(body, "nonceBase64", 256);
+        const signatureBase64 = requiredString(body, "signatureBase64", 16_384);
+        const now = nowEpochMs();
+        if (Math.abs(now - issuedAtEpochMs) > MOBILE_CLAIM_MAX_AGE_MS) {
+          throw new Error("PAIRING_MOBILE_CLAIM_EXPIRED");
+        }
+        const nonce = decodeBase64(nonceBase64);
+        if (nonce.length < 16 || nonce.length > 64) {
+          throw new Error("PAIRING_MOBILE_CLAIM_NONCE_INVALID");
+        }
+        for (const [key, expiresAtEpochMs] of mobileClaimNonces) {
+          if (expiresAtEpochMs < now) mobileClaimNonces.delete(key);
+        }
+        const replayKey = `${code}:${nonceBase64}`;
+        if (mobileClaimNonces.has(replayKey)) {
+          throw new Error("PAIRING_MOBILE_CLAIM_REPLAY");
+        }
+        const pairing = options.store.getPairing(code);
+        if (!pairing) throw new Error("PAIRING_NOT_FOUND");
+        const device = options.store.getDevice(pairing.deviceId);
+        if (!device || device.revokedAtEpochMs != null) throw new Error("DEVICE_REVOKED");
+        const publicKey = createPublicKey({
+          key: Buffer.from(device.publicKeySpkiBase64, "base64"),
+          format: "der",
+          type: "spki",
+        });
+        const signedPayload = Buffer.from(
+          `${MOBILE_CLAIM_PREFIX}\n${code}\n${issuedAtEpochMs}\n${nonceBase64}`,
+          "utf8",
+        );
+        const valid = verify(
+          "sha256",
+          signedPayload,
+          publicKey,
+          Buffer.from(signatureBase64, "base64"),
+        );
+        if (!valid) throw new Error("PAIRING_SIGNATURE_INVALID");
+        mobileClaimNonces.set(replayKey, now + MOBILE_CLAIM_MAX_AGE_MS);
+        const result = options.pairing.claim(code, options.controllerId, now);
+        return sendJson(res, 200, {
+          claimed: true,
+          deviceId: result.deviceId,
+          challengeBase64: result.challengeBase64,
+          expiresAtEpochMs: result.expiresAtEpochMs,
+        });
       }
 
       if (url.pathname === "/v1/pair/status") {
@@ -288,6 +342,14 @@ function requiredString(body: Record<string, unknown>, key: string, maxLength: n
   return value;
 }
 
+function requiredInteger(body: Record<string, unknown>, key: string): number {
+  const value = body[key];
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+    throw new Error("INVALID_ARGUMENT");
+  }
+  return value;
+}
+
 function optionalString(body: Record<string, unknown>, key: string, maxLength: number): string | null {
   const value = body[key];
   if (value == null) return null;
@@ -295,6 +357,13 @@ function optionalString(body: Record<string, unknown>, key: string, maxLength: n
     throw new Error("INVALID_ARGUMENT");
   }
   return value;
+}
+
+function decodeBase64(value: string): Buffer {
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value) || value.length % 4 !== 0) {
+    throw new Error("PAIRING_MOBILE_CLAIM_NONCE_INVALID");
+  }
+  return Buffer.from(value, "base64");
 }
 
 function sendRedirect(res: ServerResponse, location: string): void {

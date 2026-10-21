@@ -10,10 +10,16 @@ import java.nio.charset.StandardCharsets
  * Parses explicit user-triggered Android handoff links. The link itself never executes silently:
  * MobileHandoffActivity always asks for local confirmation before dispatching a command.
  */
+enum class MobileHandoffReturnTarget {
+    CHATGPT,
+    EDITOR,
+}
+
 data class MobileHandoffCommand(
     val capability: BridgeCapability,
     val payloadJson: String,
     val description: String,
+    val returnTarget: MobileHandoffReturnTarget = MobileHandoffReturnTarget.EDITOR,
 )
 
 object MobileHandoffParser {
@@ -24,7 +30,8 @@ object MobileHandoffParser {
         require(!rawUri.isNullOrBlank()) { "HANDOFF_URI_MISSING" }
         require(rawUri.length <= MAX_URI_LENGTH) { "HANDOFF_URI_TOO_LONG" }
         val uri = URI(rawUri)
-        val accepted = when (uri.scheme?.lowercase()) {
+        val normalizedScheme = uri.scheme?.lowercase()
+        val accepted = when (normalizedScheme) {
             "localcut" -> uri.host == "command"
             "https" -> uri.host == HTTPS_HOST && uri.path == "/open"
             else -> false
@@ -32,8 +39,18 @@ object MobileHandoffParser {
         require(accepted) { "HANDOFF_URI_NOT_ALLOWED" }
 
         val params = parseQuery(uri.rawQuery)
+        val returnTarget = when (params["returnTo"]?.lowercase()) {
+            null, "" -> if (normalizedScheme == "https") {
+                MobileHandoffReturnTarget.CHATGPT
+            } else {
+                MobileHandoffReturnTarget.EDITOR
+            }
+            "chatgpt" -> MobileHandoffReturnTarget.CHATGPT
+            "editor" -> MobileHandoffReturnTarget.EDITOR
+            else -> error("HANDOFF_RETURN_TARGET_INVALID")
+        }
         val action = params["action"]?.lowercase() ?: error("HANDOFF_ACTION_MISSING")
-        when (action) {
+        val command = when (action) {
             "seek" -> {
                 val positionUs = requiredLong(params, "positionUs", min = 0L)
                 MobileHandoffCommand(
@@ -109,6 +126,7 @@ object MobileHandoffParser {
             )
             else -> error("HANDOFF_ACTION_UNSUPPORTED")
         }
+        command.copy(returnTarget = returnTarget)
     }
 
     private fun parseQuery(rawQuery: String?): Map<String, String> {

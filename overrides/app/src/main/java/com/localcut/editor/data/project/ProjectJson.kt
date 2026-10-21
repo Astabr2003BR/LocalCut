@@ -19,6 +19,10 @@ object ProjectJson {
         project.assets.forEachIndexed { i, asset -> if (i > 0) comma(); appendAsset(asset) }
         append("],\"tracks\":[")
         project.tracks.forEachIndexed { i, track -> if (i > 0) comma(); appendTrack(track) }
+        append("],\"textOverlays\":[")
+        project.textOverlays.forEachIndexed { i, overlay -> if (i > 0) comma(); appendTextOverlay(overlay) }
+        append("],\"transitions\":[")
+        project.transitions.forEachIndexed { i, transition -> if (i > 0) comma(); appendTransition(transition) }
         append("]}")
     }
 
@@ -28,7 +32,7 @@ object ProjectJson {
         if (sourceSchemaVersion > BuildContract.PROJECT_SCHEMA_VERSION) {
             throw UnsupportedProjectSchemaException(sourceSchemaVersion)
         }
-        require(sourceSchemaVersion == 1 || sourceSchemaVersion == 2) {
+        require(sourceSchemaVersion in 1..3) {
             "unsupported old schemaVersion=$sourceSchemaVersion"
         }
         val project = Project(
@@ -39,7 +43,9 @@ object ProjectJson {
             height = root.required("height").asInt(),
             fps = root.required("fps").asInt(),
             assets = root.required("assets").asArray().values.map { decodeAsset(it.asObject()) },
-            tracks = root.required("tracks").asArray().values.map { decodeTrack(it.asObject(), sourceSchemaVersion) }
+            tracks = root.required("tracks").asArray().values.map { decodeTrack(it.asObject(), sourceSchemaVersion) },
+            textOverlays = if (sourceSchemaVersion >= 3) root.required("textOverlays").asArray().values.map { decodeTextOverlay(it.asObject()) } else emptyList(),
+            transitions = if (sourceSchemaVersion >= 3) root.required("transitions").asArray().values.map { decodeTransition(it.asObject()) } else emptyList(),
         )
         val issues = TimelineValidator.validate(project)
         require(issues.isEmpty()) { "invalid project JSON: ${issues.first()}" }
@@ -78,6 +84,30 @@ object ProjectJson {
         append("\"keyframes\":[")
         c.keyframes.forEachIndexed { i, k -> if (i > 0) comma(); appendKeyframe(k) }
         append("]}")
+    }
+
+    private fun StringBuilder.appendTextOverlay(overlay: TextOverlay) {
+        append('{')
+        field("id", jsonString(overlay.id)); comma(); field("startUs", overlay.startUs.toString()); comma(); field("durationUs", overlay.durationUs.toString()); comma()
+        field("text", jsonString(overlay.text)); comma(); append("\"style\":"); appendTextStyle(overlay.style); comma()
+        append("\"transform\":"); appendTransform(overlay.transform); comma(); field("opacity", overlay.opacity.toString()); comma(); field("zIndex", overlay.zIndex.toString())
+        append('}')
+    }
+
+    private fun StringBuilder.appendTextStyle(style: TextStyle) {
+        append('{')
+        field("fontSizePx", style.fontSizePx.toString()); comma(); field("alignment", jsonString(style.alignment.name)); comma(); field("fillArgb", style.fillArgb.toString()); comma()
+        field("strokeArgb", style.strokeArgb?.toString() ?: "null"); comma(); field("strokeWidthPx", style.strokeWidthPx.toString()); comma()
+        field("shadowArgb", style.shadowArgb?.toString() ?: "null"); comma(); field("shadowRadiusPx", style.shadowRadiusPx.toString()); comma()
+        field("shadowOffsetX", style.shadowOffsetX.toString()); comma(); field("shadowOffsetY", style.shadowOffsetY.toString())
+        append('}')
+    }
+
+    private fun StringBuilder.appendTransition(transition: ClipTransition) {
+        append('{')
+        field("id", jsonString(transition.id)); comma(); field("fromClipId", jsonString(transition.fromClipId)); comma(); field("toClipId", jsonString(transition.toClipId)); comma()
+        field("durationUs", transition.durationUs.toString()); comma(); field("kind", jsonString(transition.kind.name))
+        append('}')
     }
 
     private fun StringBuilder.appendKeyframe(k: TransformKeyframe) {
@@ -136,6 +166,37 @@ object ProjectJson {
         fadeOutUs = o.optional("fadeOutUs").nullableLong() ?: 0L,
     )
 
+    private fun decodeTextOverlay(o: JObject): TextOverlay = TextOverlay(
+        id = o.required("id").asString(),
+        startUs = o.required("startUs").asLong(),
+        durationUs = o.required("durationUs").asLong(),
+        text = o.required("text").asString(),
+        style = decodeTextStyle(o.required("style").asObject()),
+        transform = decodeTransform(o.required("transform").asObject()),
+        opacity = o.required("opacity").asDouble(),
+        zIndex = o.required("zIndex").asInt(),
+    )
+
+    private fun decodeTextStyle(o: JObject): TextStyle = TextStyle(
+        fontSizePx = o.required("fontSizePx").asDouble(),
+        alignment = TextHorizontalAlignment.valueOf(o.required("alignment").asString()),
+        fillArgb = o.required("fillArgb").asInt(),
+        strokeArgb = o.optional("strokeArgb").nullableInt(),
+        strokeWidthPx = o.required("strokeWidthPx").asDouble(),
+        shadowArgb = o.optional("shadowArgb").nullableInt(),
+        shadowRadiusPx = o.required("shadowRadiusPx").asDouble(),
+        shadowOffsetX = o.required("shadowOffsetX").asDouble(),
+        shadowOffsetY = o.required("shadowOffsetY").asDouble(),
+    )
+
+    private fun decodeTransition(o: JObject): ClipTransition = ClipTransition(
+        id = o.required("id").asString(),
+        fromClipId = o.required("fromClipId").asString(),
+        toClipId = o.required("toClipId").asString(),
+        durationUs = o.required("durationUs").asLong(),
+        kind = TransitionKind.valueOf(o.required("kind").asString()),
+    )
+
     private fun decodeTransform(o: JObject): TransformValue = TransformValue(
         x = o.required("x").asDouble(),
         y = o.required("y").asDouble(),
@@ -145,6 +206,7 @@ object ProjectJson {
     )
 
     private fun JValue?.nullableLong(): Long? = when (this) { null, JNull -> null; else -> asLong() }
+    private fun JValue?.nullableInt(): Int? = when (this) { null, JNull -> null; else -> asInt() }
     private fun JValue?.nullableString(): String? = when (this) { null, JNull -> null; else -> asString() }
     private fun StringBuilder.field(name: String, encodedValue: String) { append(jsonString(name)); append(':'); append(encodedValue) }
     private fun StringBuilder.comma() { append(',') }

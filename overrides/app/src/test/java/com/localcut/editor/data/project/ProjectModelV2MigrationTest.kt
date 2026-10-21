@@ -10,10 +10,10 @@ import org.junit.Test
 
 class ProjectModelV2MigrationTest {
     @Test
-    fun v1FixtureMigratesToV2WithoutChangingAssetsOrTimelineData() {
+    fun v1FixtureMigratesToCurrentSchemaWithoutChangingAssetsOrTimelineData() {
         val project = ProjectJson.decode(v1Fixture())
 
-        assertEquals(2, project.schemaVersion)
+        assertEquals(3, project.schemaVersion)
         assertEquals("legacy-project", project.id)
         assertEquals("Projeto legado", project.title)
         assertEquals(1080, project.width)
@@ -26,15 +26,15 @@ class ProjectModelV2MigrationTest {
         assertEquals(2_000_000L, project.tracks.first().clips.single().durationUs)
 
         val encoded = ProjectJson.encode(project)
-        assertTrue(encoded.contains("\"schemaVersion\":2"))
+        assertTrue(encoded.contains("\"schemaVersion\":3"))
         assertTrue(encoded.contains("\"collisionPolicy\":\"EXCLUSIVE\""))
     }
 
     @Test
-    fun v2ProjectWithMultipleTracksRoundTripsExactly() {
+    fun v2ProjectWithMultipleTracksMigratesAndRoundTripsExactly() {
         val decoded = ProjectJson.decode(v2EmptyMultitrackFixture())
 
-        assertEquals(2, decoded.schemaVersion)
+        assertEquals(3, decoded.schemaVersion)
         assertEquals(3, decoded.tracks.size)
         assertEquals(decoded, ProjectJson.decode(ProjectJson.encode(decoded)))
     }

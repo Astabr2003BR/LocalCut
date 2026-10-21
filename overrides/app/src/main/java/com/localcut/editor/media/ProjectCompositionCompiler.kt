@@ -2,6 +2,7 @@ package com.localcut.editor.media
 
 import androidx.annotation.OptIn
 import androidx.media3.common.C
+import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.DefaultGainProvider
@@ -35,19 +36,22 @@ class ProjectCompositionCompiler(
             outputSettings = outputSettings,
         ).mapCatching { plan ->
             Media3CompositionSupportPolicy.validate(plan, mode).getOrThrow()
+            val transitionSpecs = TransitionRenderSpecCompiler.compile(project).getOrThrow()
             toComposition(
                 blueprint = Media3CompositionBlueprintCompiler.compile(plan),
-                sourceProjectFps = project.fps,
+                project = project,
+                transitionSpecs = transitionSpecs,
             )
         }
 
     private fun toComposition(
         blueprint: Media3CompositionBlueprint,
-        sourceProjectFps: Int,
+        project: Project,
+        transitionSpecs: Map<String, ClipTransitionRenderSpec>,
     ): Composition {
         val sequences = buildList {
             Media3VisualLayerOrder.toInputOrder(blueprint.visualLayers).forEach { layer ->
-                if (layer.items.isNotEmpty()) add(buildVisualSequence(layer, blueprint))
+                if (layer.items.isNotEmpty()) add(buildVisualSequence(layer, blueprint, transitionSpecs))
             }
             blueprint.audioLayers.forEach { layer ->
                 if (layer.items.any { it is Media3BlueprintItem.Media }) {
@@ -57,10 +61,19 @@ class ProjectCompositionCompiler(
         }
         require(sequences.isNotEmpty()) { "Composition requires at least one sequence" }
 
-        val compositionVideoEffects = Media3FrameRatePolicy.effectsFor(
-            sourceProjectFps = sourceProjectFps,
-            targetFps = blueprint.fps,
-        )
+        val compositionVideoEffects = buildList<Effect> {
+            addAll(
+                Media3FrameRatePolicy.effectsFor(
+                    sourceProjectFps = project.fps,
+                    targetFps = blueprint.fps,
+                )
+            )
+            Media3TextOverlayEffectFactory.create(
+                project = project,
+                outputWidth = blueprint.width,
+                outputHeight = blueprint.height,
+            )?.let(::add)
+        }
         val builder = Composition.Builder(sequences)
         if (compositionVideoEffects.isNotEmpty()) {
             builder.setEffects(Effects(emptyList(), compositionVideoEffects))
@@ -71,6 +84,7 @@ class ProjectCompositionCompiler(
     private fun buildVisualSequence(
         sequence: Media3SequenceBlueprint,
         blueprint: Media3CompositionBlueprint,
+        transitionSpecs: Map<String, ClipTransitionRenderSpec>,
     ): EditedMediaItemSequence {
         val hasEmbeddedAudio = sequence.items
             .filterIsInstance<Media3BlueprintItem.Media>()
@@ -81,11 +95,20 @@ class ProjectCompositionCompiler(
             setOf(C.TRACK_TYPE_VIDEO)
         }
         val builder = EditedMediaItemSequence.Builder(trackTypes)
+        var presentationStartUs = 0L
         sequence.items.forEach { item ->
             when (item) {
                 is Media3BlueprintItem.Gap -> builder.addGap(item.presentationDurationUs)
-                is Media3BlueprintItem.Media -> builder.addItem(buildMediaItem(item, blueprint))
+                is Media3BlueprintItem.Media -> builder.addItem(
+                    buildMediaItem(
+                        item = item,
+                        blueprint = blueprint,
+                        transitionSpec = transitionSpecs[item.clipId],
+                        presentationStartUs = presentationStartUs,
+                    ),
+                )
             }
+            presentationStartUs = Math.addExact(presentationStartUs, item.presentationDurationUs)
         }
         return builder.build()
     }
@@ -98,7 +121,7 @@ class ProjectCompositionCompiler(
         sequence.items.forEach { item ->
             when (item) {
                 is Media3BlueprintItem.Gap -> builder.addGap(item.presentationDurationUs)
-                is Media3BlueprintItem.Media -> builder.addItem(buildMediaItem(item, blueprint))
+                is Media3BlueprintItem.Media -> builder.addItem(buildMediaItem(item, blueprint, null))
             }
         }
         return builder.build()
@@ -107,6 +130,8 @@ class ProjectCompositionCompiler(
     private fun buildMediaItem(
         item: Media3BlueprintItem.Media,
         blueprint: Media3CompositionBlueprint,
+        transitionSpec: ClipTransitionRenderSpec?,
+        presentationStartUs: Long = 0L,
     ): EditedMediaItem {
         val mediaBuilder = MediaItem.Builder().setUri(item.uri)
         if (item.assetType == com.localcut.editor.domain.model.AssetType.IMAGE) {
@@ -146,15 +171,24 @@ class ProjectCompositionCompiler(
         val videoEffects = if (item.outputTracks == Media3OutputTracks.AUDIO_ONLY) {
             emptyList()
         } else {
-            TransformEffectFactory.create(
-                transform = item.transform,
-                keyframes = item.keyframes,
-                opacity = item.opacity,
-                outputWidth = blueprint.width,
-                outputHeight = blueprint.height,
-                transformSpaceWidth = blueprint.transformSpaceWidth,
-                transformSpaceHeight = blueprint.transformSpaceHeight,
-            )
+            buildList<Effect> {
+                addAll(
+                    TransformEffectFactory.create(
+                        transform = item.transform,
+                        keyframes = item.keyframes,
+                        opacity = item.opacity,
+                        outputWidth = blueprint.width,
+                        outputHeight = blueprint.height,
+                        transformSpaceWidth = blueprint.transformSpaceWidth,
+                        transformSpaceHeight = blueprint.transformSpaceHeight,
+                    )
+                )
+                FadeToBlackEffectFactory.create(
+                    durationUs = item.presentationDurationUs,
+                    spec = transitionSpec,
+                    presentationStartUs = presentationStartUs,
+                )?.let(::add)
+            }
         }
 
         val edited = EditedMediaItem.Builder(mediaBuilder.build())

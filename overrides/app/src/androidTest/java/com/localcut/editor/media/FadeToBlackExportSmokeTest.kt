@@ -38,7 +38,7 @@ import org.junit.runner.RunWith
 @OptIn(UnstableApi::class)
 class FadeToBlackExportSmokeTest {
     @Test
-    fun exportVisiblyDimsOutgoingClipMidFade() {
+    fun exportVisiblyDimsBothSidesOfFade() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val testDir = File(context.cacheDir, "fade-to-black-smoke-${System.nanoTime()}").apply { mkdirs() }
@@ -81,22 +81,45 @@ class FadeToBlackExportSmokeTest {
 
             val output = File(testDir, "fade.mp4")
             export(project, output, instrumentation, context)
-            val frame = extractFrame(output, 750_000L)
+
+            val outgoing = extractFrame(output, 750_000L)
             try {
-                val center = frame.getPixel(frame.width / 2, frame.height / 2)
-                val red = Color.red(center)
-                val green = Color.green(center)
-                val blue = Color.blue(center)
-                assertTrue(
-                    "fade-to-black must visibly dim outgoing red; rgb=($red,$green,$blue)",
-                    red in 70..210 && green <= 45 && blue <= 45,
-                )
+                assertDimmedRed(outgoing)
             } finally {
-                frame.recycle()
+                outgoing.recycle()
+            }
+
+            val incoming = extractFrame(output, 1_250_000L)
+            try {
+                assertDimmedBlue(incoming)
+            } finally {
+                incoming.recycle()
             }
         } finally {
             testDir.deleteRecursively()
         }
+    }
+
+    private fun assertDimmedRed(frame: Bitmap) {
+        val center = frame.getPixel(frame.width / 2, frame.height / 2)
+        val red = Color.red(center)
+        val green = Color.green(center)
+        val blue = Color.blue(center)
+        assertTrue(
+            "fade-to-black must visibly dim outgoing red; rgb=($red,$green,$blue)",
+            red in 70..210 && green <= 45 && blue <= 45,
+        )
+    }
+
+    private fun assertDimmedBlue(frame: Bitmap) {
+        val center = frame.getPixel(frame.width / 2, frame.height / 2)
+        val red = Color.red(center)
+        val green = Color.green(center)
+        val blue = Color.blue(center)
+        assertTrue(
+            "fade-to-black must visibly dim incoming blue; rgb=($red,$green,$blue)",
+            blue in 70..210 && red <= 45 && green <= 45,
+        )
     }
 
     private fun export(

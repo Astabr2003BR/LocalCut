@@ -10,9 +10,13 @@ sealed interface ReplayDecision {
     data class Rejected(val code: BridgeErrorCode) : ReplayDecision
 }
 
-class ReplayGuard(private val maxEntries: Int = 512) {
+class ReplayGuard(
+    private val maxEntries: Int = 512,
+    private val replayRetentionMs: Long = DEFAULT_REPLAY_RETENTION_MS,
+) {
     init {
         require(maxEntries > 0) { "maxEntries must be positive" }
+        require(replayRetentionMs >= 0L) { "replayRetentionMs must be non-negative" }
     }
 
     private sealed interface EntryState {
@@ -37,9 +41,6 @@ class ReplayGuard(private val maxEntries: Int = 512) {
         expiresAtEpochMs: Long,
         nowEpochMs: Long,
     ): ReplayDecision {
-        if (expiresAtEpochMs <= nowEpochMs) {
-            return ReplayDecision.Rejected(BridgeErrorCode.COMMAND_EXPIRED)
-        }
         if (messageId.isBlank() || nonce.isBlank()) {
             return ReplayDecision.Rejected(BridgeErrorCode.INVALID_ARGUMENT)
         }
@@ -49,18 +50,29 @@ class ReplayGuard(private val maxEntries: Int = 512) {
             if (existing.nonce != nonce) {
                 return ReplayDecision.Rejected(BridgeErrorCode.REPLAY_REJECTED)
             }
+            if (existing.expiresAtEpochMs <= nowEpochMs) {
+                return ReplayDecision.Rejected(BridgeErrorCode.COMMAND_EXPIRED)
+            }
+            if (existing.expiresAtEpochMs != expiresAtEpochMs) {
+                return ReplayDecision.Rejected(BridgeErrorCode.REPLAY_REJECTED)
+            }
             return when (val state = existing.state) {
                 EntryState.Pending -> ReplayDecision.DuplicatePending
                 is EntryState.Completed -> ReplayDecision.Completed(state.result)
             }
         }
 
+        if (expiresAtEpochMs <= nowEpochMs) {
+            return ReplayDecision.Rejected(BridgeErrorCode.COMMAND_EXPIRED)
+        }
+
+        evictForgottenEntries(nowEpochMs)
+
         val nonceOwner = nonceOwners[nonce]
         if (nonceOwner != null && nonceOwner != messageId) {
             return ReplayDecision.Rejected(BridgeErrorCode.REPLAY_REJECTED)
         }
 
-        evictCompletedUntilRoom()
         if (entries.size >= maxEntries) {
             return ReplayDecision.Rejected(BridgeErrorCode.RATE_LIMITED)
         }
@@ -83,11 +95,27 @@ class ReplayGuard(private val maxEntries: Int = 512) {
         nonceOwners.remove(removed.nonce, messageId)
     }
 
-    private fun evictCompletedUntilRoom() {
-        while (entries.size >= maxEntries) {
-            val candidate = entries.values.firstOrNull { it.state is EntryState.Completed } ?: return
-            entries.remove(candidate.messageId)
-            nonceOwners.remove(candidate.nonce, candidate.messageId)
+    private fun evictForgottenEntries(nowEpochMs: Long) {
+        val iterator = entries.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next().value
+            if (nowEpochMs > forgetAfterEpochMs(entry.expiresAtEpochMs)) {
+                iterator.remove()
+                nonceOwners.remove(entry.nonce, entry.messageId)
+            }
         }
+    }
+
+    private fun forgetAfterEpochMs(expiresAtEpochMs: Long): Long {
+        if (replayRetentionMs == 0L) return expiresAtEpochMs
+        return if (expiresAtEpochMs > Long.MAX_VALUE - replayRetentionMs) {
+            Long.MAX_VALUE
+        } else {
+            expiresAtEpochMs + replayRetentionMs
+        }
+    }
+
+    private companion object {
+        const val DEFAULT_REPLAY_RETENTION_MS = 60_000L
     }
 }

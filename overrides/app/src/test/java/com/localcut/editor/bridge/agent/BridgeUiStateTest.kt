@@ -33,13 +33,27 @@ class BridgeUiStateTest {
     }
 
     @Test
-    fun manualRevokeReturnsToUnpairedOffline() {
-        val state = BridgeUiState(phase = BridgeUiPhase.ONLINE, paired = true, alwaysConnected = true)
-            .reduce(BridgeUiEvent.PairingRevoked)
+    fun manualRevokeReturnsToUnpairedOfflineAndPreservesRelay() {
+        val state = BridgeUiState(
+            phase = BridgeUiPhase.ONLINE,
+            paired = true,
+            alwaysConnected = true,
+            relayBaseUrl = "https://bridge.example.com",
+        ).reduce(BridgeUiEvent.PairingRevoked)
 
         assertEquals(BridgeUiPhase.OFFLINE, state.phase)
         assertFalse(state.paired)
         assertFalse(state.alwaysConnected)
+        assertEquals("https://bridge.example.com", state.relayBaseUrl)
+    }
+
+    @Test
+    fun relayChangeUpdatesValueWithoutChangingPhase() {
+        val state = BridgeUiState(phase = BridgeUiPhase.OFFLINE)
+            .reduce(BridgeUiEvent.RelayBaseUrlChanged("https://bridge.example.com"))
+
+        assertEquals(BridgeUiPhase.OFFLINE, state.phase)
+        assertEquals("https://bridge.example.com", state.relayBaseUrl)
     }
 
     @Test

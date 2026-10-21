@@ -6,9 +6,9 @@ import android.text.Spanned
 import android.text.style.AlignmentSpan
 import android.text.style.ForegroundColorSpan
 import androidx.annotation.OptIn
+import androidx.media3.common.OverlaySettings
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.OverlayEffect
-import androidx.media3.effect.OverlaySettings
 import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.TextOverlay as Media3TextOverlay
 import androidx.media3.effect.TextureOverlay

@@ -61,8 +61,8 @@ class ReplayGuardTest {
     }
 
     @Test
-    fun expiredCompletedEntriesAreEvictedBeforeCapacityCheck() {
-        val guard = ReplayGuard(maxEntries = 2)
+    fun expiredCompletedEntriesAreEvictedAfterReplayRetention() {
+        val guard = ReplayGuard(maxEntries = 2, replayRetentionMs = 100L)
         complete(guard, "msg-1", "nonce-1", expiresAtEpochMs = 1_500L, nowEpochMs = 1_000L, revision = 1L)
         complete(guard, "msg-2", "nonce-2", expiresAtEpochMs = 10_000L, nowEpochMs = 1_000L, revision = 2L)
 

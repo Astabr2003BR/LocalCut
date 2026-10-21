@@ -11,6 +11,7 @@ class BridgeMessageProcessor(
     private val deviceId: String,
     private val executor: BridgeCommandExecutor,
     private val replayGuard: ReplayGuard = ReplayGuard(),
+    private val onExecuted: () -> Unit = {},
 ) {
     init {
         require(deviceId.isNotBlank()) { "deviceId must not be blank" }
@@ -48,6 +49,7 @@ class BridgeMessageProcessor(
                     .getOrElse {
                         errorResult(command.messageId, BridgeErrorCode.INTERNAL_ERROR, retryable = true)
                     }
+                runCatching(onExecuted)
                 replayGuard.complete(command.messageId, result)
                 BridgeCodec.encodeResult(result)
             }

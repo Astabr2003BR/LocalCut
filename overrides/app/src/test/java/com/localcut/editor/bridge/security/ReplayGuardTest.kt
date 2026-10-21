@@ -70,6 +70,24 @@ class ReplayGuardTest {
         assertTrue(fresh is ReplayDecision.Reserved)
     }
 
+    @Test
+    fun retryCannotExtendOriginalExpiry() {
+        val guard = ReplayGuard(maxEntries = 2)
+        complete(guard, "msg-1", "nonce-1", expiresAtEpochMs = 1_500L, nowEpochMs = 1_000L, revision = 1L)
+
+        val replayWithExtendedEnvelope = guard.validateAndReserve(
+            messageId = "msg-1",
+            nonce = "nonce-1",
+            expiresAtEpochMs = 10_000L,
+            nowEpochMs = 1_600L,
+        )
+
+        assertEquals(
+            BridgeErrorCode.COMMAND_EXPIRED,
+            (replayWithExtendedEnvelope as ReplayDecision.Rejected).code,
+        )
+    }
+
     private fun complete(
         guard: ReplayGuard,
         messageId: String,

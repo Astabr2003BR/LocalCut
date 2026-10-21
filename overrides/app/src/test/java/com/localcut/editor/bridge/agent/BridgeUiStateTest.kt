@@ -48,12 +48,15 @@ class BridgeUiStateTest {
     }
 
     @Test
-    fun relayChangeUpdatesValueWithoutChangingPhase() {
-        val state = BridgeUiState(phase = BridgeUiPhase.OFFLINE)
-            .reduce(BridgeUiEvent.RelayBaseUrlChanged("https://bridge.example.com"))
+    fun relayChangeUpdatesValueAndClearsConfigurationError() {
+        val state = BridgeUiState(
+            phase = BridgeUiPhase.ERROR,
+            message = "invalid relay",
+        ).reduce(BridgeUiEvent.RelayBaseUrlChanged("https://bridge.example.com"))
 
         assertEquals(BridgeUiPhase.OFFLINE, state.phase)
         assertEquals("https://bridge.example.com", state.relayBaseUrl)
+        assertEquals(null, state.message)
     }
 
     @Test

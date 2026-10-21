@@ -95,13 +95,20 @@ class ProjectCompositionCompiler(
             setOf(C.TRACK_TYPE_VIDEO)
         }
         val builder = EditedMediaItemSequence.Builder(trackTypes)
+        var presentationStartUs = 0L
         sequence.items.forEach { item ->
             when (item) {
                 is Media3BlueprintItem.Gap -> builder.addGap(item.presentationDurationUs)
                 is Media3BlueprintItem.Media -> builder.addItem(
-                    buildMediaItem(item, blueprint, transitionSpecs[item.clipId]),
+                    buildMediaItem(
+                        item = item,
+                        blueprint = blueprint,
+                        transitionSpec = transitionSpecs[item.clipId],
+                        presentationStartUs = presentationStartUs,
+                    ),
                 )
             }
+            presentationStartUs = Math.addExact(presentationStartUs, item.presentationDurationUs)
         }
         return builder.build()
     }
@@ -124,6 +131,7 @@ class ProjectCompositionCompiler(
         item: Media3BlueprintItem.Media,
         blueprint: Media3CompositionBlueprint,
         transitionSpec: ClipTransitionRenderSpec?,
+        presentationStartUs: Long = 0L,
     ): EditedMediaItem {
         val mediaBuilder = MediaItem.Builder().setUri(item.uri)
         if (item.assetType == com.localcut.editor.domain.model.AssetType.IMAGE) {
@@ -178,6 +186,7 @@ class ProjectCompositionCompiler(
                 FadeToBlackEffectFactory.create(
                     durationUs = item.presentationDurationUs,
                     spec = transitionSpec,
+                    presentationStartUs = presentationStartUs,
                 )?.let(::add)
             }
         }

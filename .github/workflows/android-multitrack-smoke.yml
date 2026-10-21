@@ -53,6 +53,7 @@ jobs:
           cp -R overrides/app/. work/app/
           test -f work/app/src/androidTest/java/com/localcut/editor/media/MultitrackExportSmokeTest.kt
           test -f work/app/src/androidTest/java/com/localcut/editor/media/FadeToBlackExportSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/media/KeyframeExportSmokeTest.kt
 
       - name: Set up Gradle 9.5.0
         uses: gradle/actions/setup-gradle@v6
@@ -176,7 +177,7 @@ jobs:
           "$ADB" shell input keyevent 82 || true
 
           gradle --no-daemon -p work connectedDebugAndroidTest \
-            -Pandroid.testInstrumentationRunnerArguments.class=com.localcut.editor.media.MultitrackExportSmokeTest,com.localcut.editor.media.FadeToBlackExportSmokeTest
+            -Pandroid.testInstrumentationRunnerArguments.class=com.localcut.editor.media.MultitrackExportSmokeTest,com.localcut.editor.media.FadeToBlackExportSmokeTest,com.localcut.editor.media.KeyframeExportSmokeTest
 
       - name: Upload instrumentation reports on failure
         if: failure()

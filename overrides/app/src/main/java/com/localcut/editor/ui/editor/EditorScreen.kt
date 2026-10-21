@@ -356,6 +356,32 @@ private fun SelectedClipActions(
 ) {
     val clip = session.selectedClipId?.let(session.project::findClip) ?: return
     val canSplit = playheadUs > clip.startUs && playheadUs < clip.startUs + clip.durationUs
+    val transitionCandidate = FadeTransitionUiPolicy.createOrUpdate(session.project, clip.id, 500_000L)
+    val existingFade = FadeTransitionUiPolicy.existingFade(session.project, clip.id)
+    var showTransitionDialog by remember(clip.id) { mutableStateOf(false) }
+
+    if (showTransitionDialog && transitionCandidate != null) {
+        FadeTransitionDialog(
+            existing = existingFade,
+            onDurationSelected = { durationUs ->
+                FadeTransitionUiPolicy.createOrUpdate(session.project, clip.id, durationUs)?.let { transition ->
+                    viewModel.dispatch(
+                        if (existingFade == null) EditorAction.AddClipTransition(transition)
+                        else EditorAction.UpdateClipTransition(transition),
+                    )
+                }
+                showTransitionDialog = false
+            },
+            onRemove = existingFade?.let { transition ->
+                {
+                    viewModel.dispatch(EditorAction.DeleteClipTransition(transition.id))
+                    showTransitionDialog = false
+                }
+            },
+            onDismiss = { showTransitionDialog = false },
+        )
+    }
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
@@ -375,6 +401,10 @@ private fun SelectedClipActions(
                     enabled = canSplit,
                 ) { Text("Dividir") }
                 FilledTonalButton(onClick = { viewModel.dispatch(EditorAction.DuplicateSelected) }) { Text("Duplicar") }
+                FilledTonalButton(
+                    onClick = { showTransitionDialog = true },
+                    enabled = transitionCandidate != null,
+                ) { Text(if (existingFade == null) "Transição" else "Transição ativa") }
                 Button(onClick = { viewModel.dispatch(EditorAction.DeleteSelected) }) { Text("Excluir") }
                 OutlinedButton(
                     onClick = { viewModel.dispatch(EditorAction.Undo) },
@@ -387,6 +417,45 @@ private fun SelectedClipActions(
             }
         }
     }
+}
+
+@Composable
+private fun FadeTransitionDialog(
+    existing: com.localcut.editor.domain.model.ClipTransition?,
+    onDurationSelected: (Long) -> Unit,
+    onRemove: (() -> Unit)?,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Transição") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Fade para preto")
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    listOf(250_000L to "0,25 s", 500_000L to "0,5 s", 1_000_000L to "1 s").forEach { (durationUs, label) ->
+                        val selected = existing?.durationUs == durationUs
+                        if (selected) {
+                            FilledTonalButton(onClick = { onDurationSelected(durationUs) }) { Text(label) }
+                        } else {
+                            OutlinedButton(onClick = { onDurationSelected(durationUs) }) { Text(label) }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            OutlinedButton(onClick = onDismiss) { Text("Fechar") }
+        },
+        dismissButton = {
+            onRemove?.let { remove ->
+                Button(onClick = remove) { Text("Remover") }
+            }
+        },
+    )
 }
 
 @Composable

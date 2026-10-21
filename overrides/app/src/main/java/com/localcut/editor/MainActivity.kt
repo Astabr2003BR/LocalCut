@@ -156,6 +156,7 @@ class MainActivity : ComponentActivity() {
                         onConnect = connectBridge,
                         onDisconnect = runtime.bridgeControl::disconnect,
                         onAlwaysConnectedChange = runtime.bridgeControl::setAlwaysConnected,
+                        onRelayEndpointSave = runtime.bridgeControl::setRelayBaseUrl,
                         onRevokePairing = runtime.bridgeControl::revokePairing,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                     )

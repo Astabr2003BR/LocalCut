@@ -10,6 +10,7 @@ enum class ProjectIssueCode {
     DUPLICATE_ASSET_ID,
     DUPLICATE_TRACK_ID,
     DUPLICATE_CLIP_ID,
+    DUPLICATE_TEXT_OVERLAY_ID,
     UNKNOWN_ASSET,
     NON_POSITIVE_DURATION,
     NEGATIVE_START,
@@ -25,6 +26,8 @@ enum class ProjectIssueCode {
     INVALID_OPACITY,
     INVALID_VOLUME,
     INVALID_AUDIO_FADE,
+    INVALID_TRANSITION,
+    INVALID_TEXT_OVERLAY,
 }
 
 data class ProjectIssue(val code: ProjectIssueCode, val subjectId: String? = null, val detail: String? = null)
@@ -42,6 +45,9 @@ object TimelineValidator {
         duplicateIds(project.tracks.map { it.id }).forEach { issues += ProjectIssue(ProjectIssueCode.DUPLICATE_TRACK_ID, it) }
         val allClips = project.tracks.flatMap { it.clips }
         duplicateIds(allClips.map { it.id }).forEach { issues += ProjectIssue(ProjectIssueCode.DUPLICATE_CLIP_ID, it) }
+        duplicateIds(project.textOverlays.map { it.id }).forEach {
+            issues += ProjectIssue(ProjectIssueCode.DUPLICATE_TEXT_OVERLAY_ID, it)
+        }
 
         val assets = project.assets.associateBy { it.id }
         project.tracks.forEach { track ->
@@ -92,7 +98,62 @@ object TimelineValidator {
                 }
             }
         }
+
+        validateTextOverlays(project, issues)
+        validateTransitions(project, issues)
         return issues
+    }
+
+    private fun validateTextOverlays(project: Project, issues: MutableList<ProjectIssue>) {
+        project.textOverlays.forEach { overlay ->
+            val validTiming = overlay.startUs >= 0L && overlay.durationUs > 0L &&
+                overlay.startUs <= Long.MAX_VALUE - overlay.durationUs
+            val validText = overlay.text.isNotBlank()
+            val validOpacity = overlay.opacity.isFinite() && overlay.opacity in 0.0..1.0
+            val validStyle = overlay.style.fontSizePx.isFinite() && overlay.style.fontSizePx > 0.0 &&
+                overlay.style.strokeWidthPx.isFinite() && overlay.style.strokeWidthPx >= 0.0 &&
+                overlay.style.shadowRadiusPx.isFinite() && overlay.style.shadowRadiusPx >= 0.0 &&
+                overlay.style.shadowOffsetX.isFinite() && overlay.style.shadowOffsetY.isFinite()
+            if (!validTiming || !validText || !validOpacity || !validStyle || !validTransform(overlay.transform)) {
+                issues += ProjectIssue(ProjectIssueCode.INVALID_TEXT_OVERLAY, overlay.id)
+            }
+        }
+    }
+
+    private fun validateTransitions(project: Project, issues: MutableList<ProjectIssue>) {
+        data class ClipLocation(val track: Track, val clip: Clip, val index: Int)
+
+        val locations = mutableMapOf<String, ClipLocation>()
+        project.tracks.forEach { track ->
+            track.clips.sortedBy { it.startUs }.forEachIndexed { index, clip ->
+                locations[clip.id] = ClipLocation(track, clip, index)
+            }
+        }
+
+        project.transitions.forEach { transition ->
+            val from = locations[transition.fromClipId]
+            val to = locations[transition.toClipId]
+            val valid = if (from == null || to == null) {
+                false
+            } else {
+                val sameTrack = from.track.id == to.track.id
+                val sequentialVisualTrack = from.track.type == TrackType.VISUAL &&
+                    from.track.collisionPolicy == TrackCollisionPolicy.EXCLUSIVE
+                val adjacent = sameTrack && to.index == from.index + 1
+                val fromEnd = try {
+                    Math.addExact(from.clip.startUs, from.clip.durationUs)
+                } catch (_: ArithmeticException) {
+                    Long.MIN_VALUE
+                }
+                val exactBoundary = adjacent && fromEnd == to.clip.startUs
+                val validDuration = transition.durationUs > 0L &&
+                    transition.durationUs <= minOf(from.clip.durationUs, to.clip.durationUs)
+                sameTrack && sequentialVisualTrack && adjacent && exactBoundary && validDuration
+            }
+            if (!valid) {
+                issues += ProjectIssue(ProjectIssueCode.INVALID_TRANSITION, transition.id)
+            }
+        }
     }
 
     private fun validAudioFades(clip: Clip): Boolean {

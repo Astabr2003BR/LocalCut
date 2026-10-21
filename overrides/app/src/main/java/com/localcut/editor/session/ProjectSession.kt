@@ -1,7 +1,12 @@
 package com.localcut.editor.session
 
+import com.localcut.editor.domain.history.AddTextOverlayCommand
+import com.localcut.editor.domain.history.AddClipTransitionCommand
+import com.localcut.editor.domain.history.DeleteTextOverlayCommand
+import com.localcut.editor.domain.history.DeleteClipTransitionCommand
 import com.localcut.editor.domain.history.EditorCommand
 import com.localcut.editor.domain.history.InsertAssetClipCommand
+import com.localcut.editor.domain.history.InsertVisualOverlayAssetClipCommand
 import com.localcut.editor.domain.history.HistoryManager
 import com.localcut.editor.domain.history.MoveClipCommand
 import com.localcut.editor.domain.history.TrimClipCommand
@@ -14,11 +19,15 @@ import com.localcut.editor.domain.history.SetAudioFadesCommand
 import com.localcut.editor.domain.history.SetTrackMutedCommand
 import com.localcut.editor.domain.history.SetTrackSoloCommand
 import com.localcut.editor.domain.history.SetKeyframesCommand
-import com.localcut.editor.domain.history.DeleteClipCommand
+import com.localcut.editor.domain.history.DeleteClipWithTransitionsCommand
 import com.localcut.editor.domain.history.DuplicateClipCommand
+import com.localcut.editor.domain.history.UpdateTextOverlayCommand
+import com.localcut.editor.domain.history.UpdateClipTransitionCommand
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.Clip
+import com.localcut.editor.domain.model.ClipTransition
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.TextOverlay
 import com.localcut.editor.domain.model.TransformKeyframe
 import com.localcut.editor.domain.model.TransformValue
 
@@ -43,6 +52,13 @@ data class ProjectSessionState(
 sealed interface EditorAction {
     data class Execute(val command: EditorCommand) : EditorAction
     data class AddImportedClip(val trackId: String, val asset: Asset, val clip: Clip) : EditorAction
+    data class AddImportedOverlayClip(val asset: Asset, val clip: Clip) : EditorAction
+    data class AddTextOverlay(val overlay: TextOverlay) : EditorAction
+    data class UpdateTextOverlay(val overlay: TextOverlay) : EditorAction
+    data class DeleteTextOverlay(val overlayId: String) : EditorAction
+    data class AddClipTransition(val transition: ClipTransition) : EditorAction
+    data class UpdateClipTransition(val transition: ClipTransition) : EditorAction
+    data class DeleteClipTransition(val transitionId: String) : EditorAction
     data class SelectClip(val clipId: String?) : EditorAction
     data class SelectTrack(val trackId: String?) : EditorAction
     data class MoveSelected(val newStartUs: Long) : EditorAction
@@ -89,6 +105,21 @@ class ProjectSession(
                     )
                 }
             }
+            is EditorAction.AddImportedOverlayClip -> {
+                execute(InsertVisualOverlayAssetClipCommand(action.asset, action.clip))
+                if (state.project.findClip(action.clip.id) != null) {
+                    state = state.copy(
+                        selectedClipId = action.clip.id,
+                        selectedTrackId = trackIdForClip(state.project, action.clip.id),
+                    )
+                }
+            }
+            is EditorAction.AddTextOverlay -> execute(AddTextOverlayCommand(action.overlay))
+            is EditorAction.UpdateTextOverlay -> execute(UpdateTextOverlayCommand(action.overlay))
+            is EditorAction.DeleteTextOverlay -> execute(DeleteTextOverlayCommand(action.overlayId))
+            is EditorAction.AddClipTransition -> execute(AddClipTransitionCommand(action.transition))
+            is EditorAction.UpdateClipTransition -> execute(UpdateClipTransitionCommand(action.transition))
+            is EditorAction.DeleteClipTransition -> execute(DeleteClipTransitionCommand(action.transitionId))
             is EditorAction.SelectClip -> selectClip(action.clipId)
             is EditorAction.SelectTrack -> selectTrack(action.trackId)
             is EditorAction.MoveSelected -> withSelected { execute(MoveClipCommand(it, action.newStartUs)) }
@@ -110,7 +141,7 @@ class ProjectSession(
                 }
             }
             EditorAction.DeleteSelected -> withSelected { clipId ->
-                execute(DeleteClipCommand(clipId))
+                execute(DeleteClipWithTransitionsCommand(clipId))
                 if (state.project.findClip(clipId) == null) state = state.copy(selectedClipId = null)
             }
             EditorAction.Undo -> applyHistoryChange { history.undo() }

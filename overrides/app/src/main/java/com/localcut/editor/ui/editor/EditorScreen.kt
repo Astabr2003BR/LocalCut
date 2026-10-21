@@ -59,6 +59,7 @@ fun EditorScreen(
     exportCapabilities: ExportCapabilities,
     onImportRequested: () -> Unit,
     onImportAudioRequested: () -> Unit,
+    onImportOverlayRequested: () -> Unit,
     onExportRequested: (ExportProfile) -> Unit,
     onCancelExport: () -> Unit,
     onFinalPreviewRequested: () -> Unit,
@@ -69,6 +70,8 @@ fun EditorScreen(
     val configuration = LocalConfiguration.current
     var loopEnabled by remember { mutableStateOf(false) }
     var showExportSettings by remember { mutableStateOf(false) }
+    var showTextManager by remember { mutableStateOf(false) }
+    var textEditor by remember { mutableStateOf<TextOverlayEditorModel?>(null) }
     var exportSettings by remember(
         session.project.width,
         session.project.height,
@@ -90,6 +93,41 @@ fun EditorScreen(
         )
     }
 
+    if (showTextManager) {
+        TextOverlayManagerDialog(
+            project = session.project,
+            playheadUs = preview.positionUs,
+            onEditRequested = { editor ->
+                showTextManager = false
+                textEditor = editor
+            },
+            onDeleteRequested = { overlayId ->
+                viewModel.dispatch(EditorAction.DeleteTextOverlay(overlayId))
+            },
+            onDismiss = { showTextManager = false },
+        )
+    }
+
+    textEditor?.let { editor ->
+        TextOverlayEditorDialog(
+            project = session.project,
+            model = editor,
+            onModelChange = { textEditor = it },
+            onSave = { overlay, isNew ->
+                viewModel.dispatch(
+                    if (isNew) EditorAction.AddTextOverlay(overlay)
+                    else EditorAction.UpdateTextOverlay(overlay),
+                )
+                textEditor = null
+                showTextManager = true
+            },
+            onDismiss = {
+                textEditor = null
+                showTextManager = true
+            },
+        )
+    }
+
     Surface(
         modifier = modifier.fillMaxSize().safeDrawingPadding(),
         color = MaterialTheme.colorScheme.background,
@@ -98,7 +136,7 @@ fun EditorScreen(
             Column(Modifier.fillMaxSize()) {
                 EditorToolbar(
                     session.canUndo, session.canRedo, loopEnabled, exportState,
-                    onImportRequested, onImportAudioRequested, { showExportSettings = true }, onCancelExport, onFinalPreviewRequested, viewModel
+                    onImportRequested, onImportAudioRequested, onImportOverlayRequested, { showTextManager = true }, { showExportSettings = true }, onCancelExport, onFinalPreviewRequested, viewModel
                 ) {
                     loopEnabled = it
                     viewModel.setLoopRange(0L, if (it && preview.durationUs > 0) preview.durationUs else null)
@@ -134,7 +172,7 @@ fun EditorScreen(
             Column(Modifier.fillMaxSize()) {
                 EditorToolbar(
                     session.canUndo, session.canRedo, loopEnabled, exportState,
-                    onImportRequested, onImportAudioRequested, { showExportSettings = true }, onCancelExport, onFinalPreviewRequested, viewModel
+                    onImportRequested, onImportAudioRequested, onImportOverlayRequested, { showTextManager = true }, { showExportSettings = true }, onCancelExport, onFinalPreviewRequested, viewModel
                 ) {
                     loopEnabled = it
                     viewModel.setLoopRange(0L, if (it && preview.durationUs > 0) preview.durationUs else null)
@@ -182,6 +220,8 @@ private fun EditorToolbar(
     exportState: ExportUiState,
     onImportRequested: () -> Unit,
     onImportAudioRequested: () -> Unit,
+    onImportOverlayRequested: () -> Unit,
+    onTextRequested: () -> Unit,
     onExportRequested: () -> Unit,
     onCancelExport: () -> Unit,
     onFinalPreviewRequested: () -> Unit,
@@ -202,6 +242,8 @@ private fun EditorToolbar(
                 )
                 Button(onClick = onImportRequested, enabled = !exportState.running) { Text("Mídia") }
                 FilledTonalButton(onClick = onImportAudioRequested, enabled = !exportState.running) { Text("Áudio") }
+                FilledTonalButton(onClick = onImportOverlayRequested, enabled = !exportState.running) { Text("Overlay") }
+                FilledTonalButton(onClick = onTextRequested, enabled = !exportState.running) { Text("Texto") }
                 FilledTonalButton(onClick = onExportRequested, enabled = !exportState.running) { Text("Exportar") }
                 FilledTonalButton(onClick = onFinalPreviewRequested, enabled = !exportState.running) { Text("Prévia final") }
                 if (exportState.running) {
@@ -314,6 +356,32 @@ private fun SelectedClipActions(
 ) {
     val clip = session.selectedClipId?.let(session.project::findClip) ?: return
     val canSplit = playheadUs > clip.startUs && playheadUs < clip.startUs + clip.durationUs
+    val transitionCandidate = FadeTransitionUiPolicy.createOrUpdate(session.project, clip.id, 500_000L)
+    val existingFade = FadeTransitionUiPolicy.existingFade(session.project, clip.id)
+    var showTransitionDialog by remember(clip.id) { mutableStateOf(false) }
+
+    if (showTransitionDialog && transitionCandidate != null) {
+        FadeTransitionDialog(
+            existing = existingFade,
+            onDurationSelected = { durationUs ->
+                FadeTransitionUiPolicy.createOrUpdate(session.project, clip.id, durationUs)?.let { transition ->
+                    viewModel.dispatch(
+                        if (existingFade == null) EditorAction.AddClipTransition(transition)
+                        else EditorAction.UpdateClipTransition(transition),
+                    )
+                }
+                showTransitionDialog = false
+            },
+            onRemove = existingFade?.let { transition ->
+                {
+                    viewModel.dispatch(EditorAction.DeleteClipTransition(transition.id))
+                    showTransitionDialog = false
+                }
+            },
+            onDismiss = { showTransitionDialog = false },
+        )
+    }
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
@@ -333,6 +401,10 @@ private fun SelectedClipActions(
                     enabled = canSplit,
                 ) { Text("Dividir") }
                 FilledTonalButton(onClick = { viewModel.dispatch(EditorAction.DuplicateSelected) }) { Text("Duplicar") }
+                FilledTonalButton(
+                    onClick = { showTransitionDialog = true },
+                    enabled = transitionCandidate != null,
+                ) { Text(if (existingFade == null) "Transição" else "Transição ativa") }
                 Button(onClick = { viewModel.dispatch(EditorAction.DeleteSelected) }) { Text("Excluir") }
                 OutlinedButton(
                     onClick = { viewModel.dispatch(EditorAction.Undo) },
@@ -345,6 +417,45 @@ private fun SelectedClipActions(
             }
         }
     }
+}
+
+@Composable
+private fun FadeTransitionDialog(
+    existing: com.localcut.editor.domain.model.ClipTransition?,
+    onDurationSelected: (Long) -> Unit,
+    onRemove: (() -> Unit)?,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Transição") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Fade para preto")
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    listOf(250_000L to "0,25 s", 500_000L to "0,5 s", 1_000_000L to "1 s").forEach { (durationUs, label) ->
+                        val selected = existing?.durationUs == durationUs
+                        if (selected) {
+                            FilledTonalButton(onClick = { onDurationSelected(durationUs) }) { Text(label) }
+                        } else {
+                            OutlinedButton(onClick = { onDurationSelected(durationUs) }) { Text(label) }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            OutlinedButton(onClick = onDismiss) { Text("Fechar") }
+        },
+        dismissButton = {
+            onRemove?.let { remove ->
+                Button(onClick = remove) { Text("Remover") }
+            }
+        },
+    )
 }
 
 @Composable

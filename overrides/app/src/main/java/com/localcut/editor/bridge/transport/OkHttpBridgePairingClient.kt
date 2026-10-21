@@ -60,11 +60,30 @@ class OkHttpBridgePairingClient(
         credentialFrom(root)
     }
 
-    private fun post(path: String, jsonBody: String) = client.newCall(
+    override fun unpair(accessToken: String): Result<Unit> = runCatching {
+        require(accessToken.isNotBlank()) { "accessToken must not be blank" }
+        post(
+            path = "/v1/device/unpair-self",
+            jsonBody = "{}",
+            bearerToken = accessToken,
+        )
+        Unit
+    }
+
+    private fun post(
+        path: String,
+        jsonBody: String,
+        bearerToken: String? = null,
+    ) = client.newCall(
         Request.Builder()
             .url(baseUrl + path)
             .post(jsonBody.toRequestBody(JSON_MEDIA_TYPE))
             .header("Accept", "application/json")
+            .apply {
+                if (bearerToken != null) {
+                    header("Authorization", "Bearer $bearerToken")
+                }
+            }
             .build(),
     ).execute().use { response ->
         val body = response.body.string()

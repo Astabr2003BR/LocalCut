@@ -8,6 +8,7 @@ import com.localcut.editor.data.project.JNull
 import com.localcut.editor.data.project.JObject
 import com.localcut.editor.data.project.JValue
 import com.localcut.editor.data.project.MiniJson
+import com.localcut.editor.data.project.asArray
 import com.localcut.editor.data.project.asDouble
 import com.localcut.editor.data.project.asLong
 import com.localcut.editor.data.project.asObject
@@ -15,15 +16,23 @@ import com.localcut.editor.data.project.asString
 import com.localcut.editor.data.project.jsonString
 import com.localcut.editor.data.project.optional
 import com.localcut.editor.data.project.required
+import com.localcut.editor.domain.history.AddClipTransitionCommand
+import com.localcut.editor.domain.history.AddTextOverlayCommand
 import com.localcut.editor.domain.history.DeleteClipWithTransitionsCommand
 import com.localcut.editor.domain.history.DuplicateClipCommand
 import com.localcut.editor.domain.history.MoveClipCommand
+import com.localcut.editor.domain.history.SetKeyframesCommand
 import com.localcut.editor.domain.history.SetTransformCommand
 import com.localcut.editor.domain.history.SetVolumeCommand
 import com.localcut.editor.domain.history.SplitClipCommand
 import com.localcut.editor.domain.history.TrimClipLeftEdgeCommand
 import com.localcut.editor.domain.history.TrimClipRightEdgeCommand
+import com.localcut.editor.domain.model.ClipTransition
+import com.localcut.editor.domain.model.TextOverlay
+import com.localcut.editor.domain.model.TextStyle
+import com.localcut.editor.domain.model.TransformKeyframe
 import com.localcut.editor.domain.model.TransformValue
+import com.localcut.editor.domain.model.TransitionKind
 import com.localcut.editor.session.EditorAction
 import com.localcut.editor.session.ProjectSession
 
@@ -76,6 +85,9 @@ class BridgeCommandExecutor(
                 BridgeCapability.TRIM_CLIP -> executeTrim(command)
                 BridgeCapability.SET_TRANSFORM -> executeTransform(command)
                 BridgeCapability.SET_VOLUME -> executeVolume(command)
+                BridgeCapability.SET_KEYFRAMES -> executeKeyframes(command)
+                BridgeCapability.ADD_TEXT -> executeAddText(command)
+                BridgeCapability.ADD_TRANSITION -> executeAddTransition(command)
                 BridgeCapability.UNDO -> executeHistory(command, EditorAction.Undo)
                 BridgeCapability.REDO -> executeHistory(command, EditorAction.Redo)
                 BridgeCapability.IMPORT_MEDIA -> error(
@@ -92,14 +104,6 @@ class BridgeCommandExecutor(
                 )
                 BridgeCapability.EXPORT_PROJECT -> executeExport(command)
                 BridgeCapability.CANCEL_EXPORT -> executeCancelExport(command)
-                BridgeCapability.SET_KEYFRAMES,
-                BridgeCapability.ADD_TEXT,
-                BridgeCapability.ADD_TRANSITION -> error(
-                    command,
-                    BridgeErrorCode.CAPABILITY_NOT_ALLOWED,
-                    "capability not wired into Bridge V1 command executor yet",
-                    retryable = false,
-                )
             }
         } catch (error: IllegalArgumentException) {
             error(command, BridgeErrorCode.INVALID_ARGUMENT, error.message ?: "invalid argument", retryable = false)
@@ -202,6 +206,96 @@ class BridgeCommandExecutor(
         val volume = payload.requiredDouble("volume")
         require(volume >= 0.0) { "volume must be non-negative" }
         return dispatchWrite(command, EditorAction.Execute(SetVolumeCommand(clipId, volume)))
+    }
+
+    private fun executeKeyframes(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val payload = payload(command)
+        val clipId = payload.requiredString("clipId")
+        val clip = session.state.project.findClip(clipId)
+            ?: return error(command, BridgeErrorCode.CLIP_NOT_FOUND, "clip not found", false)
+        val keyframes = payload.required("keyframes").asArray().values.map { raw ->
+            val item = raw.asObject()
+            val offsetUs = item.requiredLong("offsetUs")
+            require(offsetUs in 0L..clip.durationUs) { "keyframe offset must be inside clip" }
+            TransformKeyframe(
+                offsetUs = offsetUs,
+                value = TransformValue(
+                    x = item.requiredDouble("x"),
+                    y = item.requiredDouble("y"),
+                    scale = item.requiredDouble("scale"),
+                    rotationDeg = item.requiredDouble("rotationDeg"),
+                    opacity = item.requiredDouble("opacity"),
+                ),
+            )
+        }
+        require(keyframes.map { it.offsetUs }.distinct().size == keyframes.size) { "duplicate keyframe offset" }
+        require(keyframes.all { it.value.scale > 0.0 }) { "keyframe scale must be positive" }
+        require(keyframes.all { it.value.opacity in 0.0..1.0 }) { "keyframe opacity must be in 0..1" }
+        return dispatchWrite(command, EditorAction.Execute(SetKeyframesCommand(clipId, keyframes.sortedBy { it.offsetUs })))
+    }
+
+    private fun executeAddText(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val payload = payload(command)
+        val id = payload.requiredString("id")
+        val startUs = payload.requiredLong("startUs")
+        val durationUs = payload.requiredLong("durationUs")
+        val text = payload.requiredString("text")
+        require(startUs >= 0L) { "startUs must be non-negative" }
+        require(durationUs > 0L) { "durationUs must be positive" }
+        val fontSizePx = payload.optionalDouble("fontSizePx") ?: 64.0
+        require(fontSizePx > 0.0) { "fontSizePx must be positive" }
+        val fillArgbLong = payload.optionalLong("fillArgb") ?: 0xFFFFFFFFL
+        require(fillArgbLong in Int.MIN_VALUE.toLong()..0xFFFFFFFFL) { "fillArgb out of range" }
+        val zIndexLong = payload.optionalLong("zIndex") ?: 0L
+        require(zIndexLong in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) { "zIndex out of range" }
+        val overlayOpacity = payload.optionalDouble("opacity") ?: 1.0
+        require(overlayOpacity in 0.0..1.0) { "opacity must be in 0..1" }
+        val transform = TransformValue(
+            x = payload.optionalDouble("x") ?: 0.0,
+            y = payload.optionalDouble("y") ?: 0.0,
+            scale = payload.optionalDouble("scale") ?: 1.0,
+            rotationDeg = payload.optionalDouble("rotationDeg") ?: 0.0,
+            opacity = 1.0,
+        )
+        require(transform.scale > 0.0) { "scale must be positive" }
+        val overlay = TextOverlay(
+            id = id,
+            startUs = startUs,
+            durationUs = durationUs,
+            text = text,
+            style = TextStyle(
+                fontSizePx = fontSizePx,
+                fillArgb = fillArgbLong.toInt(),
+            ),
+            transform = transform,
+            opacity = overlayOpacity,
+            zIndex = zIndexLong.toInt(),
+        )
+        return dispatchWrite(command, EditorAction.Execute(AddTextOverlayCommand(overlay)))
+    }
+
+    private fun executeAddTransition(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val payload = payload(command)
+        val kindName = payload.requiredString("kind")
+        val kind = runCatching { TransitionKind.valueOf(kindName) }
+            .getOrElse { throw IllegalArgumentException("unsupported transition kind") }
+        if (kind != TransitionKind.FADE_TO_BLACK) {
+            return error(
+                command,
+                BridgeErrorCode.CAPABILITY_NOT_ALLOWED,
+                "transition kind is not renderable in Bridge V1",
+                retryable = false,
+            )
+        }
+        val transition = ClipTransition(
+            id = payload.requiredString("id"),
+            fromClipId = payload.requiredString("fromClipId"),
+            toClipId = payload.requiredString("toClipId"),
+            durationUs = payload.requiredLong("durationUs"),
+            kind = kind,
+        )
+        require(transition.durationUs > 0L) { "durationUs must be positive" }
+        return dispatchWrite(command, EditorAction.Execute(AddClipTransitionCommand(transition)))
     }
 
     private fun executeHistory(command: BridgeCommandEnvelope, action: EditorAction): BridgeResultEnvelope {

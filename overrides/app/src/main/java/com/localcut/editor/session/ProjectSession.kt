@@ -4,6 +4,7 @@ import com.localcut.editor.domain.history.AddTextOverlayCommand
 import com.localcut.editor.domain.history.DeleteTextOverlayCommand
 import com.localcut.editor.domain.history.EditorCommand
 import com.localcut.editor.domain.history.InsertAssetClipCommand
+import com.localcut.editor.domain.history.InsertVisualOverlayAssetClipCommand
 import com.localcut.editor.domain.history.HistoryManager
 import com.localcut.editor.domain.history.MoveClipCommand
 import com.localcut.editor.domain.history.TrimClipCommand
@@ -47,6 +48,7 @@ data class ProjectSessionState(
 sealed interface EditorAction {
     data class Execute(val command: EditorCommand) : EditorAction
     data class AddImportedClip(val trackId: String, val asset: Asset, val clip: Clip) : EditorAction
+    data class AddImportedOverlayClip(val asset: Asset, val clip: Clip) : EditorAction
     data class AddTextOverlay(val overlay: TextOverlay) : EditorAction
     data class UpdateTextOverlay(val overlay: TextOverlay) : EditorAction
     data class DeleteTextOverlay(val overlayId: String) : EditorAction
@@ -93,6 +95,15 @@ class ProjectSession(
                     state = state.copy(
                         selectedClipId = action.clip.id,
                         selectedTrackId = action.trackId,
+                    )
+                }
+            }
+            is EditorAction.AddImportedOverlayClip -> {
+                execute(InsertVisualOverlayAssetClipCommand(action.asset, action.clip))
+                if (state.project.findClip(action.clip.id) != null) {
+                    state = state.copy(
+                        selectedClipId = action.clip.id,
+                        selectedTrackId = trackIdForClip(state.project, action.clip.id),
                     )
                 }
             }

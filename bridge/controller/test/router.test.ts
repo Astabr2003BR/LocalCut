@@ -118,6 +118,32 @@ test("one active device session replaces and closes the old channel", () => {
   assert.equal(registry.get("lc_device"), second);
 });
 
+test("registry shutdown closes every active device route once and clears routing", () => {
+  const registry = new DeviceRegistry();
+  const closed: string[] = [];
+  const shared: DeviceChannel = {
+    async send(cmd) { return success(cmd.messageId); },
+    close(reason) { closed.push(`shared:${reason ?? ""}`); },
+  };
+  const other: DeviceChannel = {
+    async send(cmd) { return success(cmd.messageId); },
+    close(reason) { closed.push(`other:${reason ?? ""}`); },
+  };
+
+  registry.register("lc_device", shared);
+  registry.register("lc_device_alias", shared);
+  registry.register("lc_other", other);
+  registry.closeAll("controller_shutdown");
+
+  assert.deepEqual(closed.sort(), [
+    "other:controller_shutdown",
+    "shared:controller_shutdown",
+  ]);
+  assert.equal(registry.get("lc_device"), null);
+  assert.equal(registry.get("lc_device_alias"), null);
+  assert.equal(registry.get("lc_other"), null);
+});
+
 test("controller cannot route to a device it does not own or that is revoked", async () => {
   const store = pairedStore();
   const registry = new DeviceRegistry();

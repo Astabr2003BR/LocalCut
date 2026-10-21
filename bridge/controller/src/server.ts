@@ -12,6 +12,17 @@ import { DeviceSessionService, SqliteSessionStore, type DeviceSessionStore } fro
 import { SqliteBridgeStore, type BridgeStore } from "./store.ts";
 
 const MAX_JSON_BODY_BYTES = 64 * 1024;
+const MAX_HANDOFF_QUERY_BYTES = 8 * 1024;
+const ANDROID_ASSET_LINKS = [{
+  relation: ["delegate_permission/common.handle_all_urls"],
+  target: {
+    namespace: "android_app",
+    package_name: "com.localcut.editor",
+    sha256_cert_fingerprints: [
+      "B7:C1:27:CE:71:09:BF:4B:BB:CD:A3:96:EB:93:75:EA:99:DF:28:0F:75:95:FB:ED:98:37:73:4E:B8:47:6F:91",
+    ],
+  },
+}];
 
 export type ControllerServerOptions = {
   controllerApiToken: string;
@@ -66,6 +77,20 @@ export function createControllerServer(options: ControllerServerOptions): Contro
       const url = new URL(req.url ?? "/", "http://localcut.invalid");
       if (req.method === "GET" && url.pathname === "/health") {
         return sendJson(res, 200, { ok: true, service: "localcut-bridge-controller" });
+      }
+
+      if (req.method === "GET" && url.pathname === "/.well-known/assetlinks.json") {
+        return sendJson(res, 200, ANDROID_ASSET_LINKS);
+      }
+
+      if (req.method === "GET" && url.pathname === "/open") {
+        if (url.search.length === 0 || !url.searchParams.get("action")) {
+          return sendJson(res, 400, { code: "HANDOFF_ACTION_MISSING" });
+        }
+        if (Buffer.byteLength(url.search, "utf8") > MAX_HANDOFF_QUERY_BYTES) {
+          return sendJson(res, 414, { code: "HANDOFF_URI_TOO_LONG" });
+        }
+        return sendRedirect(res, `localcut://command${url.search}`);
       }
 
       if (url.pathname === "/mcp") {
@@ -270,6 +295,17 @@ function optionalString(body: Record<string, unknown>, key: string, maxLength: n
     throw new Error("INVALID_ARGUMENT");
   }
   return value;
+}
+
+function sendRedirect(res: ServerResponse, location: string): void {
+  if (res.writableEnded) return;
+  res.writeHead(302, {
+    location,
+    "content-length": "0",
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+  });
+  res.end();
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {

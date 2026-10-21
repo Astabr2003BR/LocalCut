@@ -65,7 +65,20 @@ object FadeTransitionUiPolicy {
             return null
         }
         if (fromEnd != to.startUs) return null
-        val maxDurationUs = minOf(from.durationUs, to.durationUs)
+
+        val incomingFadeOnFrom = project.transitions
+            .asSequence()
+            .filter { it.kind == TransitionKind.FADE_TO_BLACK && it.toClipId == from.id }
+            .maxOfOrNull { it.durationUs }
+            ?: 0L
+        val outgoingFadeOnTo = project.transitions
+            .asSequence()
+            .filter { it.kind == TransitionKind.FADE_TO_BLACK && it.fromClipId == to.id }
+            .maxOfOrNull { it.durationUs }
+            ?: 0L
+        val availableOnFrom = from.durationUs - incomingFadeOnFrom
+        val availableOnTo = to.durationUs - outgoingFadeOnTo
+        val maxDurationUs = minOf(availableOnFrom, availableOnTo)
         if (maxDurationUs <= 0L) return null
         return Boundary(from.id, to.id, maxDurationUs)
     }

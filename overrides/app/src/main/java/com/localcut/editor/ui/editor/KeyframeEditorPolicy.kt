@@ -61,6 +61,17 @@ object KeyframeEditorPolicy {
         return Math.addExact(clip.startUs, next)
     }
 
+    fun markerFractions(clip: Clip): List<Float> {
+        if (clip.durationUs <= 0L) return emptyList()
+        return clip.keyframes
+            .sortedBy { it.offsetUs }
+            .map { keyframe ->
+                (keyframe.offsetUs.toDouble() / clip.durationUs.toDouble())
+                    .coerceIn(0.0, 1.0)
+                    .toFloat()
+            }
+    }
+
     private fun clipEndUs(clip: Clip): Long? = try {
         Math.addExact(clip.startUs, clip.durationUs)
     } catch (_: ArithmeticException) {

@@ -271,6 +271,7 @@ class ProjectSession(
             ?: state.selectedTrackId?.takeIf { selectedId -> project.tracks.any { it.id == selectedId } }
         state = state.copy(
             project = project,
+            revision = revisionClock.next(project.id),
             lastError = null,
             selectedClipId = selectedClip,
             selectedTrackId = selectedTrack,

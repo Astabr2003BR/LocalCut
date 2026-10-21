@@ -13,6 +13,7 @@ import com.localcut.editor.MainActivity
 import com.localcut.editor.domain.model.TrackType
 import java.util.UUID
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,68 +21,50 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class SharedMediaImportSmokeTest {
     @Test
-    fun importsOneSharedImageOnColdStart() {
+    fun importsColdAndWarmSharedImagesExactlyOnce() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         lateinit var runtime: LocalCutProcessRuntime
         instrumentation.runOnMainSync {
             runtime = LocalCutProcessRuntime.get(context)
         }
+
         val before = visualClipCount(runtime)
-        val uri = createPngFixture()
+        val coldUri = createPngFixture()
+        val warmUri = createPngFixture()
 
         val activity = instrumentation.startActivitySync(
             Intent(context, MainActivity::class.java).apply {
                 action = Intent.ACTION_SEND
                 type = "image/png"
-                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_STREAM, coldUri)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
             },
         ) as MainActivity
 
-        try {
-            waitForVisualClipCount(runtime, before + 1)
-            assertEquals(before + 1, visualClipCount(runtime))
-        } finally {
-            activity.finish()
-        }
-    }
+        waitForVisualClipCount(runtime, before + 1)
+        assertEquals(before + 1, visualClipCount(runtime))
+        assertFalse(activity.isFinishing)
 
-    @Test
-    fun warmActivityImportsOnlyTheNewShareOnce() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val context = instrumentation.targetContext
-        lateinit var runtime: LocalCutProcessRuntime
-        instrumentation.runOnMainSync {
-            runtime = LocalCutProcessRuntime.get(context)
-        }
-        val activity = instrumentation.startActivitySync(
-            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        ) as MainActivity
-        val before = visualClipCount(runtime)
-        val uri = createPngFixture()
+        context.startActivity(
+            Intent(context, MainActivity::class.java).apply {
+                action = Intent.ACTION_SEND
+                type = "image/png"
+                putExtra(Intent.EXTRA_STREAM, warmUri)
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            },
+        )
+        instrumentation.waitForIdleSync()
+        waitForVisualClipCount(runtime, before + 2)
+        SystemClock.sleep(250)
 
-        try {
-            context.startActivity(
-                Intent(context, MainActivity::class.java).apply {
-                    action = Intent.ACTION_SEND
-                    type = "image/png"
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK or
-                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                    )
-                },
-            )
-            instrumentation.waitForIdleSync()
-            waitForVisualClipCount(runtime, before + 1)
-            SystemClock.sleep(250)
-            assertEquals(before + 1, visualClipCount(runtime))
-        } finally {
-            activity.finish()
-        }
+        assertEquals(before + 2, visualClipCount(runtime))
+        assertFalse(activity.isFinishing)
     }
 
     private fun visualClipCount(runtime: LocalCutProcessRuntime): Int =

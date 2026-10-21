@@ -6,7 +6,12 @@ import com.localcut.editor.domain.timeline.TimelineValidator
 import kotlin.math.roundToInt
 
 object ProjectRenderPlanCompiler {
-    fun compile(project: Project, mode: RenderMode, resolver: RenderAssetResolver): Result<RenderPlan> = runCatching {
+    fun compile(
+        project: Project,
+        mode: RenderMode,
+        resolver: RenderAssetResolver,
+        outputSettings: RenderOutputSettings = RenderOutputSettings(),
+    ): Result<RenderPlan> = runCatching {
         val issues = TimelineValidator.validate(project)
         if (issues.isNotEmpty()) {
             throw RenderPlanException(RenderPlanErrorCode.INVALID_PROJECT, "invalid project: ${issues.first()}")
@@ -35,21 +40,22 @@ object ProjectRenderPlanCompiler {
             !track.muted && (!hasSoloAudio || track.solo)
         }
         val durationUs = TimelineMath.durationUs(project)
-        val (width, height) = outputSize(project.width, project.height, mode)
+        val outputFps = outputSettings.fps ?: project.fps
+        val (width, height) = outputSize(project.width, project.height, mode, outputSettings)
         val assets = project.assets.associateBy { it.id }
         val visualLayers = visualTracks.flatMap { track ->
-            buildVisualLayers(track, durationUs, project.fps, assets, resolver)
+            buildVisualLayers(track, durationUs, outputFps, assets, resolver)
         }
         RenderPlan(
             width = width,
             height = height,
             transformSpaceWidth = project.width,
             transformSpaceHeight = project.height,
-            fps = project.fps,
+            fps = outputFps,
             durationUs = durationUs,
             visualLayers = visualLayers,
             audioLayers = audibleAudioTracks.map { track ->
-                buildSequence(track, durationUs, project.fps, assets, resolver)
+                buildSequence(track, durationUs, outputFps, assets, resolver)
             },
         )
     }
@@ -139,11 +145,20 @@ object ProjectRenderPlanCompiler {
         )
     }
 
-    private fun outputSize(width: Int, height: Int, mode: RenderMode): Pair<Int, Int> {
+    private fun outputSize(
+        projectWidth: Int,
+        projectHeight: Int,
+        mode: RenderMode,
+        outputSettings: RenderOutputSettings,
+    ): Pair<Int, Int> {
+        val width = outputSettings.width ?: projectWidth
+        val height = outputSettings.height ?: projectHeight
         if (mode != RenderMode.FAST_PREVIEW) return width to height
+
+        val previewLongEdge = outputSettings.previewMaxLongEdge ?: FAST_PREVIEW_LONG_EDGE
         val longEdge = maxOf(width, height)
-        if (longEdge <= FAST_PREVIEW_LONG_EDGE) return width to height
-        val scale = FAST_PREVIEW_LONG_EDGE.toDouble() / longEdge.toDouble()
+        if (longEdge <= previewLongEdge) return width to height
+        val scale = previewLongEdge.toDouble() / longEdge.toDouble()
         return maxOf(1, (width * scale).roundToInt()) to maxOf(1, (height * scale).roundToInt())
     }
 

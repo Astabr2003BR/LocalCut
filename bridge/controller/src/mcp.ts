@@ -15,8 +15,17 @@ const routingFields = {
   payload: z.record(z.string(), z.unknown()).default({}),
 };
 
+export interface ControllerAdminActions {
+  claimPairing(code: string): Promise<unknown> | unknown;
+  revokeDevice(deviceId: string): Promise<unknown> | unknown;
+}
+
 export function controllerToolNames(): string[] {
   return [...bridgeCapabilities];
+}
+
+export function controllerManagementToolNames(): string[] {
+  return ["claim_pairing", "revoke_device"];
 }
 
 export function buildToolInputSchema(capability: BridgeCapability) {
@@ -32,7 +41,11 @@ export function buildToolInputSchema(capability: BridgeCapability) {
   }).strict();
 }
 
-export function createLocalCutMcpServer(router: CommandRouter, controllerId: string): McpServer {
+export function createLocalCutMcpServer(
+  router: CommandRouter,
+  controllerId: string,
+  admin?: ControllerAdminActions,
+): McpServer {
   if (!controllerId) throw new Error("controllerId is required");
   const server = new McpServer({ name: "LocalCut Controller", version: "0.1.0" });
 
@@ -62,16 +75,68 @@ export function createLocalCutMcpServer(router: CommandRouter, controllerId: str
           payload: parsed.payload,
         };
         const result = await router.execute(controllerId, command);
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(result) }],
-          structuredContent: { ...result },
-          isError: !result.success,
-        };
+        return toolResult(result, !result.success);
+      },
+    );
+  }
+
+  if (admin) {
+    const claimSchema = z.object({ code: z.string().regex(/^\d{6}$/) }).strict();
+    server.registerTool(
+      "claim_pairing",
+      {
+        title: "LocalCut: claim pairing",
+        description: "Claim the 6-digit pairing code shown by a LocalCut APK. The APK will independently sign the server challenge before pairing completes.",
+        inputSchema: claimSchema,
+      },
+      async input => {
+        const parsed = claimSchema.parse(input);
+        try {
+          return toolResult(await admin.claimPairing(parsed.code), false);
+        } catch (error) {
+          return toolResult({ code: safeAdminError(error) }, true);
+        }
+      },
+    );
+
+    const revokeSchema = z.object({ deviceId: z.string().min(1).max(128) }).strict();
+    server.registerTool(
+      "revoke_device",
+      {
+        title: "LocalCut: revoke device",
+        description: "Revoke a paired LocalCut device and terminate its active controller session.",
+        inputSchema: revokeSchema,
+      },
+      async input => {
+        const parsed = revokeSchema.parse(input);
+        try {
+          return toolResult(await admin.revokeDevice(parsed.deviceId), false);
+        } catch (error) {
+          return toolResult({ code: safeAdminError(error) }, true);
+        }
       },
     );
   }
 
   return server;
+}
+
+function toolResult(value: unknown, isError: boolean) {
+  const structured = isRecord(value) ? value : { value };
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(value) }],
+    structuredContent: structured,
+    isError,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function safeAdminError(error: unknown): string {
+  if (error instanceof Error && /^[A-Z0-9_]{3,64}$/.test(error.message)) return error.message;
+  return "INTERNAL_ERROR";
 }
 
 function titleFor(capability: BridgeCapability): string {

@@ -8,14 +8,6 @@ data class BridgeEndpoint(
 )
 
 object BridgeEndpointConfig {
-    // Compatibility shim while runtime endpoint persistence is wired into the APK.
-    // Removed once LocalCutBridgeControl and BridgeServiceRuntime read BridgeSettingsStore.relayBaseUrl.
-    const val HTTPS_BASE_URL: String = ""
-    const val WSS_URL: String = ""
-
-    fun isConfigured(): Boolean =
-        HTTPS_BASE_URL.startsWith("https://") && WSS_URL.startsWith("wss://")
-
     fun resolve(rawBaseUrl: String): Result<BridgeEndpoint> = runCatching {
         val raw = rawBaseUrl.trim()
         require(raw.isNotEmpty()) { "bridge relay URL must not be blank" }

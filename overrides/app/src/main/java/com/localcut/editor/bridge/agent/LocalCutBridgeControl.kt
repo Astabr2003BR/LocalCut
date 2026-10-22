@@ -90,6 +90,7 @@ class LocalCutBridgeControl(
                         credentialStore.save(credential)
                     } else {
                         credentialStore.clear()
+                        mutableState.value = mutableState.value.copy(paired = false)
                     }
                 }
 

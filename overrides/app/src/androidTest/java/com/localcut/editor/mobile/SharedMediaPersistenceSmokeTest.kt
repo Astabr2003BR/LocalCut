@@ -40,7 +40,9 @@ class SharedMediaPersistenceSmokeTest {
         val previewController = NoOpPreviewController()
         val session = ProjectSession(
             initialProject = Project.create("Persistence smoke", 1080, 1920, 30),
-            preview = ProjectPreviewLoader { Result.success(Unit) },
+            preview = object : ProjectPreviewLoader {
+                override fun load(project: Project): Result<Unit> = Result.success(Unit)
+            },
             autosave = autosave,
             store = store,
         )

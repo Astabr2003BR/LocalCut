@@ -7,6 +7,7 @@ import android.provider.MediaStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.localcut.editor.data.assets.AndroidAssetImporter
+import com.localcut.editor.data.assets.AssetUriResolver
 import com.localcut.editor.data.project.AtomicProjectStore
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.media.PreviewController
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -82,6 +84,63 @@ class SharedMediaPersistenceSmokeTest {
             assertTrue(
                 "project.json must exist after a successful shared-media import",
                 projectDir.resolve("project.json").toFile().isFile,
+            )
+        } finally {
+            runCatching { context.contentResolver.delete(sourceUri, null, null) }
+            projectDir.toFile().deleteRecursively()
+            remoteDir.listFiles().orEmpty()
+                .filter { it.name !in beforePrivateFiles }
+                .forEach { runCatching { it.delete() } }
+        }
+    }
+
+    @Test
+    fun regularImageImportUsesLocalCutOwnedBackingAndSurvivesSourceDeletion() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val projectDir = context.cacheDir.toPath().resolve("regular-persistence-smoke-${UUID.randomUUID()}")
+        val store = AtomicProjectStore(projectDir)
+        val scheduler = DelayScheduler { _, _ -> Cancellable { } }
+        val autosave = DebouncedProjectSaver(store, scheduler, 60_000L)
+        val session = ProjectSession(
+            initialProject = Project.create("Regular persistence smoke", 1080, 1920, 30),
+            preview = object : ProjectPreviewLoader {
+                override fun load(project: Project): Result<Unit> = Result.success(Unit)
+            },
+            autosave = autosave,
+            store = store,
+        )
+        val editorViewModel = EditorViewModel(session, NoOpPreviewController())
+        val coordinator = MediaIngestCoordinator(
+            importer = AndroidAssetImporter(context.contentResolver),
+            editorViewModel = editorViewModel,
+            sharedMediaStager = SharedMediaStager(context),
+            persistProject = autosave::flushNow,
+        )
+
+        val remoteDir = File(context.filesDir, "remote-media")
+        val beforePrivateFiles = remoteDir.listFiles().orEmpty().map { it.name }.toSet()
+        val sourceUri = createPngFixture()
+        try {
+            val result = runBlocking(Dispatchers.Main.immediate) {
+                coordinator.importUris(listOf(sourceUri))
+            }
+            assertEquals(result.errors.joinToString(), 1, result.importedCount)
+            assertEquals(result.errors.joinToString(), 0, result.failedCount)
+            assertTrue(result.errors.joinToString(), result.errors.isEmpty())
+
+            val importedAsset = session.state.project.assets.single()
+            assertNotEquals(
+                "regular import must not keep a transient external source URI",
+                sourceUri.toString(),
+                importedAsset.uri,
+            )
+
+            val persisted = store.load().getOrThrow()
+            assertEquals(importedAsset.uri, persisted.assets.single { it.id == importedAsset.id }.uri)
+            assertEquals(1, context.contentResolver.delete(sourceUri, null, null))
+            assertTrue(
+                "regular imported asset must remain readable after the original source is deleted",
+                AssetUriResolver(context.contentResolver).resolve(importedAsset).isSuccess,
             )
         } finally {
             runCatching { context.contentResolver.delete(sourceUri, null, null) }

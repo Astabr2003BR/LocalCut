@@ -23,26 +23,28 @@ class RemoteMediaImportExecutor(
 ) {
     suspend fun importUrl(rawUrl: String): Result<MediaIngestResult> {
         var downloadedFile: File? = null
-        var promotedFile: File? = null
+        var persistentFile: File? = null
+        var committed = false
 
         return try {
             val downloaded = downloader(rawUrl).getOrThrow()
             downloadedFile = downloaded.file
             val kind = validator(downloaded.file, downloaded.declaredContentType).getOrThrow()
-            val promoted = withContext(Dispatchers.IO) {
-                promoteForIngest(downloaded, kind)
+            val persisted = withContext(Dispatchers.IO) {
+                persistForIngest(downloaded, kind)
             }
-            promotedFile = promoted
+            persistentFile = persisted
 
             val uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.remote-media",
-                promoted,
+                persisted,
             )
             val ingest = mediaIngestCoordinator.importUris(listOf(uri))
             require(ingest.importedCount == 1 && ingest.failedCount == 0) {
                 ingest.errors.firstOrNull() ?: "REMOTE_MEDIA_IMPORT_FAILED"
             }
+            committed = true
             Result.success(ingest)
         } catch (error: CancellationException) {
             throw error
@@ -50,29 +52,31 @@ class RemoteMediaImportExecutor(
             Result.failure(error)
         } finally {
             withContext(NonCancellable + Dispatchers.IO) {
-                promotedFile?.delete()
+                if (!committed) {
+                    persistentFile?.delete()
+                }
                 downloadedFile?.delete()
                 cleanupRemoteDirectory()
             }
         }
     }
 
-    private fun promoteForIngest(
+    private fun persistForIngest(
         downloaded: DownloadedRemoteMedia,
         kind: RemoteMediaKind,
     ): File {
         val source = downloaded.file
         require(source.isFile && source.length() > 0L) { "REMOTE_MEDIA_FILE_INVALID" }
         val extension = extensionFor(downloaded.declaredContentType, kind)
-        val stem = source.name.removeSuffix(".part").ifBlank { "remote-${UUID.randomUUID()}" }
-        val target = File(source.parentFile ?: File(context.cacheDir, "remote-import"), "$stem$extension")
-        if (target.absolutePath == source.absolutePath) return source
-        if (target.exists()) target.delete()
+        val persistentDir = File(context.filesDir, PERSISTENT_DIR_NAME).apply { mkdirs() }
+        require(persistentDir.isDirectory) { "REMOTE_MEDIA_PERSIST_DIR_FAILED" }
+        val target = File(persistentDir, "${UUID.randomUUID()}$extension")
+
         if (!source.renameTo(target)) {
-            source.copyTo(target, overwrite = true)
+            source.copyTo(target, overwrite = false)
             source.delete()
         }
-        require(target.isFile && target.length() > 0L) { "REMOTE_MEDIA_PROMOTE_FAILED" }
+        require(target.isFile && target.length() > 0L) { "REMOTE_MEDIA_PERSIST_FAILED" }
         return target
     }
 
@@ -102,9 +106,14 @@ class RemoteMediaImportExecutor(
     }
 
     private fun cleanupRemoteDirectory() {
-        val directory = File(context.cacheDir, "remote-import")
+        val directory = File(context.cacheDir, REMOTE_DOWNLOAD_DIR_NAME)
         if (directory.isDirectory && directory.listFiles().orEmpty().isEmpty()) {
             directory.delete()
         }
+    }
+
+    private companion object {
+        const val PERSISTENT_DIR_NAME = "remote-media"
+        const val REMOTE_DOWNLOAD_DIR_NAME = "remote-import"
     }
 }

@@ -9,6 +9,7 @@ import com.localcut.editor.session.EditorAction
 import com.localcut.editor.ui.editor.EditorViewModel
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
 data class MediaIngestResult(
@@ -20,6 +21,7 @@ data class MediaIngestResult(
 class MediaIngestCoordinator(
     private val importer: AndroidAssetImporter,
     private val editorViewModel: EditorViewModel,
+    private val sharedMediaStager: SharedMediaStager,
 ) {
     suspend fun importUris(uris: List<Uri>): MediaIngestResult {
         var importedCount = 0
@@ -52,10 +54,52 @@ class MediaIngestCoordinator(
             )
             clipResult.onSuccess { clip ->
                 editorViewModel.dispatch(EditorAction.AddImportedClip(track.id, asset, clip))
-                importedCount += 1
+                if (editorViewModel.sessionState.value.project.findClip(clip.id) != null) {
+                    importedCount += 1
+                } else {
+                    failedCount += 1
+                    errors += editorViewModel.sessionState.value.lastError ?: "Não foi possível inserir a mídia"
+                }
             }.onFailure { error ->
                 failedCount += 1
                 errors += error.message ?: "Não foi possível criar o clipe"
+            }
+        }
+
+        return MediaIngestResult(
+            importedCount = importedCount,
+            failedCount = failedCount,
+            errors = errors,
+        )
+    }
+
+    suspend fun importSharedUris(uris: List<Uri>): MediaIngestResult {
+        var importedCount = 0
+        var failedCount = 0
+        val errors = mutableListOf<String>()
+
+        for (source in uris) {
+            val stagedResult = sharedMediaStager.stage(source)
+            if (stagedResult.isFailure) {
+                failedCount += 1
+                errors += stagedResult.exceptionOrNull()?.message ?: "Não foi possível preservar a mídia compartilhada"
+                continue
+            }
+
+            val staged = stagedResult.getOrThrow()
+            var retainBacking = false
+            try {
+                val result = importUris(listOf(staged.uri))
+                importedCount += result.importedCount
+                failedCount += result.failedCount
+                errors += result.errors
+                retainBacking = result.importedCount == 1 && result.failedCount == 0
+            } finally {
+                if (!retainBacking) {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        staged.backingFile.delete()
+                    }
+                }
             }
         }
 

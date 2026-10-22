@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/android-multitrack-smoke.yml'
       - 'overrides/app/src/main/java/com/localcut/editor/media/**'
+      - 'overrides/app/src/main/java/com/localcut/editor/bridge/**'
+      - 'overrides/app/src/main/java/com/localcut/editor/mobile/**'
       - 'overrides/app/src/androidTest/**'
       - 'localcut-source-full-build9.zip'
   push:
@@ -13,6 +15,8 @@ on:
     paths:
       - '.github/workflows/android-multitrack-smoke.yml'
       - 'overrides/app/src/main/java/com/localcut/editor/media/**'
+      - 'overrides/app/src/main/java/com/localcut/editor/bridge/**'
+      - 'overrides/app/src/main/java/com/localcut/editor/mobile/**'
       - 'overrides/app/src/androidTest/**'
       - 'localcut-source-full-build9.zip'
   workflow_dispatch:

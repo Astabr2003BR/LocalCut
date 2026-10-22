@@ -82,7 +82,7 @@ class RemoteMediaDownloader(
                     redirects += 1
                 } else {
                     require(response.isSuccessful) { "REMOTE_MEDIA_HTTP_${response.code}" }
-                    val body = response.body ?: error("REMOTE_MEDIA_BODY_MISSING")
+                    val body = response.body
                     val declaredContentType = normalizeContentType(response.header("Content-Type"))
                     val limit = provisionalLimitBytes(declaredContentType)
                     require(limit > 0L) { "REMOTE_MEDIA_LIMIT_INVALID" }

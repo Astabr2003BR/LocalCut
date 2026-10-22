@@ -29,6 +29,7 @@ import com.localcut.editor.media.ProjectCompositionCompiler
 import com.localcut.editor.media.RenderPlanErrorCode
 import com.localcut.editor.media.RenderPlanException
 import com.localcut.editor.mobile.MediaIngestCoordinator
+import com.localcut.editor.mobile.SharedMediaStager
 import com.localcut.editor.session.DebouncedProjectSaver
 import com.localcut.editor.session.ExecutorDelayScheduler
 import com.localcut.editor.session.PreviewErrorCode
@@ -126,6 +127,7 @@ class LocalCutProcessRuntime private constructor(context: Context) {
         mediaIngestCoordinator = MediaIngestCoordinator(
             importer = AndroidAssetImporter(appContext.contentResolver),
             editorViewModel = editorViewModel,
+            sharedMediaStager = SharedMediaStager(appContext),
         )
         previewController.load(initialProject)
 

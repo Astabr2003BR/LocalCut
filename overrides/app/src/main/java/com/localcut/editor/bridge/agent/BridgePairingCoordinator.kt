@@ -3,10 +3,12 @@ package com.localcut.editor.bridge.agent
 import com.localcut.editor.bridge.security.BridgeCredentialStore
 import com.localcut.editor.bridge.security.DeviceIdentityStore
 import com.localcut.editor.bridge.transport.BridgePairingClient
+import com.localcut.editor.bridge.transport.BridgePairingStatus
+import java.io.IOException
 import java.util.Base64
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
 
 class BridgePairingCoordinator(
     private val client: BridgePairingClient,
@@ -27,7 +29,11 @@ class BridgePairingCoordinator(
         onEvent(BridgeUiEvent.Pairing(started.code))
 
         while (nowEpochMs() <= started.expiresAtEpochMs) {
-            val status = withContext(Dispatchers.IO) { client.status(started.code).getOrThrow() }
+            val status = statusWithTransientRetry(
+                code = started.code,
+                signatureBase64 = null,
+                expiresAtEpochMs = started.expiresAtEpochMs,
+            )
             when (status.state) {
                 "PENDING" -> pollDelay(pollDelayMs)
                 "CLAIMED" -> {
@@ -38,9 +44,11 @@ class BridgePairingCoordinator(
                     val signatureBase64 = Base64.getEncoder().encodeToString(
                         identityStore.signChallenge(challengeBytes),
                     )
-                    val completed = withContext(Dispatchers.IO) {
-                        client.status(started.code, signatureBase64).getOrThrow()
-                    }
+                    val completed = statusWithTransientRetry(
+                        code = started.code,
+                        signatureBase64 = signatureBase64,
+                        expiresAtEpochMs = started.expiresAtEpochMs,
+                    )
                     if (completed.state != "PAIRED") {
                         throw IllegalStateException("PAIRING_NOT_COMPLETED")
                     }
@@ -66,5 +74,22 @@ class BridgePairingCoordinator(
         throw IllegalStateException("PAIRING_EXPIRED")
     }.onFailure { error ->
         onEvent(BridgeUiEvent.Error(error.message ?: "Falha no pareamento"))
+    }
+
+    private suspend fun statusWithTransientRetry(
+        code: String,
+        signatureBase64: String?,
+        expiresAtEpochMs: Long,
+    ): BridgePairingStatus {
+        while (nowEpochMs() <= expiresAtEpochMs) {
+            val result = withContext(Dispatchers.IO) {
+                client.status(code, signatureBase64)
+            }
+            result.getOrNull()?.let { return it }
+            val error = result.exceptionOrNull() ?: error("PAIRING_STATUS_FAILED")
+            if (error !is IOException) throw error
+            pollDelay(pollDelayMs)
+        }
+        throw IllegalStateException("PAIRING_EXPIRED")
     }
 }

@@ -82,9 +82,10 @@ class BridgeUiStateTest {
         )
 
         assertEquals(BridgeUiPhase.ERROR, state.phase)
-        assertFalse(state.message!!.contains("secret-token"))
-        assertFalse(state.message!!.contains("content://"))
-        assertFalse(state.message!!.contains("file://"))
+        val message = requireNotNull(state.message)
+        assertFalse(message.contains("secret-token"))
+        assertFalse(message.contains("content://"))
+        assertFalse(message.contains("file://"))
     }
 
     @Test

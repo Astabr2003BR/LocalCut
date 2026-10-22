@@ -33,28 +33,30 @@ class SharedMediaStager(
             require(directory.isDirectory) { "SHARED_MEDIA_STORAGE_UNAVAILABLE" }
 
             val stem = "shared-${UUID.randomUUID()}"
-            partial = File(directory, "$stem.part")
-            target = File(directory, "$stem.$extension")
+            val partialFile = File(directory, "$stem.part")
+            val targetFile = File(directory, "$stem.$extension")
+            partial = partialFile
+            target = targetFile
 
             resolver.openInputStream(source)?.use { input ->
-                partial.outputStream().buffered().use { output ->
+                partialFile.outputStream().buffered().use { output ->
                     input.copyTo(output)
                 }
             } ?: throw IllegalArgumentException("SHARED_MEDIA_SOURCE_UNAVAILABLE")
 
-            require(partial.isFile && partial.length() > 0L) { "SHARED_MEDIA_EMPTY" }
-            if (!partial.renameTo(target)) {
-                partial.copyTo(target, overwrite = true)
-                partial.delete()
+            require(partialFile.isFile && partialFile.length() > 0L) { "SHARED_MEDIA_EMPTY" }
+            if (!partialFile.renameTo(targetFile)) {
+                partialFile.copyTo(targetFile, overwrite = true)
+                partialFile.delete()
             }
-            require(target.isFile && target.length() > 0L) { "SHARED_MEDIA_STAGE_FAILED" }
+            require(targetFile.isFile && targetFile.length() > 0L) { "SHARED_MEDIA_STAGE_FAILED" }
 
             val uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.remote-media",
-                target,
+                targetFile,
             )
-            Result.success(StagedSharedMedia(uri = uri, backingFile = target))
+            Result.success(StagedSharedMedia(uri = uri, backingFile = targetFile))
         } catch (error: CancellationException) {
             target?.delete()
             throw error

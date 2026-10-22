@@ -25,8 +25,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
-import com.localcut.editor.data.assets.AndroidAssetImporter
-import com.localcut.editor.data.assets.VisualOverlayImportPolicy
 import com.localcut.editor.domain.timeline.TimelineMath
 import com.localcut.editor.media.AndroidExportCapabilitiesProvider
 import com.localcut.editor.media.ExportEvent
@@ -36,13 +34,11 @@ import com.localcut.editor.media.Media3ExportController
 import com.localcut.editor.media.Media3PreviewController
 import com.localcut.editor.media.SafExportDestination
 import com.localcut.editor.mobile.SharedMediaIntentParser
-import com.localcut.editor.session.EditorAction
 import com.localcut.editor.ui.editor.BridgePanel
 import com.localcut.editor.ui.editor.EditorScreen
 import com.localcut.editor.ui.editor.EditorViewModel
 import com.localcut.editor.ui.editor.ExportUiState
 import java.io.File
-import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -50,7 +46,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @UnstableApi
 @OptIn(ExperimentalApi::class)
@@ -77,7 +72,6 @@ class MainActivity : ComponentActivity() {
         finalPreviewRenderer = runtime.finalPreviewRenderer
         editorViewModel = runtime.editorViewModel
 
-        val overlayImporter = AndroidAssetImporter(contentResolver)
         val exportCapabilitiesProvider = AndroidExportCapabilitiesProvider(this)
         val exportCapabilities = exportCapabilitiesProvider.current()
 
@@ -90,7 +84,7 @@ class MainActivity : ComponentActivity() {
         val overlayImportLauncher = registerForActivityResult(
             ActivityResultContracts.PickMultipleVisualMedia(maxItems = 20)
         ) { uris ->
-            if (uris.isNotEmpty()) importOverlayUris(uris, overlayImporter)
+            if (uris.isNotEmpty()) importOverlayUris(uris)
         }
 
         val audioImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -263,44 +257,22 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun importOverlayUris(uris: List<Uri>, importer: AndroidAssetImporter) {
+    private fun importOverlayUris(uris: List<Uri>) {
         activityScope.launch {
-            var importedCount = 0
-            var failedCount = 0
+            val result = runtime.mediaIngestCoordinator.importOverlayUris(
+                uris = uris,
+                playheadUs = editorViewModel.previewState.value.positionUs,
+            )
+            result.errors.forEach(::showError)
 
-            for (uri in uris) {
-                val importResult = withContext(Dispatchers.IO) { importer.import(uri) }
-                if (importResult.isFailure) {
-                    failedCount += 1
-                    showError(importResult.exceptionOrNull()?.message ?: "Não foi possível importar o overlay")
-                    continue
+            if (result.importedCount > 0) {
+                val message = if (result.importedCount == 1) {
+                    "1 overlay importado"
+                } else {
+                    "${result.importedCount} overlays importados"
                 }
-                val asset = importResult.getOrThrow()
-                val project = editorViewModel.sessionState.value.project
-                val clipResult = VisualOverlayImportPolicy.create(
-                    project = project,
-                    asset = asset,
-                    clipId = UUID.randomUUID().toString(),
-                    playheadUs = editorViewModel.previewState.value.positionUs,
-                )
-                clipResult.onSuccess { clip ->
-                    editorViewModel.dispatch(EditorAction.AddImportedOverlayClip(asset, clip))
-                    if (editorViewModel.sessionState.value.project.findClip(clip.id) != null) {
-                        importedCount += 1
-                    } else {
-                        failedCount += 1
-                        showError(editorViewModel.sessionState.value.lastError ?: "Não foi possível inserir o overlay")
-                    }
-                }.onFailure { error ->
-                    failedCount += 1
-                    showError(error.message ?: "Não foi possível criar o overlay")
-                }
-            }
-
-            if (importedCount > 0) {
-                val message = if (importedCount == 1) "1 overlay importado" else "$importedCount overlays importados"
                 Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
-            } else if (failedCount == 0) {
+            } else if (result.failedCount == 0) {
                 showError("Nenhum overlay selecionado")
             }
         }

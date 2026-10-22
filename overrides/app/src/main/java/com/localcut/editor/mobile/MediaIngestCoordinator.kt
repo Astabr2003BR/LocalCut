@@ -24,7 +24,70 @@ class MediaIngestCoordinator(
     private val sharedMediaStager: SharedMediaStager,
     private val persistProject: () -> Result<Unit> = { Result.success(Unit) },
 ) {
-    suspend fun importUris(uris: List<Uri>): MediaIngestResult {
+    /**
+     * User-selected external media must become LocalCut-owned before it is added to the project.
+     * This avoids keeping transient provider URIs that can stop resolving after process/device
+     * restarts or later provider permission changes.
+     */
+    suspend fun importUris(uris: List<Uri>): MediaIngestResult = importStagedUris(
+        uris = uris,
+        stageFailureMessage = "Não foi possível preservar a mídia importada",
+    )
+
+    suspend fun importSharedUris(uris: List<Uri>): MediaIngestResult = importStagedUris(
+        uris = uris,
+        stageFailureMessage = "Não foi possível preservar a mídia compartilhada",
+    )
+
+    /**
+     * Imports media that is already backed by LocalCut-owned storage (for example remote-media).
+     * Callers are responsible for retaining/deleting that backing according to the returned result.
+     */
+    suspend fun importOwnedUris(uris: List<Uri>): MediaIngestResult = importPreparedUris(uris)
+
+    private suspend fun importStagedUris(
+        uris: List<Uri>,
+        stageFailureMessage: String,
+    ): MediaIngestResult {
+        var importedCount = 0
+        var failedCount = 0
+        val errors = mutableListOf<String>()
+
+        for (source in uris) {
+            val stagedResult = sharedMediaStager.stage(source)
+            if (stagedResult.isFailure) {
+                failedCount += 1
+                errors += stagedResult.exceptionOrNull()?.message ?: stageFailureMessage
+                continue
+            }
+
+            val staged = stagedResult.getOrThrow()
+            var retainBacking = false
+            try {
+                val result = importPreparedUris(listOf(staged.uri))
+                importedCount += result.importedCount
+                failedCount += result.failedCount
+                errors += result.errors
+                // If the clip made it into the project, retain its backing even when persistence
+                // reports an error so a later autosave/recovery can still reference valid bytes.
+                retainBacking = result.importedCount == 1 && result.failedCount == 0
+            } finally {
+                if (!retainBacking) {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        staged.backingFile.delete()
+                    }
+                }
+            }
+        }
+
+        return MediaIngestResult(
+            importedCount = importedCount,
+            failedCount = failedCount,
+            errors = errors,
+        )
+    }
+
+    private suspend fun importPreparedUris(uris: List<Uri>): MediaIngestResult {
         var importedCount = 0
         var failedCount = 0
         val errors = mutableListOf<String>()
@@ -71,43 +134,6 @@ class MediaIngestCoordinator(
             val persistenceResult = withContext(Dispatchers.IO) { persistProject() }
             persistenceResult.exceptionOrNull()?.let { error ->
                 errors += "Mídia importada, mas o projeto ainda não pôde ser salvo: ${error.message ?: error::class.simpleName}"
-            }
-        }
-
-        return MediaIngestResult(
-            importedCount = importedCount,
-            failedCount = failedCount,
-            errors = errors,
-        )
-    }
-
-    suspend fun importSharedUris(uris: List<Uri>): MediaIngestResult {
-        var importedCount = 0
-        var failedCount = 0
-        val errors = mutableListOf<String>()
-
-        for (source in uris) {
-            val stagedResult = sharedMediaStager.stage(source)
-            if (stagedResult.isFailure) {
-                failedCount += 1
-                errors += stagedResult.exceptionOrNull()?.message ?: "Não foi possível preservar a mídia compartilhada"
-                continue
-            }
-
-            val staged = stagedResult.getOrThrow()
-            var retainBacking = false
-            try {
-                val result = importUris(listOf(staged.uri))
-                importedCount += result.importedCount
-                failedCount += result.failedCount
-                errors += result.errors
-                retainBacking = result.importedCount == 1 && result.failedCount == 0
-            } finally {
-                if (!retainBacking) {
-                    withContext(NonCancellable + Dispatchers.IO) {
-                        staged.backingFile.delete()
-                    }
-                }
             }
         }
 

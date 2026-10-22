@@ -22,6 +22,7 @@ data class BridgeUiState(
     fun reduce(event: BridgeUiEvent): BridgeUiState = when (event) {
         is BridgeUiEvent.Pairing -> copy(
             phase = BridgeUiPhase.PAIRING,
+            paired = false,
             pairingCode = event.code.take(12),
             exportProgressPercent = null,
             message = null,

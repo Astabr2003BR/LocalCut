@@ -57,7 +57,11 @@ class OkHttpBridgeSocketClient(
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 if (!clearIfCurrent(webSocket)) return
-                listener.onFailure(t.message?.take(240) ?: "bridge websocket failed")
+                if (response?.code == HTTP_UNAUTHORIZED) {
+                    listener.onDisconnected(HTTP_UNAUTHORIZED, response.message.take(240))
+                } else {
+                    listener.onFailure(t.message?.take(240) ?: "bridge websocket failed")
+                }
             }
         })
 
@@ -101,5 +105,6 @@ class OkHttpBridgeSocketClient(
 
     private companion object {
         const val NORMAL_CLOSE_CODE = 1000
+        const val HTTP_UNAUTHORIZED = 401
     }
 }

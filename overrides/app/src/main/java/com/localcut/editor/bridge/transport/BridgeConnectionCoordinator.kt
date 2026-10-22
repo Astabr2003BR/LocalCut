@@ -80,6 +80,11 @@ class BridgeConnectionCoordinator(
     @Synchronized
     override fun onDisconnected(code: Int?, reason: String?) {
         observer.onDisconnected(code, reason)
+        if (code == HTTP_UNAUTHORIZED) {
+            reconnectAttempt = 0
+            cancelScheduledReconnect()
+            return
+        }
         scheduleReconnectIfAllowed()
     }
 
@@ -128,5 +133,9 @@ class BridgeConnectionCoordinator(
     private fun cancelScheduledReconnect() {
         scheduledReconnect?.cancel()
         scheduledReconnect = null
+    }
+
+    private companion object {
+        const val HTTP_UNAUTHORIZED = 401
     }
 }

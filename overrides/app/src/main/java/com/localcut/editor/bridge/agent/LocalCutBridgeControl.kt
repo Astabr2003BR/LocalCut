@@ -29,6 +29,7 @@ class LocalCutBridgeControl(
 ) {
     private val appContext = context.applicationContext
     private val pairingRunning = AtomicBoolean(false)
+    private val forcedRefreshPending = AtomicBoolean(false)
     private val endpointPreference = BridgeEndpointPreference(settingsStore, credentialStore)
     private val mutableState = MutableStateFlow(
         BridgeUiState(
@@ -45,7 +46,10 @@ class LocalCutBridgeControl(
         }
 
         override fun onDisconnected(code: Int?, reason: String?) {
-            if (settingsStore.sessionEnabled) {
+            if (code == HTTP_UNAUTHORIZED) {
+                update(BridgeUiEvent.Connecting)
+                connect(forceRefreshCredential = true)
+            } else if (settingsStore.sessionEnabled) {
                 update(BridgeUiEvent.Connecting)
             } else {
                 update(BridgeUiEvent.Disconnected)
@@ -73,16 +77,22 @@ class LocalCutBridgeControl(
     }
 
     fun connect() {
+        connect(forceRefreshCredential = false)
+    }
+
+    private fun connect(forceRefreshCredential: Boolean) {
         val endpoint = endpointPreference.current().getOrElse {
             update(BridgeUiEvent.Error("Configure um endereço HTTPS válido do Relay antes de conectar."))
             return
         }
+        if (forceRefreshCredential) forcedRefreshPending.set(true)
         if (!pairingRunning.compareAndSet(false, true)) return
         scope.launch {
             try {
+                val forceRefresh = forcedRefreshPending.getAndSet(false)
                 val client = OkHttpBridgePairingClient(endpoint.httpsBaseUrl)
                 var credential = credentialStore.load()
-                if (credential != null && credential.expiresAtEpochMs <= nowEpochMs()) {
+                if (credential != null && (forceRefresh || credential.expiresAtEpochMs <= nowEpochMs())) {
                     credential = credential.refreshToken?.let { refresh ->
                         withContext(Dispatchers.IO) { client.refresh(refresh).getOrNull() }
                     }
@@ -113,6 +123,9 @@ class LocalCutBridgeControl(
                 startBridgeService(BridgeConnectionService.ACTION_CONNECT)
             } finally {
                 pairingRunning.set(false)
+                if (forcedRefreshPending.get()) {
+                    connect(forceRefreshCredential = true)
+                }
             }
         }
     }
@@ -203,5 +216,9 @@ class LocalCutBridgeControl(
         }.onFailure { error ->
             update(BridgeUiEvent.Error(error.message ?: "Não foi possível iniciar o Bridge"))
         }
+    }
+
+    private companion object {
+        const val HTTP_UNAUTHORIZED = 401
     }
 }

@@ -40,8 +40,8 @@ class RemoteMediaImportExecutor(
                 "${context.packageName}.remote-media",
                 persisted,
             )
-            val ingest = mediaIngestCoordinator.importUris(listOf(uri))
-            require(ingest.importedCount == 1 && ingest.failedCount == 0) {
+            val ingest = mediaIngestCoordinator.importOwnedUris(listOf(uri))
+            require(ingest.importedCount == 1 && ingest.failedCount == 0 && ingest.errors.isEmpty()) {
                 ingest.errors.firstOrNull() ?: "REMOTE_MEDIA_IMPORT_FAILED"
             }
             committed = true

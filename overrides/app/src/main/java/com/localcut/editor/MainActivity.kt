@@ -199,9 +199,13 @@ class MainActivity : ComponentActivity() {
         consumeSharedMediaIntent(intent)
     }
 
-    private fun importUris(uris: List<Uri>) {
+    private fun importUris(uris: List<Uri>, shared: Boolean = false) {
         activityScope.launch {
-            val result = runtime.mediaIngestCoordinator.importUris(uris)
+            val result = if (shared) {
+                runtime.mediaIngestCoordinator.importSharedUris(uris)
+            } else {
+                runtime.mediaIngestCoordinator.importUris(uris)
+            }
             result.errors.forEach(::showError)
 
             if (result.importedCount > 0) {
@@ -230,7 +234,7 @@ class MainActivity : ComponentActivity() {
         markSharedIntentConsumed(sourceIntent)
 
         parsed.onSuccess { request ->
-            importUris(request.uriStrings.map(Uri::parse))
+            importUris(request.uriStrings.map(Uri::parse), shared = true)
         }.onFailure { error ->
             showError(error.message ?: "Não foi possível importar a mídia compartilhada")
         }

@@ -151,6 +151,75 @@ class SharedMediaPersistenceSmokeTest {
         }
     }
 
+    @Test
+    fun overlayImportUsesLocalCutOwnedBackingAndSurvivesSourceDeletion() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val projectDir = context.cacheDir.toPath().resolve("overlay-persistence-smoke-${UUID.randomUUID()}")
+        val store = AtomicProjectStore(projectDir)
+        val scheduler = DelayScheduler { _, _ -> Cancellable { } }
+        val autosave = DebouncedProjectSaver(store, scheduler, 60_000L)
+        val session = ProjectSession(
+            initialProject = Project.create("Overlay persistence smoke", 1080, 1920, 30),
+            preview = object : ProjectPreviewLoader {
+                override fun load(project: Project): Result<Unit> = Result.success(Unit)
+            },
+            autosave = autosave,
+            store = store,
+        )
+        val coordinator = MediaIngestCoordinator(
+            importer = AndroidAssetImporter(context.contentResolver),
+            editorViewModel = EditorViewModel(session, NoOpPreviewController()),
+            sharedMediaStager = SharedMediaStager(context),
+            persistProject = autosave::flushNow,
+        )
+
+        val remoteDir = File(context.filesDir, "remote-media")
+        val beforePrivateFiles = remoteDir.listFiles().orEmpty().map { it.name }.toSet()
+        val primarySource = createPngFixture()
+        val overlaySource = createPngFixture()
+        try {
+            val primary = runBlocking(Dispatchers.Main.immediate) {
+                coordinator.importUris(listOf(primarySource))
+            }
+            assertEquals(primary.errors.joinToString(), 1, primary.importedCount)
+            assertEquals(primary.errors.joinToString(), 0, primary.failedCount)
+            assertTrue(primary.errors.joinToString(), primary.errors.isEmpty())
+
+            val beforeOverlayIds = session.state.project.assets.map { it.id }.toSet()
+            val overlay = runBlocking(Dispatchers.Main.immediate) {
+                coordinator.importOverlayUris(listOf(overlaySource), playheadUs = 0L)
+            }
+            assertEquals(overlay.errors.joinToString(), 1, overlay.importedCount)
+            assertEquals(overlay.errors.joinToString(), 0, overlay.failedCount)
+            assertTrue(overlay.errors.joinToString(), overlay.errors.isEmpty())
+
+            val overlayAsset = session.state.project.assets.single { it.id !in beforeOverlayIds }
+            assertNotEquals(
+                "overlay import must not keep a transient external source URI",
+                overlaySource.toString(),
+                overlayAsset.uri,
+            )
+            val persisted = store.load().getOrThrow()
+            assertEquals(overlayAsset.uri, persisted.assets.single { it.id == overlayAsset.id }.uri)
+            assertTrue(
+                "persisted project must contain the overlay clip",
+                persisted.tracks.any { track -> track.clips.any { it.assetId == overlayAsset.id } },
+            )
+            assertEquals(1, context.contentResolver.delete(overlaySource, null, null))
+            assertTrue(
+                "overlay asset must remain readable after the original source is deleted",
+                AssetUriResolver(context.contentResolver).resolve(overlayAsset).isSuccess,
+            )
+        } finally {
+            runCatching { context.contentResolver.delete(primarySource, null, null) }
+            runCatching { context.contentResolver.delete(overlaySource, null, null) }
+            projectDir.toFile().deleteRecursively()
+            remoteDir.listFiles().orEmpty()
+                .filter { it.name !in beforePrivateFiles }
+                .forEach { runCatching { it.delete() } }
+        }
+    }
+
     private class NoOpPreviewController : PreviewController {
         private val mutableState = MutableStateFlow(PreviewState())
         override val state: StateFlow<PreviewState> = mutableState

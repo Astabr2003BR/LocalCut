@@ -1,5 +1,6 @@
 package com.localcut.editor.bridge.agent
 
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -13,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -33,6 +35,29 @@ class BridgeConnectionServiceSmokeTest {
                 Intent(context, BridgeConnectionService::class.java)
                     .setAction(BridgeConnectionService.ACTION_DISCONNECT),
             )
+        }
+    }
+
+    @Test
+    fun missingRelayPreferenceFallsBackToOfficialRelayWithoutOverwritingCustomRelay() {
+        val preferences = context.getSharedPreferences(
+            SharedPreferencesBridgeSettingsStore.PREFERENCES_NAME,
+            Context.MODE_PRIVATE,
+        )
+        check(preferences.edit().clear().commit())
+
+        try {
+            val settings = SharedPreferencesBridgeSettingsStore(context)
+            settings.alwaysConnected = true
+
+            assertEquals("https://localcut-bridge-v1.onrender.com", settings.relayBaseUrl)
+            assertTrue(settings.alwaysConnected)
+
+            settings.relayBaseUrl = "https://bridge.example.com"
+            assertEquals("https://bridge.example.com", settings.relayBaseUrl)
+            assertTrue(settings.alwaysConnected)
+        } finally {
+            check(preferences.edit().clear().commit())
         }
     }
 

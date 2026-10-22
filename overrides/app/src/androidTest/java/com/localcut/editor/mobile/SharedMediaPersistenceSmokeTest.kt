@@ -10,6 +10,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.localcut.editor.LocalCutProcessRuntime
 import com.localcut.editor.data.project.AtomicProjectStore
+import com.localcut.editor.domain.timeline.TimelineValidator
+import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -40,11 +42,29 @@ class SharedMediaPersistenceSmokeTest {
             assertEquals(result.errors.joinToString(), 1, result.importedCount)
             assertEquals(result.errors.joinToString(), 0, result.failedCount)
 
-            val importedAsset = runtime.session.state.project.assets
-                .single { it.id !in beforeAssetIds }
-            val persisted = AtomicProjectStore(
-                context.filesDir.toPath().resolve("projects/default"),
-            ).load().getOrThrow()
+            val project = runtime.session.state.project
+            val validationIssues = TimelineValidator.validate(project)
+            assertTrue(
+                "imported project must remain valid before persistence: $validationIssues",
+                validationIssues.isEmpty(),
+            )
+            assertTrue(
+                "successful import must not hide persistence errors: ${result.errors}; autosave=${runtime.autosave.lastResult?.exceptionOrNull()}",
+                result.errors.isEmpty(),
+            )
+            assertTrue(
+                "autosave must report success before import returns: ${runtime.autosave.lastResult?.exceptionOrNull()}",
+                runtime.autosave.lastResult?.isSuccess == true,
+            )
+
+            val importedAsset = project.assets.single { it.id !in beforeAssetIds }
+            val projectDir = context.filesDir.toPath().resolve("projects/default")
+            val projectFile = projectDir.resolve("project.json").toFile()
+            assertTrue(
+                "project.json must exist after import; loadWarning=${runtime.loadWarning}; files=${projectTree(context.filesDir)}",
+                projectFile.isFile,
+            )
+            val persisted = AtomicProjectStore(projectDir).load().getOrThrow()
 
             assertTrue(
                 "successful import must already be present in project.json before importSharedUris returns",
@@ -58,6 +78,14 @@ class SharedMediaPersistenceSmokeTest {
             runCatching { context.contentResolver.delete(sourceUri, null, null) }
         }
     }
+
+    private fun projectTree(filesDir: File): String =
+        File(filesDir, "projects").walkTopDown()
+            .take(30)
+            .joinToString(" | ") { file ->
+                val relative = file.relativeToOrSelf(filesDir).path
+                if (file.isFile) "$relative(${file.length()})" else "$relative/"
+            }
 
     private fun createPngFixture(): Uri {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

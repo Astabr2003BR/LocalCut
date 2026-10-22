@@ -29,16 +29,21 @@ class AndroidKeystoreBridgeCredentialStore(context: Context) : BridgeCredentialS
     }
 
     override fun load(): BridgeStoredCredential? {
-        val ivEncoded = preferences.getString(KEY_IV, null) ?: return null
-        val ciphertextEncoded = preferences.getString(KEY_CIPHERTEXT, null) ?: return null
+        val ivEncoded = preferences.getString(KEY_IV, null)
+        val ciphertextEncoded = preferences.getString(KEY_CIPHERTEXT, null)
+        if (ivEncoded == null || ciphertextEncoded == null) {
+            if (ivEncoded != null || ciphertextEncoded != null) clear()
+            return null
+        }
         return runCatching {
             val iv = Base64.getDecoder().decode(ivEncoded)
             val ciphertext = Base64.getDecoder().decode(ciphertextEncoded)
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.DECRYPT_MODE, getOrCreateSecretKey(), GCMParameterSpec(GCM_TAG_BITS, iv))
             decode(cipher.doFinal(ciphertext))
-        }.getOrElse { error ->
-            throw IllegalStateException("encrypted bridge credential is unreadable", error)
+        }.getOrElse {
+            clear()
+            null
         }
     }
 

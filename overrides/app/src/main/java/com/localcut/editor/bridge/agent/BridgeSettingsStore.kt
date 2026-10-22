@@ -43,7 +43,11 @@ class SharedPreferencesBridgeSettingsStore(context: Context) : BridgeSettingsSto
         }
 
     override var relayBaseUrl: String
-        get() = preferences.getString(KEY_RELAY_BASE_URL, "").orEmpty()
+        get() = preferences
+            .getString(KEY_RELAY_BASE_URL, OFFICIAL_RELAY_BASE_URL)
+            ?.trim()
+            .orEmpty()
+            .ifBlank { OFFICIAL_RELAY_BASE_URL }
         set(value) {
             check(preferences.edit().putString(KEY_RELAY_BASE_URL, value).commit()) {
                 "failed to persist bridge relayBaseUrl"
@@ -52,6 +56,7 @@ class SharedPreferencesBridgeSettingsStore(context: Context) : BridgeSettingsSto
 
     companion object {
         const val PREFERENCES_NAME = "localcut.bridge.settings.v1"
+        const val OFFICIAL_RELAY_BASE_URL = "https://localcut-bridge-v1.onrender.com"
         private const val KEY_SESSION_ENABLED = "session_enabled"
         private const val KEY_ALWAYS_CONNECTED = "always_connected"
         private const val KEY_RELAY_BASE_URL = "relay_base_url"

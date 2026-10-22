@@ -9,6 +9,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.MultipleInputVideoGraph
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.CompositionPlayer
 import androidx.media3.transformer.EditedMediaItem
@@ -25,7 +26,9 @@ class Media3PreviewController(
     compositionCompiler: ProjectCompositionCompiler,
     runtimeProvider: PreviewRuntimeProvider = AndroidPreviewRuntimeProvider(context),
 ) : PreviewController {
-    private val player = CompositionPlayer.Builder(context).build()
+    private val player = CompositionPlayer.Builder(context)
+        .setVideoGraphFactory(MultipleInputVideoGraph.Factory())
+        .build()
     private val engine = Media3PreviewEngine(player, compositionCompiler, runtimeProvider)
     private val delegate = DefaultPreviewController(engine, AndroidPreviewTicker())
 

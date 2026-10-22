@@ -80,15 +80,7 @@ class BridgeConnectionServiceSmokeTest {
             relayBaseUrl = "https://127.0.0.1:1",
         )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        val identity = object : DeviceIdentityStore {
-            override fun getOrCreatePublicIdentity(): DevicePublicIdentity = DevicePublicIdentity(
-                deviceId = "lc_test_device",
-                algorithm = "EC_P256",
-                publicKeySpkiBase64 = "AQ==",
-            )
-
-            override fun signChallenge(challenge: ByteArray): ByteArray = byteArrayOf(1)
-        }
+        val identity = testIdentity()
         val control = LocalCutBridgeControl(
             context = context,
             scope = scope,
@@ -111,6 +103,57 @@ class BridgeConnectionServiceSmokeTest {
         } finally {
             scope.cancel()
         }
+    }
+
+    @Test
+    fun unauthorizedSocketForcesCredentialRecoveryInsteadOfKeepingRejectedTokenPaired() {
+        val credentials = InMemoryBridgeCredentialStore().apply {
+            save(
+                BridgeStoredCredential(
+                    accessToken = "server-rejected-access",
+                    refreshToken = "refresh-token",
+                    expiresAtEpochMs = Long.MAX_VALUE,
+                ),
+            )
+        }
+        val settings = InMemoryBridgeSettingsStore(
+            sessionEnabled = true,
+            alwaysConnected = true,
+            relayBaseUrl = "https://127.0.0.1:1",
+        )
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val control = LocalCutBridgeControl(
+            context = context,
+            scope = scope,
+            settingsStore = settings,
+            credentialStore = credentials,
+            identityStore = testIdentity(),
+            nowEpochMs = { 10_000L },
+        )
+
+        try {
+            assertTrue(control.state.value.paired)
+            control.connectionObserver.onDisconnected(401, "Unauthorized")
+
+            waitUntil(timeoutMs = 10_000L) {
+                credentials.load() == null && control.state.value.phase == BridgeUiPhase.ERROR
+            }
+
+            assertFalse("401 must invalidate the rejected paired state when refresh cannot recover", control.state.value.paired)
+            assertTrue("always-connected preference must survive auth recovery", control.state.value.alwaysConnected)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    private fun testIdentity(): DeviceIdentityStore = object : DeviceIdentityStore {
+        override fun getOrCreatePublicIdentity(): DevicePublicIdentity = DevicePublicIdentity(
+            deviceId = "lc_test_device",
+            algorithm = "EC_P256",
+            publicKeySpkiBase64 = "AQ==",
+        )
+
+        override fun signChallenge(challenge: ByteArray): ByteArray = byteArrayOf(1)
     }
 
     private fun waitUntil(timeoutMs: Long = 5_000L, condition: () -> Boolean) {

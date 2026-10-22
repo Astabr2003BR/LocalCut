@@ -22,6 +22,7 @@ class MediaIngestCoordinator(
     private val importer: AndroidAssetImporter,
     private val editorViewModel: EditorViewModel,
     private val sharedMediaStager: SharedMediaStager,
+    private val persistProject: () -> Result<Unit> = { Result.success(Unit) },
 ) {
     suspend fun importUris(uris: List<Uri>): MediaIngestResult {
         var importedCount = 0
@@ -63,6 +64,13 @@ class MediaIngestCoordinator(
             }.onFailure { error ->
                 failedCount += 1
                 errors += error.message ?: "Não foi possível criar o clipe"
+            }
+        }
+
+        if (importedCount > 0) {
+            val persistenceResult = withContext(Dispatchers.IO) { persistProject() }
+            persistenceResult.exceptionOrNull()?.let { error ->
+                errors += "Mídia importada, mas o projeto ainda não pôde ser salvo: ${error.message ?: error::class.simpleName}"
             }
         }
 

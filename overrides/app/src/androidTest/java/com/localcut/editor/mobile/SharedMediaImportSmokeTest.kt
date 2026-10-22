@@ -38,6 +38,7 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -150,7 +151,7 @@ class SharedMediaImportSmokeTest {
         val audioUri = publishFixture(wav, "audio/wav", MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
 
         try {
-            val result = runBlocking {
+            val result = runBlocking(Dispatchers.Main.immediate) {
                 runtime.mediaIngestCoordinator.importSharedUris(listOf(imageUri, videoUri, audioUri))
             }
 
@@ -182,6 +183,8 @@ class SharedMediaImportSmokeTest {
                 )
             }
             waitForPreviewToMatchProject(runtime)
+            assertTrue(runtime.session.state.issues.joinToString { it.message }, runtime.session.state.issues.isEmpty())
+            assertEquals(null, runtime.previewController.state.value.errorMessage)
             assertTrue(runtime.previewController.state.value.durationUs > 0L)
         } finally {
             runCatching { context.contentResolver.delete(imageUri, null, null) }

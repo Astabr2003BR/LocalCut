@@ -137,7 +137,13 @@ class AtomicProjectStore(private val projectDir: Path) : ProjectStore {
         return Result.success(recovered)
     }
 
-    private fun readProject(path: Path): Project = ProjectJson.decode(Files.readString(path, StandardCharsets.UTF_8))
+    private fun readProject(path: Path): Project {
+        val json = path.toFile()
+            .inputStream()
+            .bufferedReader(StandardCharsets.UTF_8)
+            .use { reader -> reader.readText() }
+        return ProjectJson.decode(json)
+    }
 
     private fun isValidCurrent(path: Path): Boolean = try {
         readProject(path)

@@ -128,6 +128,7 @@ class LocalCutProcessRuntime private constructor(context: Context) {
             importer = AndroidAssetImporter(appContext.contentResolver),
             editorViewModel = editorViewModel,
             sharedMediaStager = SharedMediaStager(appContext),
+            persistProject = autosave::flushNow,
         )
         previewController.load(initialProject)
 

@@ -33,6 +33,22 @@ class BridgeUiStateTest {
     }
 
     @Test
+    fun startingFreshPairingClearsStalePairedFlag() {
+        val state = BridgeUiState(
+            phase = BridgeUiPhase.ONLINE,
+            paired = true,
+            alwaysConnected = true,
+            relayBaseUrl = "https://bridge.example.com",
+        ).reduce(BridgeUiEvent.Pairing("977402"))
+
+        assertEquals(BridgeUiPhase.PAIRING, state.phase)
+        assertEquals("977402", state.pairingCode)
+        assertFalse(state.paired)
+        assertTrue(state.alwaysConnected)
+        assertEquals("https://bridge.example.com", state.relayBaseUrl)
+    }
+
+    @Test
     fun manualRevokeReturnsToUnpairedOfflineAndPreservesRelay() {
         val state = BridgeUiState(
             phase = BridgeUiPhase.ONLINE,

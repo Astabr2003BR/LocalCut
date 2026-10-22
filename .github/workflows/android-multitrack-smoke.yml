@@ -62,6 +62,7 @@ jobs:
           test -f work/app/src/androidTest/java/com/localcut/editor/bridge/agent/MediaStoreBridgeExportSmokeTest.kt
           test -f work/app/src/androidTest/java/com/localcut/editor/bridge/agent/BridgeConnectionServiceSmokeTest.kt
           test -f work/app/src/androidTest/java/com/localcut/editor/mobile/MobileHandoffIntentFilterSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/mobile/PackageCoexistenceSmokeTest.kt
           test -f work/app/src/androidTest/java/com/localcut/editor/mobile/SharedMediaImportSmokeTest.kt
           test -f work/app/src/androidTest/java/com/localcut/editor/mobile/RemoteMediaValidatorSmokeTest.kt
           test -f work/app/src/androidTest/java/com/localcut/editor/mobile/RemoteMediaHandoffSmokeTest.kt
@@ -107,7 +108,7 @@ jobs:
           echo "LOCALCUT_ADB=$ADB" >> "$GITHUB_ENV"
           echo "LOCALCUT_EMULATOR=$EMULATOR" >> "$GITHUB_ENV"
 
-      - name: Run real multitrack export, Bridge, mobile handoff, share-import, and remote-media smoke on emulator
+      - name: Run real multitrack export, Bridge, mobile handoff, share-import, package-coexistence, and remote-media smoke on emulator
         shell: bash
         run: |
           set -euo pipefail
@@ -188,7 +189,7 @@ jobs:
           "$ADB" shell input keyevent 82 || true
 
           gradle --no-daemon -p work connectedDebugAndroidTest \
-            -Pandroid.testInstrumentationRunnerArguments.class=com.localcut.editor.media.MultitrackExportSmokeTest,com.localcut.editor.media.FadeToBlackExportSmokeTest,com.localcut.editor.media.KeyframeExportSmokeTest,com.localcut.editor.bridge.security.AndroidKeystoreDeviceIdentitySmokeTest,com.localcut.editor.bridge.agent.MediaStoreBridgeExportSmokeTest,com.localcut.editor.bridge.agent.BridgeConnectionServiceSmokeTest,com.localcut.editor.mobile.MobileHandoffIntentFilterSmokeTest,com.localcut.editor.mobile.SharedMediaImportSmokeTest,com.localcut.editor.mobile.RemoteMediaValidatorSmokeTest,com.localcut.editor.mobile.RemoteMediaHandoffSmokeTest
+            -Pandroid.testInstrumentationRunnerArguments.class=com.localcut.editor.media.MultitrackExportSmokeTest,com.localcut.editor.media.FadeToBlackExportSmokeTest,com.localcut.editor.media.KeyframeExportSmokeTest,com.localcut.editor.bridge.security.AndroidKeystoreDeviceIdentitySmokeTest,com.localcut.editor.bridge.agent.MediaStoreBridgeExportSmokeTest,com.localcut.editor.bridge.agent.BridgeConnectionServiceSmokeTest,com.localcut.editor.mobile.MobileHandoffIntentFilterSmokeTest,com.localcut.editor.mobile.PackageCoexistenceSmokeTest,com.localcut.editor.mobile.SharedMediaImportSmokeTest,com.localcut.editor.mobile.RemoteMediaValidatorSmokeTest,com.localcut.editor.mobile.RemoteMediaHandoffSmokeTest
 
       - name: Upload instrumentation reports on failure
         if: failure()

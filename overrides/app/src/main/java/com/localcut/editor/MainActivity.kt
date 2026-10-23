@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.collectAsState
@@ -143,7 +144,11 @@ class MainActivity : ComponentActivity() {
                     onErrorContainer = Color(0xFFFFDADD),
                 )
             ) {
-                Column(modifier = Modifier.fillMaxSize()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .safeDrawingPadding(),
+                ) {
                     BridgePanel(
                         state = bridgeState,
                         onConnect = connectBridge,
@@ -318,10 +323,10 @@ class MainActivity : ComponentActivity() {
                     exportUiState.value = ExportUiState(message = "Prévia final pronta")
                 } else {
                     file.delete()
-                    exportUiState.value = ExportUiState(message = loaded.exceptionOrNull()?.message ?: "Falha ao abrir prévia final")
+                    exportUiState.value = ExportUiState(message = "Falha ao abrir a prévia final")
                 }
-            }.onFailure { error ->
-                exportUiState.value = ExportUiState(message = error.message ?: "Falha na prévia final")
+            }.onFailure {
+                exportUiState.value = ExportUiState(message = "Falha ao renderizar a prévia final")
             }
         }
     }

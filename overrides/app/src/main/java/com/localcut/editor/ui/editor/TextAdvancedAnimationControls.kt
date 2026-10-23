@@ -121,9 +121,9 @@ private fun TextAnimationKind.usesAmount(): Boolean = when (this) {
     TextAnimationKind.SLIDE_RIGHT,
     TextAnimationKind.BOUNCE,
     TextAnimationKind.WIGGLE -> true
-    TextAnimationKind.POP,
-    TextAnimationKind.SCALE -> true
     TextAnimationKind.NONE,
     TextAnimationKind.FADE,
+    TextAnimationKind.POP,
+    TextAnimationKind.SCALE,
     TextAnimationKind.TYPEWRITER -> false
 }

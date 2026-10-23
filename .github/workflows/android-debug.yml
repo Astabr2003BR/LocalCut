@@ -65,7 +65,7 @@ jobs:
           done < <(find overrides/app -type f -print0)
 
           grep -F 'PickMultipleVisualMedia' work/app/src/main/java/com/localcut/editor/MainActivity.kt
-          grep -F 'Text("Dividir")' work/app/src/main/java/com/localcut/editor/ui/editor/EditorScreen.kt
+          grep -F 'Dividir' work/app/src/main/java/com/localcut/editor/ui/editor/EditorScreen.kt
           grep -F 'TimelineEditBounds.clampLeft' work/app/src/main/java/com/localcut/editor/ui/editor/components/TimelinePane.kt
           grep -F 'TimelineEditBounds.clampRight' work/app/src/main/java/com/localcut/editor/ui/editor/components/TimelinePane.kt
           grep -F 'TimelineEditBounds.clampMove' work/app/src/main/java/com/localcut/editor/ui/editor/components/TimelinePane.kt

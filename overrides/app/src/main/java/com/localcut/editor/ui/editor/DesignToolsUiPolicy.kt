@@ -32,6 +32,7 @@ object DesignToolsUiPolicy {
     const val DEFAULT_DURATION_US: Long = 3_000_000L
     const val MAX_STROKE_WIDTH_PX: Double = 200.0
     const val MAX_CORNER_RADIUS_PX: Double = 300.0
+    private const val DUPLICATE_OFFSET_PX: Double = 24.0
     private const val CENTER_X_GUIDE_ID = "design-center-x"
     private const val CENTER_Y_GUIDE_ID = "design-center-y"
 
@@ -85,6 +86,23 @@ object DesignToolsUiPolicy {
             startUs = playheadUs,
             durationUs = DEFAULT_DURATION_US,
             shape = shape,
+            zIndex = nextZ,
+        )
+    }
+
+    fun duplicateElement(project: Project, element: DesignElement): DesignElement {
+        require(project.designElements.any { it.id == element.id }) { "design element ${element.id} not found" }
+        val existingIds = project.designElements.mapTo(hashSetOf()) { it.id }
+        val nextZ = project.designElements.maxOfOrNull { it.zIndex }?.let { maxZ ->
+            require(maxZ < Int.MAX_VALUE) { "cannot duplicate element above max z-index" }
+            maxZ + 1
+        } ?: 0
+        return element.copy(
+            id = nextId("shape", existingIds),
+            transform = element.transform.copy(
+                x = element.transform.x + DUPLICATE_OFFSET_PX,
+                y = element.transform.y + DUPLICATE_OFFSET_PX,
+            ),
             zIndex = nextZ,
         )
     }

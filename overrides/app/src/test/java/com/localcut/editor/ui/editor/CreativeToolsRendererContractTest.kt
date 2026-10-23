@@ -68,5 +68,13 @@ class CreativeToolsRendererContractTest {
             assertTrue(Media3TimeMapSupport.canRender(CreativeToolsUiPolicy.constantSpeed(TimeMap(), speed)))
         }
         assertTrue(Media3TimeMapSupport.canRender(CreativeToolsUiPolicy.accelerationRamp(3_000_000L)))
+        assertTrue(
+            Media3TimeMapSupport.canRender(
+                CreativeToolsUiPolicy.customSpeedCurve(
+                    sourceRangeUs = 6_000_000L,
+                    speeds = listOf(0.5, 1.0, 2.0, 1.0, 0.75),
+                ),
+            ),
+        )
     }
 }

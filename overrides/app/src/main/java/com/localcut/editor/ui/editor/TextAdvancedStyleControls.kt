@@ -17,10 +17,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.localcut.editor.domain.model.Project
 import kotlin.math.roundToInt
 
 @Composable
 internal fun TextAdvancedStyleControls(
+    project: Project,
     model: TextOverlayEditorModel,
     onModelChange: (TextOverlayEditorModel) -> Unit,
 ) {
@@ -36,6 +38,50 @@ internal fun TextAdvancedStyleControls(
             value = draft.opacity,
             range = 0.0..1.0,
             onValueChange = { onModelChange(model.withTextOpacity(it)) },
+        )
+
+        Text("Transformar", style = MaterialTheme.typography.labelMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            OutlinedButton(
+                onClick = { onModelChange(model.withPosition(project, 0.0, 0.0)) },
+            ) { Text("Centralizar") }
+            OutlinedButton(
+                onClick = {
+                    onModelChange(
+                        model
+                            .withPosition(project, 0.0, 0.0)
+                            .withScale(1.0)
+                            .withRotationDeg(0.0),
+                    )
+                },
+            ) { Text("Reset transform") }
+        }
+        TextStyleSlider(
+            label = "X ${draft.transform.x.roundToInt()} px",
+            value = draft.transform.x,
+            range = -(project.width / 2.0)..(project.width / 2.0),
+            onValueChange = { onModelChange(model.withPosition(project, it, draft.transform.y)) },
+        )
+        TextStyleSlider(
+            label = "Y ${draft.transform.y.roundToInt()} px",
+            value = draft.transform.y,
+            range = -(project.height / 2.0)..(project.height / 2.0),
+            onValueChange = { onModelChange(model.withPosition(project, draft.transform.x, it)) },
+        )
+        TextStyleSlider(
+            label = "Escala ${"%.2f".format(draft.transform.scale)}×",
+            value = draft.transform.scale,
+            range = 0.1..4.0,
+            onValueChange = { onModelChange(model.withScale(it)) },
+        )
+        TextStyleSlider(
+            label = "Rotação ${draft.transform.rotationDeg.roundToInt()}°",
+            value = draft.transform.rotationDeg,
+            range = -180.0..180.0,
+            onValueChange = { onModelChange(model.withRotationDeg(it)) },
         )
 
         if (background != null) {

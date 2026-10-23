@@ -90,6 +90,22 @@ data class ApplyDetectedBeatMarkersCommand(
     }
 }
 
+data class ClearAutoBeatMarkersCommand(
+    val clipId: String,
+) : EditorCommand {
+    override fun apply(project: Project): CommandResult {
+        require(project.findClip(clipId) != null) { "clip $clipId not found for beat cleanup" }
+        val prefix = autoMarkerPrefix(clipId)
+        val previous = project.beatMarkers
+        val preserved = previous.filterNot { it.id.startsWith(prefix) }
+        val edited = validatedBeatProject(project.copy(beatMarkers = preserved))
+        return CommandResult(
+            project = edited,
+            inverse = SetBeatMarkersCommand(previous),
+        )
+    }
+}
+
 private data class RestoreBeatMarkerCommand(
     val index: Int,
     val marker: BeatMarker,

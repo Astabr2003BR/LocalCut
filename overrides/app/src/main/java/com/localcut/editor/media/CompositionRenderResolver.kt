@@ -45,6 +45,13 @@ internal object CompositionRenderResolver {
         }
         require(layerNodes.size == 1) { "clip ${clip.id} is referenced by multiple composition layers" }
         val layer = layerNodes.single()
+        if (!isEffectivelyVisible(graph, layer.id)) {
+            return@runCatching ResolvedCompositionTransform(
+                transform = clip.transform,
+                keyframes = clip.keyframes,
+                opacity = 0.0,
+            )
+        }
 
         val cameraNodeId = staticCameraNodeId(graph)
         val world = WorldTransformResolver.resolve(graph, layer.id)
@@ -75,6 +82,18 @@ internal object CompositionRenderResolver {
             },
             opacity = clip.opacity * container.opacity,
         )
+    }
+
+    private fun isEffectivelyVisible(graph: CompositionGraph, nodeId: String): Boolean {
+        val nodes = graph.nodes.associateBy { it.id }
+        val visited = mutableSetOf<String>()
+        var current = nodes[nodeId] ?: return true
+        while (true) {
+            require(visited.add(current.id)) { "composition graph contains a parent cycle" }
+            if (!current.visible) return false
+            val parentId = current.parentId ?: return true
+            current = requireNotNull(nodes[parentId]) { "composition parent does not exist: $parentId" }
+        }
     }
 
     private fun staticCameraNodeId(graph: CompositionGraph): String? {

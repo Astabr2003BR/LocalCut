@@ -40,6 +40,28 @@ class CreativeToolsUiPolicyTest {
     }
 
     @Test
+    fun greenScreenPresetEnablesAndDisablesChromaWithoutChangingMask() {
+        val source = CreativeToolsUiPolicy.setMaskPreset(CompositingSettings(), MaskKind.RECTANGLE)
+        val enabled = CreativeToolsUiPolicy.greenScreen(source, enabled = true)
+        val disabled = CreativeToolsUiPolicy.greenScreen(enabled, enabled = false)
+
+        assertTrue(enabled.chromaKey.enabled)
+        assertEquals(0xFF00FF00.toInt(), enabled.chromaKey.keyArgb)
+        assertFalse(disabled.chromaKey.enabled)
+        assertEquals(source.masks, disabled.masks)
+    }
+
+    @Test
+    fun cropLayoutPresetPreservesExplicitBounds() {
+        val source = CompositingSettings(crop = CropSettings(left = 0.1, top = 0.2, right = 0.9, bottom = 0.8))
+        val result = CreativeToolsUiPolicy.cropLayout(source, CropMode.FILL)
+
+        assertEquals(CropMode.FILL, result.crop.mode)
+        assertEquals(0.1, result.crop.left, 0.0)
+        assertEquals(0.8, result.crop.bottom, 0.0)
+    }
+
+    @Test
     fun audioPresetsStayInsideValidationBounds() {
         val voice = CreativeToolsUiPolicy.voiceAudioPreset(AudioProcessingSettings())
         val loud = CreativeToolsUiPolicy.loudnessAudioPreset(voice)

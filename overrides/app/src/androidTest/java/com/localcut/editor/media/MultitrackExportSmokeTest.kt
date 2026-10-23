@@ -28,6 +28,8 @@ import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.model.TransformValue
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -53,6 +55,78 @@ class MultitrackExportSmokeTest {
                 val corner = frame.getPixel(frame.width / 12, frame.height / 12)
                 assertDominantBlue(center, "center pixel must come from the overlay layer")
                 assertDominantRed(corner, "corner pixel must remain from the base layer")
+            } finally {
+                frame.recycle()
+            }
+        } finally {
+            testDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun exportsStaticImageTogetherWithAudioWithoutVideoFrameProcessingFailure() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val testDir = File(context.cacheDir, "image-audio-smoke-${System.nanoTime()}").apply { mkdirs() }
+        try {
+            val imageFile = createSolidPng(File(testDir, "still.png"), Color.GREEN)
+            val audioFile = createMonoPcmWav(File(testDir, "tone.wav"), durationUs = DURATION_US)
+            val imageAsset = imageAsset("still", imageFile)
+            val audioAsset = audioAsset("sound", audioFile, DURATION_US)
+            val project = Project(
+                id = "image-audio-smoke",
+                schemaVersion = BuildContract.PROJECT_SCHEMA_VERSION,
+                title = "Image audio smoke",
+                width = WIDTH,
+                height = HEIGHT,
+                fps = 30,
+                assets = listOf(imageAsset, audioAsset),
+                tracks = listOf(
+                    Track(
+                        id = "visual-base",
+                        type = TrackType.VISUAL,
+                        order = 0,
+                        collisionPolicy = TrackCollisionPolicy.EXCLUSIVE,
+                        clips = listOf(
+                            Clip(
+                                id = "still-clip",
+                                assetId = imageAsset.id,
+                                startUs = 0L,
+                                durationUs = DURATION_US,
+                                sourceInUs = 0L,
+                                sourceOutUs = DURATION_US,
+                            ),
+                        ),
+                    ),
+                    Track(
+                        id = "audio-1",
+                        type = TrackType.AUDIO,
+                        order = 1,
+                        collisionPolicy = TrackCollisionPolicy.EXCLUSIVE,
+                        clips = listOf(
+                            Clip(
+                                id = "audio-clip",
+                                assetId = audioAsset.id,
+                                startUs = 0L,
+                                durationUs = DURATION_US,
+                                sourceInUs = 0L,
+                                sourceOutUs = DURATION_US,
+                            ),
+                        ),
+                    ),
+                ),
+            )
+
+            val frame = exportFrame(project, File(testDir, "image-audio-output.mp4"), instrumentation, context)
+            try {
+                val center = frame.getPixel(frame.width / 2, frame.height / 2)
+                val green = Color.green(center)
+                val red = Color.red(center)
+                val blue = Color.blue(center)
+                assertTrue(
+                    "static image must survive image+audio frame processing; rgb=($red,$green,$blue)",
+                    green >= red + 40 && green >= blue + 40,
+                )
             } finally {
                 frame.recycle()
             }
@@ -240,6 +314,17 @@ class MultitrackExportSmokeTest {
         fingerprint = "$id-${file.length()}",
     )
 
+    private fun audioAsset(id: String, file: File, durationUs: Long): Asset = Asset(
+        id = id,
+        type = AssetType.AUDIO,
+        uri = Uri.fromFile(file).toString(),
+        sourceDurationUs = durationUs,
+        sizeBytes = file.length(),
+        displayName = file.name,
+        mimeType = "audio/wav",
+        fingerprint = "$id-${file.length()}",
+    )
+
     private fun createSolidPng(file: File, color: Int): File {
         val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
         bitmap.eraseColor(color)
@@ -247,6 +332,36 @@ class MultitrackExportSmokeTest {
             check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
         }
         bitmap.recycle()
+        return file
+    }
+
+    private fun createMonoPcmWav(file: File, durationUs: Long): File {
+        val sampleRate = 44_100
+        val channels = 1
+        val bitsPerSample = 16
+        val sampleCount = ((durationUs * sampleRate) / 1_000_000L).toInt().coerceAtLeast(1)
+        val dataSize = sampleCount * channels * (bitsPerSample / 8)
+        val bytes = ByteBuffer.allocate(44 + dataSize).order(ByteOrder.LITTLE_ENDIAN)
+        bytes.put("RIFF".toByteArray(Charsets.US_ASCII))
+        bytes.putInt(36 + dataSize)
+        bytes.put("WAVE".toByteArray(Charsets.US_ASCII))
+        bytes.put("fmt ".toByteArray(Charsets.US_ASCII))
+        bytes.putInt(16)
+        bytes.putShort(1)
+        bytes.putShort(channels.toShort())
+        bytes.putInt(sampleRate)
+        val byteRate = sampleRate * channels * bitsPerSample / 8
+        bytes.putInt(byteRate)
+        bytes.putShort((channels * bitsPerSample / 8).toShort())
+        bytes.putShort(bitsPerSample.toShort())
+        bytes.put("data".toByteArray(Charsets.US_ASCII))
+        bytes.putInt(dataSize)
+        repeat(sampleCount) { sampleIndex ->
+            val phase = (sampleIndex % 100).toDouble() / 100.0
+            val sample = (kotlin.math.sin(phase * 2.0 * kotlin.math.PI) * 0.15 * Short.MAX_VALUE).toInt()
+            bytes.putShort(sample.toShort())
+        }
+        file.writeBytes(bytes.array())
         return file
     }
 

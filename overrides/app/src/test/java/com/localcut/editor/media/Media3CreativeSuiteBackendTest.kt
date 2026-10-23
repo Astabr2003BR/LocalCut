@@ -42,6 +42,15 @@ class Media3CreativeSuiteBackendTest {
             EffectInstance("saturation", "localcut.color.saturation", parameters = mapOf("amount" to EffectParameter.Number(1.5))),
             EffectInstance("temperature", "localcut.color.temperature", parameters = mapOf("amount" to EffectParameter.Number(0.5))),
             EffectInstance("tint", "localcut.color.tint", parameters = mapOf("amount" to EffectParameter.Number(-0.5))),
+            EffectInstance(
+                "hsl",
+                "localcut.color.hsl",
+                parameters = mapOf(
+                    "hue" to EffectParameter.Number(45.0),
+                    "saturation" to EffectParameter.Number(20.0),
+                    "lightness" to EffectParameter.Number(-10.0),
+                ),
+            ),
             EffectInstance("blur", "localcut.blur.gaussian", parameters = mapOf("radius" to EffectParameter.Number(10.0))),
         )
 

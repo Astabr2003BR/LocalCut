@@ -61,6 +61,7 @@ fun LayerPanel(
             visualClips.forEach { (track, clip) ->
                 val asset = project.assets.firstOrNull { it.id == clip.assetId }
                 val visible = LayerPanelUiPolicy.isClipVisible(project.compositionGraph, clip.id)
+                val locked = LayerPanelUiPolicy.isClipLocked(project.compositionGraph, clip.id)
                 Surface(
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
                     shape = MaterialTheme.shapes.small,
@@ -71,7 +72,7 @@ fun LayerPanel(
                     ) {
                         Text(asset?.displayName ?: clip.id, style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            "Track ${track.order} • ${if (visible) "visível" else "oculta"}",
+                            "Track ${track.order} • ${if (visible) "visível" else "oculta"} • ${if (locked) "bloqueada" else "desbloqueada"}",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -96,6 +97,31 @@ fun LayerPanel(
                                 },
                             ) {
                                 Text(if (visible) "Ocultar" else "Mostrar")
+                            }
+                            if (locked) {
+                                FilledTonalButton(
+                                    onClick = {
+                                        onSetCompositionGraph(
+                                            LayerPanelUiPolicy.setClipLocked(
+                                                project.compositionGraph,
+                                                clip.id,
+                                                locked = false,
+                                            ),
+                                        )
+                                    },
+                                ) { Text("Desbloquear") }
+                            } else {
+                                OutlinedButton(
+                                    onClick = {
+                                        onSetCompositionGraph(
+                                            LayerPanelUiPolicy.setClipLocked(
+                                                project.compositionGraph,
+                                                clip.id,
+                                                locked = true,
+                                            ),
+                                        )
+                                    },
+                                ) { Text("Bloquear") }
                             }
                         }
                     }

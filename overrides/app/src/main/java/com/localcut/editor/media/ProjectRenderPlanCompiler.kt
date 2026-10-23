@@ -149,6 +149,7 @@ object ProjectRenderPlanCompiler {
                 compositing = clip.compositing,
                 effects = clip.effects,
                 timeMap = clip.timeMap,
+                audioProcessing = clip.audioProcessing,
             )
             cursorUs = Math.addExact(clip.startUs, clip.durationUs)
         }

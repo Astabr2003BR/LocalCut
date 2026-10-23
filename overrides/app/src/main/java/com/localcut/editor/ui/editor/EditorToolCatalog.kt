@@ -68,6 +68,7 @@ object EditorToolCatalog {
         tool(EditorToolId.MEDIA, "Mídia", EditorToolGroup.PROJECT, any, EditorToolState.LIVE),
         tool(EditorToolId.AUDIO, "Áudio", EditorToolGroup.AUDIO, any, EditorToolState.LIVE),
         tool(EditorToolId.TEXT, "Texto", EditorToolGroup.PROJECT, any, EditorToolState.LIVE),
+        tool(EditorToolId.CAPTIONS, "Legendas", EditorToolGroup.PROJECT, any, EditorToolState.LIVE),
         tool(EditorToolId.OVERLAY, "Overlay", EditorToolGroup.PROJECT, any, EditorToolState.LIVE),
         tool(EditorToolId.EDIT, "Editar", EditorToolGroup.EDIT, clip, EditorToolState.LIVE),
         tool(EditorToolId.EFFECTS, "Efeitos", EditorToolGroup.CREATIVE, visual, EditorToolState.LIVE),
@@ -79,7 +80,6 @@ object EditorToolCatalog {
         tool(EditorToolId.LAYERS, "Camadas", EditorToolGroup.DESIGN, visual + EditorSelectionKind.TEXT + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
         tool(EditorToolId.DESIGN, "Design", EditorToolGroup.DESIGN, project + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
         tool(EditorToolId.CANVAS, "Canvas", EditorToolGroup.DESIGN, any, EditorToolState.LIVE),
-        tool(EditorToolId.CAPTIONS, "Legendas", EditorToolGroup.PROJECT, project + EditorSelectionKind.TEXT, EditorToolState.PARTIAL),
         tool(EditorToolId.TRACKING, "Tracking", EditorToolGroup.ADVANCED, visual, EditorToolState.PLANNED),
         tool(EditorToolId.STABILIZE, "Estabilizar", EditorToolGroup.ADVANCED, setOf(EditorSelectionKind.VIDEO), EditorToolState.PLANNED),
         tool(EditorToolId.CAMERA, "Câmera", EditorToolGroup.ADVANCED, any, EditorToolState.PARTIAL),
@@ -93,6 +93,11 @@ object EditorToolCatalog {
         all.filter { definition ->
             selection in definition.selections && (group == null || definition.group == group)
         }
+
+    fun actionTarget(id: EditorToolId): EditorToolId = when (id) {
+        EditorToolId.CAPTIONS -> EditorToolId.TEXT
+        else -> id
+    }
 
     private fun tool(
         id: EditorToolId,

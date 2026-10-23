@@ -2,6 +2,7 @@ package com.localcut.editor.ui.editor
 
 import com.localcut.editor.domain.model.AssetType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class EditorChromeUiPolicyTest {
@@ -14,34 +15,44 @@ class EditorChromeUiPolicyTest {
     }
 
     @Test
-    fun activeToolIsPreservedWhenStillAvailable() {
+    fun selectingAClipDoesNotOpenAContextPanelAutomatically() {
+        assertNull(EditorChromeUiPolicy.resolveActiveTool(null, EditorSelectionKind.VIDEO))
+        assertNull(EditorChromeUiPolicy.resolveActiveTool(null, EditorSelectionKind.IMAGE))
+        assertNull(EditorChromeUiPolicy.resolveActiveTool(null, EditorSelectionKind.AUDIO))
+    }
+
+    @Test
+    fun explicitlyOpenedToolIsPreservedWhenStillAvailable() {
         assertEquals(
             EditorToolId.MASK,
             EditorChromeUiPolicy.resolveActiveTool(EditorToolId.MASK, EditorSelectionKind.VIDEO),
         )
-    }
-
-    @Test
-    fun creationActionDoesNotPinTheClipInspectorContext() {
         assertEquals(
-            EditorToolId.EDIT,
-            EditorChromeUiPolicy.resolveActiveTool(EditorToolId.MEDIA, EditorSelectionKind.VIDEO),
+            EditorToolId.COLOR,
+            EditorChromeUiPolicy.resolveActiveTool(EditorToolId.COLOR, EditorSelectionKind.IMAGE),
         )
-    }
-
-    @Test
-    fun incompatibleToolFallsBackToPreferredLiveToolForNewSelection() {
         assertEquals(
             EditorToolId.AUDIO,
-            EditorChromeUiPolicy.resolveActiveTool(EditorToolId.MASK, EditorSelectionKind.AUDIO),
+            EditorChromeUiPolicy.resolveActiveTool(EditorToolId.AUDIO, EditorSelectionKind.AUDIO),
         )
     }
 
     @Test
-    fun plannedToolCannotBecomeActive() {
-        assertEquals(
-            EditorToolId.EDIT,
-            EditorChromeUiPolicy.resolveActiveTool(EditorToolId.TRACKING, EditorSelectionKind.VIDEO),
-        )
+    fun creationActionsDoNotPinAContextPanel() {
+        assertNull(EditorChromeUiPolicy.resolveActiveTool(EditorToolId.MEDIA, EditorSelectionKind.VIDEO))
+        assertNull(EditorChromeUiPolicy.resolveActiveTool(EditorToolId.TEXT, EditorSelectionKind.VIDEO))
+        assertNull(EditorChromeUiPolicy.resolveActiveTool(EditorToolId.OVERLAY, EditorSelectionKind.IMAGE))
+    }
+
+    @Test
+    fun incompatibleToolClosesInsteadOfOpeningAnotherPanel() {
+        assertNull(EditorChromeUiPolicy.resolveActiveTool(EditorToolId.MASK, EditorSelectionKind.AUDIO))
+        assertNull(EditorChromeUiPolicy.resolveActiveTool(EditorToolId.SPEED, EditorSelectionKind.IMAGE))
+        assertNull(EditorChromeUiPolicy.resolveActiveTool(EditorToolId.TRACKING, EditorSelectionKind.VIDEO))
+    }
+
+    @Test
+    fun audioImportActionDoesNotPinAudioPanelForVisualSelection() {
+        assertNull(EditorChromeUiPolicy.resolveActiveTool(EditorToolId.AUDIO, EditorSelectionKind.VIDEO))
     }
 }

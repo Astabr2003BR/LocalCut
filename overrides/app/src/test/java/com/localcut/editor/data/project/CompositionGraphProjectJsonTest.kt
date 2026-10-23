@@ -42,7 +42,7 @@ class CompositionGraphProjectJsonTest {
     @Test
     fun interimSchemaV4WithoutCompositionGraphMigratesToEmptyGraph() {
         val legacyV4 = ProjectJson.encode(Project.create("Legacy", 1080, 1920, 30))
-            .replace("\"schemaVersion\":5", "\"schemaVersion\":4")
+            .replace("\"schemaVersion\":6", "\"schemaVersion\":4")
             .replace(Regex(",\"compositionGraph\":\\{.*}$"), "}")
 
         val decoded = ProjectJson.decode(legacyV4)

@@ -1,5 +1,6 @@
 package com.localcut.editor.ui.editor
 
+import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.BeatMarker
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.timeline.TimelineMath
@@ -52,6 +53,45 @@ object BeatMarkerUiPolicy {
         )
     }
 
+    fun canAutoAnalyzeSelectedClip(project: Project, clipId: String?): Boolean {
+        val clip = clipId?.let(project::findClip) ?: return false
+        val asset = project.assets.firstOrNull { it.id == clip.assetId } ?: return false
+        val timeMap = clip.timeMap
+        return asset.type != AssetType.IMAGE &&
+            clip.sourceOutUs > clip.sourceInUs &&
+            !timeMap.reverse &&
+            timeMap.freezeSegments.isEmpty() &&
+            timeMap.speedPoints.isEmpty() &&
+            kotlin.math.abs(timeMap.baseSpeed - 1.0) < 1e-9
+    }
+
+    fun mergeAutoDetectedMarkers(
+        existing: List<BeatMarker>,
+        clipId: String,
+        clipStartUs: Long,
+        clipDurationUs: Long,
+        detected: List<BeatMarker>,
+    ): List<BeatMarker> {
+        require(clipId.isNotBlank()) { "clipId must not be blank" }
+        require(clipStartUs >= 0L) { "clip start must be non-negative" }
+        require(clipDurationUs > 0L) { "clip duration must be positive" }
+        val prefix = autoMarkerPrefix(clipId)
+        val preserved = existing.filterNot { it.id.startsWith(prefix) }
+        val mapped = detected
+            .filter { it.timeUs in 0L..clipDurationUs }
+            .mapIndexed { index, marker ->
+                BeatMarker(
+                    id = "$prefix${index + 1}",
+                    timeUs = clipStartUs + marker.timeUs,
+                    strength = marker.strength,
+                )
+            }
+        val merged = (preserved + mapped).sortedWith(compareBy<BeatMarker> { it.timeUs }.thenBy { it.id })
+        val issues = BeatMarker.validationIssues(merged)
+        require(issues.isEmpty()) { "invalid mapped beat markers: ${issues.first()}" }
+        return merged
+    }
+
     fun markerFractions(project: Project): List<Float> {
         val durationUs = TimelineMath.durationUs(project)
         if (durationUs <= 0L) return emptyList()
@@ -59,4 +99,7 @@ object BeatMarkerUiPolicy {
             (marker.timeUs.toDouble() / durationUs.toDouble()).coerceIn(0.0, 1.0).toFloat()
         }
     }
+
+    private fun autoMarkerPrefix(clipId: String): String =
+        "auto-beat-${clipId.replace(Regex("[^A-Za-z0-9_-]"), "_")}-"
 }

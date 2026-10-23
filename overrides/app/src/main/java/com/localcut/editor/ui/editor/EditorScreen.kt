@@ -511,21 +511,33 @@ private fun InspectorForState(
     viewModel: EditorViewModel,
     modifier: Modifier = Modifier,
 ) {
-    InspectorPane(
-        project = session.project,
-        selectedClipId = session.selectedClipId,
-        playheadUs = playheadUs,
-        onDelete = { viewModel.dispatch(EditorAction.DeleteSelected) },
-        onSplit = { viewModel.dispatch(EditorAction.SplitSelected(it)) },
-        onTransform = { viewModel.dispatch(EditorAction.SetSelectedTransform(it)) },
-        onSetKeyframes = { viewModel.dispatch(EditorAction.SetSelectedKeyframes(it)) },
-        onSeek = viewModel::seekToUs,
-        onVolume = { viewModel.dispatch(EditorAction.SetSelectedVolume(it)) },
-        onAudioFades = { fadeInUs, fadeOutUs ->
-            viewModel.dispatch(EditorAction.SetSelectedAudioFades(fadeInUs, fadeOutUs))
-        },
-        modifier = modifier,
-    )
-    session.lastError?.let { Text("Erro: $it", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) }
-    session.issues.firstOrNull()?.let { Text("Aviso: ${it.message}", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) }
+    Column(modifier = modifier) {
+        CreativeToolsPanel(
+            project = session.project,
+            selectedClipId = session.selectedClipId,
+            onSetEffects = { viewModel.dispatch(EditorAction.SetSelectedEffects(it)) },
+            onSetCompositing = { viewModel.dispatch(EditorAction.SetSelectedCompositing(it)) },
+            onSetTimeMap = { viewModel.dispatch(EditorAction.SetSelectedTimeMap(it)) },
+            onSetAudioProcessing = { viewModel.dispatch(EditorAction.SetSelectedAudioProcessing(it)) },
+            onSetPropertyAnimations = { viewModel.dispatch(EditorAction.SetSelectedPropertyAnimations(it)) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        InspectorPane(
+            project = session.project,
+            selectedClipId = session.selectedClipId,
+            playheadUs = playheadUs,
+            onDelete = { viewModel.dispatch(EditorAction.DeleteSelected) },
+            onSplit = { viewModel.dispatch(EditorAction.SplitSelected(it)) },
+            onTransform = { viewModel.dispatch(EditorAction.SetSelectedTransform(it)) },
+            onSetKeyframes = { viewModel.dispatch(EditorAction.SetSelectedKeyframes(it)) },
+            onSeek = viewModel::seekToUs,
+            onVolume = { viewModel.dispatch(EditorAction.SetSelectedVolume(it)) },
+            onAudioFades = { fadeInUs, fadeOutUs ->
+                viewModel.dispatch(EditorAction.SetSelectedAudioFades(fadeInUs, fadeOutUs))
+            },
+            modifier = Modifier.weight(1f),
+        )
+        session.lastError?.let { Text("Erro: $it", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) }
+        session.issues.firstOrNull()?.let { Text("Aviso: ${it.message}", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) }
+    }
 }

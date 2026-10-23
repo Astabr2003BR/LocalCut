@@ -82,15 +82,66 @@ fun InspectorPane(
         }
 
         if (asset?.type != AssetType.AUDIO) {
-            Text("Escala ${"%.2f".format(clip.transform.scale)}", style = MaterialTheme.typography.labelLarge)
+            var transformDraft by remember(clip.id, clip.transform) {
+                mutableStateOf(clip.transform)
+            }
+            Text("Transformar", style = MaterialTheme.typography.labelLarge)
+            Text("X ${"%.0f".format(transformDraft.x)} px", style = MaterialTheme.typography.labelMedium)
+            Slider(
+                value = transformDraft.x.toFloat().coerceIn(-project.width.toFloat(), project.width.toFloat()),
+                onValueChange = { transformDraft = transformDraft.copy(x = it.toDouble()) },
+                onValueChangeFinished = { onTransform(transformDraft) },
+                valueRange = -project.width.toFloat()..project.width.toFloat(),
+            )
+            Text("Y ${"%.0f".format(transformDraft.y)} px", style = MaterialTheme.typography.labelMedium)
+            Slider(
+                value = transformDraft.y.toFloat().coerceIn(-project.height.toFloat(), project.height.toFloat()),
+                onValueChange = { transformDraft = transformDraft.copy(y = it.toDouble()) },
+                onValueChangeFinished = { onTransform(transformDraft) },
+                valueRange = -project.height.toFloat()..project.height.toFloat(),
+            )
+            Text("Escala ${"%.2f".format(transformDraft.scale)}", style = MaterialTheme.typography.labelMedium)
+            Slider(
+                value = transformDraft.scale.toFloat().coerceIn(0.05f, 4f),
+                onValueChange = { transformDraft = transformDraft.copy(scale = it.toDouble()) },
+                onValueChangeFinished = { onTransform(transformDraft) },
+                valueRange = 0.05f..4f,
+            )
+            Text("Rotação ${"%.0f".format(transformDraft.rotationDeg)}°", style = MaterialTheme.typography.labelMedium)
+            Slider(
+                value = transformDraft.rotationDeg.toFloat().coerceIn(-180f, 180f),
+                onValueChange = { transformDraft = transformDraft.copy(rotationDeg = it.toDouble()) },
+                onValueChangeFinished = { onTransform(transformDraft) },
+                valueRange = -180f..180f,
+            )
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             ) {
-                FilledTonalButton(onClick = { onTransform(clip.transform.copy(scale = (clip.transform.scale - 0.05).coerceAtLeast(0.05))) }) { Text("Zoom −") }
-                FilledTonalButton(onClick = { onTransform(clip.transform.copy(scale = clip.transform.scale + 0.05)) }) { Text("Zoom +") }
-                FilledTonalButton(onClick = { onTransform(clip.transform.copy(rotationDeg = clip.transform.rotationDeg - 5.0)) }) { Text("↺ 5°") }
-                FilledTonalButton(onClick = { onTransform(clip.transform.copy(rotationDeg = clip.transform.rotationDeg + 5.0)) }) { Text("↻ 5°") }
+                FilledTonalButton(onClick = {
+                    val next = transformDraft.copy(scale = (transformDraft.scale - 0.05).coerceAtLeast(0.05))
+                    transformDraft = next
+                    onTransform(next)
+                }) { Text("Zoom −") }
+                FilledTonalButton(onClick = {
+                    val next = transformDraft.copy(scale = (transformDraft.scale + 0.05).coerceAtMost(4.0))
+                    transformDraft = next
+                    onTransform(next)
+                }) { Text("Zoom +") }
+                FilledTonalButton(onClick = {
+                    val next = transformDraft.copy(rotationDeg = (transformDraft.rotationDeg - 5.0).coerceAtLeast(-180.0))
+                    transformDraft = next
+                    onTransform(next)
+                }) { Text("↺ 5°") }
+                FilledTonalButton(onClick = {
+                    val next = transformDraft.copy(rotationDeg = (transformDraft.rotationDeg + 5.0).coerceAtMost(180.0))
+                    transformDraft = next
+                    onTransform(next)
+                }) { Text("↻ 5°") }
+                OutlinedButton(onClick = {
+                    transformDraft = TransformValue()
+                    onTransform(transformDraft)
+                }) { Text("Reset") }
             }
 
             var opacityDraft by remember(clip.id, clip.opacity) {

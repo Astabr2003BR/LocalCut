@@ -29,18 +29,23 @@ object AudioToolsUiPolicy {
         gainDb: Double,
     ): AudioProcessingSettings {
         require(gainDb.isFinite() && gainDb in -24.0..24.0) { "EQ gain must be in -24..24 dB" }
-        val byFrequency = source.eqBands.associateBy { it.frequencyHz }.toMutableMap()
-        AudioEqBand.entries.forEach { definition ->
-            byFrequency.putIfAbsent(definition.frequencyHz, EqBand(definition.frequencyHz, 0.0, q = 1.0))
-        }
-        byFrequency[band.frequencyHz] = byFrequency.getValue(band.frequencyHz).copy(gainDb = gainDb)
-        val standard = AudioEqBand.entries.map { byFrequency.getValue(it.frequencyHz) }
-        val custom = source.eqBands.filter { existing -> AudioEqBand.entries.none { it.frequencyHz == existing.frequencyHz } }
-        return validated(source.copy(eqBands = standard + custom))
+        return updateStandardEqBand(source, band) { it.copy(gainDb = gainDb) }
+    }
+
+    fun setEqQ(
+        source: AudioProcessingSettings,
+        band: AudioEqBand,
+        q: Double,
+    ): AudioProcessingSettings {
+        require(q.isFinite() && q in 0.1..20.0) { "EQ Q must be in 0.1..20" }
+        return updateStandardEqBand(source, band) { it.copy(q = q) }
     }
 
     fun eqGain(source: AudioProcessingSettings, band: AudioEqBand): Double =
         source.eqBands.firstOrNull { it.frequencyHz == band.frequencyHz }?.gainDb ?: 0.0
+
+    fun eqQ(source: AudioProcessingSettings, band: AudioEqBand): Double =
+        source.eqBands.firstOrNull { it.frequencyHz == band.frequencyHz }?.q ?: 1.0
 
     fun setCompressorEnabled(source: AudioProcessingSettings, enabled: Boolean): AudioProcessingSettings =
         validated(source.copy(compressor = if (enabled) source.compressor ?: CompressorSettings() else null))
@@ -98,6 +103,21 @@ object AudioToolsUiPolicy {
     }
 
     fun reset(): AudioProcessingSettings = AudioProcessingSettings()
+
+    private fun updateStandardEqBand(
+        source: AudioProcessingSettings,
+        band: AudioEqBand,
+        transform: (EqBand) -> EqBand,
+    ): AudioProcessingSettings {
+        val byFrequency = source.eqBands.associateBy { it.frequencyHz }.toMutableMap()
+        AudioEqBand.entries.forEach { definition ->
+            byFrequency.putIfAbsent(definition.frequencyHz, EqBand(definition.frequencyHz, 0.0, q = 1.0))
+        }
+        byFrequency[band.frequencyHz] = transform(byFrequency.getValue(band.frequencyHz))
+        val standard = AudioEqBand.entries.map { byFrequency.getValue(it.frequencyHz) }
+        val custom = source.eqBands.filter { existing -> AudioEqBand.entries.none { it.frequencyHz == existing.frequencyHz } }
+        return validated(source.copy(eqBands = standard + custom))
+    }
 
     private fun updateCompressor(
         source: AudioProcessingSettings,

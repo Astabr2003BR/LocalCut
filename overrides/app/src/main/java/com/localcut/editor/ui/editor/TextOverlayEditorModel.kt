@@ -2,9 +2,12 @@ package com.localcut.editor.ui.editor
 
 import com.localcut.editor.domain.model.CaptionMetadata
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.TextAnimationDescriptor
+import com.localcut.editor.domain.model.TextAnimationKind
 import com.localcut.editor.domain.model.TextBackgroundStyle
 import com.localcut.editor.domain.model.TextHorizontalAlignment
 import com.localcut.editor.domain.model.TextOverlay
+import com.localcut.editor.domain.model.TextShadowStyle
 import com.localcut.editor.domain.model.TextStyle
 import com.localcut.editor.domain.model.TransformValue
 
@@ -34,6 +37,67 @@ data class TextOverlayEditorModel(
     fun withFillArgb(fillArgb: Int): TextOverlayEditorModel =
         copy(draft = draft.copy(style = draft.style.copy(fillArgb = fillArgb)))
 
+    fun withLetterSpacingEm(letterSpacingEm: Double): TextOverlayEditorModel {
+        require(letterSpacingEm.isFinite() && letterSpacingEm in -0.5..2.0) {
+            "letter spacing must be finite and in -0.5..2.0 em"
+        }
+        return copy(draft = draft.copy(style = draft.style.copy(letterSpacingEm = letterSpacingEm)))
+    }
+
+    fun withBackgroundEnabled(enabled: Boolean): TextOverlayEditorModel {
+        val background = if (enabled) {
+            draft.style.background ?: TextBackgroundStyle(
+                argb = 0xFF000000.toInt(),
+                paddingPx = 10.0,
+                cornerRadiusPx = 10.0,
+                opacity = 0.70,
+            )
+        } else {
+            null
+        }
+        return copy(draft = draft.copy(style = draft.style.copy(background = background)))
+    }
+
+    fun withShadowEnabled(enabled: Boolean): TextOverlayEditorModel {
+        val style = if (enabled) {
+            draft.style.copy(
+                shadowArgb = null,
+                shadowRadiusPx = 0.0,
+                shadowOffsetX = 0.0,
+                shadowOffsetY = 0.0,
+                shadows = draft.style.shadows.ifEmpty {
+                    listOf(
+                        TextShadowStyle(
+                            argb = 0xCC000000.toInt(),
+                            radiusPx = 6.0,
+                            offsetX = 2.0,
+                            offsetY = 3.0,
+                            opacity = 0.9,
+                        ),
+                    )
+                },
+            )
+        } else {
+            draft.style.copy(
+                shadowArgb = null,
+                shadowRadiusPx = 0.0,
+                shadowOffsetX = 0.0,
+                shadowOffsetY = 0.0,
+                shadows = emptyList(),
+            )
+        }
+        return copy(draft = draft.copy(style = style))
+    }
+
+    fun withEntranceAnimation(kind: TextAnimationKind): TextOverlayEditorModel =
+        copy(draft = draft.copy(entrance = animationDescriptor(draft.entrance, kind, DEFAULT_ENTRANCE_DURATION_US)))
+
+    fun withExitAnimation(kind: TextAnimationKind): TextOverlayEditorModel =
+        copy(draft = draft.copy(exit = animationDescriptor(draft.exit, kind, DEFAULT_ENTRANCE_DURATION_US)))
+
+    fun withLoopAnimation(kind: TextAnimationKind): TextOverlayEditorModel =
+        copy(draft = draft.copy(loop = animationDescriptor(draft.loop, kind, DEFAULT_LOOP_DURATION_US)))
+
     fun withDuration(project: Project, requestedDurationUs: Long): TextOverlayEditorModel {
         val updated = TextOverlayUiPolicy.withDuration(project, draft, requestedDurationUs) ?: return this
         return copy(draft = updated)
@@ -41,7 +105,19 @@ data class TextOverlayEditorModel(
 
     fun overlayForSave(): TextOverlay? = draft.takeIf { it.text.isNotBlank() }
 
+    private fun animationDescriptor(
+        previous: TextAnimationDescriptor,
+        kind: TextAnimationKind,
+        defaultDurationUs: Long,
+    ): TextAnimationDescriptor = previous.copy(
+        kind = kind,
+        durationUs = if (kind == TextAnimationKind.NONE) 0L else previous.durationUs.takeIf { it > 0L } ?: defaultDurationUs,
+    )
+
     companion object {
+        private const val DEFAULT_ENTRANCE_DURATION_US = 350_000L
+        private const val DEFAULT_LOOP_DURATION_US = 700_000L
+
         fun forNew(project: Project, playheadUs: Long): TextOverlayEditorModel? =
             TextOverlayUiPolicy.createNew(project, playheadUs, "Texto")?.let { overlay ->
                 TextOverlayEditorModel(

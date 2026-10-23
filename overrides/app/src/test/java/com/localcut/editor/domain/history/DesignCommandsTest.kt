@@ -44,6 +44,30 @@ class DesignCommandsTest {
     }
 
     @Test
+    fun setProjectCanvasSizeIsUndoableAndPreservesTimelineContent() {
+        val element = DesignElement(
+            id = "shape-1",
+            startUs = 0L,
+            durationUs = 1_000_000L,
+            shape = ShapeSpec(ShapeKind.RECTANGLE),
+        )
+        val initial = Project.create("Canvas", 1080, 1920, 30).copy(designElements = listOf(element))
+        val history = HistoryManager(initial)
+
+        history.execute(SetProjectCanvasSizeCommand(width = 1920, height = 1080))
+
+        assertEquals(1920, history.project.width)
+        assertEquals(1080, history.project.height)
+        assertEquals(initial.designElements, history.project.designElements)
+        assertEquals(initial.tracks, history.project.tracks)
+
+        assertTrue(history.undo())
+        assertEquals(1080, history.project.width)
+        assertEquals(1920, history.project.height)
+        assertEquals(initial.designElements, history.project.designElements)
+    }
+
+    @Test
     fun reusableComponentUpsertIsUndoable() {
         val element = DesignElement(
             id = "shape-1",

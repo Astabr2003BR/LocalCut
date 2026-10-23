@@ -351,7 +351,7 @@ fun FocusedChromaPanel(
 @Composable
 private fun FocusedToolSurface(
     modifier: Modifier,
-    content: @Composable Column.() -> Unit,
+    content: @Composable () -> Unit,
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -361,8 +361,9 @@ private fun FocusedToolSurface(
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            content = content,
-        )
+        ) {
+            content()
+        }
     }
 }
 

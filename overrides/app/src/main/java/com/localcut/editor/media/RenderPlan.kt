@@ -4,7 +4,14 @@ import com.localcut.editor.domain.model.*
 
 enum class RenderMode { FAST_PREVIEW, FULL_PREVIEW, EXPORT }
 
-enum class RenderPlanErrorCode { INVALID_PROJECT, ASSET_UNAVAILABLE, UNSUPPORTED_TRACK_LAYOUT, UNSUPPORTED_COMPOSITING }
+enum class RenderPlanErrorCode {
+    INVALID_PROJECT,
+    ASSET_UNAVAILABLE,
+    UNSUPPORTED_TRACK_LAYOUT,
+    UNSUPPORTED_COMPOSITING,
+    UNSUPPORTED_EFFECT,
+    UNSUPPORTED_TIME_MAP,
+}
 
 class RenderPlanException(
     val code: RenderPlanErrorCode,
@@ -65,6 +72,8 @@ sealed interface RenderSegment {
         val fadeInUs: Long = 0L,
         val fadeOutUs: Long = 0L,
         val compositing: CompositingSettings = CompositingSettings(),
+        val effects: List<EffectInstance> = emptyList(),
+        val timeMap: TimeMap = TimeMap(),
     ) : RenderSegment {
         val isImage: Boolean get() = assetType == AssetType.IMAGE
     }

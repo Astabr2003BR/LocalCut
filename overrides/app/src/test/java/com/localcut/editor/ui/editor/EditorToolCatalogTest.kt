@@ -1,5 +1,6 @@
 package com.localcut.editor.ui.editor
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -47,6 +48,21 @@ class EditorToolCatalogTest {
 
         assertTrue(layers.enabled)
         assertTrue(layers.state == EditorToolState.LIVE)
+    }
+
+    @Test
+    fun manualCaptionsAreLiveAndReachableFromEverySelection() {
+        val captions = EditorToolCatalog.all.single { it.id == EditorToolId.CAPTIONS }
+
+        assertTrue(captions.enabled)
+        assertEquals(EditorToolState.LIVE, captions.state)
+        EditorSelectionKind.entries.forEach { selection ->
+            assertTrue(
+                "captions must stay reachable for $selection",
+                EditorToolCatalog.primaryToolsFor(selection).any { it.id == EditorToolId.CAPTIONS },
+            )
+        }
+        assertEquals(EditorToolId.TEXT, EditorToolCatalog.actionTarget(EditorToolId.CAPTIONS))
     }
 
     @Test

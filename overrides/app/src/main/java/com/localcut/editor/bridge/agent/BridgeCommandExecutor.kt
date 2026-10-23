@@ -28,6 +28,7 @@ import com.localcut.editor.domain.history.SplitClipCommand
 import com.localcut.editor.domain.history.TrimClipLeftEdgeCommand
 import com.localcut.editor.domain.history.TrimClipRightEdgeCommand
 import com.localcut.editor.domain.model.ClipTransition
+import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.TextOverlay
 import com.localcut.editor.domain.model.TextStyle
 import com.localcut.editor.domain.model.TransformKeyframe
@@ -158,8 +159,8 @@ class BridgeCommandExecutor(
     private fun executeSplit(command: BridgeCommandEnvelope): BridgeResultEnvelope {
         val payload = payload(command)
         val clipId = payload.requiredString("clipId")
-        val clip = session.state.project.findClip(clipId)
-            ?: return error(command, BridgeErrorCode.CLIP_NOT_FOUND, "clip not found", false)
+        requireClip(command, clipId)?.let { return it }
+        val clip = session.state.project.findClip(clipId)!!
         val positionUs = payload.requiredLong("positionUs")
         require(positionUs > clip.startUs && positionUs < clip.startUs + clip.durationUs) { "split position must be inside clip" }
         return dispatchWrite(command, EditorAction.Execute(SplitClipCommand(clipId, positionUs)))
@@ -211,8 +212,8 @@ class BridgeCommandExecutor(
     private fun executeKeyframes(command: BridgeCommandEnvelope): BridgeResultEnvelope {
         val payload = payload(command)
         val clipId = payload.requiredString("clipId")
-        val clip = session.state.project.findClip(clipId)
-            ?: return error(command, BridgeErrorCode.CLIP_NOT_FOUND, "clip not found", false)
+        requireClip(command, clipId)?.let { return it }
+        val clip = session.state.project.findClip(clipId)!!
         val keyframes = payload.required("keyframes").asArray().values.map { raw ->
             val item = raw.asObject()
             val offsetUs = item.requiredLong("offsetUs")
@@ -378,10 +379,20 @@ class BridgeCommandExecutor(
         return success(command, "{\"applied\":true}")
     }
 
-    private fun requireClip(command: BridgeCommandEnvelope, clipId: String): BridgeResultEnvelope? =
-        if (session.state.project.findClip(clipId) == null) {
-            error(command, BridgeErrorCode.CLIP_NOT_FOUND, "clip not found", false)
-        } else null
+    private fun requireClip(command: BridgeCommandEnvelope, clipId: String): BridgeResultEnvelope? {
+        val project = session.state.project
+        if (project.findClip(clipId) == null) {
+            return error(command, BridgeErrorCode.CLIP_NOT_FOUND, "clip not found", false)
+        }
+        val locked = project.compositionGraph.nodes.any { node ->
+            node.kind == CompositionNodeKind.LAYER && node.clipId == clipId && node.locked
+        }
+        return if (locked) {
+            error(command, BridgeErrorCode.CAPABILITY_NOT_ALLOWED, "clip is locked", false)
+        } else {
+            null
+        }
+    }
 
     private fun allocateDuplicateId(clipId: String): String {
         var suffix = 1

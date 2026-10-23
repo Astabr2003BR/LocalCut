@@ -59,19 +59,6 @@ fun ColorToolsPanel(
         val categoryPresets = EffectBrowserUiPolicy.presets(effectCategory)
         val selectedPreset = categoryPresets.firstOrNull { it.typeId == selectedEffectTypeId }
             ?: categoryPresets.firstOrNull()
-        val selectedRange = selectedPreset?.let(EffectBrowserUiPolicy::adjustableRange)
-        var selectedEffectValue by remember(
-            clip.id,
-            clip.effects,
-            selectedPreset?.typeId,
-            selectedPreset?.parameterName,
-        ) {
-            mutableFloatStateOf(
-                selectedPreset
-                    ?.let { EffectBrowserUiPolicy.currentValue(clip.effects, it).toFloat() }
-                    ?: 0f,
-            )
-        }
 
         Column(
             modifier = Modifier
@@ -145,26 +132,11 @@ fun ColorToolsPanel(
                 ) { Text("Limpar categoria") }
             }
 
-            if (selectedPreset != null && selectedRange != null) {
-                val min = selectedRange.start.toFloat()
-                val max = selectedRange.endInclusive.toFloat()
-                Text(
-                    "${selectedPreset.label} ${"%.2f".format(selectedEffectValue)}",
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                Slider(
-                    value = selectedEffectValue.coerceIn(min, max),
-                    onValueChange = { selectedEffectValue = it },
-                    onValueChangeFinished = {
-                        onSetEffects(
-                            EffectBrowserUiPolicy.setValue(
-                                effects = clip.effects,
-                                preset = selectedPreset,
-                                value = selectedEffectValue.toDouble(),
-                            ),
-                        )
-                    },
-                    valueRange = min..max,
+            selectedPreset?.let { preset ->
+                EffectAdvancedControls(
+                    effects = clip.effects,
+                    preset = preset,
+                    onSetEffects = onSetEffects,
                 )
             }
 

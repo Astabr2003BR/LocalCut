@@ -175,6 +175,9 @@ fun DesignToolsPanel(
                             OutlinedButton(
                                 onClick = { onUpdateElement(DesignToolsUiPolicy.sendToBack(project, element)) },
                             ) { Text("Trás") }
+                            FilledTonalButton(
+                                onClick = { onAddElement(DesignToolsUiPolicy.duplicateElement(project, element)) },
+                            ) { Text("Duplicar forma") }
                             Button(onClick = { onDeleteElement(element.id) }) { Text("Excluir forma") }
                         }
 

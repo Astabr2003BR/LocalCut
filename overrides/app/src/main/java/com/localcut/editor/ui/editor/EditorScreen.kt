@@ -38,6 +38,7 @@ import androidx.media3.common.util.UnstableApi
 import com.localcut.editor.domain.history.AddBeatMarkerCommand
 import com.localcut.editor.domain.history.ApplyDetectedBeatMarkersCommand
 import com.localcut.editor.domain.history.DeleteBeatMarkerCommand
+import com.localcut.editor.domain.history.SetClipOpacityCommand
 import com.localcut.editor.domain.history.SetCompositionGraphCommand
 import com.localcut.editor.domain.history.SetProjectCanvasSizeCommand
 import com.localcut.editor.domain.model.ClipTransition
@@ -368,6 +369,11 @@ private fun ProfessionalContextPanel(
                         onDelete = { viewModel.dispatch(EditorAction.DeleteSelected) },
                         onSplit = { viewModel.dispatch(EditorAction.SplitSelected(it)) },
                         onTransform = { viewModel.dispatch(EditorAction.SetSelectedTransform(it)) },
+                        onOpacity = { opacity ->
+                            session.selectedClipId?.let { clipId ->
+                                viewModel.dispatch(EditorAction.Execute(SetClipOpacityCommand(clipId, opacity)))
+                            }
+                        },
                         onSetKeyframes = { viewModel.dispatch(EditorAction.SetSelectedKeyframes(it)) },
                         onSeek = viewModel::seekToUs,
                         onVolume = { viewModel.dispatch(EditorAction.SetSelectedVolume(it)) },
@@ -535,25 +541,16 @@ private fun TimelineForProfessionalState(
             onSelectClip = { viewModel.dispatch(EditorAction.SelectClip(it)) },
             onSeek = viewModel::seekToUs,
             onMoveClip = { clipId, newStart ->
-                val track = session.project.tracks.firstOrNull { candidate -> candidate.clips.any { it.id == clipId } }
-                val snapped = BeatMarkerUiPolicy.snapTimeUs(session.project.beatMarkers, newStart)
-                val bounded = track?.let { TimelineEditBounds.clampMove(it, clipId, snapped) } ?: snapped
                 viewModel.dispatch(EditorAction.SelectClip(clipId))
-                viewModel.dispatch(EditorAction.MoveSelected(bounded))
+                viewModel.dispatch(EditorAction.MoveSelected(newStart))
             },
             onTrimLeft = { clipId, newStart ->
-                val track = session.project.tracks.firstOrNull { candidate -> candidate.clips.any { it.id == clipId } }
-                val snapped = BeatMarkerUiPolicy.snapTimeUs(session.project.beatMarkers, newStart)
-                val bounded = track?.let { TimelineEditBounds.clampLeft(it, clipId, snapped) } ?: snapped
                 viewModel.dispatch(EditorAction.SelectClip(clipId))
-                viewModel.dispatch(EditorAction.TrimSelectedLeftEdge(bounded))
+                viewModel.dispatch(EditorAction.TrimSelectedLeftEdge(newStart))
             },
             onTrimRight = { clipId, newEnd ->
-                val track = session.project.tracks.firstOrNull { candidate -> candidate.clips.any { it.id == clipId } }
-                val snapped = BeatMarkerUiPolicy.snapTimeUs(session.project.beatMarkers, newEnd)
-                val bounded = track?.let { TimelineEditBounds.clampRight(it, clipId, snapped) } ?: snapped
                 viewModel.dispatch(EditorAction.SelectClip(clipId))
-                viewModel.dispatch(EditorAction.TrimSelectedRightEdge(bounded))
+                viewModel.dispatch(EditorAction.TrimSelectedRightEdge(newEnd))
             },
             onSetTrackMuted = { trackId, muted ->
                 viewModel.dispatch(EditorAction.SetTrackMuted(trackId, muted))

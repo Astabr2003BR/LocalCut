@@ -146,6 +146,7 @@ object ProjectRenderPlanCompiler {
                 imageFrameRate = if (asset.type == AssetType.IMAGE) fps else null,
                 fadeInUs = clip.fadeInUs,
                 fadeOutUs = clip.fadeOutUs,
+                compositing = clip.compositing,
             )
             cursorUs = Math.addExact(clip.startUs, clip.durationUs)
         }

@@ -35,7 +35,11 @@ fun EditorBottomToolRail(
 ) {
     val tools = EditorToolCatalog.primaryToolsFor(selection).filter { it.enabled }
     var expanded by remember(selection) { mutableStateOf(false) }
-    val layout = EditorBottomToolRailPolicy.layout(tools, expanded)
+    val layout = EditorBottomToolRailPolicy.layout(
+        tools = tools,
+        expanded = expanded,
+        activeTool = activeTool,
+    )
 
     Surface(
         modifier = modifier.fillMaxWidth(),

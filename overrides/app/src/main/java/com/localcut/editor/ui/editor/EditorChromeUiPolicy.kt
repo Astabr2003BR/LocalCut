@@ -16,6 +16,15 @@ object EditorChromeUiPolicy {
     ): EditorToolId? {
         val available = EditorToolCatalog.primaryToolsFor(selection).filter { it.enabled }
         val preserved = available.firstOrNull { it.id == current }
-        return preserved?.id ?: available.firstOrNull()?.id
+        if (preserved != null) return preserved.id
+
+        val preferred = when (selection) {
+            EditorSelectionKind.PROJECT -> EditorToolId.MEDIA
+            EditorSelectionKind.VIDEO, EditorSelectionKind.IMAGE -> EditorToolId.EDIT
+            EditorSelectionKind.AUDIO -> EditorToolId.AUDIO
+            EditorSelectionKind.TEXT -> EditorToolId.TEXT
+            EditorSelectionKind.DESIGN -> EditorToolId.DESIGN
+        }
+        return available.firstOrNull { it.id == preferred }?.id ?: available.firstOrNull()?.id
     }
 }

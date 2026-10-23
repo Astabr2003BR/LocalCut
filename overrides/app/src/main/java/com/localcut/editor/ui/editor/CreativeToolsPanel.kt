@@ -17,17 +17,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.AudioProcessingSettings
+import com.localcut.editor.domain.model.CompositingSettings
+import com.localcut.editor.domain.model.CropMode
 import com.localcut.editor.domain.model.EffectInstance
+import com.localcut.editor.domain.model.MaskKind
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.model.TimeMap
+import com.localcut.editor.recipes.AnimeRecipe
+import com.localcut.editor.recipes.AnimeRecipeApplicator
 
 @Composable
 fun CreativeToolsPanel(
     project: Project,
     selectedClipId: String?,
     onSetEffects: (List<EffectInstance>) -> Unit,
+    onSetCompositing: (CompositingSettings) -> Unit,
     onSetTimeMap: (TimeMap) -> Unit,
     onSetAudioProcessing: (AudioProcessingSettings) -> Unit,
+    onSetPropertyAnimations: (List<PropertyAnimation>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val clip = selectedClipId?.let(project::findClip) ?: return
@@ -65,6 +73,70 @@ fun CreativeToolsPanel(
                     OutlinedButton(onClick = { onSetEffects(emptyList()) }, enabled = clip.effects.isNotEmpty()) {
                         Text("Limpar FX")
                     }
+                }
+
+                Text("Recorte e composição", style = MaterialTheme.typography.labelMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    FilledTonalButton(onClick = {
+                        onSetCompositing(CreativeToolsUiPolicy.setMaskPreset(clip.compositing, MaskKind.RECTANGLE))
+                    }) { Text("Máscara retângulo") }
+                    FilledTonalButton(onClick = {
+                        onSetCompositing(CreativeToolsUiPolicy.setMaskPreset(clip.compositing, MaskKind.ELLIPSE))
+                    }) { Text("Máscara elipse") }
+                    OutlinedButton(
+                        onClick = { onSetCompositing(CreativeToolsUiPolicy.clearMaskPreset(clip.compositing)) },
+                        enabled = clip.compositing.masks.any { it.id == CreativeToolsUiPolicy.UI_MASK_ID },
+                    ) { Text("Sem máscara") }
+                    FilledTonalButton(onClick = {
+                        onSetCompositing(CreativeToolsUiPolicy.greenScreen(clip.compositing, !clip.compositing.chromaKey.enabled))
+                    }) { Text(if (clip.compositing.chromaKey.enabled) "Chroma ON" else "Chroma verde") }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    listOf(
+                        CropMode.NONE to "Livre",
+                        CropMode.FIT to "Fit",
+                        CropMode.FILL to "Fill",
+                        CropMode.STRETCH to "Stretch",
+                    ).forEach { (mode, label) ->
+                        val selected = clip.compositing.crop.mode == mode
+                        if (selected) {
+                            FilledTonalButton(onClick = {
+                                onSetCompositing(CreativeToolsUiPolicy.cropLayout(clip.compositing, mode))
+                            }) { Text(label) }
+                        } else {
+                            OutlinedButton(onClick = {
+                                onSetCompositing(CreativeToolsUiPolicy.cropLayout(clip.compositing, mode))
+                            }) { Text(label) }
+                        }
+                    }
+                }
+
+                Text("Anime Mode", style = MaterialTheme.typography.labelMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    listOf(
+                        AnimeRecipe.IMPACT_ZOOM to "Impacto",
+                        AnimeRecipe.CAMERA_SHAKE to "Shake",
+                        AnimeRecipe.PARALLAX_PAN to "Parallax",
+                    ).forEach { (recipe, label) ->
+                        FilledTonalButton(onClick = {
+                            onSetPropertyAnimations(
+                                AnimeRecipeApplicator.apply(clip, recipe, seed = clip.id.hashCode().toLong()).propertyAnimations,
+                            )
+                        }) { Text(label) }
+                    }
+                    OutlinedButton(
+                        onClick = { onSetPropertyAnimations(emptyList()) },
+                        enabled = clip.propertyAnimations.isNotEmpty(),
+                    ) { Text("Limpar animação") }
                 }
             }
 
@@ -109,7 +181,7 @@ fun CreativeToolsPanel(
             }
 
             Text(
-                "Máscaras, blend e chroma: dados já suportados pelo projeto; render GPU ainda em implementação.",
+                "Blend avançado e máscara freeform continuam bloqueados até o backend dedicado ficar validado.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

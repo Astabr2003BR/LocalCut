@@ -12,6 +12,7 @@ import com.localcut.editor.domain.model.EffectParameter
 import com.localcut.editor.domain.model.EqBand
 import com.localcut.editor.domain.model.LimiterSettings
 import com.localcut.editor.domain.model.MaskKind
+import com.localcut.editor.domain.model.MaskPoint
 import com.localcut.editor.domain.model.MaskSpec
 import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.model.TimeMap
@@ -55,10 +56,24 @@ object CreativeToolsUiPolicy {
     }
 
     fun setMaskPreset(source: CompositingSettings, kind: MaskKind): CompositingSettings {
-        require(kind == MaskKind.RECTANGLE || kind == MaskKind.ELLIPSE) {
-            "mobile mask preset requires a currently renderable mask kind"
+        require(kind in setOf(MaskKind.RECTANGLE, MaskKind.ELLIPSE, MaskKind.FREEFORM)) {
+            "mobile mask preset requires a renderable mask kind"
         }
-        val preset = MaskSpec(id = UI_MASK_ID, kind = kind)
+        val preset = when (kind) {
+            MaskKind.FREEFORM -> MaskSpec(
+                id = UI_MASK_ID,
+                kind = kind,
+                points = listOf(
+                    MaskPoint(0.50, 0.10),
+                    MaskPoint(0.88, 0.32),
+                    MaskPoint(0.78, 0.82),
+                    MaskPoint(0.22, 0.82),
+                    MaskPoint(0.12, 0.32),
+                ),
+                featherPx = 8.0,
+            )
+            else -> MaskSpec(id = UI_MASK_ID, kind = kind)
+        }
         val withoutUiPreset = source.masks.filterNot { it.id == UI_MASK_ID }
         return source.copy(masks = withoutUiPreset + preset)
     }

@@ -7,6 +7,9 @@ import com.localcut.editor.data.project.ProjectStore
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
+import com.localcut.editor.domain.model.CompositionGraph
+import com.localcut.editor.domain.model.CompositionNode
+import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackType
@@ -48,6 +51,36 @@ class BridgeCommandExecutorTest {
         assertTrue(result.success)
         assertEquals(6L, result.projectRevision)
         assertEquals(1_000_000L, fixture.session.state.project.findClip("clip-1")!!.startUs)
+    }
+
+    @Test
+    fun lockedClipRejectsBridgeWritesWithoutRevisionChange() {
+        val fixture = fixture(locked = true)
+        val baseline = fixture.session.state.project
+
+        val move = fixture.executor.execute(
+            command(
+                BridgeCapability.MOVE_CLIP,
+                messageId = "locked-move",
+                payload = "{\"clipId\":\"clip-1\",\"newStartUs\":1000000}",
+                expectedRevision = 5L,
+            ),
+        )
+        val delete = fixture.executor.execute(
+            command(
+                BridgeCapability.DELETE_CLIP,
+                messageId = "locked-delete",
+                payload = "{\"clipId\":\"clip-1\"}",
+                expectedRevision = 5L,
+            ),
+        )
+
+        assertFalse(move.success)
+        assertEquals(BridgeErrorCode.CAPABILITY_NOT_ALLOWED, move.code)
+        assertFalse(delete.success)
+        assertEquals(BridgeErrorCode.CAPABILITY_NOT_ALLOWED, delete.code)
+        assertEquals(5L, fixture.session.state.revision)
+        assertEquals(baseline, fixture.session.state.project)
     }
 
     @Test
@@ -148,7 +181,7 @@ class BridgeCommandExecutorTest {
         val executor: BridgeCommandExecutor,
     )
 
-    private fun fixture(): Fixture {
+    private fun fixture(locked: Boolean = false): Fixture {
         val asset = Asset(
             id = "asset-1",
             type = AssetType.VIDEO,
@@ -166,6 +199,20 @@ class BridgeCommandExecutorTest {
             tracks = listOf(
                 Track("visual-1", TrackType.VISUAL, 0, clips = listOf(clip)),
                 Track("audio-1", TrackType.AUDIO, 1),
+            ),
+            compositionGraph = CompositionGraph(
+                nodes = if (locked) {
+                    listOf(
+                        CompositionNode(
+                            id = "layer-clip-1",
+                            kind = CompositionNodeKind.LAYER,
+                            clipId = "clip-1",
+                            locked = true,
+                        ),
+                    )
+                } else {
+                    emptyList()
+                },
             ),
         )
         val session = ProjectSession(

@@ -2,6 +2,7 @@ package com.localcut.editor.domain.history
 
 import com.localcut.editor.domain.model.*
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -54,6 +55,49 @@ class CreativeClipCommandsTest {
 
         assertTrue(history.undo())
         assertEquals(initial.findClip("clip-1"), history.project.findClip("clip-1"))
+    }
+
+    @Test
+    fun clipOpacityIsUndoableRedoableAndBounded() {
+        val initial = projectWithClip()
+        val history = HistoryManager(initial)
+
+        history.execute(SetClipOpacityCommand("clip-1", 0.35))
+        assertEquals(0.35, history.project.findClip("clip-1")!!.opacity, 0.0)
+
+        assertTrue(history.undo())
+        assertEquals(1.0, history.project.findClip("clip-1")!!.opacity, 0.0)
+
+        assertTrue(history.redo())
+        assertEquals(0.35, history.project.findClip("clip-1")!!.opacity, 0.0)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            SetClipOpacityCommand("clip-1", 1.1).apply(initial)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            SetClipOpacityCommand("clip-1", Double.NaN).apply(initial)
+        }
+    }
+
+    @Test
+    fun lockedLayerRejectsStaticOpacityMutation() {
+        val initial = projectWithClip().copy(
+            compositionGraph = CompositionGraph(
+                nodes = listOf(
+                    CompositionNode(
+                        id = "layer-clip-1",
+                        kind = CompositionNodeKind.LAYER,
+                        clipId = "clip-1",
+                        locked = true,
+                    ),
+                ),
+            ),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            SetClipOpacityCommand("clip-1", 0.5).apply(initial)
+        }
+        assertEquals(1.0, initial.findClip("clip-1")!!.opacity, 0.0)
     }
 
     private fun projectWithClip(): Project {

@@ -6,6 +6,7 @@ import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.ShapeKind
 import com.localcut.editor.domain.model.ShapeSpec
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -64,6 +65,39 @@ class DesignToolsUiPolicyTest {
         assertEquals(3_000_000L, second.durationUs)
         assertEquals(5, second.zIndex)
         assertEquals(ShapeKind.ELLIPSE, second.shape!!.kind)
+    }
+
+    @Test
+    fun duplicateElementPreservesStyleAndTimingButOffsetsAndRaisesCopy() {
+        val original = element("shape-1", 4).copy(
+            startUs = 500_000L,
+            durationUs = 2_500_000L,
+            opacity = 0.65,
+            transform = element("template", 0).transform.copy(x = 100.0, y = -80.0, scale = 1.4),
+            shape = ShapeSpec(
+                kind = ShapeKind.RECTANGLE,
+                fillArgb = 0xFFFF3B30.toInt(),
+                strokeArgb = 0xFF111111.toInt(),
+                strokeWidthPx = 8.0,
+                cornerRadiusPx = 30.0,
+            ),
+        )
+        val front = element("shape-2", 9)
+        val project = Project.create("Design", 1080, 1920, 30).copy(designElements = listOf(original, front))
+
+        val duplicate = DesignToolsUiPolicy.duplicateElement(project, original)
+
+        assertEquals("shape-3", duplicate.id)
+        assertNotEquals(original.id, duplicate.id)
+        assertEquals(original.startUs, duplicate.startUs)
+        assertEquals(original.durationUs, duplicate.durationUs)
+        assertEquals(original.shape, duplicate.shape)
+        assertEquals(original.opacity, duplicate.opacity, 0.0)
+        assertEquals(original.transform.scale, duplicate.transform.scale, 0.0)
+        assertEquals(original.transform.x + 24.0, duplicate.transform.x, 0.0)
+        assertEquals(original.transform.y + 24.0, duplicate.transform.y, 0.0)
+        assertEquals(10, duplicate.zIndex)
+        assertTrue(duplicate.validationIssues().isEmpty())
     }
 
     @Test

@@ -80,6 +80,18 @@ object DesignToolsUiPolicy {
         )
     }
 
+    fun nextInstancePrefix(project: Project, componentId: String): String {
+        require(componentId.isNotBlank()) { "componentId must not be blank" }
+        var index = 1L
+        while (true) {
+            val prefix = "$componentId-instance-$index"
+            val occupied = project.designElements.any { it.id.startsWith("$prefix-") }
+            if (!occupied) return prefix
+            check(index < Long.MAX_VALUE) { "unable to allocate component instance prefix" }
+            index++
+        }
+    }
+
     private fun nextId(prefix: String, existing: Set<String>): String {
         var index = 1L
         while (true) {

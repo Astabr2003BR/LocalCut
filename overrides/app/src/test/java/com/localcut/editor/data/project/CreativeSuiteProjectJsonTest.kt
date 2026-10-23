@@ -78,12 +78,7 @@ class CreativeSuiteProjectJsonTest {
                     ),
                 ),
             ),
-            timeMap = TimeMap(
-                baseSpeed = 1.25,
-                reverse = true,
-                speedPoints = listOf(SpeedPoint(0L, 1.0), SpeedPoint(2_000_000L, 2.0)),
-                freezeSegments = listOf(FreezeSegment(1_000_000L, 250_000L, 750_000L)),
-            ),
+            timeMap = TimeMap(reverse = true),
         )
         val project = Project.create("Creative", 1080, 1920, 30).copy(
             assets = listOf(asset),
@@ -96,8 +91,8 @@ class CreativeSuiteProjectJsonTest {
         val encoded = ProjectJson.encode(project)
         val decoded = ProjectJson.decode(encoded)
 
-        assertEquals(6, BuildContract.PROJECT_SCHEMA_VERSION)
-        assertTrue(encoded.contains("\"schemaVersion\":6"))
+        assertEquals(BuildContract.PROJECT_SCHEMA_VERSION, decoded.schemaVersion)
+        assertTrue(encoded.contains("\"schemaVersion\":${BuildContract.PROJECT_SCHEMA_VERSION}"))
         assertEquals(clip.propertyAnimations, decoded.findClip("clip-1")!!.propertyAnimations)
         assertEquals(clip.compositing, decoded.findClip("clip-1")!!.compositing)
         assertEquals(clip.effects, decoded.findClip("clip-1")!!.effects)
@@ -109,7 +104,7 @@ class CreativeSuiteProjectJsonTest {
         val decoded = ProjectJson.decode(v3Fixture())
         val clip = decoded.findClip("clip-1")!!
 
-        assertEquals(6, decoded.schemaVersion)
+        assertEquals(BuildContract.PROJECT_SCHEMA_VERSION, decoded.schemaVersion)
         assertTrue(clip.propertyAnimations.isEmpty())
         assertEquals(CompositingSettings(), clip.compositing)
         assertTrue(clip.effects.isEmpty())

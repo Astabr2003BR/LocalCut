@@ -6,11 +6,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.localcut.editor.domain.design.SnapEngine
@@ -27,6 +31,7 @@ import com.localcut.editor.domain.model.GuideAxis
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.ReusableComponent
 import com.localcut.editor.domain.model.ShapeKind
+import kotlin.math.roundToInt
 
 @Composable
 fun DesignToolsPanel(
@@ -114,6 +119,14 @@ fun DesignToolsPanel(
                     }
 
                     activeShape?.let { element ->
+                        val shape = requireNotNull(element.shape)
+                        var strokeWidth by remember(element.id, shape.strokeWidthPx) {
+                            mutableStateOf(shape.strokeWidthPx.coerceIn(0.0, DesignToolsUiPolicy.MAX_STROKE_WIDTH_PX))
+                        }
+                        var cornerRadius by remember(element.id, shape.cornerRadiusPx) {
+                            mutableStateOf(shape.cornerRadiusPx.coerceIn(0.0, DesignToolsUiPolicy.MAX_CORNER_RADIUS_PX))
+                        }
+
                         Text(
                             "Editar ${element.id}",
                             style = MaterialTheme.typography.labelMedium,
@@ -150,6 +163,94 @@ fun DesignToolsPanel(
                                 onClick = { onUpdateElement(DesignToolsUiPolicy.sendToBack(project, element)) },
                             ) { Text("Trás") }
                             Button(onClick = { onDeleteElement(element.id) }) { Text("Excluir forma") }
+                        }
+
+                        Text("Preenchimento", style = MaterialTheme.typography.labelMedium)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            designColorPresets.forEach { preset ->
+                                val selected = shape.fillArgb == preset.argb
+                                if (selected) {
+                                    FilledTonalButton(
+                                        onClick = { onUpdateElement(DesignToolsUiPolicy.setShapeFill(element, preset.argb)) },
+                                    ) { Text(preset.label) }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { onUpdateElement(DesignToolsUiPolicy.setShapeFill(element, preset.argb)) },
+                                    ) { Text(preset.label) }
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = { onUpdateElement(DesignToolsUiPolicy.setShapeFill(element, null)) },
+                            ) { Text("Sem fill") }
+                        }
+
+                        Text("Contorno", style = MaterialTheme.typography.labelMedium)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            designColorPresets.forEach { preset ->
+                                val selected = shape.strokeArgb == preset.argb
+                                if (selected) {
+                                    FilledTonalButton(
+                                        onClick = { onUpdateElement(DesignToolsUiPolicy.setShapeStrokeColor(element, preset.argb)) },
+                                    ) { Text(preset.label) }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { onUpdateElement(DesignToolsUiPolicy.setShapeStrokeColor(element, preset.argb)) },
+                                    ) { Text(preset.label) }
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = { onUpdateElement(DesignToolsUiPolicy.setShapeStrokeColor(element, null)) },
+                            ) { Text("Sem contorno") }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                "Borda ${strokeWidth.roundToInt()} px",
+                                modifier = Modifier.width(104.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Slider(
+                                value = strokeWidth.toFloat(),
+                                onValueChange = { strokeWidth = it.toDouble() },
+                                onValueChangeFinished = {
+                                    onUpdateElement(DesignToolsUiPolicy.setShapeStrokeWidth(element, strokeWidth))
+                                },
+                                modifier = Modifier.weight(1f),
+                                valueRange = 0f..DesignToolsUiPolicy.MAX_STROKE_WIDTH_PX.toFloat(),
+                            )
+                        }
+
+                        if (shape.kind == ShapeKind.RECTANGLE) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    "Cantos ${cornerRadius.roundToInt()} px",
+                                    modifier = Modifier.width(104.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                Slider(
+                                    value = cornerRadius.toFloat(),
+                                    onValueChange = { cornerRadius = it.toDouble() },
+                                    onValueChangeFinished = {
+                                        onUpdateElement(DesignToolsUiPolicy.setShapeCornerRadius(element, cornerRadius))
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    valueRange = 0f..DesignToolsUiPolicy.MAX_CORNER_RADIUS_PX.toFloat(),
+                                )
+                            }
                         }
                     }
                 }
@@ -204,6 +305,17 @@ fun DesignToolsPanel(
         }
     }
 }
+
+private data class DesignColorPreset(val label: String, val argb: Int)
+
+private val designColorPresets = listOf(
+    DesignColorPreset("Branco", 0xFFFFFFFF.toInt()),
+    DesignColorPreset("Preto", 0xFF111111.toInt()),
+    DesignColorPreset("Vermelho", 0xFFFF3B30.toInt()),
+    DesignColorPreset("Amarelo", 0xFFFFCC00.toInt()),
+    DesignColorPreset("Verde", 0xFF34C759.toInt()),
+    DesignColorPreset("Azul", 0xFF0A84FF.toInt()),
+)
 
 private fun nudge(
     project: Project,

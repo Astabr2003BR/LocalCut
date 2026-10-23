@@ -34,6 +34,7 @@ enum class ProjectIssueCode {
     INVALID_CREATIVE_STATE,
     INVALID_COMPOSITION_GRAPH,
     INVALID_DESIGN_STATE,
+    INVALID_AUDIO_PROCESSING,
 }
 
 data class ProjectIssue(val code: ProjectIssueCode, val subjectId: String? = null, val detail: String? = null)
@@ -114,11 +115,17 @@ object TimelineValidator {
                 creativeStateIssues(clip, sourceRangeUs).firstOrNull()?.let { detail ->
                     issues += ProjectIssue(ProjectIssueCode.INVALID_CREATIVE_STATE, clip.id, detail)
                 }
+                clip.audioProcessing.validationIssues().firstOrNull()?.let { detail ->
+                    issues += ProjectIssue(ProjectIssueCode.INVALID_AUDIO_PROCESSING, clip.id, detail)
+                }
             }
         }
 
         validateTextOverlays(project, issues)
         validateDesignState(project, allClips.map { it.id }.toSet(), issues)
+        BeatMarker.validationIssues(project.beatMarkers).firstOrNull()?.let { detail ->
+            issues += ProjectIssue(ProjectIssueCode.INVALID_AUDIO_PROCESSING, project.id, detail)
+        }
         validateTransitions(project, issues)
         return issues
     }

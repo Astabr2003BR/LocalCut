@@ -65,10 +65,10 @@ object EditorToolCatalog {
     private val any = EditorSelectionKind.entries.toSet()
 
     val all: List<EditorToolDefinition> = listOf(
-        tool(EditorToolId.MEDIA, "Mídia", EditorToolGroup.PROJECT, project, EditorToolState.LIVE),
-        tool(EditorToolId.AUDIO, "Áudio", EditorToolGroup.AUDIO, project + clip, EditorToolState.LIVE),
-        tool(EditorToolId.TEXT, "Texto", EditorToolGroup.PROJECT, project + EditorSelectionKind.TEXT, EditorToolState.LIVE),
-        tool(EditorToolId.OVERLAY, "Overlay", EditorToolGroup.PROJECT, project + visual, EditorToolState.LIVE),
+        tool(EditorToolId.MEDIA, "Mídia", EditorToolGroup.PROJECT, any, EditorToolState.LIVE),
+        tool(EditorToolId.AUDIO, "Áudio", EditorToolGroup.AUDIO, any, EditorToolState.LIVE),
+        tool(EditorToolId.TEXT, "Texto", EditorToolGroup.PROJECT, any, EditorToolState.LIVE),
+        tool(EditorToolId.OVERLAY, "Overlay", EditorToolGroup.PROJECT, any, EditorToolState.LIVE),
         tool(EditorToolId.EDIT, "Editar", EditorToolGroup.EDIT, clip, EditorToolState.LIVE),
         tool(EditorToolId.EFFECTS, "Efeitos", EditorToolGroup.CREATIVE, visual, EditorToolState.LIVE),
         tool(EditorToolId.COLOR, "Cor", EditorToolGroup.CREATIVE, visual, EditorToolState.LIVE),
@@ -78,7 +78,7 @@ object EditorToolCatalog {
         tool(EditorToolId.ANIMATION, "Animação", EditorToolGroup.CREATIVE, visual + EditorSelectionKind.TEXT + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
         tool(EditorToolId.LAYERS, "Camadas", EditorToolGroup.DESIGN, visual + EditorSelectionKind.TEXT + EditorSelectionKind.DESIGN, EditorToolState.PARTIAL),
         tool(EditorToolId.DESIGN, "Design", EditorToolGroup.DESIGN, project + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
-        tool(EditorToolId.CANVAS, "Canvas", EditorToolGroup.DESIGN, project + visual + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
+        tool(EditorToolId.CANVAS, "Canvas", EditorToolGroup.DESIGN, any, EditorToolState.LIVE),
         tool(EditorToolId.CAPTIONS, "Legendas", EditorToolGroup.PROJECT, project + EditorSelectionKind.TEXT, EditorToolState.PARTIAL),
         tool(EditorToolId.TRACKING, "Tracking", EditorToolGroup.ADVANCED, visual, EditorToolState.PLANNED),
         tool(EditorToolId.STABILIZE, "Estabilizar", EditorToolGroup.ADVANCED, setOf(EditorSelectionKind.VIDEO), EditorToolState.PLANNED),

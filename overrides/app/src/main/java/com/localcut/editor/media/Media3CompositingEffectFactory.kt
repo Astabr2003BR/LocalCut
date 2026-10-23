@@ -10,10 +10,13 @@ import androidx.media3.common.util.GlUtil
 import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BaseGlShaderProgram
+import androidx.media3.effect.Crop
 import androidx.media3.effect.GlEffect
 import androidx.media3.effect.GlShaderProgram
+import androidx.media3.effect.Presentation
 import com.localcut.editor.domain.model.BlendMode
 import com.localcut.editor.domain.model.CompositingSettings
+import com.localcut.editor.domain.model.CropMode
 import com.localcut.editor.domain.model.CropSettings
 import com.localcut.editor.domain.model.MaskKind
 import com.localcut.editor.domain.model.MaskSpec
@@ -25,7 +28,6 @@ internal object Media3CompositingEffectFactory {
     fun canRender(settings: CompositingSettings): Boolean {
         if (settings.validationIssues().isNotEmpty()) return false
         if (settings.blendMode != BlendMode.NORMAL) return false
-        if (settings.crop != CropSettings()) return false
         if (settings.chromaKey.enabled && settings.chromaKey.edgeFeatherPx != 0.0) return false
         if (settings.masks.size > 1) return false
         val mask = settings.masks.singleOrNull()
@@ -34,16 +36,49 @@ internal object Media3CompositingEffectFactory {
             if (mask.animations.isNotEmpty()) return false
             if (mask.points.isNotEmpty() && mask.points.size < 2) return false
         }
+        val crop = settings.crop
+        if (crop.right <= crop.left || crop.bottom <= crop.top) return false
         return true
     }
 
-    fun create(settings: CompositingSettings): List<Effect> {
+    fun create(
+        settings: CompositingSettings,
+        outputWidth: Int,
+        outputHeight: Int,
+    ): List<Effect> {
         require(canRender(settings)) { "unsupported compositing state for Media3 backend" }
-        return if (settings.chromaKey.enabled || settings.masks.isNotEmpty()) {
-            listOf(LocalCutCompositingEffect(settings))
-        } else {
-            emptyList()
+        require(outputWidth > 0 && outputHeight > 0) { "output dimensions must be positive" }
+        return buildList {
+            cropEffectOrNull(settings.crop)?.let(::add)
+            if (settings.chromaKey.enabled || settings.masks.isNotEmpty()) {
+                add(LocalCutCompositingEffect(settings))
+            }
+            presentationEffectOrNull(settings.crop, outputWidth, outputHeight)?.let(::add)
         }
+    }
+
+    private fun cropEffectOrNull(crop: CropSettings): Effect? {
+        val explicitBounds = crop.left != 0.0 || crop.top != 0.0 || crop.right != 1.0 || crop.bottom != 1.0
+        if (!explicitBounds) return null
+        val left = (crop.left * 2.0 - 1.0).toFloat()
+        val right = (crop.right * 2.0 - 1.0).toFloat()
+        val bottom = (1.0 - crop.bottom * 2.0).toFloat()
+        val top = (1.0 - crop.top * 2.0).toFloat()
+        return Crop(left, right, bottom, top)
+    }
+
+    private fun presentationEffectOrNull(
+        crop: CropSettings,
+        outputWidth: Int,
+        outputHeight: Int,
+    ): Effect? {
+        val layout = when (crop.mode) {
+            CropMode.NONE -> return null
+            CropMode.FIT -> Presentation.LAYOUT_SCALE_TO_FIT
+            CropMode.FILL -> Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
+            CropMode.STRETCH -> Presentation.LAYOUT_STRETCH_TO_FIT
+        }
+        return Presentation.createForWidthAndHeight(outputWidth, outputHeight, layout)
     }
 }
 

@@ -1,5 +1,6 @@
 package com.localcut.editor.ui.editor
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -55,6 +56,18 @@ fun AudioToolsPanel(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text("Áudio profissional", style = MaterialTheme.typography.titleSmall)
+
+            Text("Presets", style = MaterialTheme.typography.labelLarge)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                AudioPreset.entries.forEach { preset ->
+                    FilledTonalButton(
+                        onClick = { onSetAudioProcessing(AudioPresetUiPolicy.apply(settings, preset)) },
+                    ) { Text(AudioPresetUiPolicy.label(preset)) }
+                }
+            }
 
             AudioCommitSlider(
                 label = "Pan",

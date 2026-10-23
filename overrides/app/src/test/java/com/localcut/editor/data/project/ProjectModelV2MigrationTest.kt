@@ -1,5 +1,6 @@
 package com.localcut.editor.data.project
 
+import com.localcut.editor.BuildContract
 import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.timeline.ProjectIssueCode
 import com.localcut.editor.domain.timeline.TimelineValidator
@@ -13,7 +14,7 @@ class ProjectModelV2MigrationTest {
     fun v1FixtureMigratesToCurrentSchemaWithoutChangingAssetsOrTimelineData() {
         val project = ProjectJson.decode(v1Fixture())
 
-        assertEquals(4, project.schemaVersion)
+        assertEquals(BuildContract.PROJECT_SCHEMA_VERSION, project.schemaVersion)
         assertEquals("legacy-project", project.id)
         assertEquals("Projeto legado", project.title)
         assertEquals(1080, project.width)
@@ -26,7 +27,7 @@ class ProjectModelV2MigrationTest {
         assertEquals(2_000_000L, project.tracks.first().clips.single().durationUs)
 
         val encoded = ProjectJson.encode(project)
-        assertTrue(encoded.contains("\"schemaVersion\":4"))
+        assertTrue(encoded.contains("\"schemaVersion\":${BuildContract.PROJECT_SCHEMA_VERSION}"))
         assertTrue(encoded.contains("\"collisionPolicy\":\"EXCLUSIVE\""))
     }
 
@@ -34,7 +35,7 @@ class ProjectModelV2MigrationTest {
     fun v2ProjectWithMultipleTracksMigratesAndRoundTripsExactly() {
         val decoded = ProjectJson.decode(v2EmptyMultitrackFixture())
 
-        assertEquals(4, decoded.schemaVersion)
+        assertEquals(BuildContract.PROJECT_SCHEMA_VERSION, decoded.schemaVersion)
         assertEquals(3, decoded.tracks.size)
         assertEquals(decoded, ProjectJson.decode(ProjectJson.encode(decoded)))
     }

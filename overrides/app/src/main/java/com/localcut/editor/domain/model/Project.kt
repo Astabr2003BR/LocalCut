@@ -1,6 +1,7 @@
 package com.localcut.editor.domain.model
 
 import com.localcut.editor.BuildContract
+import com.localcut.editor.analysis.ProjectAnalysisState
 
 data class Project(
     val id: String,
@@ -18,6 +19,7 @@ data class Project(
     val designCanvas: DesignCanvasSettings = DesignCanvasSettings(),
     val reusableComponents: List<ReusableComponent> = emptyList(),
     val beatMarkers: List<BeatMarker> = emptyList(),
+    val analysis: ProjectAnalysisState = ProjectAnalysisState(),
 ) {
     fun findClip(clipId: String): Clip? = tracks.asSequence().flatMap { it.clips.asSequence() }.firstOrNull { it.id == clipId }
 

@@ -41,7 +41,7 @@ internal fun BeatMarkerTimelineControls(
     onAddMarker: (BeatMarker) -> Unit,
     onDeleteMarker: (String) -> Unit,
     onApplyDetectedMarkers: (String, List<BeatMarker>) -> Unit,
-    onClearDetectedMarkers: (String) -> Unit,
+    onClearDetectedMarkers: (String) -> Unit = { clipId -> onApplyDetectedMarkers(clipId, emptyList()) },
     modifier: Modifier = Modifier,
 ) {
     val durationUs = TimelineMath.durationUs(project)
@@ -129,7 +129,7 @@ internal fun BeatMarkerTimelineControls(
             }
             OutlinedButton(
                 onClick = { selectedClipId?.let(onClearDetectedMarkers) },
-                enabled = selectedClipId != null && hasAutoMarkers && analyzingClipId == null,
+                enabled = selectedClipId != null && canAnalyze && hasAutoMarkers && analyzingClipId == null,
             ) {
                 Text("Limpar automáticas")
             }

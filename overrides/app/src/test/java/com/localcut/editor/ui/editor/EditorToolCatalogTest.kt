@@ -42,6 +42,14 @@ class EditorToolCatalogTest {
     }
 
     @Test
+    fun layerPanelIsLiveOnlyAfterRealVisibilityBackendExists() {
+        val layers = EditorToolCatalog.all.single { it.id == EditorToolId.LAYERS }
+
+        assertTrue(layers.enabled)
+        assertTrue(layers.state == EditorToolState.LIVE)
+    }
+
+    @Test
     fun audioSelectionDoesNotOfferVisualOnlyTools() {
         val ids = EditorToolCatalog.primaryToolsFor(EditorSelectionKind.AUDIO).map { it.id }.toSet()
 

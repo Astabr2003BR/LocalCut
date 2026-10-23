@@ -127,27 +127,20 @@ object TrackingAnimationAdapter {
         val halfWidth = projectWidth / 2.0
         val halfHeight = projectHeight / 2.0
         return listOf(
-            scalarAnimation("transform.x", data.samples) { it.normalizedX * projectWidth - halfWidth },
-            scalarAnimation("transform.y", data.samples) { it.normalizedY * projectHeight - halfHeight },
-            scalarAnimation("transform.scale", data.samples) { it.scale },
-            scalarAnimation("transform.rotationDeg", data.samples) { it.rotationDeg },
+            trackingScalar("transform.x", data.samples) { it.normalizedX * projectWidth - halfWidth },
+            trackingScalar("transform.y", data.samples) { it.normalizedY * projectHeight - halfHeight },
+            trackingScalar("transform.scale", data.samples) { it.scale },
+            trackingScalar("transform.rotationDeg", data.samples) { it.rotationDeg },
         )
     }
 
-    private fun scalarAnimation(
+    private fun trackingScalar(
         propertyId: String,
         samples: List<TrackingSample>,
         value: (TrackingSample) -> Double,
-    ): PropertyAnimation = PropertyAnimation(
+    ): PropertyAnimation = scalarAnimation(
         propertyId = propertyId,
-        keyframes = samples.mapIndexed { index, sample ->
-            PropertyKeyframe(
-                id = "$propertyId-$index",
-                offsetUs = sample.timeUs,
-                value = PropertyValue.Scalar(value(sample)),
-                easingToNext = Easing(),
-            )
-        },
+        samples = samples.map { TimedScalar(it.timeUs, value(it)) },
     )
 }
 
@@ -163,4 +156,61 @@ object StabilizationAdapter {
             rotationDeg = -sample.rotationDeg,
         )
     }
+
+    fun toPropertyAnimations(data: StabilizationData): List<PropertyAnimation> {
+        require(data.validationIssues().isEmpty()) { "invalid stabilization data: ${data.validationIssues().first()}" }
+        return listOf(
+            scalarAnimation("transform.x", data.samples.map { TimedScalar(it.timeUs, -it.motionX) }),
+            scalarAnimation("transform.y", data.samples.map { TimedScalar(it.timeUs, -it.motionY) }),
+            scalarAnimation("transform.scale", data.samples.map { TimedScalar(it.timeUs, data.cropScale / it.zoom) }),
+            scalarAnimation("transform.rotationDeg", data.samples.map { TimedScalar(it.timeUs, -it.rotationDeg) }),
+        )
+    }
 }
+
+object AutoReframeAdapter {
+    fun toPropertyAnimations(
+        data: AutoReframeData,
+        projectWidth: Int,
+        projectHeight: Int,
+    ): List<PropertyAnimation> {
+        require(data.validationIssues().isEmpty()) { "invalid auto-reframe data: ${data.validationIssues().first()}" }
+        require(projectWidth > 0 && projectHeight > 0) { "project dimensions must be positive" }
+        val halfWidth = projectWidth / 2.0
+        val halfHeight = projectHeight / 2.0
+        return listOf(
+            scalarAnimation(
+                "transform.x",
+                data.samples.map { TimedScalar(it.timeUs, -(it.centerX * projectWidth - halfWidth)) },
+            ),
+            scalarAnimation(
+                "transform.y",
+                data.samples.map { TimedScalar(it.timeUs, -(it.centerY * projectHeight - halfHeight)) },
+            ),
+            scalarAnimation(
+                "transform.scale",
+                data.samples.map { TimedScalar(it.timeUs, it.scale) },
+            ),
+        )
+    }
+}
+
+private data class TimedScalar(
+    val timeUs: Long,
+    val value: Double,
+)
+
+private fun scalarAnimation(
+    propertyId: String,
+    samples: List<TimedScalar>,
+): PropertyAnimation = PropertyAnimation(
+    propertyId = propertyId,
+    keyframes = samples.mapIndexed { index, sample ->
+        PropertyKeyframe(
+            id = "$propertyId-$index",
+            offsetUs = sample.timeUs,
+            value = PropertyValue.Scalar(sample.value),
+            easingToNext = Easing(),
+        )
+    },
+)

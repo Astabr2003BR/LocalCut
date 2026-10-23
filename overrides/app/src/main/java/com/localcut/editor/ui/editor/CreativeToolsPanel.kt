@@ -6,10 +6,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.localcut.editor.domain.model.AssetType
@@ -31,6 +35,7 @@ import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.model.TimeMap
 import com.localcut.editor.recipes.AnimeRecipe
 import com.localcut.editor.recipes.AnimeRecipeApplicator
+import kotlin.math.roundToInt
 
 @Composable
 fun CreativeToolsPanel(
@@ -61,6 +66,12 @@ fun CreativeToolsPanel(
         mutableStateOf(CreativeToolsUiPolicy.defaultSection(asset?.type))
     }
     val activeSection = requestedSection.takeIf { it in availableSections } ?: availableSections.first()
+    var customCurveExpanded by remember(clip.id) {
+        mutableStateOf(!clip.timeMap.reverse && clip.timeMap.freezeSegments.isEmpty() && clip.timeMap.speedPoints.size == 5)
+    }
+    var customSpeeds by remember(clip.id, clip.timeMap) {
+        mutableStateOf(CreativeToolsUiPolicy.customSpeedControlValues(clip.timeMap))
+    }
 
     Surface(
         modifier = modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
@@ -231,6 +242,7 @@ fun CreativeToolsPanel(
                     }
 
                     if (asset?.type != AssetType.IMAGE) {
+                        val sourceRangeUs = clip.sourceOutUs - clip.sourceInUs
                         Text("Velocidade", style = MaterialTheme.typography.labelMedium)
                         Row(
                             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -251,8 +263,9 @@ fun CreativeToolsPanel(
                                     }) { Text(label) }
                                 }
                             }
-                            val sourceRangeUs = clip.sourceOutUs - clip.sourceInUs
-                            val rampSelected = !clip.timeMap.reverse && clip.timeMap.speedPoints.size >= 2
+                            val rampSelected = !clip.timeMap.reverse &&
+                                clip.timeMap.freezeSegments.isEmpty() &&
+                                clip.timeMap.speedPoints.map { it.speed } == listOf(0.5, 2.0)
                             if (rampSelected) {
                                 FilledTonalButton(onClick = {
                                     onSetTimeMap(CreativeToolsUiPolicy.accelerationRamp(sourceRangeUs))
@@ -261,6 +274,60 @@ fun CreativeToolsPanel(
                                 OutlinedButton(onClick = {
                                     onSetTimeMap(CreativeToolsUiPolicy.accelerationRamp(sourceRangeUs))
                                 }) { Text("Ramp 0,5→2×") }
+                            }
+                            val customSelected = !clip.timeMap.reverse &&
+                                clip.timeMap.freezeSegments.isEmpty() &&
+                                clip.timeMap.speedPoints.size == 5
+                            if (customSelected) {
+                                FilledTonalButton(onClick = { customCurveExpanded = !customCurveExpanded }) {
+                                    Text(if (customCurveExpanded) "Curva ✓" else "Curva custom")
+                                }
+                            } else {
+                                OutlinedButton(onClick = { customCurveExpanded = !customCurveExpanded }) {
+                                    Text("Curva custom")
+                                }
+                            }
+                        }
+
+                        if (customCurveExpanded) {
+                            Text(
+                                "Curva customizada • 0,1×–10×",
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                            customSpeeds.forEachIndexed { index, speed ->
+                                val rounded = (speed * 10.0).roundToInt() / 10.0
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(
+                                        "P${index + 1} ${rounded}×",
+                                        modifier = Modifier.width(82.dp),
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                    Slider(
+                                        value = speed.toFloat(),
+                                        onValueChange = { value ->
+                                            customSpeeds = CreativeToolsUiPolicy.updateCustomSpeedControl(
+                                                customSpeeds,
+                                                index,
+                                                value.toDouble(),
+                                            )
+                                        },
+                                        onValueChangeFinished = {
+                                            onSetTimeMap(
+                                                CreativeToolsUiPolicy.customSpeedCurve(
+                                                    sourceRangeUs = sourceRangeUs,
+                                                    speeds = customSpeeds,
+                                                ),
+                                            )
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        valueRange = 0.1f..10f,
+                                        steps = 98,
+                                    )
+                                }
                             }
                         }
                     }

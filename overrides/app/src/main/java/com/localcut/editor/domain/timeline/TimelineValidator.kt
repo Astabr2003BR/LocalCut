@@ -3,6 +3,8 @@ package com.localcut.editor.domain.timeline
 import com.localcut.editor.BuildContract
 import com.localcut.editor.domain.composition.LayerGraph
 import com.localcut.editor.domain.model.*
+import com.localcut.editor.domain.time.TimeMapEvaluator
+import com.localcut.editor.effects.EffectRegistry
 
 enum class ProjectIssueCode {
     UNSUPPORTED_SCHEMA,
@@ -85,8 +87,14 @@ object TimelineValidator {
                 if (clip.startUs < 0) issues += ProjectIssue(ProjectIssueCode.NEGATIVE_START, clip.id)
                 if (clip.sourceInUs < 0) issues += ProjectIssue(ProjectIssueCode.NEGATIVE_SOURCE_IN, clip.id)
                 if (clip.sourceOutUs <= clip.sourceInUs) issues += ProjectIssue(ProjectIssueCode.INVALID_SOURCE_RANGE, clip.id)
-                if (clip.sourceOutUs > clip.sourceInUs && clip.durationUs != clip.sourceOutUs - clip.sourceInUs) {
-                    issues += ProjectIssue(ProjectIssueCode.DURATION_SOURCE_MISMATCH, clip.id)
+                val sourceRangeUs = if (clip.sourceOutUs > clip.sourceInUs) clip.sourceOutUs - clip.sourceInUs else null
+                if (sourceRangeUs != null && clip.timeMap.validationIssues().isEmpty()) {
+                    val expectedDurationUs = runCatching {
+                        TimeMapEvaluator.presentationDurationUs(sourceRangeUs, clip.timeMap)
+                    }.getOrNull()
+                    if (expectedDurationUs != null && clip.durationUs != expectedDurationUs) {
+                        issues += ProjectIssue(ProjectIssueCode.DURATION_SOURCE_MISMATCH, clip.id)
+                    }
                 }
                 if (!validTransform(clip.transform)) issues += ProjectIssue(ProjectIssueCode.INVALID_TRANSFORM, clip.id)
                 if (!clip.opacity.isFinite() || clip.opacity !in 0.0..1.0) issues += ProjectIssue(ProjectIssueCode.INVALID_OPACITY, clip.id)
@@ -102,7 +110,7 @@ object TimelineValidator {
                 if (clip.keyframes.any { !validTransform(it.value) }) {
                     issues += ProjectIssue(ProjectIssueCode.INVALID_TRANSFORM, clip.id, "invalid keyframe transform")
                 }
-                creativeStateIssues(clip).firstOrNull()?.let { detail ->
+                creativeStateIssues(clip, sourceRangeUs).firstOrNull()?.let { detail ->
                     issues += ProjectIssue(ProjectIssueCode.INVALID_CREATIVE_STATE, clip.id, detail)
                 }
             }
@@ -113,7 +121,7 @@ object TimelineValidator {
         return issues
     }
 
-    private fun creativeStateIssues(clip: Clip): List<String> = buildList {
+    private fun creativeStateIssues(clip: Clip, sourceRangeUs: Long?): List<String> = buildList {
         if (clip.propertyAnimations.map { it.propertyId }.distinct().size != clip.propertyAnimations.size) {
             add("property animation propertyIds must be unique per clip")
         }
@@ -128,7 +136,7 @@ object TimelineValidator {
             add("effect ids must be unique per clip")
         }
         clip.effects.forEach { effect ->
-            addAll(effect.validationIssues())
+            addAll(EffectRegistry.validationIssues(effect))
             if (effect.animations.any { animation -> animation.keyframes.any { it.offsetUs > clip.durationUs } }) {
                 add("effect animation keyframe offset must be within clip duration")
             }
@@ -143,6 +151,9 @@ object TimelineValidator {
                     freeze.startOffsetUs + freeze.durationUs > clip.durationUs
             }) {
             add("freeze segment must be within clip duration")
+        }
+        if (sourceRangeUs != null && clip.timeMap.freezeSegments.any { it.sourceOffsetUs > sourceRangeUs }) {
+            add("freeze source offset must be within source range")
         }
     }
 

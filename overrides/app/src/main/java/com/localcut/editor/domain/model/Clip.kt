@@ -1,5 +1,7 @@
 package com.localcut.editor.domain.model
 
+import com.localcut.editor.analysis.ClipAnalysisState
+
 data class Clip(
     val id: String,
     val assetId: String,
@@ -18,4 +20,5 @@ data class Clip(
     val effects: List<EffectInstance> = emptyList(),
     val timeMap: TimeMap = TimeMap(),
     val audioProcessing: AudioProcessingSettings = AudioProcessingSettings(),
+    val analysis: ClipAnalysisState = ClipAnalysisState(),
 )

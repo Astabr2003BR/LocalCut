@@ -43,21 +43,40 @@ data class ExportSettingsState(
             capabilities: ExportCapabilities,
         ): ExportSettingsState {
             val default = ExportProfile.defaultFor(project)
-            val resolutions = ExportProfileOptions.resolutionsFor(project)
-            val fps = ExportProfileOptions.fpsFor(project)
-            val bitrates = ExportProfileOptions.bitrates()
-            val codecs = ExportProfileOptions.codecsFor(capabilities)
+            val selectedResolution = ExportResolution(default.width, default.height)
+            val selectedFps = default.fps
+            val selectedBitrate = default.videoBitrateBitsPerSecond
+            val selectedCodec = default.codec
 
             return ExportSettingsState(
-                resolutionOptions = resolutions,
-                fpsOptions = fps,
-                bitrateOptions = bitrates,
-                codecOptions = codecs,
-                selectedResolution = ExportResolution(default.width, default.height),
-                selectedFps = default.fps,
-                selectedBitrateBitsPerSecond = default.videoBitrateBitsPerSecond,
-                selectedCodec = default.codec,
+                resolutionOptions = prioritize(
+                    ExportProfileOptions.resolutionsFor(project),
+                    selectedResolution,
+                ),
+                fpsOptions = prioritize(
+                    ExportProfileOptions.fpsFor(project),
+                    selectedFps,
+                ),
+                bitrateOptions = prioritize(
+                    ExportProfileOptions.bitrates(),
+                    selectedBitrate,
+                ),
+                codecOptions = prioritize(
+                    ExportProfileOptions.codecsFor(capabilities),
+                    selectedCodec,
+                ),
+                selectedResolution = selectedResolution,
+                selectedFps = selectedFps,
+                selectedBitrateBitsPerSecond = selectedBitrate,
+                selectedCodec = selectedCodec,
             )
         }
+
+        private fun <T> prioritize(options: List<T>, selected: T): List<T> =
+            if (selected !in options || options.firstOrNull() == selected) {
+                options
+            } else {
+                listOf(selected) + options.filterNot { it == selected }
+            }
     }
 }

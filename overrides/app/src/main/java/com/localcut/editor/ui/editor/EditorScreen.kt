@@ -376,7 +376,6 @@ private fun ProfessionalContextPanel(
             }
             EditorToolId.AUDIO,
             EditorToolId.EFFECTS,
-            EditorToolId.COLOR,
             EditorToolId.SPEED,
             EditorToolId.MASK,
             EditorToolId.CHROMA -> {
@@ -392,6 +391,14 @@ private fun ProfessionalContextPanel(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+            }
+            EditorToolId.COLOR -> {
+                ColorToolsPanel(
+                    project = session.project,
+                    selectedClipId = session.selectedClipId,
+                    onSetEffects = { viewModel.dispatch(EditorAction.SetSelectedEffects(it)) },
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
             EditorToolId.ANIMATION -> {
                 AnimationCurvePanel(

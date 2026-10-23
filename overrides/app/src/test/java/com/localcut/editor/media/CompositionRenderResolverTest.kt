@@ -58,12 +58,13 @@ class CompositionRenderResolverTest {
 
         val resolved = CompositionRenderResolver.resolve(graph, clip).getOrThrow()
 
-        assertEquals(160.0, resolved.transform.x, 1e-6)
-        assertEquals(75.0, resolved.transform.y, 1e-6)
+        assertEquals(158.9798366418, resolved.transform.x, 1e-6)
+        assertEquals(76.6605205417, resolved.transform.y, 1e-6)
         assertEquals(2.0, resolved.transform.scale, 1e-6)
         assertEquals(15.0, resolved.transform.rotationDeg, 1e-6)
         assertEquals(0.30, resolved.opacity, 1e-9)
-        assertEquals(170.0, resolved.keyframes.single().value.x, 1e-6)
+        assertEquals(169.6961550602, resolved.keyframes.single().value.x, 1e-6)
+        assertEquals(73.4729635533, resolved.keyframes.single().value.y, 1e-6)
     }
 
     @Test

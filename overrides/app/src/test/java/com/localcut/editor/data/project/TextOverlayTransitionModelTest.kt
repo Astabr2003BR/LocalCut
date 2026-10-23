@@ -1,5 +1,6 @@
 package com.localcut.editor.data.project
 
+import com.localcut.editor.BuildContract
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
@@ -22,10 +23,10 @@ class TextOverlayTransitionModelTest {
     fun v2ProjectMigratesToCurrentSchemaWithEmptyCreativeLayers() {
         val decoded = ProjectJson.decode(v2Fixture())
 
-        assertEquals(4, decoded.schemaVersion)
+        assertEquals(BuildContract.PROJECT_SCHEMA_VERSION, decoded.schemaVersion)
         assertTrue(decoded.textOverlays.isEmpty())
         assertTrue(decoded.transitions.isEmpty())
-        assertTrue(ProjectJson.encode(decoded).contains("\"schemaVersion\":4"))
+        assertTrue(ProjectJson.encode(decoded).contains("\"schemaVersion\":${BuildContract.PROJECT_SCHEMA_VERSION}"))
     }
 
     @Test
@@ -91,7 +92,7 @@ class TextOverlayTransitionModelTest {
         val encoded = ProjectJson.encode(project)
         val decoded = ProjectJson.decode(encoded)
 
-        assertTrue(encoded.contains("\"schemaVersion\":4"))
+        assertTrue(encoded.contains("\"schemaVersion\":${BuildContract.PROJECT_SCHEMA_VERSION}"))
         assertEquals(project, decoded)
         assertEquals("LocalCut", decoded.textOverlays.single().text)
         assertEquals(TransitionKind.DISSOLVE, decoded.transitions.single().kind)

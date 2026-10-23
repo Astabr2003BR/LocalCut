@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -12,6 +13,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,6 +22,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.localcut.editor.bridge.agent.BridgeUiPhase
@@ -40,46 +43,61 @@ fun BridgePanel(
 
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f),
-        shape = MaterialTheme.shapes.medium,
+        color = Color(0xFF111114),
+        shape = RoundedCornerShape(8.dp),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(
+                horizontal = if (expanded) 10.dp else 8.dp,
+                vertical = if (expanded) 7.dp else 2.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(if (expanded) 7.dp else 0.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text("ChatGPT Bridge", fontWeight = FontWeight.SemiBold)
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
-                        BridgePanelUiPolicy.summary(state),
-                        style = MaterialTheme.typography.bodySmall,
+                        text = bridgeDot(state),
+                        color = bridgeColor(state),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    Text(
+                        text = if (expanded) "ChatGPT Bridge" else BridgePanelUiPolicy.summary(state),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (expanded) FontWeight.SemiBold else FontWeight.Normal,
                         color = if (BridgePanelUiPolicy.needsAttention(state)) {
                             MaterialTheme.colorScheme.error
                         } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
+                            Color(0xFFD7D7DC)
                         },
+                        maxLines = 1,
                     )
                 }
-                OutlinedButton(onClick = { expanded = !expanded }) {
-                    Text(if (expanded) "Fechar" else "Detalhes")
+                TextButton(onClick = { expanded = !expanded }) {
+                    Text(if (expanded) "Fechar" else "Bridge")
                 }
             }
 
             if (!expanded) {
-                state.message?.takeIf { BridgePanelUiPolicy.needsAttention(state) }?.let { message ->
-                    Text(
-                        message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        maxLines = 1,
-                    )
-                }
                 return@Column
             }
+
+            Text(
+                BridgePanelUiPolicy.summary(state),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (BridgePanelUiPolicy.needsAttention(state)) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -172,4 +190,24 @@ fun BridgePanel(
             }
         }
     }
+}
+
+private fun bridgeDot(state: BridgeUiState): String = when (state.phase) {
+    BridgeUiPhase.ERROR -> "●"
+    BridgeUiPhase.ONLINE,
+    BridgeUiPhase.EDITING,
+    BridgeUiPhase.EXPORTING -> "●"
+    BridgeUiPhase.PAIRING,
+    BridgeUiPhase.CONNECTING -> "◉"
+    BridgeUiPhase.OFFLINE -> "○"
+}
+
+private fun bridgeColor(state: BridgeUiState): Color = when (state.phase) {
+    BridgeUiPhase.ERROR -> Color(0xFFFF6B6B)
+    BridgeUiPhase.ONLINE,
+    BridgeUiPhase.EDITING,
+    BridgeUiPhase.EXPORTING -> Color(0xFF20D5D2)
+    BridgeUiPhase.PAIRING,
+    BridgeUiPhase.CONNECTING -> Color(0xFFFFC857)
+    BridgeUiPhase.OFFLINE -> Color(0xFF77777D)
 }

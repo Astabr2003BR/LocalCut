@@ -32,9 +32,12 @@ internal object Media3CompositingEffectFactory {
         if (settings.masks.size > 1) return false
         val mask = settings.masks.singleOrNull()
         if (mask != null) {
-            if (mask.kind !in setOf(MaskKind.RECTANGLE, MaskKind.ELLIPSE)) return false
+            if (mask.kind !in setOf(MaskKind.RECTANGLE, MaskKind.ELLIPSE, MaskKind.FREEFORM)) return false
             if (mask.animations.isNotEmpty()) return false
-            if (mask.points.isNotEmpty() && mask.points.size < 2) return false
+            when (mask.kind) {
+                MaskKind.FREEFORM -> if (mask.points.size !in 3..MAX_FREEFORM_POINTS) return false
+                else -> if (mask.points.isNotEmpty() && mask.points.size < 2) return false
+            }
         }
         val crop = settings.crop
         if (crop.right <= crop.left || crop.bottom <= crop.top) return false
@@ -80,6 +83,8 @@ internal object Media3CompositingEffectFactory {
         }
         return Presentation.createForWidthAndHeight(outputWidth, outputHeight, layout)
     }
+
+    private const val MAX_FREEFORM_POINTS = 8
 }
 
 @UnstableApi
@@ -134,11 +139,20 @@ private class LocalCutCompositingShaderProgram(
                 when (mask?.kind) {
                     MaskKind.RECTANGLE -> 1f
                     MaskKind.ELLIPSE -> 2f
+                    MaskKind.FREEFORM -> 3f
                     else -> 0f
                 },
             )
             glProgram.setFloatsUniform("uMaskMin", floatArrayOf(bounds[0], bounds[1]))
             glProgram.setFloatsUniform("uMaskMax", floatArrayOf(bounds[2], bounds[3]))
+            val edges = polygonEdges(mask)
+            glProgram.setFloatUniform("uMaskEdgeCount", edges.size.toFloat())
+            (0 until 8).forEach { index ->
+                glProgram.setFloatsUniform(
+                    "uMaskEdge$index",
+                    edges.getOrNull(index) ?: ZERO_EDGE,
+                )
+            }
             glProgram.setFloatUniform("uMaskInvert", if (mask?.invert == true) 1f else 0f)
             glProgram.setFloatUniform("uMaskOpacity", mask?.opacity?.toFloat() ?: 1f)
             glProgram.setFloatUniform("uMaskFeather", 0.000001f)
@@ -182,6 +196,8 @@ private class LocalCutCompositingShaderProgram(
     }
 
     companion object {
+        private val ZERO_EDGE = floatArrayOf(0f, 0f, 0f, 0f)
+
         private val VERTEX_SHADER = """
             #version 100
             attribute vec4 aFramePosition;
@@ -213,6 +229,15 @@ private class LocalCutCompositingShaderProgram(
             uniform float uMaskKind;
             uniform vec2 uMaskMin;
             uniform vec2 uMaskMax;
+            uniform vec4 uMaskEdge0;
+            uniform vec4 uMaskEdge1;
+            uniform vec4 uMaskEdge2;
+            uniform vec4 uMaskEdge3;
+            uniform vec4 uMaskEdge4;
+            uniform vec4 uMaskEdge5;
+            uniform vec4 uMaskEdge6;
+            uniform vec4 uMaskEdge7;
+            uniform float uMaskEdgeCount;
             uniform float uMaskInvert;
             uniform float uMaskOpacity;
             uniform float uMaskFeather;
@@ -234,6 +259,47 @@ private class LocalCutCompositingShaderProgram(
                 return 1.0 - smoothstep(-uMaskFeather, uMaskFeather, signedDistance);
             }
 
+            float segmentDistance(vec2 p, vec2 a, vec2 b) {
+                vec2 ab = b - a;
+                float denominator = max(dot(ab, ab), 0.0000001);
+                float t = clamp(dot(p - a, ab) / denominator, 0.0, 1.0);
+                return length(p - (a + t * ab));
+            }
+
+            vec2 accumulatePolygonEdge(vec2 state, vec2 p, vec4 edge, float edgeIndex) {
+                if (edgeIndex >= uMaskEdgeCount) {
+                    return state;
+                }
+                vec2 a = edge.xy;
+                vec2 b = edge.zw;
+                float distanceToEdge = segmentDistance(p, a, b);
+                float crossings = state.y;
+                bool crossesY = (a.y > p.y) != (b.y > p.y);
+                if (crossesY) {
+                    float xAtY = a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y);
+                    if (p.x < xAtY) {
+                        crossings += 1.0;
+                    }
+                }
+                return vec2(min(state.x, distanceToEdge), crossings);
+            }
+
+            float freeformMask(vec2 uv) {
+                vec2 state = vec2(10.0, 0.0);
+                state = accumulatePolygonEdge(state, uv, uMaskEdge0, 0.0);
+                state = accumulatePolygonEdge(state, uv, uMaskEdge1, 1.0);
+                state = accumulatePolygonEdge(state, uv, uMaskEdge2, 2.0);
+                state = accumulatePolygonEdge(state, uv, uMaskEdge3, 3.0);
+                state = accumulatePolygonEdge(state, uv, uMaskEdge4, 4.0);
+                state = accumulatePolygonEdge(state, uv, uMaskEdge5, 5.0);
+                state = accumulatePolygonEdge(state, uv, uMaskEdge6, 6.0);
+                state = accumulatePolygonEdge(state, uv, uMaskEdge7, 7.0);
+                float inside = mod(state.y, 2.0);
+                float signedDistance = inside > 0.5 ? -state.x : state.x;
+                signedDistance -= uMaskExpansion;
+                return 1.0 - smoothstep(-uMaskFeather, uMaskFeather, signedDistance);
+            }
+
             void main() {
                 vec4 source = texture2D(uTexSampler, vTexSamplingCoord);
 
@@ -252,9 +318,13 @@ private class LocalCutCompositingShaderProgram(
 
                 float maskAlpha = 1.0;
                 if (uMaskEnabled > 0.5) {
-                    maskAlpha = uMaskKind < 1.5
-                        ? rectangleMask(vTexSamplingCoord)
-                        : ellipseMask(vTexSamplingCoord);
+                    if (uMaskKind < 1.5) {
+                        maskAlpha = rectangleMask(vTexSamplingCoord);
+                    } else if (uMaskKind < 2.5) {
+                        maskAlpha = ellipseMask(vTexSamplingCoord);
+                    } else {
+                        maskAlpha = freeformMask(vTexSamplingCoord);
+                    }
                     if (uMaskInvert > 0.5) {
                         maskAlpha = 1.0 - maskAlpha;
                     }
@@ -276,6 +346,19 @@ private class LocalCutCompositingShaderProgram(
             val right = max(first.x, second.x).coerceIn(0.0, 1.0).toFloat()
             val bottom = max(first.y, second.y).coerceIn(0.0, 1.0).toFloat()
             return floatArrayOf(left, top, right, bottom)
+        }
+
+        private fun polygonEdges(mask: MaskSpec?): List<FloatArray> {
+            if (mask?.kind != MaskKind.FREEFORM || mask.points.size < 3) return emptyList()
+            return mask.points.mapIndexed { index, point ->
+                val next = mask.points[(index + 1) % mask.points.size]
+                floatArrayOf(
+                    point.x.coerceIn(0.0, 1.0).toFloat(),
+                    point.y.coerceIn(0.0, 1.0).toFloat(),
+                    next.x.coerceIn(0.0, 1.0).toFloat(),
+                    next.y.coerceIn(0.0, 1.0).toFloat(),
+                )
+            }
         }
 
         private fun argbToRgb(argb: Int): FloatArray = floatArrayOf(

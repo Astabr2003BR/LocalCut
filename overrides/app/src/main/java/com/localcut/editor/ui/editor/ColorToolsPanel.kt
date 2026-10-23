@@ -1,13 +1,16 @@
 package com.localcut.editor.ui.editor
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -53,7 +56,19 @@ fun ColorToolsPanel(
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             Text("Cor", style = MaterialTheme.typography.titleSmall)
+            Text("Filtros LocalCut", style = MaterialTheme.typography.labelLarge)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                ColorFilterPreset.entries.forEach { preset ->
+                    OutlinedButton(
+                        onClick = { onSetEffects(ColorFilterUiPolicy.applyPreset(clip.effects, preset)) },
+                    ) { Text(preset.label) }
+                }
+            }
 
+            Text("Ajustes", style = MaterialTheme.typography.labelLarge)
             ColorCommitSlider(
                 label = "Brilho",
                 initial = ColorToolsUiPolicy.number(clip.effects, "localcut.color.brightness", "amount", 0.0),

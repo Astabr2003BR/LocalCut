@@ -8,7 +8,7 @@ import org.junit.Test
 
 class DesignProjectJsonV5Test {
     @Test
-    fun schemaV5RoundTripsDesignElementsCanvasAndReusableComponents() {
+    fun latestSchemaRoundTripsDesignElementsCanvasAndReusableComponents() {
         val element = DesignElement(
             id = "shape-1",
             startUs = 0L,
@@ -44,8 +44,8 @@ class DesignProjectJsonV5Test {
         val encoded = ProjectJson.encode(project)
         val decoded = ProjectJson.decode(encoded)
 
-        assertEquals(5, BuildContract.PROJECT_SCHEMA_VERSION)
-        assertTrue(encoded.contains("\"schemaVersion\":5"))
+        assertEquals(6, BuildContract.PROJECT_SCHEMA_VERSION)
+        assertTrue(encoded.contains("\"schemaVersion\":6"))
         assertEquals(project.designElements, decoded.designElements)
         assertEquals(project.designCanvas, decoded.designCanvas)
         assertEquals(project.reusableComponents, decoded.reusableComponents)
@@ -54,12 +54,12 @@ class DesignProjectJsonV5Test {
     @Test
     fun schemaV4MigratesDesignStateToNeutralDefaults() {
         val v4 = ProjectJson.encode(Project.create("Legacy", 1080, 1920, 30))
-            .replace("\"schemaVersion\":5", "\"schemaVersion\":4")
-            .replace(Regex(",\"designElements\":.*$"), "}")
+            .replace("\"schemaVersion\":6", "\"schemaVersion\":4")
+            .replace(Regex(",\"compositionGraph\":\\{.*}$"), "}")
 
         val decoded = ProjectJson.decode(v4)
 
-        assertEquals(5, decoded.schemaVersion)
+        assertEquals(6, decoded.schemaVersion)
         assertTrue(decoded.designElements.isEmpty())
         assertEquals(DesignCanvasSettings(), decoded.designCanvas)
         assertTrue(decoded.reusableComponents.isEmpty())

@@ -21,6 +21,7 @@ internal object Media3EffectStackFactory {
         "localcut.color.saturation",
         "localcut.color.temperature",
         "localcut.color.tint",
+        "localcut.color.hsl",
         "localcut.blur.gaussian",
     ) + LocalCutStylizeEffect.SUPPORTED_TYPES
 
@@ -79,6 +80,12 @@ internal object Media3EffectStackFactory {
                 .setBlueScale((1.0 + 0.125 * amount).toFloat())
                 .build()
         }
+        "localcut.color.hsl" ->
+            HslAdjustment.Builder()
+                .adjustHue(number(effect, "hue").toFloat())
+                .adjustSaturation(number(effect, "saturation").toFloat())
+                .adjustLightness(number(effect, "lightness").toFloat())
+                .build()
         "localcut.blur.gaussian" -> {
             val radius = number(effect, "radius")
             if (radius <= 0.0) null else GaussianBlur(radius.toFloat())

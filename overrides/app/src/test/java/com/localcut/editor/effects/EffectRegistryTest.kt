@@ -21,6 +21,7 @@ class EffectRegistryTest {
         assertTrue("localcut.color.saturation" in ids)
         assertTrue("localcut.color.temperature" in ids)
         assertTrue("localcut.color.tint" in ids)
+        assertTrue("localcut.color.hsl" in ids)
         assertTrue("localcut.blur.gaussian" in ids)
         assertTrue("localcut.sharpen" in ids)
         assertTrue("localcut.glow" in ids)
@@ -31,6 +32,25 @@ class EffectRegistryTest {
         assertTrue("localcut.ripple" in ids)
         assertTrue("localcut.displacement" in ids)
         assertTrue("localcut.motion_blur" in ids)
+    }
+
+    @Test
+    fun hslParametersUseProfessionalBounds() {
+        val valid = EffectInstance(
+            id = "hsl",
+            typeId = "localcut.color.hsl",
+            parameters = mapOf(
+                "hue" to EffectParameter.Number(180.0),
+                "saturation" to EffectParameter.Number(-100.0),
+                "lightness" to EffectParameter.Number(100.0),
+            ),
+        )
+        val invalid = valid.copy(
+            parameters = valid.parameters + ("hue" to EffectParameter.Number(181.0)),
+        )
+
+        assertTrue(EffectRegistry.validationIssues(valid).isEmpty())
+        assertTrue(EffectRegistry.validationIssues(invalid).any { "hue" in it && "range" in it })
     }
 
     @Test

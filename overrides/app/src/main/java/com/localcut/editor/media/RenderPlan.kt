@@ -64,6 +64,7 @@ sealed interface RenderSegment {
         val imageFrameRate: Int?,
         val fadeInUs: Long = 0L,
         val fadeOutUs: Long = 0L,
+        val compositing: CompositingSettings = CompositingSettings(),
     ) : RenderSegment {
         val isImage: Boolean get() = assetType == AssetType.IMAGE
     }

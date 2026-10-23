@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,14 +36,15 @@ fun BridgePanel(
     modifier: Modifier = Modifier,
 ) {
     var relayDraft by remember(state.relayBaseUrl) { mutableStateOf(state.relayBaseUrl) }
+    var expanded by rememberSaveable { mutableStateOf(BridgePanelUiPolicy.defaultExpanded(state)) }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f),
         shape = MaterialTheme.shapes.medium,
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
@@ -50,14 +52,40 @@ fun BridgePanel(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column {
+                Column(Modifier.weight(1f)) {
                     Text("ChatGPT Bridge", fontWeight = FontWeight.SemiBold)
                     Text(
-                        phaseLabel(state),
+                        BridgePanelUiPolicy.summary(state),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (BridgePanelUiPolicy.needsAttention(state)) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     )
                 }
+                OutlinedButton(onClick = { expanded = !expanded }) {
+                    Text(if (expanded) "Fechar" else "Detalhes")
+                }
+            }
+
+            if (!expanded) {
+                state.message?.takeIf { BridgePanelUiPolicy.needsAttention(state) }?.let { message ->
+                    Text(
+                        message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 1,
+                    )
+                }
+                return@Column
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 if (state.phase == BridgeUiPhase.OFFLINE || state.phase == BridgeUiPhase.ERROR) {
                     Button(
                         onClick = onConnect,
@@ -144,14 +172,4 @@ fun BridgePanel(
             }
         }
     }
-}
-
-private fun phaseLabel(state: BridgeUiState): String = when (state.phase) {
-    BridgeUiPhase.OFFLINE -> if (state.paired) "Offline — pareado" else "Offline"
-    BridgeUiPhase.PAIRING -> "Pareando"
-    BridgeUiPhase.CONNECTING -> "Conectando"
-    BridgeUiPhase.ONLINE -> "Online"
-    BridgeUiPhase.EDITING -> "Editando projeto"
-    BridgeUiPhase.EXPORTING -> "Exportando"
-    BridgeUiPhase.ERROR -> "Erro de conexão"
 }

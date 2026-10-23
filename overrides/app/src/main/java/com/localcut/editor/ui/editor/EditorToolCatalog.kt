@@ -65,8 +65,6 @@ object EditorToolCatalog {
     private val any = EditorSelectionKind.entries.toSet()
 
     val all: List<EditorToolDefinition> = listOf(
-        // Clip editing leads the contextual rail, matching a timeline-first mobile editor.
-        // It is automatically filtered out for the project/no-selection state.
         tool(EditorToolId.EDIT, "Editar", EditorToolGroup.EDIT, clip, EditorToolState.LIVE),
         tool(EditorToolId.MEDIA, "Mídia", EditorToolGroup.PROJECT, any, EditorToolState.LIVE),
         tool(EditorToolId.AUDIO, "Áudio", EditorToolGroup.AUDIO, any, EditorToolState.LIVE),
@@ -88,8 +86,69 @@ object EditorToolCatalog {
         tool(EditorToolId.TEMPLATES, "Modelos", EditorToolGroup.DESIGN, project + EditorSelectionKind.DESIGN, EditorToolState.PARTIAL),
     )
 
-    fun primaryToolsFor(selection: EditorSelectionKind): List<EditorToolDefinition> =
-        all.filter { it.primary && selection in it.selections }
+    fun primaryToolsFor(selection: EditorSelectionKind): List<EditorToolDefinition> {
+        val available = all.filter { it.primary && selection in it.selections }
+        val priority = when (selection) {
+            EditorSelectionKind.PROJECT -> listOf(
+                EditorToolId.MEDIA,
+                EditorToolId.AUDIO,
+                EditorToolId.TEXT,
+                EditorToolId.CAPTIONS,
+                EditorToolId.OVERLAY,
+                EditorToolId.CANVAS,
+                EditorToolId.DESIGN,
+            )
+            EditorSelectionKind.VIDEO -> listOf(
+                EditorToolId.EDIT,
+                EditorToolId.EFFECTS,
+                EditorToolId.COLOR,
+                EditorToolId.SPEED,
+                EditorToolId.ANIMATION,
+                EditorToolId.MASK,
+                EditorToolId.CHROMA,
+                EditorToolId.LAYERS,
+                EditorToolId.AUDIO,
+                EditorToolId.TEXT,
+                EditorToolId.CAPTIONS,
+                EditorToolId.OVERLAY,
+                EditorToolId.MEDIA,
+                EditorToolId.CANVAS,
+            )
+            EditorSelectionKind.IMAGE -> listOf(
+                EditorToolId.EDIT,
+                EditorToolId.EFFECTS,
+                EditorToolId.COLOR,
+                EditorToolId.ANIMATION,
+                EditorToolId.MASK,
+                EditorToolId.CHROMA,
+                EditorToolId.LAYERS,
+                EditorToolId.TEXT,
+                EditorToolId.CAPTIONS,
+                EditorToolId.OVERLAY,
+                EditorToolId.MEDIA,
+                EditorToolId.AUDIO,
+                EditorToolId.CANVAS,
+            )
+            EditorSelectionKind.AUDIO -> listOf(
+                EditorToolId.EDIT,
+                EditorToolId.AUDIO,
+                EditorToolId.SPEED,
+                EditorToolId.TEXT,
+                EditorToolId.CAPTIONS,
+                EditorToolId.MEDIA,
+                EditorToolId.OVERLAY,
+                EditorToolId.CANVAS,
+            )
+            EditorSelectionKind.TEXT,
+            EditorSelectionKind.DESIGN -> emptyList()
+        }
+        if (priority.isEmpty()) return available
+        val rank = priority.withIndex().associate { (index, id) -> id to index }
+        return available.sortedWith(
+            compareBy<EditorToolDefinition> { rank[it.id] ?: Int.MAX_VALUE }
+                .thenBy { all.indexOf(it) },
+        )
+    }
 
     fun toolsFor(selection: EditorSelectionKind, group: EditorToolGroup? = null): List<EditorToolDefinition> =
         all.filter { definition ->

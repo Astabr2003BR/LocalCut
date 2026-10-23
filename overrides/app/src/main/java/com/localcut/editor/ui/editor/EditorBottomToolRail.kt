@@ -29,7 +29,7 @@ fun EditorBottomToolRail(
     onToolSelected: (EditorToolId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val tools = EditorToolCatalog.primaryToolsFor(selection)
+    val tools = EditorToolCatalog.primaryToolsFor(selection).filter { it.enabled }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -46,23 +46,15 @@ fun EditorBottomToolRail(
         ) {
             tools.forEach { tool ->
                 val target = EditorToolCatalog.actionTarget(tool.id)
-                val active = tool.id == activeTool && tool.enabled
-                val itemColor = when {
-                    !tool.enabled -> Color.Transparent
-                    active -> Color(0xFF26262B)
-                    else -> Color.Transparent
-                }
-                val contentColor = when {
-                    !tool.enabled -> Color(0xFF66666B)
-                    active -> Color.White
-                    else -> Color(0xFFE7E7EA)
-                }
+                val active = tool.id == activeTool
+                val itemColor = if (active) Color(0xFF26262B) else Color.Transparent
+                val contentColor = if (active) Color.White else Color(0xFFE7E7EA)
 
                 Column(
                     modifier = Modifier
                         .width(68.dp)
                         .background(itemColor, RoundedCornerShape(10.dp))
-                        .clickable(enabled = tool.enabled) { onToolSelected(target) }
+                        .clickable { onToolSelected(target) }
                         .padding(horizontal = 4.dp, vertical = 5.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(2.dp),

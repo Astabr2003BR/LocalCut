@@ -158,7 +158,7 @@ class DeleteSelectedClipIntegrationTest {
 
     private fun command(
         capability: BridgeCapability,
-        payload: String,
+        payload: String = "{}",
         messageId: String = "delete-1",
         expectedRevision: Long,
     ): BridgeCommandEnvelope = BridgeCommandEnvelope(

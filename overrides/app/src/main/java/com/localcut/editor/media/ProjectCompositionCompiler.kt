@@ -190,6 +190,7 @@ class ProjectCompositionCompiler(
                         presentationStartUs = presentationStartUs,
                     )
                 )
+                addAll(Media3CompositingEffectFactory.create(item.compositing))
                 addAll(Media3EffectStackFactory.create(item.effects))
                 FadeToBlackEffectFactory.create(
                     durationUs = item.presentationDurationUs,

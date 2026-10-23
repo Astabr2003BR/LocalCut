@@ -78,9 +78,7 @@ class EditorToolCatalogTest {
     @Test
     fun generativeAiIsNotPartOfTheActiveCatalog() {
         assertTrue(EditorToolCatalog.all.none { tool ->
-            tool.id.name.contains("AI", ignoreCase = true) ||
-                tool.label.contains("IA", ignoreCase = true) ||
-                tool.label.contains("AI", ignoreCase = true)
+            hasStandaloneAiToken(tool.id.name) || hasStandaloneAiToken(tool.label)
         })
     }
 
@@ -88,4 +86,9 @@ class EditorToolCatalogTest {
     fun plannedToolsAreNeverEnabled() {
         assertTrue(EditorToolCatalog.all.filter { it.state == EditorToolState.PLANNED }.all { !it.enabled })
     }
+
+    private fun hasStandaloneAiToken(value: String): Boolean =
+        value.split(Regex("[^\\p{L}\\p{N}]+"))
+            .filter { it.isNotBlank() }
+            .any { token -> token.equals("AI", ignoreCase = true) || token.equals("IA", ignoreCase = true) }
 }

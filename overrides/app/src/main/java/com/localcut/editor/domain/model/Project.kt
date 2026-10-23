@@ -14,6 +14,9 @@ data class Project(
     val textOverlays: List<TextOverlay> = emptyList(),
     val transitions: List<ClipTransition> = emptyList(),
     val compositionGraph: CompositionGraph = CompositionGraph(),
+    val designElements: List<DesignElement> = emptyList(),
+    val designCanvas: DesignCanvasSettings = DesignCanvasSettings(),
+    val reusableComponents: List<ReusableComponent> = emptyList(),
 ) {
     fun findClip(clipId: String): Clip? = tracks.asSequence().flatMap { it.clips.asSequence() }.firstOrNull { it.id == clipId }
 

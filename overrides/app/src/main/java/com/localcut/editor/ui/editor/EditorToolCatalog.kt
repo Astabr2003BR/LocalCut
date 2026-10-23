@@ -76,14 +76,14 @@ object EditorToolCatalog {
         tool(EditorToolId.MASK, "Máscara", EditorToolGroup.CREATIVE, visual, EditorToolState.LIVE),
         tool(EditorToolId.CHROMA, "Chroma", EditorToolGroup.CREATIVE, visual, EditorToolState.LIVE),
         tool(EditorToolId.ANIMATION, "Animação", EditorToolGroup.CREATIVE, visual + EditorSelectionKind.TEXT + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
-        tool(EditorToolId.LAYERS, "Camadas", EditorToolGroup.DESIGN, visual + EditorSelectionKind.TEXT + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
+        tool(EditorToolId.LAYERS, "Camadas", EditorToolGroup.DESIGN, visual + EditorSelectionKind.TEXT + EditorSelectionKind.DESIGN, EditorToolState.PARTIAL),
         tool(EditorToolId.DESIGN, "Design", EditorToolGroup.DESIGN, project + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
         tool(EditorToolId.CANVAS, "Canvas", EditorToolGroup.DESIGN, project + visual + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
-        tool(EditorToolId.CAPTIONS, "Legendas", EditorToolGroup.PROJECT, project + EditorSelectionKind.TEXT, EditorToolState.PARTIAL, primary = false),
-        tool(EditorToolId.TRACKING, "Tracking", EditorToolGroup.ADVANCED, visual, EditorToolState.PLANNED, primary = false),
-        tool(EditorToolId.STABILIZE, "Estabilizar", EditorToolGroup.ADVANCED, setOf(EditorSelectionKind.VIDEO), EditorToolState.PLANNED, primary = false),
-        tool(EditorToolId.CAMERA, "Câmera", EditorToolGroup.ADVANCED, any, EditorToolState.PARTIAL, primary = false),
-        tool(EditorToolId.TEMPLATES, "Modelos", EditorToolGroup.DESIGN, project + EditorSelectionKind.DESIGN, EditorToolState.PARTIAL, primary = false),
+        tool(EditorToolId.CAPTIONS, "Legendas", EditorToolGroup.PROJECT, project + EditorSelectionKind.TEXT, EditorToolState.PARTIAL),
+        tool(EditorToolId.TRACKING, "Tracking", EditorToolGroup.ADVANCED, visual, EditorToolState.PLANNED),
+        tool(EditorToolId.STABILIZE, "Estabilizar", EditorToolGroup.ADVANCED, setOf(EditorSelectionKind.VIDEO), EditorToolState.PLANNED),
+        tool(EditorToolId.CAMERA, "Câmera", EditorToolGroup.ADVANCED, any, EditorToolState.PARTIAL),
+        tool(EditorToolId.TEMPLATES, "Modelos", EditorToolGroup.DESIGN, project + EditorSelectionKind.DESIGN, EditorToolState.PARTIAL),
     )
 
     fun primaryToolsFor(selection: EditorSelectionKind): List<EditorToolDefinition> =

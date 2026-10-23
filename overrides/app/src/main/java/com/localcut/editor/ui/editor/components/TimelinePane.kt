@@ -62,12 +62,12 @@ import com.localcut.editor.ui.editor.BeatMarkerUiPolicy
 import com.localcut.editor.ui.editor.KeyframeEditorPolicy
 import com.localcut.editor.ui.editor.TimelineEditBounds
 import com.localcut.editor.ui.editor.TimelineTrackGeometry
+import com.localcut.editor.ui.editor.TimelineZoomUiPolicy
 import java.util.concurrent.Executors
 import kotlinx.coroutines.launch
 import kotlin.math.max
 
 private const val US_PER_SECOND = 1_000_000.0
-private const val DEFAULT_DP_PER_SECOND = 84f
 private const val WAVEFORM_BUCKETS = 96
 private const val WAVEFORM_CACHE_SAMPLES = 16_384
 
@@ -82,14 +82,17 @@ fun TimelinePane(
     onTrimLeft: (String, Long) -> Unit,
     onTrimRight: (String, Long) -> Unit,
     modifier: Modifier = Modifier,
-    dpPerSecond: Float = DEFAULT_DP_PER_SECOND,
+    dpPerSecond: Float = TimelineZoomUiPolicy.DEFAULT_DP_PER_SECOND,
     onSetTrackMuted: (String, Boolean) -> Unit = { _, _ -> },
     onSetTrackSolo: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     val horizontalScroll = rememberScrollState()
     val verticalScroll = rememberScrollState()
+    var timelineZoom by remember(project.id) {
+        mutableFloatStateOf(TimelineZoomUiPolicy.clamp(dpPerSecond))
+    }
     val durationUs = max(TimelineMath.durationUs(project), 1_000_000L)
-    val timelineWidth = max(360f, durationUs / US_PER_SECOND.toFloat() * dpPerSecond).dp
+    val timelineWidth = max(360f, durationUs / US_PER_SECOND.toFloat() * timelineZoom).dp
     val assetNames = project.assets.associate { it.id to it.displayName }
     val tracksById = project.tracks.associateBy { it.id }
     val trackLayout = TimelineTrackGeometry.layout(project.tracks)
@@ -154,12 +157,27 @@ fun TimelinePane(
         modifier = modifier.fillMaxWidth().verticalScroll(verticalScroll),
         verticalArrangement = Arrangement.spacedBy(TimelineTrackGeometry.DEFAULT_ROW_GAP_DP.dp),
     ) {
-        if (project.beatMarkers.isNotEmpty()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedButton(
+                onClick = { timelineZoom = TimelineZoomUiPolicy.zoomOut(timelineZoom) },
+                enabled = timelineZoom > TimelineZoomUiPolicy.MIN_DP_PER_SECOND,
+            ) { Text("−") }
+            OutlinedButton(
+                onClick = { timelineZoom = TimelineZoomUiPolicy.reset() },
+            ) { Text("${TimelineZoomUiPolicy.percent(timelineZoom)}%") }
+            OutlinedButton(
+                onClick = { timelineZoom = TimelineZoomUiPolicy.zoomIn(timelineZoom) },
+                enabled = timelineZoom < TimelineZoomUiPolicy.MAX_DP_PER_SECOND,
+            ) { Text("+") }
+
+            if (project.beatMarkers.isNotEmpty()) {
                 if (beatSnapEnabled) {
                     FilledTonalButton(onClick = { beatSnapEnabled = false }) {
                         Text("Ímã batidas ON")
@@ -195,7 +213,7 @@ fun TimelinePane(
                         selectedClipId = selectedClipId,
                         playheadUs = playheadUs,
                         timelineWidth = timelineWidth,
-                        dpPerSecond = dpPerSecond,
+                        dpPerSecond = timelineZoom,
                         assetNames = assetNames,
                         waveforms = waveforms,
                         onSelectClip = onSelectClip,

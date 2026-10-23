@@ -33,6 +33,7 @@ enum class ProjectIssueCode {
     INVALID_TEXT_OVERLAY,
     INVALID_CREATIVE_STATE,
     INVALID_COMPOSITION_GRAPH,
+    INVALID_DESIGN_STATE,
 }
 
 data class ProjectIssue(val code: ProjectIssueCode, val subjectId: String? = null, val detail: String? = null)
@@ -117,6 +118,7 @@ object TimelineValidator {
         }
 
         validateTextOverlays(project, issues)
+        validateDesignState(project, allClips.map { it.id }.toSet(), issues)
         validateTransitions(project, issues)
         return issues
     }
@@ -159,16 +161,63 @@ object TimelineValidator {
 
     private fun validateTextOverlays(project: Project, issues: MutableList<ProjectIssue>) {
         project.textOverlays.forEach { overlay ->
-            val validTiming = overlay.startUs >= 0L && overlay.durationUs > 0L &&
-                overlay.startUs <= Long.MAX_VALUE - overlay.durationUs
-            val validText = overlay.text.isNotBlank()
-            val validOpacity = overlay.opacity.isFinite() && overlay.opacity in 0.0..1.0
-            val validStyle = overlay.style.fontSizePx.isFinite() && overlay.style.fontSizePx > 0.0 &&
-                overlay.style.strokeWidthPx.isFinite() && overlay.style.strokeWidthPx >= 0.0 &&
-                overlay.style.shadowRadiusPx.isFinite() && overlay.style.shadowRadiusPx >= 0.0 &&
-                overlay.style.shadowOffsetX.isFinite() && overlay.style.shadowOffsetY.isFinite()
-            if (!validTiming || !validText || !validOpacity || !validStyle || !validTransform(overlay.transform)) {
-                issues += ProjectIssue(ProjectIssueCode.INVALID_TEXT_OVERLAY, overlay.id)
+            val details = buildList {
+                val validTiming = overlay.startUs >= 0L && overlay.durationUs > 0L &&
+                    overlay.startUs <= Long.MAX_VALUE - overlay.durationUs
+                if (!validTiming) add("text overlay timing is invalid")
+                if (overlay.text.isBlank()) add("text overlay text must not be blank")
+                if (!overlay.opacity.isFinite() || overlay.opacity !in 0.0..1.0) add("text overlay opacity is invalid")
+                if (!validTransform(overlay.transform)) add("text overlay transform is invalid")
+                addAll(overlay.style.validationIssues())
+                addAll(overlay.entrance.validationIssues())
+                addAll(overlay.exit.validationIssues())
+                addAll(overlay.loop.validationIssues())
+                if (overlay.perCharacterDelayUs < 0L) add("per-character delay must be non-negative")
+                overlay.caption?.let { addAll(it.validationIssues()) }
+            }
+            if (details.isNotEmpty()) {
+                issues += ProjectIssue(ProjectIssueCode.INVALID_TEXT_OVERLAY, overlay.id, details.first())
+            }
+        }
+    }
+
+    private fun validateDesignState(
+        project: Project,
+        knownClipIds: Set<String>,
+        issues: MutableList<ProjectIssue>,
+    ) {
+        val textOverlayIds = project.textOverlays.map { it.id }.toSet()
+        val elementIds = project.designElements.map { it.id }
+
+        duplicateIds(elementIds).forEach { id ->
+            issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, id, "duplicate design element id")
+        }
+        project.designElements.forEach { element ->
+            element.validationIssues().forEach { detail ->
+                issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, element.id, detail)
+            }
+            if (element.clipId != null && element.clipId !in knownClipIds) {
+                issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, element.id, "design element clip reference is missing")
+            }
+            if (element.textOverlayId != null && element.textOverlayId !in textOverlayIds) {
+                issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, element.id, "design element text reference is missing")
+            }
+        }
+
+        project.designCanvas.validationIssues().forEach { detail ->
+            issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, project.id, detail)
+        }
+        duplicateIds(project.designCanvas.guides.map { it.id }).forEach { id ->
+            issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, id, "duplicate guide id")
+        }
+
+        duplicateIds(project.reusableComponents.map { it.id }).forEach { id ->
+            issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, id, "duplicate reusable component id")
+        }
+        val knownElements = elementIds.toSet()
+        project.reusableComponents.forEach { component ->
+            component.validationIssues(knownElements).forEach { detail ->
+                issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, component.id, detail)
             }
         }
     }

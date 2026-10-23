@@ -71,6 +71,32 @@ fun CreativeToolsPanel(
                     FilledTonalButton(onClick = {
                         onSetEffects(CreativeToolsUiPolicy.setNumericEffect(clip.effects, "localcut.blur.gaussian", "radius", 8.0))
                     }) { Text("Blur") }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    listOf(
+                        Triple("localcut.sharpen", "amount", 1.0) to "Sharpen",
+                        Triple("localcut.vignette", "amount", 0.55) to "Vignette",
+                        Triple("localcut.grain", "amount", 0.18) to "Grain",
+                        Triple("localcut.rgb_split", "amount", 8.0) to "RGB Split",
+                        Triple("localcut.mosaic", "blockSize", 12.0) to "Mosaic",
+                        Triple("localcut.glow", "radius", 10.0) to "Glow",
+                        Triple("localcut.ripple", "amplitude", 10.0) to "Ripple",
+                        Triple("localcut.displacement", "amount", 12.0) to "Displace",
+                    ).forEach { (preset, label) ->
+                        FilledTonalButton(onClick = {
+                            onSetEffects(
+                                CreativeToolsUiPolicy.setNumericEffect(
+                                    clip.effects,
+                                    preset.first,
+                                    preset.second,
+                                    preset.third,
+                                ),
+                            )
+                        }) { Text(label) }
+                    }
                     OutlinedButton(onClick = { onSetEffects(emptyList()) }, enabled = clip.effects.isNotEmpty()) {
                         Text("Limpar FX")
                     }
@@ -202,7 +228,7 @@ fun CreativeToolsPanel(
             }
 
             Text(
-                "Blend avançado e máscara freeform continuam bloqueados até o backend dedicado ficar validado.",
+                "Motion blur temporal, blend avançado e máscara freeform continuam bloqueados até os backends dedicados ficarem validados.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -28,6 +28,7 @@ enum class ProjectIssueCode {
     INVALID_AUDIO_FADE,
     INVALID_TRANSITION,
     INVALID_TEXT_OVERLAY,
+    INVALID_CREATIVE_STATE,
 }
 
 data class ProjectIssue(val code: ProjectIssueCode, val subjectId: String? = null, val detail: String? = null)
@@ -96,12 +97,48 @@ object TimelineValidator {
                 if (clip.keyframes.any { !validTransform(it.value) }) {
                     issues += ProjectIssue(ProjectIssueCode.INVALID_TRANSFORM, clip.id, "invalid keyframe transform")
                 }
+                creativeStateIssues(clip).firstOrNull()?.let { detail ->
+                    issues += ProjectIssue(ProjectIssueCode.INVALID_CREATIVE_STATE, clip.id, detail)
+                }
             }
         }
 
         validateTextOverlays(project, issues)
         validateTransitions(project, issues)
         return issues
+    }
+
+    private fun creativeStateIssues(clip: Clip): List<String> = buildList {
+        if (clip.propertyAnimations.map { it.propertyId }.distinct().size != clip.propertyAnimations.size) {
+            add("property animation propertyIds must be unique per clip")
+        }
+        clip.propertyAnimations.forEach { animation ->
+            addAll(animation.validationIssues())
+            if (animation.keyframes.any { it.offsetUs > clip.durationUs }) {
+                add("property animation keyframe offset must be within clip duration")
+            }
+        }
+        addAll(clip.compositing.validationIssues())
+        if (clip.effects.map { it.id }.distinct().size != clip.effects.size) {
+            add("effect ids must be unique per clip")
+        }
+        clip.effects.forEach { effect ->
+            addAll(effect.validationIssues())
+            if (effect.animations.any { animation -> animation.keyframes.any { it.offsetUs > clip.durationUs } }) {
+                add("effect animation keyframe offset must be within clip duration")
+            }
+        }
+        addAll(clip.timeMap.validationIssues())
+        if (clip.timeMap.speedPoints.any { it.offsetUs > clip.durationUs }) {
+            add("speed point offset must be within clip duration")
+        }
+        if (clip.timeMap.freezeSegments.any { freeze ->
+                freeze.startOffsetUs > clip.durationUs ||
+                    freeze.startOffsetUs > Long.MAX_VALUE - freeze.durationUs ||
+                    freeze.startOffsetUs + freeze.durationUs > clip.durationUs
+            }) {
+            add("freeze segment must be within clip duration")
+        }
     }
 
     private fun validateTextOverlays(project: Project, issues: MutableList<ProjectIssue>) {

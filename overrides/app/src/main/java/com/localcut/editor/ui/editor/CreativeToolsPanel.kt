@@ -197,7 +197,8 @@ fun CreativeToolsPanel(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     listOf(0.5 to "0,5×", 1.0 to "1×", 2.0 to "2×").forEach { (speed, label) ->
-                        val selected = clip.timeMap.speedPoints.isEmpty() &&
+                        val selected = !clip.timeMap.reverse &&
+                            clip.timeMap.speedPoints.isEmpty() &&
                             clip.timeMap.freezeSegments.isEmpty() &&
                             kotlin.math.abs(clip.timeMap.baseSpeed - speed) < 1e-9
                         if (selected) {
@@ -209,6 +210,17 @@ fun CreativeToolsPanel(
                                 onSetTimeMap(CreativeToolsUiPolicy.constantSpeed(clip.timeMap, speed))
                             }) { Text(label) }
                         }
+                    }
+                    val sourceRangeUs = clip.sourceOutUs - clip.sourceInUs
+                    val rampSelected = !clip.timeMap.reverse && clip.timeMap.speedPoints.size >= 2
+                    if (rampSelected) {
+                        FilledTonalButton(onClick = {
+                            onSetTimeMap(CreativeToolsUiPolicy.accelerationRamp(sourceRangeUs))
+                        }) { Text("Ramp 0,5→2×") }
+                    } else {
+                        OutlinedButton(onClick = {
+                            onSetTimeMap(CreativeToolsUiPolicy.accelerationRamp(sourceRangeUs))
+                        }) { Text("Ramp 0,5→2×") }
                     }
                 }
 
@@ -231,7 +243,7 @@ fun CreativeToolsPanel(
             }
 
             Text(
-                "Motion blur temporal e blend avançado continuam bloqueados até os backends dedicados ficarem validados.",
+                "Reverse, freeze, motion blur temporal e blend avançado ainda exigem backends dedicados.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

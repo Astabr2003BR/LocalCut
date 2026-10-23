@@ -79,6 +79,18 @@ fun CreativeToolsPanel(
     var maskExpansion by remember(clip.id, primaryMask?.expansionPx) {
         mutableStateOf(primaryMask?.expansionPx ?: 0.0)
     }
+    var maskOpacity by remember(clip.id, primaryMask?.opacity) {
+        mutableStateOf(primaryMask?.opacity ?: 1.0)
+    }
+    var chromaThreshold by remember(clip.id, clip.compositing.chromaKey.threshold) {
+        mutableStateOf(clip.compositing.chromaKey.threshold)
+    }
+    var chromaSoftness by remember(clip.id, clip.compositing.chromaKey.softness) {
+        mutableStateOf(clip.compositing.chromaKey.softness)
+    }
+    var chromaSpill by remember(clip.id, clip.compositing.chromaKey.spillSuppression) {
+        mutableStateOf(clip.compositing.chromaKey.spillSuppression)
+    }
 
     Surface(
         modifier = modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
@@ -221,10 +233,7 @@ fun CreativeToolsPanel(
                                 onValueChange = { maskFeather = it.toDouble() },
                                 onValueChangeFinished = {
                                     onSetCompositing(
-                                        CreativeToolsUiPolicy.setPrimaryMaskFeather(
-                                            clip.compositing,
-                                            maskFeather,
-                                        ),
+                                        CreativeToolsUiPolicy.setPrimaryMaskFeather(clip.compositing, maskFeather),
                                     )
                                 },
                                 modifier = Modifier.weight(1f),
@@ -246,14 +255,33 @@ fun CreativeToolsPanel(
                                 onValueChange = { maskExpansion = it.toDouble() },
                                 onValueChangeFinished = {
                                     onSetCompositing(
-                                        CreativeToolsUiPolicy.setPrimaryMaskExpansion(
-                                            clip.compositing,
-                                            maskExpansion,
-                                        ),
+                                        CreativeToolsUiPolicy.setPrimaryMaskExpansion(clip.compositing, maskExpansion),
                                     )
                                 },
                                 modifier = Modifier.weight(1f),
                                 valueRange = -200f..200f,
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                "Opacidade ${(maskOpacity * 100.0).roundToInt()}%",
+                                modifier = Modifier.width(116.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Slider(
+                                value = maskOpacity.toFloat(),
+                                onValueChange = { maskOpacity = it.toDouble() },
+                                onValueChangeFinished = {
+                                    onSetCompositing(
+                                        CreativeToolsUiPolicy.setPrimaryMaskOpacity(clip.compositing, maskOpacity),
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                                valueRange = 0f..1f,
                             )
                         }
                         if (primaryMask.invert) {
@@ -268,6 +296,76 @@ fun CreativeToolsPanel(
                                     CreativeToolsUiPolicy.setPrimaryMaskInverted(clip.compositing, true),
                                 )
                             }) { Text("Inverter máscara") }
+                        }
+                    }
+
+                    if (clip.compositing.chromaKey.enabled) {
+                        Text("Ajuste do chroma", style = MaterialTheme.typography.labelMedium)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                "Limiar ${(chromaThreshold * 100.0).roundToInt()}%",
+                                modifier = Modifier.width(116.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Slider(
+                                value = chromaThreshold.toFloat(),
+                                onValueChange = { chromaThreshold = it.toDouble() },
+                                onValueChangeFinished = {
+                                    onSetCompositing(
+                                        CreativeToolsUiPolicy.setChromaThreshold(clip.compositing, chromaThreshold),
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                                valueRange = 0f..1f,
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                "Suavidade ${(chromaSoftness * 100.0).roundToInt()}%",
+                                modifier = Modifier.width(116.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Slider(
+                                value = chromaSoftness.toFloat(),
+                                onValueChange = { chromaSoftness = it.toDouble() },
+                                onValueChangeFinished = {
+                                    onSetCompositing(
+                                        CreativeToolsUiPolicy.setChromaSoftness(clip.compositing, chromaSoftness),
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                                valueRange = 0f..1f,
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                "Spill ${(chromaSpill * 100.0).roundToInt()}%",
+                                modifier = Modifier.width(116.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Slider(
+                                value = chromaSpill.toFloat(),
+                                onValueChange = { chromaSpill = it.toDouble() },
+                                onValueChangeFinished = {
+                                    onSetCompositing(
+                                        CreativeToolsUiPolicy.setChromaSpillSuppression(clip.compositing, chromaSpill),
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                                valueRange = 0f..1f,
+                            )
                         }
                     }
                 }

@@ -92,6 +92,36 @@ object DesignToolsUiPolicy {
         }
     }
 
+    fun instantiateComponentElements(
+        project: Project,
+        component: ReusableComponent,
+        instancePrefix: String,
+        startUs: Long,
+    ): List<DesignElement> {
+        require(instancePrefix.isNotBlank()) { "instance prefix must not be blank" }
+        require(startUs >= 0L) { "instance start must be non-negative" }
+        val byId = project.designElements.associateBy { it.id }
+        val sources = component.elementIds.map { id ->
+            byId[id] ?: throw IllegalArgumentException("component ${component.id} references missing element $id")
+        }
+        require(sources.isNotEmpty()) { "component must contain elements" }
+        val earliestStart = sources.minOf { it.startUs }
+        val minZ = sources.minOf { it.zIndex }
+        val baseZ = (project.designElements.maxOfOrNull { it.zIndex } ?: -1) + 1
+        val existingIds = project.designElements.map { it.id }.toHashSet()
+        return sources.map { source ->
+            val id = "$instancePrefix-${source.id}"
+            require(existingIds.add(id)) { "design element $id already exists" }
+            val relativeStart = source.startUs - earliestStart
+            require(startUs <= Long.MAX_VALUE - relativeStart) { "component instance timing overflow" }
+            source.copy(
+                id = id,
+                startUs = startUs + relativeStart,
+                zIndex = baseZ + (source.zIndex - minZ),
+            )
+        }
+    }
+
     private fun nextId(prefix: String, existing: Set<String>): String {
         var index = 1L
         while (true) {

@@ -126,6 +126,9 @@ fun DesignToolsPanel(
                         var cornerRadius by remember(element.id, shape.cornerRadiusPx) {
                             mutableStateOf(shape.cornerRadiusPx.coerceIn(0.0, DesignToolsUiPolicy.MAX_CORNER_RADIUS_PX))
                         }
+                        var elementOpacity by remember(element.id, element.opacity) {
+                            mutableStateOf(element.opacity.coerceIn(0.0, 1.0))
+                        }
 
                         Text(
                             "Editar ${element.id}",
@@ -157,12 +160,42 @@ fun DesignToolsPanel(
                                 },
                             ) { Text("↻ 15°") }
                             OutlinedButton(
+                                onClick = { onUpdateElement(DesignToolsUiPolicy.alignCenterX(element)) },
+                            ) { Text("Centro X") }
+                            OutlinedButton(
+                                onClick = { onUpdateElement(DesignToolsUiPolicy.alignCenterY(element)) },
+                            ) { Text("Centro Y") }
+                            OutlinedButton(
+                                onClick = { onUpdateElement(DesignToolsUiPolicy.alignCenter(element)) },
+                            ) { Text("Centro") }
+                            OutlinedButton(
                                 onClick = { onUpdateElement(DesignToolsUiPolicy.bringToFront(project, element)) },
                             ) { Text("Frente") }
                             OutlinedButton(
                                 onClick = { onUpdateElement(DesignToolsUiPolicy.sendToBack(project, element)) },
                             ) { Text("Trás") }
                             Button(onClick = { onDeleteElement(element.id) }) { Text("Excluir forma") }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                "Opacidade ${(elementOpacity * 100.0).roundToInt()}%",
+                                modifier = Modifier.width(104.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Slider(
+                                value = elementOpacity.toFloat(),
+                                onValueChange = { elementOpacity = it.toDouble() },
+                                onValueChangeFinished = {
+                                    onUpdateElement(DesignToolsUiPolicy.setElementOpacity(element, elementOpacity))
+                                },
+                                modifier = Modifier.weight(1f),
+                                valueRange = 0f..1f,
+                            )
                         }
 
                         Text("Preenchimento", style = MaterialTheme.typography.labelMedium)

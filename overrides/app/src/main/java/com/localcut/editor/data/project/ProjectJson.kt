@@ -23,7 +23,9 @@ object ProjectJson {
         project.textOverlays.forEachIndexed { i, overlay -> if (i > 0) comma(); appendTextOverlay(overlay) }
         append("],\"transitions\":[")
         project.transitions.forEachIndexed { i, transition -> if (i > 0) comma(); appendTransition(transition) }
-        append("]}")
+        append("],\"compositionGraph\":")
+        append(CompositionGraphJson.encode(project.compositionGraph))
+        append('}')
     }
 
     fun decode(json: String): Project {
@@ -46,6 +48,11 @@ object ProjectJson {
             tracks = root.required("tracks").asArray().values.map { decodeTrack(it.asObject(), sourceSchemaVersion) },
             textOverlays = if (sourceSchemaVersion >= 3) root.required("textOverlays").asArray().values.map { decodeTextOverlay(it.asObject()) } else emptyList(),
             transitions = if (sourceSchemaVersion >= 3) root.required("transitions").asArray().values.map { decodeTransition(it.asObject()) } else emptyList(),
+            compositionGraph = if (sourceSchemaVersion >= 4) {
+                root.optional("compositionGraph")?.let { CompositionGraphJson.decode(it.asObject()) } ?: CompositionGraph()
+            } else {
+                CompositionGraph()
+            },
         )
         val issues = TimelineValidator.validate(project)
         require(issues.isEmpty()) { "invalid project JSON: ${issues.first()}" }

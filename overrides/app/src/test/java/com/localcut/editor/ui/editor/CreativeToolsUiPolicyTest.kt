@@ -1,6 +1,7 @@
 package com.localcut.editor.ui.editor
 
 import com.localcut.editor.domain.model.*
+import com.localcut.editor.domain.time.TimeMapEvaluator
 import com.localcut.editor.media.Media3CompositingEffectFactory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -21,14 +22,26 @@ class CreativeToolsUiPolicyTest {
     }
 
     @Test
-    fun speedPresetCreatesConstantMapAndPreservesReverseFlag() {
+    fun speedPresetCreatesForwardConstantMap() {
         val source = TimeMap(baseSpeed = 1.0, reverse = true, speedPoints = listOf(SpeedPoint(0L, 1.0)))
         val result = CreativeToolsUiPolicy.constantSpeed(source, 2.0)
 
         assertEquals(2.0, result.baseSpeed, 0.0)
-        assertTrue(result.reverse)
+        assertFalse(result.reverse)
         assertTrue(result.speedPoints.isEmpty())
         assertTrue(result.freezeSegments.isEmpty())
+    }
+
+    @Test
+    fun accelerationRampIsForwardValidAndFitsItsOwnPresentationDuration() {
+        val sourceRangeUs = 3_000_000L
+        val result = CreativeToolsUiPolicy.accelerationRamp(sourceRangeUs)
+        val durationUs = TimeMapEvaluator.presentationDurationUs(sourceRangeUs, result)
+
+        assertFalse(result.reverse)
+        assertEquals(listOf(0.5, 2.0), result.speedPoints.map { it.speed })
+        assertTrue(result.speedPoints.last().offsetUs <= durationUs)
+        assertTrue(result.validationIssues().isEmpty())
     }
 
     @Test

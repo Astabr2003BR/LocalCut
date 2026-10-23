@@ -66,6 +66,22 @@ object DesignToolsUiPolicy {
         )
     }
 
+    fun bringToFront(project: Project, element: DesignElement): DesignElement {
+        require(project.designElements.any { it.id == element.id }) { "design element ${element.id} not found" }
+        val maxZ = project.designElements.maxOfOrNull { it.zIndex } ?: element.zIndex
+        if (project.designElements.size <= 1 || element.zIndex == maxZ) return element
+        require(maxZ < Int.MAX_VALUE) { "cannot bring element further forward" }
+        return element.copy(zIndex = maxZ + 1)
+    }
+
+    fun sendToBack(project: Project, element: DesignElement): DesignElement {
+        require(project.designElements.any { it.id == element.id }) { "design element ${element.id} not found" }
+        val minZ = project.designElements.minOfOrNull { it.zIndex } ?: element.zIndex
+        if (project.designElements.size <= 1 || element.zIndex == minZ) return element
+        require(minZ > Int.MIN_VALUE) { "cannot send element further backward" }
+        return element.copy(zIndex = minZ - 1)
+    }
+
     fun toggleCenterGuides(settings: DesignCanvasSettings): DesignCanvasSettings {
         val centerIds = setOf(CENTER_X_GUIDE_ID, CENTER_Y_GUIDE_ID)
         val hasBoth = settings.guides.count { it.id in centerIds } == 2

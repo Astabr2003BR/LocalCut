@@ -49,11 +49,13 @@ import com.localcut.editor.audio.WaveformCacheKey
 import com.localcut.editor.audio.WaveformData
 import com.localcut.editor.audio.WaveformRepository
 import com.localcut.editor.domain.model.AssetType
+import com.localcut.editor.domain.model.BeatMarker
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.timeline.TimelineMath
+import com.localcut.editor.ui.editor.BeatMarkerUiPolicy
 import com.localcut.editor.ui.editor.KeyframeEditorPolicy
 import com.localcut.editor.ui.editor.TimelineEditBounds
 import com.localcut.editor.ui.editor.TimelineTrackGeometry
@@ -161,6 +163,7 @@ fun TimelinePane(
                 Box(modifier = Modifier.weight(1f).horizontalScroll(horizontalScroll).padding(start = 6.dp)) {
                     TrackLane(
                         track = track,
+                        beatMarkers = project.beatMarkers,
                         selectedClipId = selectedClipId,
                         playheadUs = playheadUs,
                         timelineWidth = timelineWidth,
@@ -255,6 +258,7 @@ private fun AudioTrackToggle(
 @Composable
 private fun TrackLane(
     track: Track,
+    beatMarkers: List<BeatMarker>,
     selectedClipId: String?,
     playheadUs: Long,
     timelineWidth: androidx.compose.ui.unit.Dp,
@@ -346,7 +350,8 @@ private fun TrackLane(
                             val deltaUs = (deltaDp / dpPerSecond * US_PER_SECOND).toLong()
                             bodyDragPx = 0f
                             val requested = (clip.startUs + deltaUs).coerceAtLeast(0L)
-                            onMoveClip(clip.id, TimelineEditBounds.clampMove(track, clip.id, requested))
+                            val snapped = BeatMarkerUiPolicy.snapTimeUs(beatMarkers, requested)
+                            onMoveClip(clip.id, TimelineEditBounds.clampMove(track, clip.id, snapped))
                         },
                     ),
             ) {
@@ -366,7 +371,8 @@ private fun TrackLane(
                             val deltaDp = with(density) { deltaPx.toDp().value }
                             val deltaUs = (deltaDp / dpPerSecond * US_PER_SECOND).toLong()
                             val requested = (clip.startUs + deltaUs).coerceAtLeast(0L)
-                            onTrimLeft(clip.id, TimelineEditBounds.clampLeft(track, clip.id, requested))
+                            val snapped = BeatMarkerUiPolicy.snapTimeUs(beatMarkers, requested)
+                            onTrimLeft(clip.id, TimelineEditBounds.clampLeft(track, clip.id, snapped))
                         },
                     )
                     TrimHandle(
@@ -376,7 +382,8 @@ private fun TrackLane(
                             val deltaDp = with(density) { deltaPx.toDp().value }
                             val deltaUs = (deltaDp / dpPerSecond * US_PER_SECOND).toLong()
                             val requested = (clip.startUs + clip.durationUs + deltaUs).coerceAtLeast(0L)
-                            onTrimRight(clip.id, TimelineEditBounds.clampRight(track, clip.id, requested))
+                            val snapped = BeatMarkerUiPolicy.snapTimeUs(beatMarkers, requested)
+                            onTrimRight(clip.id, TimelineEditBounds.clampRight(track, clip.id, snapped))
                         },
                     )
                 }

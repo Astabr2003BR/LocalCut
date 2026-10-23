@@ -1,41 +1,51 @@
 package com.localcut.editor.session
 
-import com.localcut.editor.domain.history.AddTextOverlayCommand
 import com.localcut.editor.domain.history.AddClipTransitionCommand
-import com.localcut.editor.domain.history.DeleteTextOverlayCommand
+import com.localcut.editor.domain.history.AddDesignElementCommand
+import com.localcut.editor.domain.history.AddTextOverlayCommand
 import com.localcut.editor.domain.history.DeleteClipTransitionCommand
+import com.localcut.editor.domain.history.DeleteClipWithTransitionsCommand
+import com.localcut.editor.domain.history.DeleteDesignElementCommand
+import com.localcut.editor.domain.history.DeleteReusableComponentCommand
+import com.localcut.editor.domain.history.DeleteTextOverlayCommand
+import com.localcut.editor.domain.history.DuplicateClipCommand
 import com.localcut.editor.domain.history.EditorCommand
+import com.localcut.editor.domain.history.HistoryManager
 import com.localcut.editor.domain.history.InsertAssetClipCommand
 import com.localcut.editor.domain.history.InsertVisualOverlayAssetClipCommand
-import com.localcut.editor.domain.history.HistoryManager
 import com.localcut.editor.domain.history.MoveClipCommand
-import com.localcut.editor.domain.history.TrimClipCommand
-import com.localcut.editor.domain.history.TrimClipLeftEdgeCommand
-import com.localcut.editor.domain.history.TrimClipRightEdgeCommand
-import com.localcut.editor.domain.history.SplitClipCommand
-import com.localcut.editor.domain.history.SetTransformCommand
-import com.localcut.editor.domain.history.SetVolumeCommand
 import com.localcut.editor.domain.history.SetAudioFadesCommand
-import com.localcut.editor.domain.history.SetTrackMutedCommand
-import com.localcut.editor.domain.history.SetTrackSoloCommand
-import com.localcut.editor.domain.history.SetKeyframesCommand
 import com.localcut.editor.domain.history.SetClipAudioProcessingCommand
 import com.localcut.editor.domain.history.SetClipCompositingCommand
 import com.localcut.editor.domain.history.SetClipEffectsCommand
 import com.localcut.editor.domain.history.SetClipPropertyAnimationsCommand
 import com.localcut.editor.domain.history.SetClipTimeMapCommand
-import com.localcut.editor.domain.history.DeleteClipWithTransitionsCommand
-import com.localcut.editor.domain.history.DuplicateClipCommand
-import com.localcut.editor.domain.history.UpdateTextOverlayCommand
+import com.localcut.editor.domain.history.SetDesignCanvasCommand
+import com.localcut.editor.domain.history.SetKeyframesCommand
+import com.localcut.editor.domain.history.SetTrackMutedCommand
+import com.localcut.editor.domain.history.SetTrackSoloCommand
+import com.localcut.editor.domain.history.SetTransformCommand
+import com.localcut.editor.domain.history.SetVolumeCommand
+import com.localcut.editor.domain.history.SplitCaptionCommand
+import com.localcut.editor.domain.history.SplitClipCommand
+import com.localcut.editor.domain.history.TrimClipCommand
+import com.localcut.editor.domain.history.TrimClipLeftEdgeCommand
+import com.localcut.editor.domain.history.TrimClipRightEdgeCommand
 import com.localcut.editor.domain.history.UpdateClipTransitionCommand
+import com.localcut.editor.domain.history.UpdateDesignElementCommand
+import com.localcut.editor.domain.history.UpdateTextOverlayCommand
+import com.localcut.editor.domain.history.UpsertReusableComponentCommand
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AudioProcessingSettings
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.ClipTransition
 import com.localcut.editor.domain.model.CompositingSettings
+import com.localcut.editor.domain.model.DesignCanvasSettings
+import com.localcut.editor.domain.model.DesignElement
 import com.localcut.editor.domain.model.EffectInstance
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.PropertyAnimation
+import com.localcut.editor.domain.model.ReusableComponent
 import com.localcut.editor.domain.model.TextOverlay
 import com.localcut.editor.domain.model.TimeMap
 import com.localcut.editor.domain.model.TransformKeyframe
@@ -70,6 +80,19 @@ sealed interface EditorAction {
     data class AddClipTransition(val transition: ClipTransition) : EditorAction
     data class UpdateClipTransition(val transition: ClipTransition) : EditorAction
     data class DeleteClipTransition(val transitionId: String) : EditorAction
+    data class AddDesignElement(val element: DesignElement) : EditorAction
+    data class UpdateDesignElement(val element: DesignElement) : EditorAction
+    data class DeleteDesignElement(val elementId: String) : EditorAction
+    data class SetDesignCanvas(val settings: DesignCanvasSettings) : EditorAction
+    data class UpsertReusableComponent(val component: ReusableComponent) : EditorAction
+    data class DeleteReusableComponent(val componentId: String) : EditorAction
+    data class SplitCaption(
+        val overlayId: String,
+        val leftDurationUs: Long,
+        val rightId: String,
+        val leftText: String,
+        val rightText: String,
+    ) : EditorAction
     data class SelectClip(val clipId: String?) : EditorAction
     data class SelectTrack(val trackId: String?) : EditorAction
     data class MoveSelected(val newStartUs: Long) : EditorAction
@@ -140,6 +163,21 @@ class ProjectSession(
             is EditorAction.AddClipTransition -> execute(AddClipTransitionCommand(action.transition))
             is EditorAction.UpdateClipTransition -> execute(UpdateClipTransitionCommand(action.transition))
             is EditorAction.DeleteClipTransition -> execute(DeleteClipTransitionCommand(action.transitionId))
+            is EditorAction.AddDesignElement -> execute(AddDesignElementCommand(action.element))
+            is EditorAction.UpdateDesignElement -> execute(UpdateDesignElementCommand(action.element))
+            is EditorAction.DeleteDesignElement -> execute(DeleteDesignElementCommand(action.elementId))
+            is EditorAction.SetDesignCanvas -> execute(SetDesignCanvasCommand(action.settings))
+            is EditorAction.UpsertReusableComponent -> execute(UpsertReusableComponentCommand(action.component))
+            is EditorAction.DeleteReusableComponent -> execute(DeleteReusableComponentCommand(action.componentId))
+            is EditorAction.SplitCaption -> execute(
+                SplitCaptionCommand(
+                    overlayId = action.overlayId,
+                    leftDurationUs = action.leftDurationUs,
+                    rightId = action.rightId,
+                    leftText = action.leftText,
+                    rightText = action.rightText,
+                ),
+            )
             is EditorAction.SelectClip -> selectClip(action.clipId)
             is EditorAction.SelectTrack -> selectTrack(action.trackId)
             is EditorAction.MoveSelected -> withSelected { execute(MoveClipCommand(it, action.newStartUs)) }

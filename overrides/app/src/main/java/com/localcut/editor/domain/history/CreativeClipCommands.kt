@@ -28,6 +28,18 @@ data class SetClipCompositingCommand(
     }
 }
 
+data class SetClipOpacityCommand(
+    val clipId: String,
+    val opacity: Double,
+) : EditorCommand {
+    override fun apply(project: Project): CommandResult = replaceCreativeClip(project, clipId) { clip ->
+        require(opacity.isFinite() && opacity in 0.0..1.0) {
+            "clip opacity must be finite and in 0..1"
+        }
+        clip.copy(opacity = opacity)
+    }
+}
+
 data class SetClipPropertyAnimationsCommand(
     val clipId: String,
     val propertyAnimations: List<PropertyAnimation>,

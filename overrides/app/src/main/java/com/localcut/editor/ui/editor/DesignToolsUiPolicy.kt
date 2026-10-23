@@ -88,6 +88,20 @@ object DesignToolsUiPolicy {
         }
     }
 
+    fun setElementOpacity(element: DesignElement, opacity: Double): DesignElement {
+        require(opacity.isFinite()) { "design element opacity must be finite" }
+        return element.copy(opacity = opacity.coerceIn(0.0, 1.0))
+    }
+
+    fun alignCenterX(element: DesignElement): DesignElement =
+        element.copy(transform = element.transform.copy(x = 0.0))
+
+    fun alignCenterY(element: DesignElement): DesignElement =
+        element.copy(transform = element.transform.copy(y = 0.0))
+
+    fun alignCenter(element: DesignElement): DesignElement =
+        element.copy(transform = element.transform.copy(x = 0.0, y = 0.0))
+
     fun bringToFront(project: Project, element: DesignElement): DesignElement {
         require(project.designElements.any { it.id == element.id }) { "design element ${element.id} not found" }
         val maxZ = project.designElements.maxOfOrNull { it.zIndex } ?: element.zIndex

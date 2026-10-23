@@ -80,6 +80,31 @@ fun ColorToolsPanel(
                 }
             }
 
+            Text("Transformar imagem", style = MaterialTheme.typography.labelLarge)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (FlipToolsUiPolicy.isHorizontalEnabled(clip.effects)) {
+                    FilledTonalButton(
+                        onClick = { onSetEffects(FlipToolsUiPolicy.toggleHorizontal(clip.effects)) },
+                    ) { Text("Flip H ✓") }
+                } else {
+                    OutlinedButton(
+                        onClick = { onSetEffects(FlipToolsUiPolicy.toggleHorizontal(clip.effects)) },
+                    ) { Text("Flip H") }
+                }
+                if (FlipToolsUiPolicy.isVerticalEnabled(clip.effects)) {
+                    FilledTonalButton(
+                        onClick = { onSetEffects(FlipToolsUiPolicy.toggleVertical(clip.effects)) },
+                    ) { Text("Flip V ✓") }
+                } else {
+                    OutlinedButton(
+                        onClick = { onSetEffects(FlipToolsUiPolicy.toggleVertical(clip.effects)) },
+                    ) { Text("Flip V") }
+                }
+            }
+
             Text("Efeitos rápidos", style = MaterialTheme.typography.labelLarge)
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),

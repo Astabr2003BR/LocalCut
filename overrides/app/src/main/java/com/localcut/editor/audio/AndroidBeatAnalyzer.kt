@@ -26,7 +26,7 @@ class AndroidBeatAnalyzer(
         require(settings.validationIssues().isEmpty()) { "invalid beat detection settings" }
 
         val extractor = MediaExtractor()
-        var codec: MediaCodec? = null
+        var codecForCleanup: MediaCodec? = null
         try {
             contentResolver.openAssetFileDescriptor(Uri.parse(uri), "r")?.use { descriptor ->
                 if (descriptor.length >= 0L) {
@@ -44,7 +44,8 @@ class AndroidBeatAnalyzer(
             extractor.seekTo(sourceInUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
             val inputFormat = extractor.getTrackFormat(trackIndex)
             val mime = inputFormat.getString(MediaFormat.KEY_MIME) ?: error("Audio MIME type missing")
-            codec = MediaCodec.createDecoderByType(mime).also {
+            val decoder = MediaCodec.createDecoderByType(mime).also {
+                codecForCleanup = it
                 it.configure(inputFormat, null, null, 0)
                 it.start()
             }
@@ -57,18 +58,18 @@ class AndroidBeatAnalyzer(
 
             while (!outputEnded) {
                 if (!inputEnded) {
-                    val inputIndex = codec.dequeueInputBuffer(CODEC_TIMEOUT_US)
+                    val inputIndex = decoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
                     if (inputIndex >= 0) {
                         val sampleTimeUs = extractor.sampleTime
                         if (sampleTimeUs < 0L || sampleTimeUs >= sourceOutUs) {
-                            codec.queueInputBuffer(inputIndex, 0, 0, sourceOutUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            decoder.queueInputBuffer(inputIndex, 0, 0, sourceOutUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                             inputEnded = true
                         } else {
-                            val inputBuffer = codec.getInputBuffer(inputIndex)
+                            val inputBuffer = decoder.getInputBuffer(inputIndex)
                                 ?: error("Decoder input buffer unavailable")
                             val size = extractor.readSampleData(inputBuffer, 0)
                             if (size < 0) {
-                                codec.queueInputBuffer(
+                                decoder.queueInputBuffer(
                                     inputIndex,
                                     0,
                                     0,
@@ -77,15 +78,15 @@ class AndroidBeatAnalyzer(
                                 )
                                 inputEnded = true
                             } else {
-                                codec.queueInputBuffer(inputIndex, 0, size, sampleTimeUs, extractor.sampleFlags)
+                                decoder.queueInputBuffer(inputIndex, 0, size, sampleTimeUs, extractor.sampleFlags)
                                 extractor.advance()
                             }
                         }
                     }
                 }
 
-                when (val outputIndex = codec.dequeueOutputBuffer(bufferInfo, CODEC_TIMEOUT_US)) {
-                    MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> outputFormat = codec.outputFormat
+                when (val outputIndex = decoder.dequeueOutputBuffer(bufferInfo, CODEC_TIMEOUT_US)) {
+                    MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> outputFormat = decoder.outputFormat
                     MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
                     else -> if (outputIndex >= 0) {
                         if (bufferInfo.size > 0) {
@@ -102,7 +103,7 @@ class AndroidBeatAnalyzer(
                             require(activeAccumulator.sourceSampleRateHz == sampleRate) {
                                 "Audio sample rate changed during beat analysis"
                             }
-                            codec.getOutputBuffer(outputIndex)?.let { buffer ->
+                            decoder.getOutputBuffer(outputIndex)?.let { buffer ->
                                 accumulateOutput(
                                     buffer = buffer,
                                     offset = bufferInfo.offset,
@@ -116,7 +117,7 @@ class AndroidBeatAnalyzer(
                             }
                         }
                         outputEnded = bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
-                        codec.releaseOutputBuffer(outputIndex, false)
+                        decoder.releaseOutputBuffer(outputIndex, false)
                     }
                 }
             }
@@ -130,11 +131,11 @@ class AndroidBeatAnalyzer(
             )
         } finally {
             try {
-                codec?.stop()
+                codecForCleanup?.stop()
             } catch (_: Throwable) {
                 // Decoder may fail before start; release below is still required.
             }
-            codec?.release()
+            codecForCleanup?.release()
             extractor.release()
         }
     }

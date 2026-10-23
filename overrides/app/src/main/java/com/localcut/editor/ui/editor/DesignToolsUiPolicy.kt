@@ -28,6 +28,13 @@ enum class DesignCanvasPreset(
     PORTRAIT_4_5("4:5", 1080, 1350),
 }
 
+enum class DesignShapePreset(val label: String) {
+    STAR("Estrela"),
+    DIAMOND("Losango"),
+    ARROW("Seta"),
+    HEXAGON("Hexágono"),
+}
+
 object DesignToolsUiPolicy {
     const val DEFAULT_DURATION_US: Long = 3_000_000L
     const val MAX_STROKE_WIDTH_PX: Double = 200.0
@@ -48,6 +55,8 @@ object DesignToolsUiPolicy {
         DesignCanvasPreset.SQUARE_1_1,
         DesignCanvasPreset.PORTRAIT_4_5,
     )
+
+    fun shapePresets(): List<DesignShapePreset> = DesignShapePreset.entries
 
     fun isCanvasPresetActive(project: Project, preset: DesignCanvasPreset): Boolean =
         project.width == preset.width && project.height == preset.height
@@ -88,6 +97,62 @@ object DesignToolsUiPolicy {
             shape = shape,
             zIndex = nextZ,
         )
+    }
+
+    fun newShapePreset(
+        project: Project,
+        preset: DesignShapePreset,
+        playheadUs: Long,
+    ): DesignElement {
+        require(playheadUs >= 0L) { "playheadUs must be non-negative" }
+        val id = nextId("shape", project.designElements.map { it.id }.toSet())
+        val nextZ = (project.designElements.maxOfOrNull { it.zIndex } ?: -1) + 1
+        val points = when (preset) {
+            DesignShapePreset.STAR -> listOf(
+                PathPoint(0.50, 0.04), PathPoint(0.61, 0.35),
+                PathPoint(0.95, 0.36), PathPoint(0.68, 0.56),
+                PathPoint(0.78, 0.90), PathPoint(0.50, 0.70),
+                PathPoint(0.22, 0.90), PathPoint(0.32, 0.56),
+                PathPoint(0.05, 0.36), PathPoint(0.39, 0.35),
+            )
+            DesignShapePreset.DIAMOND -> listOf(
+                PathPoint(0.50, 0.05),
+                PathPoint(0.95, 0.50),
+                PathPoint(0.50, 0.95),
+                PathPoint(0.05, 0.50),
+            )
+            DesignShapePreset.ARROW -> listOf(
+                PathPoint(0.05, 0.35),
+                PathPoint(0.62, 0.35),
+                PathPoint(0.62, 0.12),
+                PathPoint(0.95, 0.50),
+                PathPoint(0.62, 0.88),
+                PathPoint(0.62, 0.65),
+                PathPoint(0.05, 0.65),
+            )
+            DesignShapePreset.HEXAGON -> listOf(
+                PathPoint(0.25, 0.07),
+                PathPoint(0.75, 0.07),
+                PathPoint(0.96, 0.50),
+                PathPoint(0.75, 0.93),
+                PathPoint(0.25, 0.93),
+                PathPoint(0.04, 0.50),
+            )
+        }
+        val element = DesignElement(
+            id = id,
+            startUs = playheadUs,
+            durationUs = DEFAULT_DURATION_US,
+            shape = ShapeSpec(
+                kind = ShapeKind.PATH,
+                path = VectorPath(points = points, closed = true),
+                fillArgb = 0xFFFFFFFF.toInt(),
+            ),
+            zIndex = nextZ,
+        )
+        val issues = element.validationIssues()
+        require(issues.isEmpty()) { issues.first() }
+        return element
     }
 
     fun duplicateElement(project: Project, element: DesignElement): DesignElement {

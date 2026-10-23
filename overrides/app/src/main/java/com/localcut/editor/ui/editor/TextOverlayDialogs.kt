@@ -217,6 +217,11 @@ internal fun TextOverlayEditorDialog(
                     onSelect = { onModelChange(model.withShadowEnabled(it)) },
                 )
 
+                TextAdvancedStyleControls(
+                    model = model,
+                    onModelChange = onModelChange,
+                )
+
                 Text("Animação", style = MaterialTheme.typography.labelLarge)
                 TextEditorChoiceRow(
                     label = "Entrada",

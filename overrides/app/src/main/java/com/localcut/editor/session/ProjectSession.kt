@@ -39,6 +39,7 @@ import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AudioProcessingSettings
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.ClipTransition
+import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.CompositingSettings
 import com.localcut.editor.domain.model.DesignCanvasSettings
 import com.localcut.editor.domain.model.DesignElement
@@ -180,30 +181,30 @@ class ProjectSession(
             )
             is EditorAction.SelectClip -> selectClip(action.clipId)
             is EditorAction.SelectTrack -> selectTrack(action.trackId)
-            is EditorAction.MoveSelected -> withSelected { execute(MoveClipCommand(it, action.newStartUs)) }
-            is EditorAction.SetSelectedTransform -> withSelected { execute(SetTransformCommand(it, action.transform)) }
-            is EditorAction.SetSelectedVolume -> withSelected { execute(SetVolumeCommand(it, action.volume)) }
-            is EditorAction.SetSelectedAudioFades -> withSelected { execute(SetAudioFadesCommand(it, action.fadeInUs, action.fadeOutUs)) }
+            is EditorAction.MoveSelected -> withSelectedEditable { execute(MoveClipCommand(it, action.newStartUs)) }
+            is EditorAction.SetSelectedTransform -> withSelectedEditable { execute(SetTransformCommand(it, action.transform)) }
+            is EditorAction.SetSelectedVolume -> withSelectedEditable { execute(SetVolumeCommand(it, action.volume)) }
+            is EditorAction.SetSelectedAudioFades -> withSelectedEditable { execute(SetAudioFadesCommand(it, action.fadeInUs, action.fadeOutUs)) }
             is EditorAction.SetTrackMuted -> execute(SetTrackMutedCommand(action.trackId, action.muted))
             is EditorAction.SetTrackSolo -> execute(SetTrackSoloCommand(action.trackId, action.solo))
-            is EditorAction.SetSelectedKeyframes -> withSelected { execute(SetKeyframesCommand(it, action.keyframes)) }
-            is EditorAction.SetSelectedPropertyAnimations -> withSelected { execute(SetClipPropertyAnimationsCommand(it, action.propertyAnimations)) }
-            is EditorAction.SetSelectedEffects -> withSelected { execute(SetClipEffectsCommand(it, action.effects)) }
-            is EditorAction.SetSelectedCompositing -> withSelected { execute(SetClipCompositingCommand(it, action.compositing)) }
-            is EditorAction.SetSelectedTimeMap -> withSelected { execute(SetClipTimeMapCommand(it, action.timeMap)) }
-            is EditorAction.SetSelectedAudioProcessing -> withSelected { execute(SetClipAudioProcessingCommand(it, action.audioProcessing)) }
-            is EditorAction.TrimSelected -> withSelected { execute(TrimClipCommand(it, action.newSourceInUs, action.newSourceOutUs)) }
-            is EditorAction.TrimSelectedLeftEdge -> withSelected { execute(TrimClipLeftEdgeCommand(it, action.newProjectStartUs)) }
-            is EditorAction.TrimSelectedRightEdge -> withSelected { execute(TrimClipRightEdgeCommand(it, action.newProjectEndUs)) }
-            is EditorAction.SplitSelected -> withSelected { execute(SplitClipCommand(it, action.splitAtProjectUs)) }
-            EditorAction.DuplicateSelected -> withSelected { clipId ->
+            is EditorAction.SetSelectedKeyframes -> withSelectedEditable { execute(SetKeyframesCommand(it, action.keyframes)) }
+            is EditorAction.SetSelectedPropertyAnimations -> withSelectedEditable { execute(SetClipPropertyAnimationsCommand(it, action.propertyAnimations)) }
+            is EditorAction.SetSelectedEffects -> withSelectedEditable { execute(SetClipEffectsCommand(it, action.effects)) }
+            is EditorAction.SetSelectedCompositing -> withSelectedEditable { execute(SetClipCompositingCommand(it, action.compositing)) }
+            is EditorAction.SetSelectedTimeMap -> withSelectedEditable { execute(SetClipTimeMapCommand(it, action.timeMap)) }
+            is EditorAction.SetSelectedAudioProcessing -> withSelectedEditable { execute(SetClipAudioProcessingCommand(it, action.audioProcessing)) }
+            is EditorAction.TrimSelected -> withSelectedEditable { execute(TrimClipCommand(it, action.newSourceInUs, action.newSourceOutUs)) }
+            is EditorAction.TrimSelectedLeftEdge -> withSelectedEditable { execute(TrimClipLeftEdgeCommand(it, action.newProjectStartUs)) }
+            is EditorAction.TrimSelectedRightEdge -> withSelectedEditable { execute(TrimClipRightEdgeCommand(it, action.newProjectEndUs)) }
+            is EditorAction.SplitSelected -> withSelectedEditable { execute(SplitClipCommand(it, action.splitAtProjectUs)) }
+            EditorAction.DuplicateSelected -> withSelectedEditable { clipId ->
                 val duplicateClipId = nextDuplicateClipId(state.project, clipId)
                 execute(DuplicateClipCommand(clipId, duplicateClipId))
                 if (state.project.findClip(duplicateClipId) != null) {
                     state = state.copy(selectedClipId = duplicateClipId)
                 }
             }
-            EditorAction.DeleteSelected -> withSelected { clipId ->
+            EditorAction.DeleteSelected -> withSelectedEditable { clipId ->
                 execute(DeleteClipWithTransitionsCommand(clipId))
                 if (state.project.findClip(clipId) == null) state = state.copy(selectedClipId = null)
             }
@@ -313,14 +314,23 @@ class ProjectSession(
         }
     }
 
-    private inline fun withSelected(action: (String) -> Unit) {
+    private inline fun withSelectedEditable(action: (String) -> Unit) {
         val clipId = state.selectedClipId
         if (clipId == null) {
             state = state.copy(lastError = "no clip selected")
             return
         }
+        if (isClipLocked(state.project, clipId)) {
+            state = state.copy(lastError = "clip $clipId is locked")
+            return
+        }
         action(clipId)
     }
+
+    private fun isClipLocked(project: Project, clipId: String): Boolean =
+        project.compositionGraph.nodes.any { node ->
+            node.kind == CompositionNodeKind.LAYER && node.clipId == clipId && node.locked
+        }
 
     private fun commitEditedState() {
         val project = history.project

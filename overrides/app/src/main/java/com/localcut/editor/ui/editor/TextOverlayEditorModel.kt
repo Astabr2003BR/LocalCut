@@ -42,6 +42,34 @@ data class TextOverlayEditorModel(
         return copy(draft = draft.copy(opacity = opacity.coerceIn(0.0, 1.0)))
     }
 
+    fun withPosition(project: Project, x: Double, y: Double): TextOverlayEditorModel {
+        require(x.isFinite() && y.isFinite()) { "text position must be finite" }
+        val halfWidth = project.width / 2.0
+        val halfHeight = project.height / 2.0
+        return copy(
+            draft = draft.copy(
+                transform = draft.transform.copy(
+                    x = x.coerceIn(-halfWidth, halfWidth),
+                    y = y.coerceIn(-halfHeight, halfHeight),
+                ),
+            ),
+        )
+    }
+
+    fun withScale(scale: Double): TextOverlayEditorModel {
+        require(scale.isFinite()) { "text scale must be finite" }
+        return copy(draft = draft.copy(transform = draft.transform.copy(scale = scale.coerceIn(0.1, 4.0))))
+    }
+
+    fun withRotationDeg(rotationDeg: Double): TextOverlayEditorModel {
+        require(rotationDeg.isFinite()) { "text rotation must be finite" }
+        return copy(
+            draft = draft.copy(
+                transform = draft.transform.copy(rotationDeg = rotationDeg.coerceIn(-180.0, 180.0)),
+            ),
+        )
+    }
+
     fun withLetterSpacingEm(letterSpacingEm: Double): TextOverlayEditorModel {
         require(letterSpacingEm.isFinite() && letterSpacingEm in -0.5..2.0) {
             "letter spacing must be finite and in -0.5..2.0 em"

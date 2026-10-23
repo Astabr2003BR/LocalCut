@@ -30,6 +30,8 @@ object ProjectJson {
         append("],\"designCanvas\":"); appendDesignCanvas(project.designCanvas); comma()
         append("\"reusableComponents\":[")
         project.reusableComponents.forEachIndexed { i, component -> if (i > 0) comma(); appendReusableComponent(component) }
+        append("],\"beatMarkers\":[")
+        project.beatMarkers.forEachIndexed { i, marker -> if (i > 0) comma(); appendBeatMarker(marker) }
         append("]}")
     }
 
@@ -39,7 +41,7 @@ object ProjectJson {
         if (sourceSchemaVersion > BuildContract.PROJECT_SCHEMA_VERSION) {
             throw UnsupportedProjectSchemaException(sourceSchemaVersion)
         }
-        require(sourceSchemaVersion in 1..5) {
+        require(sourceSchemaVersion in 1..6) {
             "unsupported old schemaVersion=$sourceSchemaVersion"
         }
         val project = Project(
@@ -66,6 +68,9 @@ object ProjectJson {
             } else DesignCanvasSettings(),
             reusableComponents = if (sourceSchemaVersion >= 5) {
                 root.required("reusableComponents").asArray().values.map { decodeReusableComponent(it.asObject()) }
+            } else emptyList(),
+            beatMarkers = if (sourceSchemaVersion >= 6) {
+                root.required("beatMarkers").asArray().values.map { decodeBeatMarker(it.asObject()) }
             } else emptyList(),
         )
         val issues = TimelineValidator.validate(project)
@@ -109,7 +114,8 @@ object ProjectJson {
         append("],\"compositing\":"); appendCompositing(c.compositing); comma()
         append("\"effects\":[")
         c.effects.forEachIndexed { i, effect -> if (i > 0) comma(); appendEffect(effect) }
-        append("],\"timeMap\":"); appendTimeMap(c.timeMap)
+        append("],\"timeMap\":"); appendTimeMap(c.timeMap); comma()
+        append("\"audioProcessing\":"); appendAudioProcessing(c.audioProcessing)
         append('}')
     }
 
@@ -349,6 +355,43 @@ object ProjectJson {
         append("]}")
     }
 
+    private fun StringBuilder.appendAudioProcessing(settings: AudioProcessingSettings) {
+        append('{')
+        append("\"eqBands\":[")
+        settings.eqBands.forEachIndexed { index, band ->
+            if (index > 0) comma()
+            append('{')
+            field("frequencyHz", band.frequencyHz.toString()); comma(); field("gainDb", band.gainDb.toString()); comma(); field("q", band.q.toString())
+            append('}')
+        }
+        append("],\"compressor\":"); appendCompressor(settings.compressor); comma()
+        append("\"limiter\":"); appendLimiter(settings.limiter); comma()
+        append("\"noiseGate\":"); appendNoiseGate(settings.noiseGate); comma()
+        field("pan", settings.pan.toString()); comma(); field("normalizationGainDb", settings.normalizationGainDb.toString())
+        append('}')
+    }
+
+    private fun StringBuilder.appendCompressor(settings: CompressorSettings?) {
+        if (settings == null) { append("null"); return }
+        append('{')
+        field("thresholdDb", settings.thresholdDb.toString()); comma(); field("ratio", settings.ratio.toString()); comma()
+        field("attackMs", settings.attackMs.toString()); comma(); field("releaseMs", settings.releaseMs.toString()); comma()
+        field("makeupGainDb", settings.makeupGainDb.toString())
+        append('}')
+    }
+
+    private fun StringBuilder.appendLimiter(settings: LimiterSettings?) {
+        if (settings == null) { append("null"); return }
+        append('{'); field("ceilingDb", settings.ceilingDb.toString()); comma(); field("releaseMs", settings.releaseMs.toString()); append('}')
+    }
+
+    private fun StringBuilder.appendNoiseGate(settings: NoiseGateSettings?) {
+        if (settings == null) { append("null"); return }
+        append('{')
+        field("thresholdDb", settings.thresholdDb.toString()); comma(); field("attackMs", settings.attackMs.toString()); comma(); field("releaseMs", settings.releaseMs.toString())
+        append('}')
+    }
+
     private fun StringBuilder.appendDesignElement(element: DesignElement) {
         append('{')
         field("id", jsonString(element.id)); comma(); field("startUs", element.startUs.toString()); comma(); field("durationUs", element.durationUs.toString()); comma()
@@ -394,6 +437,12 @@ object ProjectJson {
         append("],\"exposedProperties\":[")
         component.exposedProperties.sorted().forEachIndexed { index, property -> if (index > 0) comma(); append(jsonString(property)) }
         append("]}")
+    }
+
+    private fun StringBuilder.appendBeatMarker(marker: BeatMarker) {
+        append('{')
+        field("id", jsonString(marker.id)); comma(); field("timeUs", marker.timeUs.toString()); comma(); field("strength", marker.strength.toString())
+        append('}')
     }
 
     private fun decodeAsset(o: JObject): Asset = Asset(
@@ -443,6 +492,7 @@ object ProjectJson {
         compositing = if (sourceSchemaVersion >= 4) decodeCompositing(o.required("compositing").asObject()) else CompositingSettings(),
         effects = if (sourceSchemaVersion >= 4) o.required("effects").asArray().values.map { decodeEffect(it.asObject()) } else emptyList(),
         timeMap = if (sourceSchemaVersion >= 4) decodeTimeMap(o.required("timeMap").asObject()) else TimeMap(),
+        audioProcessing = if (sourceSchemaVersion >= 6) decodeAudioProcessing(o.required("audioProcessing").asObject()) else AudioProcessingSettings(),
     )
 
     private fun decodePropertyAnimation(o: JObject): PropertyAnimation = PropertyAnimation(
@@ -566,6 +616,51 @@ object ProjectJson {
             )
         },
     )
+
+    private fun decodeAudioProcessing(o: JObject): AudioProcessingSettings = AudioProcessingSettings(
+        eqBands = o.required("eqBands").asArray().values.map { raw ->
+            val band = raw.asObject()
+            EqBand(
+                frequencyHz = band.required("frequencyHz").asDouble(),
+                gainDb = band.required("gainDb").asDouble(),
+                q = band.required("q").asDouble(),
+            )
+        },
+        compressor = decodeCompressor(o.optional("compressor")),
+        limiter = decodeLimiter(o.optional("limiter")),
+        noiseGate = decodeNoiseGate(o.optional("noiseGate")),
+        pan = o.required("pan").asDouble(),
+        normalizationGainDb = o.required("normalizationGainDb").asDouble(),
+    )
+
+    private fun decodeCompressor(value: JValue?): CompressorSettings? = when (value) {
+        null, JNull -> null
+        else -> value.asObject().let { o ->
+            CompressorSettings(
+                thresholdDb = o.required("thresholdDb").asDouble(),
+                ratio = o.required("ratio").asDouble(),
+                attackMs = o.required("attackMs").asDouble(),
+                releaseMs = o.required("releaseMs").asDouble(),
+                makeupGainDb = o.required("makeupGainDb").asDouble(),
+            )
+        }
+    }
+
+    private fun decodeLimiter(value: JValue?): LimiterSettings? = when (value) {
+        null, JNull -> null
+        else -> value.asObject().let { o -> LimiterSettings(o.required("ceilingDb").asDouble(), o.required("releaseMs").asDouble()) }
+    }
+
+    private fun decodeNoiseGate(value: JValue?): NoiseGateSettings? = when (value) {
+        null, JNull -> null
+        else -> value.asObject().let { o ->
+            NoiseGateSettings(
+                thresholdDb = o.required("thresholdDb").asDouble(),
+                attackMs = o.required("attackMs").asDouble(),
+                releaseMs = o.required("releaseMs").asDouble(),
+            )
+        }
+    }
 
     private fun decodeTextOverlay(o: JObject, sourceSchemaVersion: Int): TextOverlay = TextOverlay(
         id = o.required("id").asString(),
@@ -709,6 +804,12 @@ object ProjectJson {
         name = o.required("name").asString(),
         elementIds = o.required("elementIds").asArray().values.map { it.asString() },
         exposedProperties = o.required("exposedProperties").asArray().values.map { it.asString() }.toSet(),
+    )
+
+    private fun decodeBeatMarker(o: JObject): BeatMarker = BeatMarker(
+        id = o.required("id").asString(),
+        timeUs = o.required("timeUs").asLong(),
+        strength = o.required("strength").asDouble(),
     )
 
     private fun decodeTransition(o: JObject): ClipTransition = ClipTransition(

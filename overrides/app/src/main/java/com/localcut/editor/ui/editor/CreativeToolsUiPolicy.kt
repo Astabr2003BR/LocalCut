@@ -1,8 +1,10 @@
 package com.localcut.editor.ui.editor
 
 import com.localcut.editor.domain.model.AudioProcessingSettings
+import com.localcut.editor.domain.model.ChromaKeySettings
 import com.localcut.editor.domain.model.CompositingSettings
 import com.localcut.editor.domain.model.CompressorSettings
+import com.localcut.editor.domain.model.CropMode
 import com.localcut.editor.domain.model.EffectInstance
 import com.localcut.editor.domain.model.EffectParameter
 import com.localcut.editor.domain.model.EqBand
@@ -50,6 +52,9 @@ object CreativeToolsUiPolicy {
     }
 
     fun setMaskPreset(source: CompositingSettings, kind: MaskKind): CompositingSettings {
+        require(kind == MaskKind.RECTANGLE || kind == MaskKind.ELLIPSE) {
+            "mobile mask preset requires a currently renderable mask kind"
+        }
         val preset = MaskSpec(id = UI_MASK_ID, kind = kind)
         val withoutUiPreset = source.masks.filterNot { it.id == UI_MASK_ID }
         return source.copy(masks = withoutUiPreset + preset)
@@ -57,6 +62,24 @@ object CreativeToolsUiPolicy {
 
     fun clearMaskPreset(source: CompositingSettings): CompositingSettings =
         source.copy(masks = source.masks.filterNot { it.id == UI_MASK_ID })
+
+    fun greenScreen(source: CompositingSettings, enabled: Boolean): CompositingSettings = source.copy(
+        chromaKey = if (enabled) {
+            ChromaKeySettings(
+                enabled = true,
+                keyArgb = 0xFF00FF00.toInt(),
+                threshold = 0.25,
+                softness = 0.12,
+                spillSuppression = 0.35,
+                edgeFeatherPx = 0.0,
+            )
+        } else {
+            source.chromaKey.copy(enabled = false)
+        },
+    )
+
+    fun cropLayout(source: CompositingSettings, mode: CropMode): CompositingSettings =
+        source.copy(crop = source.crop.copy(mode = mode))
 
     fun voiceAudioPreset(source: AudioProcessingSettings): AudioProcessingSettings = source.copy(
         eqBands = listOf(

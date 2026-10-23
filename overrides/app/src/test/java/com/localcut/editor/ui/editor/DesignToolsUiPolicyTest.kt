@@ -9,6 +9,18 @@ import org.junit.Test
 
 class DesignToolsUiPolicyTest {
     @Test
+    fun mobileDesignSectionsExposeElementsCanvasAndComponentsInStableOrder() {
+        assertEquals(
+            listOf(
+                DesignToolsSection.ELEMENTS,
+                DesignToolsSection.CANVAS,
+                DesignToolsSection.COMPONENTS,
+            ),
+            DesignToolsUiPolicy.mobileSections(),
+        )
+    }
+
+    @Test
     fun createsTimedShapeAtPlayheadWithUniqueIdAndTopZIndex() {
         val first = DesignToolsUiPolicy.newShape(
             project = Project.create("Design", 1080, 1920, 30),

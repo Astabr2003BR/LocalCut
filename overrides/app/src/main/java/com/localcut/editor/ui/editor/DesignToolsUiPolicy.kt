@@ -11,10 +11,22 @@ import com.localcut.editor.domain.model.ShapeKind
 import com.localcut.editor.domain.model.ShapeSpec
 import com.localcut.editor.domain.model.VectorPath
 
+enum class DesignToolsSection {
+    ELEMENTS,
+    CANVAS,
+    COMPONENTS,
+}
+
 object DesignToolsUiPolicy {
     const val DEFAULT_DURATION_US: Long = 3_000_000L
     private const val CENTER_X_GUIDE_ID = "design-center-x"
     private const val CENTER_Y_GUIDE_ID = "design-center-y"
+
+    fun mobileSections(): List<DesignToolsSection> = listOf(
+        DesignToolsSection.ELEMENTS,
+        DesignToolsSection.CANVAS,
+        DesignToolsSection.COMPONENTS,
+    )
 
     fun newShape(project: Project, kind: ShapeKind, playheadUs: Long): DesignElement {
         require(playheadUs >= 0L) { "playheadUs must be non-negative" }

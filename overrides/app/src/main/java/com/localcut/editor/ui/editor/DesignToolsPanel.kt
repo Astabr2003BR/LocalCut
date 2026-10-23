@@ -14,6 +14,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.localcut.editor.domain.design.SnapEngine
@@ -46,6 +50,8 @@ fun DesignToolsPanel(
     } && project.designCanvas.guides.any {
         it.axis == GuideAxis.HORIZONTAL && it.positionNormalized == 0.5
     }
+    val sections = DesignToolsUiPolicy.mobileSections()
+    var activeSection by remember(project.id) { mutableStateOf(DesignToolsSection.ELEMENTS) }
 
     Surface(
         modifier = modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
@@ -56,7 +62,7 @@ fun DesignToolsPanel(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text("Design / Canva", style = MaterialTheme.typography.labelLarge)
+            Text("Design", style = MaterialTheme.typography.labelLarge)
             Text(
                 "Formas ${shapes.size} • Componentes ${project.reusableComponents.size}",
                 style = MaterialTheme.typography.bodySmall,
@@ -67,92 +73,126 @@ fun DesignToolsPanel(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                listOf(
-                    ShapeKind.RECTANGLE to "Retângulo",
-                    ShapeKind.ELLIPSE to "Elipse",
-                    ShapeKind.LINE to "Linha",
-                    ShapeKind.PATH to "Triângulo",
-                ).forEach { (kind, label) ->
-                    FilledTonalButton(
-                        onClick = {
-                            onAddElement(
-                                DesignToolsUiPolicy.newShape(
-                                    project = project,
-                                    kind = kind,
-                                    playheadUs = playheadUs.coerceAtLeast(0L),
-                                ),
-                            )
-                        },
-                    ) { Text(label) }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                if (centerGuidesEnabled) {
-                    FilledTonalButton(
-                        onClick = { onSetCanvas(DesignToolsUiPolicy.toggleCenterGuides(project.designCanvas)) },
-                    ) { Text("Guias ON") }
-                } else {
-                    OutlinedButton(
-                        onClick = { onSetCanvas(DesignToolsUiPolicy.toggleCenterGuides(project.designCanvas)) },
-                    ) { Text("Guias centro") }
-                }
-                FilledTonalButton(
-                    onClick = {
-                        DesignToolsUiPolicy.componentFromAllShapes(project)?.let(onUpsertComponent)
-                    },
-                    enabled = shapes.isNotEmpty(),
-                ) { Text("Salvar componente") }
-                project.reusableComponents.lastOrNull()?.let { component ->
-                    FilledTonalButton(
-                        onClick = {
-                            onInstantiateComponent(
-                                component,
-                                DesignToolsUiPolicy.nextInstancePrefix(project, component.id),
-                                playheadUs.coerceAtLeast(0L),
-                            )
-                        },
-                    ) { Text("Aplicar ${component.name}") }
-                    OutlinedButton(onClick = { onDeleteComponent(component.id) }) {
-                        Text("Remover ${component.name}")
+                sections.forEach { section ->
+                    val label = when (section) {
+                        DesignToolsSection.ELEMENTS -> "Elementos"
+                        DesignToolsSection.CANVAS -> "Canvas"
+                        DesignToolsSection.COMPONENTS -> "Componentes"
+                    }
+                    if (section == activeSection) {
+                        FilledTonalButton(onClick = { activeSection = section }) { Text(label) }
+                    } else {
+                        OutlinedButton(onClick = { activeSection = section }) { Text(label) }
                     }
                 }
             }
 
-            activeShape?.let { element ->
-                Text(
-                    "Editar ${element.id}",
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    OutlinedButton(onClick = { onUpdateElement(nudge(project, element, -40.0, 0.0)) }) { Text("←") }
-                    OutlinedButton(onClick = { onUpdateElement(nudge(project, element, 40.0, 0.0)) }) { Text("→") }
-                    OutlinedButton(onClick = { onUpdateElement(nudge(project, element, 0.0, -40.0)) }) { Text("↑") }
-                    OutlinedButton(onClick = { onUpdateElement(nudge(project, element, 0.0, 40.0)) }) { Text("↓") }
-                    OutlinedButton(
-                        onClick = {
-                            onUpdateElement(
-                                element.copy(transform = element.transform.copy(scale = (element.transform.scale - 0.1).coerceAtLeast(0.1))),
-                            )
-                        },
-                    ) { Text("Menor") }
-                    OutlinedButton(
-                        onClick = {
-                            onUpdateElement(element.copy(transform = element.transform.copy(scale = element.transform.scale + 0.1)))
-                        },
-                    ) { Text("Maior") }
-                    OutlinedButton(
-                        onClick = {
-                            onUpdateElement(element.copy(transform = element.transform.copy(rotationDeg = element.transform.rotationDeg + 15.0)))
-                        },
-                    ) { Text("↻ 15°") }
-                    Button(onClick = { onDeleteElement(element.id) }) { Text("Excluir forma") }
+            when (activeSection) {
+                DesignToolsSection.ELEMENTS -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        listOf(
+                            ShapeKind.RECTANGLE to "Retângulo",
+                            ShapeKind.ELLIPSE to "Elipse",
+                            ShapeKind.LINE to "Linha",
+                            ShapeKind.PATH to "Triângulo",
+                        ).forEach { (kind, label) ->
+                            FilledTonalButton(
+                                onClick = {
+                                    onAddElement(
+                                        DesignToolsUiPolicy.newShape(
+                                            project = project,
+                                            kind = kind,
+                                            playheadUs = playheadUs.coerceAtLeast(0L),
+                                        ),
+                                    )
+                                },
+                            ) { Text(label) }
+                        }
+                    }
+
+                    activeShape?.let { element ->
+                        Text(
+                            "Editar ${element.id}",
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            OutlinedButton(onClick = { onUpdateElement(nudge(project, element, -40.0, 0.0)) }) { Text("←") }
+                            OutlinedButton(onClick = { onUpdateElement(nudge(project, element, 40.0, 0.0)) }) { Text("→") }
+                            OutlinedButton(onClick = { onUpdateElement(nudge(project, element, 0.0, -40.0)) }) { Text("↑") }
+                            OutlinedButton(onClick = { onUpdateElement(nudge(project, element, 0.0, 40.0)) }) { Text("↓") }
+                            OutlinedButton(
+                                onClick = {
+                                    onUpdateElement(
+                                        element.copy(transform = element.transform.copy(scale = (element.transform.scale - 0.1).coerceAtLeast(0.1))),
+                                    )
+                                },
+                            ) { Text("Menor") }
+                            OutlinedButton(
+                                onClick = {
+                                    onUpdateElement(element.copy(transform = element.transform.copy(scale = element.transform.scale + 0.1)))
+                                },
+                            ) { Text("Maior") }
+                            OutlinedButton(
+                                onClick = {
+                                    onUpdateElement(element.copy(transform = element.transform.copy(rotationDeg = element.transform.rotationDeg + 15.0)))
+                                },
+                            ) { Text("↻ 15°") }
+                            Button(onClick = { onDeleteElement(element.id) }) { Text("Excluir forma") }
+                        }
+                    }
+                }
+
+                DesignToolsSection.CANVAS -> {
+                    Text("Guias e alinhamento", style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        if (centerGuidesEnabled) {
+                            FilledTonalButton(
+                                onClick = { onSetCanvas(DesignToolsUiPolicy.toggleCenterGuides(project.designCanvas)) },
+                            ) { Text("Guias ON") }
+                        } else {
+                            OutlinedButton(
+                                onClick = { onSetCanvas(DesignToolsUiPolicy.toggleCenterGuides(project.designCanvas)) },
+                            ) { Text("Guias centro") }
+                        }
+                    }
+                }
+
+                DesignToolsSection.COMPONENTS -> {
+                    Text("Componentes reutilizáveis", style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        FilledTonalButton(
+                            onClick = {
+                                DesignToolsUiPolicy.componentFromAllShapes(project)?.let(onUpsertComponent)
+                            },
+                            enabled = shapes.isNotEmpty(),
+                        ) { Text("Salvar componente") }
+                        project.reusableComponents.lastOrNull()?.let { component ->
+                            FilledTonalButton(
+                                onClick = {
+                                    onInstantiateComponent(
+                                        component,
+                                        DesignToolsUiPolicy.nextInstancePrefix(project, component.id),
+                                        playheadUs.coerceAtLeast(0L),
+                                    )
+                                },
+                            ) { Text("Aplicar ${component.name}") }
+                            OutlinedButton(onClick = { onDeleteComponent(component.id) }) {
+                                Text("Remover ${component.name}")
+                            }
+                        }
+                    }
                 }
             }
         }

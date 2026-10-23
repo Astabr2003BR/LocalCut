@@ -37,13 +37,14 @@ fun EditorBottomToolRail(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             tools.forEach { tool ->
+                val target = EditorToolCatalog.actionTarget(tool.id)
                 if (tool.id == activeTool && tool.enabled) {
-                    FilledTonalButton(onClick = { onToolSelected(tool.id) }) {
+                    FilledTonalButton(onClick = { onToolSelected(target) }) {
                         Text(tool.label)
                     }
                 } else {
                     OutlinedButton(
-                        onClick = { onToolSelected(tool.id) },
+                        onClick = { onToolSelected(target) },
                         enabled = tool.enabled,
                     ) {
                         Text(tool.label)

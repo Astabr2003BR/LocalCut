@@ -60,6 +60,42 @@ class EffectBrowserUiPolicyTest {
     }
 
     @Test
+    fun advancedControlsExposeUsefulNumericParametersButHideTechnicalSeed() {
+        val glow = EffectBrowserUiPolicy.presets(EffectBrowserCategory.LIGHT).single { it.typeId == "localcut.glow" }
+        assertEquals(
+            listOf("radius", "intensity"),
+            EffectBrowserUiPolicy.adjustableParameters(emptyList(), glow).map { it.name },
+        )
+
+        val grain = EffectBrowserUiPolicy.presets(EffectBrowserCategory.TEXTURE).single()
+        assertEquals(
+            listOf("amount", "size"),
+            EffectBrowserUiPolicy.adjustableParameters(emptyList(), grain).map { it.name },
+        )
+
+        val ripple = EffectBrowserUiPolicy.presets(EffectBrowserCategory.DISTORTION).single { it.typeId == "localcut.ripple" }
+        assertEquals(
+            listOf("amplitude", "frequency"),
+            EffectBrowserUiPolicy.adjustableParameters(emptyList(), ripple).map { it.name },
+        )
+    }
+
+    @Test
+    fun secondaryParameterUpdateUsesRegistryBoundsAndRemainsRenderable() {
+        val glow = EffectBrowserUiPolicy.presets(EffectBrowserCategory.LIGHT).single { it.typeId == "localcut.glow" }
+        val withRadius = EffectBrowserUiPolicy.setValue(emptyList(), glow, 18.0)
+        val result = EffectBrowserUiPolicy.setParameter(withRadius, glow, "intensity", 99.0)
+        val effect = result.single { it.typeId == glow.typeId }
+
+        assertEquals(
+            5.0,
+            (effect.parameters.getValue("intensity") as EffectParameter.Number).value,
+            0.0,
+        )
+        assertTrue(Media3EffectStackFactory.canRender(effect))
+    }
+
+    @Test
     fun currentValueReadsExplicitParameterAndFallsBackToPresetDefault() {
         val preset = EffectBrowserUiPolicy.presets(EffectBrowserCategory.BLUR).single()
         assertEquals(preset.value, EffectBrowserUiPolicy.currentValue(emptyList(), preset), 0.0)

@@ -7,7 +7,6 @@ import com.localcut.editor.domain.model.SpeedPoint
 import com.localcut.editor.domain.model.TimeMap
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.model.TransformValue
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -29,23 +28,19 @@ class Media3CreativeSuiteSupportPolicyTest {
     }
 
     @Test
-    fun speedRampFailsWithTypedErrorUntilRampBackendIsEnabled() {
+    fun speedRampPassesPolicyWhenRampBackendIsEnabled() {
         val segment = media(
             timeMap = TimeMap(speedPoints = listOf(SpeedPoint(0L, 1.0), SpeedPoint(500_000L, 2.0))),
         )
 
-        val failure = Media3CompositionSupportPolicy.validate(plan(segment), RenderMode.EXPORT).exceptionOrNull() as RenderPlanException
-
-        assertEquals(RenderPlanErrorCode.UNSUPPORTED_TIME_MAP, failure.code)
+        assertTrue(Media3CompositionSupportPolicy.validate(plan(segment), RenderMode.EXPORT).isSuccess)
     }
 
     @Test
-    fun customShaderEffectFailsWithTypedErrorUntilBackendIsEnabled() {
+    fun glowShaderEffectPassesPolicyWhenBackendIsEnabled() {
         val segment = media(effects = listOf(EffectInstance("glow", "localcut.glow")))
 
-        val failure = Media3CompositionSupportPolicy.validate(plan(segment), RenderMode.EXPORT).exceptionOrNull() as RenderPlanException
-
-        assertEquals(RenderPlanErrorCode.UNSUPPORTED_EFFECT, failure.code)
+        assertTrue(Media3CompositionSupportPolicy.validate(plan(segment), RenderMode.EXPORT).isSuccess)
     }
 
     private fun media(

@@ -174,6 +174,23 @@ object CreativeToolsUiPolicy {
     fun clearMaskPreset(source: CompositingSettings): CompositingSettings =
         source.copy(masks = source.masks.filterNot { it.id == UI_MASK_ID })
 
+    fun setPrimaryMaskFeather(source: CompositingSettings, featherPx: Double): CompositingSettings {
+        require(featherPx.isFinite()) { "mask feather must be finite" }
+        return updatePrimaryMask(source) { mask ->
+            mask.copy(featherPx = featherPx.coerceIn(0.0, 200.0))
+        }
+    }
+
+    fun setPrimaryMaskExpansion(source: CompositingSettings, expansionPx: Double): CompositingSettings {
+        require(expansionPx.isFinite()) { "mask expansion must be finite" }
+        return updatePrimaryMask(source) { mask ->
+            mask.copy(expansionPx = expansionPx.coerceIn(-200.0, 200.0))
+        }
+    }
+
+    fun setPrimaryMaskInverted(source: CompositingSettings, inverted: Boolean): CompositingSettings =
+        updatePrimaryMask(source) { mask -> mask.copy(invert = inverted) }
+
     fun greenScreen(source: CompositingSettings, enabled: Boolean): CompositingSettings = source.copy(
         chromaKey = if (enabled) {
             ChromaKeySettings(
@@ -233,6 +250,17 @@ object CreativeToolsUiPolicy {
         ),
         normalizationGainDb = 3.0,
     )
+
+    private fun updatePrimaryMask(
+        source: CompositingSettings,
+        transform: (MaskSpec) -> MaskSpec,
+    ): CompositingSettings {
+        val index = source.masks.indexOfFirst { it.id == UI_MASK_ID }
+        if (index < 0) return source
+        val masks = source.masks.toMutableList()
+        masks[index] = transform(masks[index])
+        return source.copy(masks = masks)
+    }
 
     private fun uiEffectId(typeId: String): String =
         "ui-${typeId.removePrefix("localcut.").replace('.', '-')}"

@@ -19,17 +19,17 @@ import org.junit.Test
 
 class TextOverlayTransitionModelTest {
     @Test
-    fun v2ProjectMigratesToV3WithEmptyCreativeLayers() {
+    fun v2ProjectMigratesToCurrentSchemaWithEmptyCreativeLayers() {
         val decoded = ProjectJson.decode(v2Fixture())
 
-        assertEquals(3, decoded.schemaVersion)
+        assertEquals(4, decoded.schemaVersion)
         assertTrue(decoded.textOverlays.isEmpty())
         assertTrue(decoded.transitions.isEmpty())
-        assertTrue(ProjectJson.encode(decoded).contains("\"schemaVersion\":3"))
+        assertTrue(ProjectJson.encode(decoded).contains("\"schemaVersion\":4"))
     }
 
     @Test
-    fun v3RoundTripPreservesTextOverlayStyleAndTransition() {
+    fun currentRoundTripPreservesTextOverlayStyleAndTransition() {
         val video = Asset(
             id = "video",
             type = AssetType.VIDEO,
@@ -91,7 +91,7 @@ class TextOverlayTransitionModelTest {
         val encoded = ProjectJson.encode(project)
         val decoded = ProjectJson.decode(encoded)
 
-        assertTrue(encoded.contains("\"schemaVersion\":3"))
+        assertTrue(encoded.contains("\"schemaVersion\":4"))
         assertEquals(project, decoded)
         assertEquals("LocalCut", decoded.textOverlays.single().text)
         assertEquals(TransitionKind.DISSOLVE, decoded.transitions.single().kind)

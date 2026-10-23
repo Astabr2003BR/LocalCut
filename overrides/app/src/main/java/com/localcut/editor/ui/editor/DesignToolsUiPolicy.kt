@@ -19,6 +19,8 @@ enum class DesignToolsSection {
 
 object DesignToolsUiPolicy {
     const val DEFAULT_DURATION_US: Long = 3_000_000L
+    const val MAX_STROKE_WIDTH_PX: Double = 200.0
+    const val MAX_CORNER_RADIUS_PX: Double = 300.0
     private const val CENTER_X_GUIDE_ID = "design-center-x"
     private const val CENTER_Y_GUIDE_ID = "design-center-y"
 
@@ -64,6 +66,26 @@ object DesignToolsUiPolicy {
             shape = shape,
             zIndex = nextZ,
         )
+    }
+
+    fun setShapeFill(element: DesignElement, fillArgb: Int?): DesignElement =
+        updateShape(element) { shape -> shape.copy(fillArgb = fillArgb) }
+
+    fun setShapeStrokeColor(element: DesignElement, strokeArgb: Int?): DesignElement =
+        updateShape(element) { shape -> shape.copy(strokeArgb = strokeArgb) }
+
+    fun setShapeStrokeWidth(element: DesignElement, strokeWidthPx: Double): DesignElement {
+        require(strokeWidthPx.isFinite()) { "shape stroke width must be finite" }
+        return updateShape(element) { shape ->
+            shape.copy(strokeWidthPx = strokeWidthPx.coerceIn(0.0, MAX_STROKE_WIDTH_PX))
+        }
+    }
+
+    fun setShapeCornerRadius(element: DesignElement, cornerRadiusPx: Double): DesignElement {
+        require(cornerRadiusPx.isFinite()) { "shape corner radius must be finite" }
+        return updateShape(element) { shape ->
+            shape.copy(cornerRadiusPx = cornerRadiusPx.coerceIn(0.0, MAX_CORNER_RADIUS_PX))
+        }
     }
 
     fun bringToFront(project: Project, element: DesignElement): DesignElement {
@@ -148,6 +170,14 @@ object DesignToolsUiPolicy {
                 zIndex = baseZ + (source.zIndex - minZ),
             )
         }
+    }
+
+    private fun updateShape(
+        element: DesignElement,
+        transform: (ShapeSpec) -> ShapeSpec,
+    ): DesignElement {
+        val shape = requireNotNull(element.shape) { "design element ${element.id} is not a shape" }
+        return element.copy(shape = transform(shape))
     }
 
     private fun nextId(prefix: String, existing: Set<String>): String {

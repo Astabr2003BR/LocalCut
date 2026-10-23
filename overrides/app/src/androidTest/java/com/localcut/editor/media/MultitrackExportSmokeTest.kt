@@ -347,7 +347,7 @@ class MultitrackExportSmokeTest {
         bytes.put("WAVE".toByteArray(Charsets.US_ASCII))
         bytes.put("fmt ".toByteArray(Charsets.US_ASCII))
         bytes.putInt(16)
-        bytes.putShort(1)
+        bytes.putShort(1.toShort())
         bytes.putShort(channels.toShort())
         bytes.putInt(sampleRate)
         val byteRate = sampleRate * channels * bitsPerSample / 8

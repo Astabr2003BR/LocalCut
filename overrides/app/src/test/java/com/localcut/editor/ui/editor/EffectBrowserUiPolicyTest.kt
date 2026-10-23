@@ -154,6 +154,35 @@ class EffectBrowserUiPolicyTest {
     }
 
     @Test
+    fun parameterlessFlipEffectsToggleWithoutTouchingOtherEffectsAndRemainRenderable() {
+        val grain = CreativeToolsUiPolicy.setNumericEffect(
+            emptyList(),
+            "localcut.grain",
+            "amount",
+            0.2,
+        ).single()
+        val horizontal = EffectBrowserUiPolicy.toggleParameterlessEffect(
+            listOf(grain),
+            EffectBrowserUiPolicy.FLIP_HORIZONTAL_TYPE_ID,
+        )
+
+        assertTrue(EffectBrowserUiPolicy.isToggleEffectEnabled(horizontal, EffectBrowserUiPolicy.FLIP_HORIZONTAL_TYPE_ID))
+        assertTrue(horizontal.any { it.id == grain.id })
+        assertTrue(
+            Media3EffectStackFactory.canRender(
+                horizontal.single { it.typeId == EffectBrowserUiPolicy.FLIP_HORIZONTAL_TYPE_ID },
+            ),
+        )
+
+        val cleared = EffectBrowserUiPolicy.toggleParameterlessEffect(
+            horizontal,
+            EffectBrowserUiPolicy.FLIP_HORIZONTAL_TYPE_ID,
+        )
+        assertFalse(EffectBrowserUiPolicy.isToggleEffectEnabled(cleared, EffectBrowserUiPolicy.FLIP_HORIZONTAL_TYPE_ID))
+        assertEquals(listOf(grain), cleared)
+    }
+
+    @Test
     fun labelsAreShortMobileFriendlyPortugueseNames() {
         EffectBrowserUiPolicy.categories().forEach { category ->
             val label = EffectBrowserUiPolicy.label(category)

@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,11 +21,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -69,6 +70,11 @@ import kotlin.math.max
 private const val US_PER_SECOND = 1_000_000.0
 private const val WAVEFORM_BUCKETS = 96
 private const val WAVEFORM_CACHE_SAMPLES = 16_384
+private val TimelineBackground = Color(0xFF101012)
+private val LaneBackground = Color(0xFF17171A)
+private val VisualClipColor = Color(0xFF333338)
+private val AudioClipColor = Color(0xFF1D3638)
+private val AccentColor = Color(0xFF20D5D2)
 
 @Composable
 fun TimelinePane(
@@ -166,39 +172,55 @@ fun TimelinePane(
     }
 
     Column(
-        modifier = modifier.fillMaxWidth().verticalScroll(verticalScroll),
-        verticalArrangement = Arrangement.spacedBy(TimelineTrackGeometry.DEFAULT_ROW_GAP_DP.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .background(TimelineBackground)
+            .verticalScroll(verticalScroll),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(horizontal = 2.dp, vertical = 0.dp),
+            horizontalArrangement = Arrangement.spacedBy(0.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OutlinedButton(
+            TextButton(
                 onClick = { timelineZoom = TimelineZoomUiPolicy.zoomOut(timelineZoom) },
                 enabled = timelineZoom > TimelineZoomUiPolicy.MIN_DP_PER_SECOND,
+                contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
             ) { Text("−") }
-            OutlinedButton(
+            TextButton(
                 onClick = { timelineZoom = TimelineZoomUiPolicy.reset() },
-            ) { Text("${TimelineZoomUiPolicy.percent(timelineZoom)}%") }
-            OutlinedButton(
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+            ) {
+                Text(
+                    "${TimelineZoomUiPolicy.percent(timelineZoom)}%",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+            TextButton(
                 onClick = { timelineZoom = TimelineZoomUiPolicy.zoomIn(timelineZoom) },
                 enabled = timelineZoom < TimelineZoomUiPolicy.MAX_DP_PER_SECOND,
+                contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
             ) { Text("+") }
-
-            if (snapEnabled) {
-                FilledTonalButton(onClick = { snapEnabled = false }) { Text("Ímã ON") }
-            } else {
-                OutlinedButton(onClick = { snapEnabled = true }) { Text("Ímã OFF") }
+            TextButton(
+                onClick = { snapEnabled = !snapEnabled },
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            ) {
+                Text(
+                    if (snapEnabled) "Ímã ✓" else "Ímã",
+                    color = if (snapEnabled) AccentColor else Color(0xFFA2A2A8),
+                    style = MaterialTheme.typography.labelSmall,
+                )
             }
             if (project.beatMarkers.isNotEmpty()) {
                 Text(
-                    "${project.beatMarkers.size} batidas",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    "${project.beatMarkers.size} beats",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF8D8D93),
+                    modifier = Modifier.padding(horizontal = 5.dp),
                 )
             }
         }
@@ -206,7 +228,7 @@ fun TimelinePane(
         trackLayout.rows.forEach { rowGeometry ->
             val track = tracksById.getValue(rowGeometry.trackId)
             Row(
-                modifier = Modifier.fillMaxWidth().height(TimelineTrackGeometry.DEFAULT_ROW_HEIGHT_DP.dp),
+                modifier = Modifier.fillMaxWidth().height(62.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TrackHeader(
@@ -214,7 +236,12 @@ fun TimelinePane(
                     onSetMuted = onSetTrackMuted,
                     onSetSolo = onSetTrackSolo,
                 )
-                Box(modifier = Modifier.weight(1f).horizontalScroll(horizontalScroll).padding(start = 6.dp)) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(horizontalScroll)
+                        .padding(start = 3.dp),
+                ) {
                     TrackLane(
                         track = track,
                         snapEnabled = snapEnabled,
@@ -244,32 +271,32 @@ private fun TrackHeader(
     onSetMuted: (String, Boolean) -> Unit,
     onSetSolo: (String, Boolean) -> Unit,
 ) {
-    Surface(
-        modifier = Modifier.width(76.dp).fillMaxHeight(),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = MaterialTheme.shapes.small,
+    Box(
+        modifier = Modifier
+            .width(46.dp)
+            .fillMaxHeight()
+            .background(Color(0xFF0D0D0F)),
+        contentAlignment = Alignment.Center,
     ) {
         if (track.type != TrackType.AUDIO) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    text = trackLabel(track),
-                    maxLines = 1,
-                    overflow = TextOverflow.Clip,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                text = trackGlyph(track),
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFFBEBEC4),
+            )
         } else {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = "ÁUDIO ${track.order}",
+                    text = "A${track.order}",
                     maxLines = 1,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Color(0xFFBEBEC4),
                 )
                 Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     AudioTrackToggle(
@@ -297,16 +324,16 @@ private fun AudioTrackToggle(
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
-    val background = if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.28f) else MaterialTheme.colorScheme.surfaceVariant
+    val background = if (active) AccentColor.copy(alpha = 0.16f) else Color.Transparent
     Box(
         modifier = modifier.background(background).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.labelSmall,
             fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (active) AccentColor else Color(0xFF77777D),
         )
     }
 }
@@ -330,14 +357,12 @@ private fun TrackLane(
     onTrimRight: (String, Long) -> Unit,
 ) {
     val density = LocalDensity.current
-    val playheadColor = MaterialTheme.colorScheme.error
     val snapToleranceUs = TimelineSnapUiPolicy.toleranceUs(dpPerSecond)
     Box(
         modifier = Modifier
             .width(timelineWidth)
             .height(58.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f), MaterialTheme.shapes.small)
+            .background(LaneBackground, RoundedCornerShape(4.dp))
             .pointerInput(track.id, dpPerSecond) {
                 detectTapGestures { offset ->
                     val xDp = with(density) { offset.x.toDp().value }
@@ -350,9 +375,9 @@ private fun TrackLane(
         if (track.clips.isEmpty()) {
             Text(
                 text = "Vazio",
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                color = Color(0xFF66666C),
                 style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.align(Alignment.CenterStart).padding(start = 12.dp),
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = 10.dp),
             )
         }
 
@@ -361,10 +386,9 @@ private fun TrackLane(
             val width = max(32f, (clip.durationUs / US_PER_SECOND * dpPerSecond).toFloat()).dp
             var bodyDragPx by remember(clip.id, clip.startUs) { mutableFloatStateOf(0f) }
             val selected = clip.id == selectedClipId
-            val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
             val waveform = if (track.type == TrackType.AUDIO) waveforms[clip.id] else null
-            val waveformColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.52f)
-            val keyframeMarkerColor = MaterialTheme.colorScheme.tertiary
+            val waveformColor = Color(0xFF9EEBE8).copy(alpha = 0.58f)
+            val keyframeMarkerColor = Color(0xFFFFC857)
             val keyframeFractions = KeyframeEditorPolicy.markerFractions(clip)
             val snapCandidates = if (snapEnabled) {
                 TimelineSnapUiPolicy.candidates(
@@ -376,21 +400,22 @@ private fun TrackLane(
             } else {
                 emptyList()
             }
+            val clipColor = if (track.type == TrackType.AUDIO) AudioClipColor else VisualClipColor
 
             Box(
                 modifier = Modifier
-                    .offset(x = x, y = 6.dp)
+                    .offset(x = x, y = 5.dp)
                     .width(width)
-                    .height(46.dp)
+                    .height(48.dp)
                     .graphicsLayer { translationX = bodyDragPx }
-                    .background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.small)
+                    .background(clipColor, RoundedCornerShape(5.dp))
                     .drawBehind {
                         val peaks = waveform?.peaks.orEmpty()
                         if (peaks.isNotEmpty()) {
                             val centerY = size.height / 2f
                             val xStep = size.width / peaks.size.toFloat()
                             peaks.forEachIndexed { index, peak ->
-                                val amplitude = peak.coerceIn(0f, 1f) * centerY * 0.82f
+                                val amplitude = peak.coerceIn(0f, 1f) * centerY * 0.78f
                                 val xPx = (index + 0.5f) * xStep
                                 drawLine(
                                     color = waveformColor,
@@ -403,12 +428,16 @@ private fun TrackLane(
                         keyframeFractions.forEach { fraction ->
                             drawCircle(
                                 color = keyframeMarkerColor,
-                                radius = 4f,
-                                center = Offset(size.width * fraction, 7f),
+                                radius = 3.5f,
+                                center = Offset(size.width * fraction, 6f),
                             )
                         }
                     }
-                    .border(if (selected) 3.dp else 1.dp, borderColor, MaterialTheme.shapes.small)
+                    .border(
+                        width = if (selected) 2.dp else 0.dp,
+                        color = if (selected) AccentColor else Color.Transparent,
+                        shape = RoundedCornerShape(5.dp),
+                    )
                     .clickable { onSelectClip(clip.id) }
                     .draggable(
                         orientation = Orientation.Horizontal,
@@ -435,15 +464,14 @@ private fun TrackLane(
             ) {
                 Text(
                     text = assetNames[clip.assetId]?.take(24) ?: "Clipe",
-                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 12.dp),
+                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 10.dp),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    color = Color(0xFFF1F1F3),
                 )
                 if (selected) {
                     TrimHandle(
-                        label = "‹",
                         modifier = Modifier.align(Alignment.CenterStart),
                         onFinished = { deltaPx ->
                             val deltaDp = with(density) { deltaPx.toDp().value }
@@ -458,7 +486,6 @@ private fun TrackLane(
                         },
                     )
                     TrimHandle(
-                        label = "›",
                         modifier = Modifier.align(Alignment.CenterEnd),
                         onFinished = { deltaPx ->
                             val deltaDp = with(density) { deltaPx.toDp().value }
@@ -480,25 +507,24 @@ private fun TrackLane(
         Box(
             modifier = Modifier
                 .offset(x = playheadX)
-                .width(3.dp)
+                .width(2.dp)
                 .height(58.dp)
-                .drawBehind { drawRect(playheadColor) },
+                .drawBehind { drawRect(Color.White) },
         )
     }
 }
 
 @Composable
 private fun TrimHandle(
-    label: String,
     modifier: Modifier,
     onFinished: (Float) -> Unit,
 ) {
     var deltaPx by remember { mutableFloatStateOf(0f) }
     Box(
         modifier = modifier
-            .width(16.dp)
-            .height(46.dp)
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.9f))
+            .width(8.dp)
+            .height(48.dp)
+            .background(AccentColor, RoundedCornerShape(4.dp))
             .draggable(
                 orientation = Orientation.Horizontal,
                 state = rememberDraggableState { deltaPx += it },
@@ -508,19 +534,11 @@ private fun TrimHandle(
                     onFinished(result)
                 },
             ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            color = MaterialTheme.colorScheme.onPrimary,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-        )
-    }
+    )
 }
 
-private fun trackLabel(track: Track): String = when {
-    track.type == TrackType.VISUAL && track.collisionPolicy == TrackCollisionPolicy.OVERLAY -> "OVERLAY"
-    track.type == TrackType.VISUAL -> "VÍDEO"
-    else -> "ÁUDIO"
+private fun trackGlyph(track: Track): String = when {
+    track.type == TrackType.VISUAL && track.collisionPolicy == TrackCollisionPolicy.OVERLAY -> "O"
+    track.type == TrackType.VISUAL -> "V"
+    else -> "A"
 }

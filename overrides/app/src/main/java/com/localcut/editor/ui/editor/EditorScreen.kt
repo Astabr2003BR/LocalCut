@@ -512,6 +512,17 @@ private fun InspectorForState(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
+        DesignToolsPanel(
+            project = session.project,
+            playheadUs = playheadUs,
+            onAddElement = { viewModel.dispatch(EditorAction.AddDesignElement(it)) },
+            onUpdateElement = { viewModel.dispatch(EditorAction.UpdateDesignElement(it)) },
+            onDeleteElement = { viewModel.dispatch(EditorAction.DeleteDesignElement(it)) },
+            onSetCanvas = { viewModel.dispatch(EditorAction.SetDesignCanvas(it)) },
+            onUpsertComponent = { viewModel.dispatch(EditorAction.UpsertReusableComponent(it)) },
+            onDeleteComponent = { viewModel.dispatch(EditorAction.DeleteReusableComponent(it)) },
+            modifier = Modifier.fillMaxWidth(),
+        )
         CreativeToolsPanel(
             project = session.project,
             selectedClipId = session.selectedClipId,

@@ -1,8 +1,10 @@
 package com.localcut.editor.ui.editor
 
+import com.localcut.editor.domain.model.DesignElement
 import com.localcut.editor.domain.model.GuideAxis
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.ShapeKind
+import com.localcut.editor.domain.model.ShapeSpec
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -50,4 +52,34 @@ class DesignToolsUiPolicyTest {
         val withoutGuides = DesignToolsUiPolicy.toggleCenterGuides(withGuides)
         assertTrue(withoutGuides.guides.isEmpty())
     }
+
+    @Test
+    fun arrangeFrontAndBackUseDeterministicExtremes() {
+        val back = element("back", 2)
+        val active = element("active", 5)
+        val front = element("front", 9)
+        val project = Project.create("Design", 1080, 1920, 30).copy(
+            designElements = listOf(back, active, front),
+        )
+
+        assertEquals(10, DesignToolsUiPolicy.bringToFront(project, active).zIndex)
+        assertEquals(1, DesignToolsUiPolicy.sendToBack(project, active).zIndex)
+    }
+
+    @Test
+    fun singleElementArrangeRemainsStable() {
+        val only = element("only", 0)
+        val project = Project.create("Design", 1080, 1920, 30).copy(designElements = listOf(only))
+
+        assertEquals(0, DesignToolsUiPolicy.bringToFront(project, only).zIndex)
+        assertEquals(0, DesignToolsUiPolicy.sendToBack(project, only).zIndex)
+    }
+
+    private fun element(id: String, z: Int): DesignElement = DesignElement(
+        id = id,
+        startUs = 0L,
+        durationUs = 1_000_000L,
+        shape = ShapeSpec(ShapeKind.RECTANGLE),
+        zIndex = z,
+    )
 }

@@ -124,9 +124,11 @@ object TrackingAnimationAdapter {
     ): List<PropertyAnimation> {
         require(data.validationIssues().isEmpty()) { "invalid tracking data: ${data.validationIssues().first()}" }
         require(projectWidth > 0 && projectHeight > 0) { "project dimensions must be positive" }
+        val halfWidth = projectWidth / 2.0
+        val halfHeight = projectHeight / 2.0
         return listOf(
-            scalarAnimation("transform.x", data.samples) { (it.normalizedX - 0.5) * projectWidth },
-            scalarAnimation("transform.y", data.samples) { (it.normalizedY - 0.5) * projectHeight },
+            scalarAnimation("transform.x", data.samples) { it.normalizedX * projectWidth - halfWidth },
+            scalarAnimation("transform.y", data.samples) { it.normalizedY * projectHeight - halfHeight },
             scalarAnimation("transform.scale", data.samples) { it.scale },
             scalarAnimation("transform.rotationDeg", data.samples) { it.rotationDeg },
         )

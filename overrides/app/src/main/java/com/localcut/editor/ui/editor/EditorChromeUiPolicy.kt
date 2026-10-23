@@ -23,18 +23,15 @@ object EditorChromeUiPolicy {
         val available = EditorToolCatalog.primaryToolsFor(selection).filter { it.enabled }
         val transient = current in transientCreationTools ||
             (current == EditorToolId.AUDIO && selection != EditorSelectionKind.AUDIO)
+
         if (!transient) {
             val preserved = available.firstOrNull { it.id == current }
             if (preserved != null) return preserved.id
         }
 
-        val preferred = when (selection) {
-            EditorSelectionKind.PROJECT -> EditorToolId.MEDIA
-            EditorSelectionKind.VIDEO, EditorSelectionKind.IMAGE -> EditorToolId.EDIT
-            EditorSelectionKind.AUDIO -> EditorToolId.AUDIO
-            EditorSelectionKind.TEXT -> EditorToolId.TEXT
-            EditorSelectionKind.DESIGN -> EditorToolId.DESIGN
-        }
-        return available.firstOrNull { it.id == preferred }?.id ?: available.firstOrNull()?.id
+        // Mobile editor UX: selecting a clip must not automatically open a large
+        // inspector. Keep the canvas/timeline clean and let the user explicitly
+        // open Edit, Audio, Effects, Color, Speed, Mask, etc. from the bottom rail.
+        return null
     }
 }

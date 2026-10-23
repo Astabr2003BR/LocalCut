@@ -19,6 +19,7 @@ import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.AudioProcessingSettings
 import com.localcut.editor.domain.model.CompositingSettings
 import com.localcut.editor.domain.model.CropMode
+import com.localcut.editor.domain.model.EasingKind
 import com.localcut.editor.domain.model.EffectInstance
 import com.localcut.editor.domain.model.MaskKind
 import com.localcut.editor.domain.model.Project
@@ -137,6 +138,26 @@ fun CreativeToolsPanel(
                         onClick = { onSetPropertyAnimations(emptyList()) },
                         enabled = clip.propertyAnimations.isNotEmpty(),
                     ) { Text("Limpar animação") }
+                }
+
+                if (clip.propertyAnimations.isNotEmpty()) {
+                    Text("Curvas / easing", style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        listOf(
+                            EasingKind.LINEAR to "Linear",
+                            EasingKind.EASE_IN_OUT to "Suave",
+                            EasingKind.BOUNCE to "Bounce",
+                            EasingKind.ELASTIC to "Elastic",
+                            EasingKind.STEPS to "Steps",
+                        ).forEach { (kind, label) ->
+                            OutlinedButton(onClick = {
+                                onSetPropertyAnimations(CreativeToolsUiPolicy.setEasingPreset(clip.propertyAnimations, kind))
+                            }) { Text(label) }
+                        }
+                    }
                 }
             }
 

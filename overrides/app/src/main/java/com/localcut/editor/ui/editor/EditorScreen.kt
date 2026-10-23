@@ -35,6 +35,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
+import com.localcut.editor.domain.history.AddBeatMarkerCommand
+import com.localcut.editor.domain.history.DeleteBeatMarkerCommand
 import com.localcut.editor.domain.history.SetCompositionGraphCommand
 import com.localcut.editor.domain.history.SetProjectCanvasSizeCommand
 import com.localcut.editor.domain.model.ClipTransition
@@ -502,32 +504,45 @@ private fun TimelineForProfessionalState(
     viewModel: EditorViewModel,
     modifier: Modifier,
 ) {
-    TimelinePane(
-        project = session.project,
-        selectedClipId = session.selectedClipId,
-        playheadUs = playheadUs,
-        onSelectClip = { viewModel.dispatch(EditorAction.SelectClip(it)) },
-        onSeek = viewModel::seekToUs,
-        onMoveClip = { clipId, newStart ->
-            viewModel.dispatch(EditorAction.SelectClip(clipId))
-            viewModel.dispatch(EditorAction.MoveSelected(newStart))
-        },
-        onTrimLeft = { clipId, newStart ->
-            viewModel.dispatch(EditorAction.SelectClip(clipId))
-            viewModel.dispatch(EditorAction.TrimSelectedLeftEdge(newStart))
-        },
-        onTrimRight = { clipId, newEnd ->
-            viewModel.dispatch(EditorAction.SelectClip(clipId))
-            viewModel.dispatch(EditorAction.TrimSelectedRightEdge(newEnd))
-        },
-        onSetTrackMuted = { trackId, muted ->
-            viewModel.dispatch(EditorAction.SetTrackMuted(trackId, muted))
-        },
-        onSetTrackSolo = { trackId, solo ->
-            viewModel.dispatch(EditorAction.SetTrackSolo(trackId, solo))
-        },
-        modifier = modifier,
-    )
+    Column(modifier = modifier) {
+        BeatMarkerTimelineControls(
+            project = session.project,
+            playheadUs = playheadUs,
+            onAddMarker = { marker ->
+                viewModel.dispatch(EditorAction.Execute(AddBeatMarkerCommand(marker)))
+            },
+            onDeleteMarker = { markerId ->
+                viewModel.dispatch(EditorAction.Execute(DeleteBeatMarkerCommand(markerId)))
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        TimelinePane(
+            project = session.project,
+            selectedClipId = session.selectedClipId,
+            playheadUs = playheadUs,
+            onSelectClip = { viewModel.dispatch(EditorAction.SelectClip(it)) },
+            onSeek = viewModel::seekToUs,
+            onMoveClip = { clipId, newStart ->
+                viewModel.dispatch(EditorAction.SelectClip(clipId))
+                viewModel.dispatch(EditorAction.MoveSelected(newStart))
+            },
+            onTrimLeft = { clipId, newStart ->
+                viewModel.dispatch(EditorAction.SelectClip(clipId))
+                viewModel.dispatch(EditorAction.TrimSelectedLeftEdge(newStart))
+            },
+            onTrimRight = { clipId, newEnd ->
+                viewModel.dispatch(EditorAction.SelectClip(clipId))
+                viewModel.dispatch(EditorAction.TrimSelectedRightEdge(newEnd))
+            },
+            onSetTrackMuted = { trackId, muted ->
+                viewModel.dispatch(EditorAction.SetTrackMuted(trackId, muted))
+            },
+            onSetTrackSolo = { trackId, solo ->
+                viewModel.dispatch(EditorAction.SetTrackSolo(trackId, solo))
+            },
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+        )
+    }
 }
 
 @Composable

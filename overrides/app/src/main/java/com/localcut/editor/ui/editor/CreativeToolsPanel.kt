@@ -215,6 +215,10 @@ fun CreativeToolsPanel(
                             }
                         }
                     }
+                    CropManualControls(
+                        settings = clip.compositing,
+                        onSetCompositing = onSetCompositing,
+                    )
 
                     if (primaryMask != null) {
                         Text("Ajuste da máscara", style = MaterialTheme.typography.labelMedium)

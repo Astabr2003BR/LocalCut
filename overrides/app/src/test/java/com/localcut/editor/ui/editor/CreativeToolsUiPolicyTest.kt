@@ -62,6 +62,25 @@ class CreativeToolsUiPolicyTest {
     }
 
     @Test
+    fun easingPresetPreservesValuesAndTimingWhileChangingCurve() {
+        val source = listOf(
+            PropertyAnimation(
+                propertyId = "transform.x",
+                keyframes = listOf(
+                    PropertyKeyframe("a", 0L, PropertyValue.Scalar(0.0)),
+                    PropertyKeyframe("b", 1_000_000L, PropertyValue.Scalar(100.0)),
+                ),
+            ),
+        )
+
+        val result = CreativeToolsUiPolicy.setEasingPreset(source, EasingKind.BOUNCE)
+
+        assertEquals(source.single().keyframes.map { it.offsetUs }, result.single().keyframes.map { it.offsetUs })
+        assertEquals(source.single().keyframes.map { it.value }, result.single().keyframes.map { it.value })
+        assertTrue(result.single().keyframes.all { it.easingToNext.kind == EasingKind.BOUNCE })
+    }
+
+    @Test
     fun audioPresetsStayInsideValidationBounds() {
         val voice = CreativeToolsUiPolicy.voiceAudioPreset(AudioProcessingSettings())
         val loud = CreativeToolsUiPolicy.loudnessAudioPreset(voice)

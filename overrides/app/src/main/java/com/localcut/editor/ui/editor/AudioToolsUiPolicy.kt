@@ -51,7 +51,69 @@ object AudioToolsUiPolicy {
     fun setNoiseGateEnabled(source: AudioProcessingSettings, enabled: Boolean): AudioProcessingSettings =
         validated(source.copy(noiseGate = if (enabled) source.noiseGate ?: NoiseGateSettings() else null))
 
+    fun setCompressorThreshold(source: AudioProcessingSettings, thresholdDb: Double): AudioProcessingSettings {
+        require(thresholdDb.isFinite() && thresholdDb in -80.0..0.0) { "compressor threshold must be in -80..0 dB" }
+        return updateCompressor(source) { it.copy(thresholdDb = thresholdDb) }
+    }
+
+    fun setCompressorRatio(source: AudioProcessingSettings, ratio: Double): AudioProcessingSettings {
+        require(ratio.isFinite() && ratio in 1.0..100.0) { "compressor ratio must be in 1..100" }
+        return updateCompressor(source) { it.copy(ratio = ratio) }
+    }
+
+    fun setCompressorAttack(source: AudioProcessingSettings, attackMs: Double): AudioProcessingSettings {
+        require(attackMs.isFinite() && attackMs in 0.1..1_000.0) { "compressor attack must be in 0.1..1000 ms" }
+        return updateCompressor(source) { it.copy(attackMs = attackMs) }
+    }
+
+    fun setCompressorRelease(source: AudioProcessingSettings, releaseMs: Double): AudioProcessingSettings {
+        require(releaseMs.isFinite() && releaseMs in 1.0..5_000.0) { "compressor release must be in 1..5000 ms" }
+        return updateCompressor(source) { it.copy(releaseMs = releaseMs) }
+    }
+
+    fun setCompressorMakeupGain(source: AudioProcessingSettings, gainDb: Double): AudioProcessingSettings {
+        require(gainDb.isFinite() && gainDb in -24.0..24.0) { "compressor makeup gain must be in -24..24 dB" }
+        return updateCompressor(source) { it.copy(makeupGainDb = gainDb) }
+    }
+
+    fun setLimiterCeiling(source: AudioProcessingSettings, ceilingDb: Double): AudioProcessingSettings {
+        require(ceilingDb.isFinite() && ceilingDb in -24.0..0.0) { "limiter ceiling must be in -24..0 dB" }
+        val limiter = source.limiter ?: return source
+        return validated(source.copy(limiter = limiter.copy(ceilingDb = ceilingDb)))
+    }
+
+    fun setNoiseGateThreshold(source: AudioProcessingSettings, thresholdDb: Double): AudioProcessingSettings {
+        require(thresholdDb.isFinite() && thresholdDb in -100.0..0.0) { "noise gate threshold must be in -100..0 dB" }
+        return updateNoiseGate(source) { it.copy(thresholdDb = thresholdDb) }
+    }
+
+    fun setNoiseGateAttack(source: AudioProcessingSettings, attackMs: Double): AudioProcessingSettings {
+        require(attackMs.isFinite() && attackMs in 0.1..1_000.0) { "noise gate attack must be in 0.1..1000 ms" }
+        return updateNoiseGate(source) { it.copy(attackMs = attackMs) }
+    }
+
+    fun setNoiseGateRelease(source: AudioProcessingSettings, releaseMs: Double): AudioProcessingSettings {
+        require(releaseMs.isFinite() && releaseMs in 1.0..5_000.0) { "noise gate release must be in 1..5000 ms" }
+        return updateNoiseGate(source) { it.copy(releaseMs = releaseMs) }
+    }
+
     fun reset(): AudioProcessingSettings = AudioProcessingSettings()
+
+    private fun updateCompressor(
+        source: AudioProcessingSettings,
+        transform: (CompressorSettings) -> CompressorSettings,
+    ): AudioProcessingSettings {
+        val compressor = source.compressor ?: return source
+        return validated(source.copy(compressor = transform(compressor)))
+    }
+
+    private fun updateNoiseGate(
+        source: AudioProcessingSettings,
+        transform: (NoiseGateSettings) -> NoiseGateSettings,
+    ): AudioProcessingSettings {
+        val gate = source.noiseGate ?: return source
+        return validated(source.copy(noiseGate = transform(gate)))
+    }
 
     private fun validated(settings: AudioProcessingSettings): AudioProcessingSettings {
         val issues = settings.validationIssues()

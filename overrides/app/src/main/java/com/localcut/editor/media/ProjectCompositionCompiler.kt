@@ -151,6 +151,7 @@ class ProjectCompositionCompiler(
         }
 
         val audioProcessors = buildList<AudioProcessor> {
+            addAll(Media3AudioProcessingFactory.create(item.audioProcessing))
             if (item.volume != 1.0) {
                 add(GainProcessor(DefaultGainProvider.Builder(item.volume.toFloat()).build()))
             }

@@ -118,6 +118,24 @@ fun DesignToolsPanel(
                             ) { Text(label) }
                         }
                     }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        DesignToolsUiPolicy.shapePresets().forEach { preset ->
+                            OutlinedButton(
+                                onClick = {
+                                    onAddElement(
+                                        DesignToolsUiPolicy.newShapePreset(
+                                            project = project,
+                                            preset = preset,
+                                            playheadUs = playheadUs.coerceAtLeast(0L),
+                                        ),
+                                    )
+                                },
+                            ) { Text(preset.label) }
+                        }
+                    }
 
                     activeShape?.let { element ->
                         val shape = requireNotNull(element.shape)

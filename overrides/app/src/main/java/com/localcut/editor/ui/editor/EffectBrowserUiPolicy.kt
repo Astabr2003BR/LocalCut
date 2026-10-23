@@ -30,6 +30,9 @@ data class EffectNumericControl(
 )
 
 object EffectBrowserUiPolicy {
+    const val FLIP_HORIZONTAL_TYPE_ID = "localcut.flip.horizontal"
+    const val FLIP_VERTICAL_TYPE_ID = "localcut.flip.vertical"
+
     private val orderedCategories = listOf(
         EffectBrowserCategory.COLOR,
         EffectBrowserCategory.LIGHT,
@@ -134,6 +137,21 @@ object EffectBrowserUiPolicy {
     ): List<EffectInstance> {
         val typeIds = presets(category).mapTo(hashSetOf()) { it.typeId }
         return effects.filterNot { it.typeId in typeIds }
+    }
+
+    fun isToggleEffectEnabled(effects: List<EffectInstance>, typeId: String): Boolean =
+        effects.any { it.typeId == typeId && it.enabled }
+
+    fun toggleParameterlessEffect(
+        effects: List<EffectInstance>,
+        typeId: String,
+    ): List<EffectInstance> {
+        val definition = requireNotNull(EffectRegistry.definition(typeId)) { "unknown effect $typeId" }
+        require(definition.parameters.isEmpty()) { "toggle effect $typeId must be parameterless" }
+        val index = effects.indexOfFirst { it.typeId == typeId }
+        if (index >= 0) return effects.filterIndexed { effectIndex, _ -> effectIndex != index }
+        val id = "ui-${typeId.removePrefix("localcut.").replace('.', '-')}"
+        return effects + EffectInstance(id = id, typeId = typeId)
     }
 
     fun label(category: EffectBrowserCategory): String = when (category) {

@@ -13,4 +13,8 @@ data class Clip(
     val keyframes: List<TransformKeyframe> = emptyList(),
     val fadeInUs: Long = 0L,
     val fadeOutUs: Long = 0L,
+    val propertyAnimations: List<PropertyAnimation> = emptyList(),
+    val compositing: CompositingSettings = CompositingSettings(),
+    val effects: List<EffectInstance> = emptyList(),
+    val timeMap: TimeMap = TimeMap(),
 )

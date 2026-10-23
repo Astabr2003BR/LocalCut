@@ -261,6 +261,10 @@ internal fun TextOverlayEditorDialog(
                     optionLabel = ::animationLabel,
                     onSelect = { onModelChange(model.withLoopAnimation(it)) },
                 )
+                TextAdvancedAnimationControls(
+                    model = model,
+                    onModelChange = onModelChange,
+                )
             }
         },
         confirmButton = {

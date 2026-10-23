@@ -5,6 +5,7 @@ import com.localcut.editor.domain.time.TimeMapEvaluator
 import com.localcut.editor.media.Media3CompositingEffectFactory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -83,6 +84,19 @@ class CreativeToolsUiPolicyTest {
         assertTrue(lastPointUs <= durationUs)
         assertTrue(kotlin.math.abs(mappedEndUs - sourceRangeUs) <= 2L)
         assertTrue(result.validationIssues().isEmpty())
+    }
+
+    @Test
+    fun customSpeedCurveRejectsInvalidControlPoints() {
+        assertThrows(IllegalArgumentException::class.java) {
+            CreativeToolsUiPolicy.customSpeedCurve(1_000_000L, listOf(1.0))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            CreativeToolsUiPolicy.customSpeedCurve(1_000_000L, listOf(1.0, 0.0))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            CreativeToolsUiPolicy.customSpeedCurve(0L, listOf(1.0, 2.0))
+        }
     }
 
     @Test

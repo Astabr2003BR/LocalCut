@@ -20,7 +20,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -102,6 +105,8 @@ fun TimelinePane(
         )
     }
     val scope = rememberCoroutineScope()
+    var beatSnapEnabled by remember(project.id) { mutableStateOf(true) }
+    val editBeatMarkers = if (beatSnapEnabled) project.beatMarkers else emptyList()
 
     DisposableEffect(waveformExecutor) {
         onDispose { waveformExecutor.shutdownNow() }
@@ -149,6 +154,29 @@ fun TimelinePane(
         modifier = modifier.fillMaxWidth().verticalScroll(verticalScroll),
         verticalArrangement = Arrangement.spacedBy(TimelineTrackGeometry.DEFAULT_ROW_GAP_DP.dp),
     ) {
+        if (project.beatMarkers.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (beatSnapEnabled) {
+                    FilledTonalButton(onClick = { beatSnapEnabled = false }) {
+                        Text("Ímã batidas ON")
+                    }
+                } else {
+                    OutlinedButton(onClick = { beatSnapEnabled = true }) {
+                        Text("Ímã batidas OFF")
+                    }
+                }
+                Text(
+                    "${project.beatMarkers.size} marcas",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
         trackLayout.rows.forEach { rowGeometry ->
             val track = tracksById.getValue(rowGeometry.trackId)
             Row(
@@ -163,7 +191,7 @@ fun TimelinePane(
                 Box(modifier = Modifier.weight(1f).horizontalScroll(horizontalScroll).padding(start = 6.dp)) {
                     TrackLane(
                         track = track,
-                        beatMarkers = project.beatMarkers,
+                        beatMarkers = editBeatMarkers,
                         selectedClipId = selectedClipId,
                         playheadUs = playheadUs,
                         timelineWidth = timelineWidth,

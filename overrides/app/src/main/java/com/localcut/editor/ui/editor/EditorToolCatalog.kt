@@ -76,7 +76,7 @@ object EditorToolCatalog {
         tool(EditorToolId.MASK, "Máscara", EditorToolGroup.CREATIVE, visual, EditorToolState.LIVE),
         tool(EditorToolId.CHROMA, "Chroma", EditorToolGroup.CREATIVE, visual, EditorToolState.LIVE),
         tool(EditorToolId.ANIMATION, "Animação", EditorToolGroup.CREATIVE, visual + EditorSelectionKind.TEXT + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
-        tool(EditorToolId.LAYERS, "Camadas", EditorToolGroup.DESIGN, visual + EditorSelectionKind.TEXT + EditorSelectionKind.DESIGN, EditorToolState.PARTIAL),
+        tool(EditorToolId.LAYERS, "Camadas", EditorToolGroup.DESIGN, visual + EditorSelectionKind.TEXT + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
         tool(EditorToolId.DESIGN, "Design", EditorToolGroup.DESIGN, project + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
         tool(EditorToolId.CANVAS, "Canvas", EditorToolGroup.DESIGN, any, EditorToolState.LIVE),
         tool(EditorToolId.CAPTIONS, "Legendas", EditorToolGroup.PROJECT, project + EditorSelectionKind.TEXT, EditorToolState.PARTIAL),

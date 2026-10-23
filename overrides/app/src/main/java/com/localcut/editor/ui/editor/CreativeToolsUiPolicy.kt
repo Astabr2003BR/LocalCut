@@ -18,6 +18,7 @@ import com.localcut.editor.domain.model.MaskSpec
 import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.model.SpeedPoint
 import com.localcut.editor.domain.model.TimeMap
+import kotlin.math.roundToLong
 
 enum class CreativeToolsSection {
     VISUAL,
@@ -83,6 +84,46 @@ object CreativeToolsUiPolicy {
                 SpeedPoint(0L, 0.5),
                 SpeedPoint(rampEndUs, 2.0),
             ),
+            freezeSegments = emptyList(),
+        )
+    }
+
+    fun customSpeedCurve(sourceRangeUs: Long, speeds: List<Double>): TimeMap {
+        require(sourceRangeUs > 0L) { "source range must be positive" }
+        require(speeds.size >= 2) { "custom speed curve requires at least two control points" }
+        require(speeds.all { it.isFinite() && it in 0.1..10.0 }) {
+            "custom speed curve values must be finite and between 0.1x and 10x"
+        }
+
+        val segmentCount = speeds.lastIndex
+        val normalizedIntegral = speeds.zipWithNext().sumOf { (left, right) ->
+            (left + right) * 0.5
+        } / segmentCount.toDouble()
+        require(normalizedIntegral.isFinite() && normalizedIntegral > 0.0) {
+            "custom speed curve integral must be finite and positive"
+        }
+
+        val presentationDurationUs = (sourceRangeUs.toDouble() / normalizedIntegral).roundToLong()
+        require(presentationDurationUs >= segmentCount.toLong()) {
+            "custom speed curve is shorter than microsecond timing resolution"
+        }
+
+        val points = speeds.mapIndexed { index, speed ->
+            val offsetUs = if (index == segmentCount) {
+                presentationDurationUs
+            } else {
+                (presentationDurationUs.toDouble() * index.toDouble() / segmentCount.toDouble()).roundToLong()
+            }
+            SpeedPoint(offsetUs = offsetUs, speed = speed)
+        }
+        require(points.zipWithNext().all { (left, right) -> right.offsetUs > left.offsetUs }) {
+            "custom speed curve points must be strictly increasing"
+        }
+
+        return TimeMap(
+            baseSpeed = speeds.first(),
+            reverse = false,
+            speedPoints = points,
             freezeSegments = emptyList(),
         )
     }

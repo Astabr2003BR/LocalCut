@@ -17,9 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.localcut.editor.domain.model.AssetType
@@ -38,7 +36,7 @@ fun ColorToolsPanel(
 
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
         shape = MaterialTheme.shapes.medium,
     ) {
         if (clip == null || asset?.type == AssetType.AUDIO) {
@@ -49,26 +47,14 @@ fun ColorToolsPanel(
             return@Surface
         }
 
-        var effectCategory by remember(clip.id) {
-            mutableStateOf(EffectBrowserCategory.COLOR)
-        }
-        var selectedEffectTypeId by remember(clip.id) {
-            mutableStateOf<String?>(null)
-        }
-
-        val categoryPresets = EffectBrowserUiPolicy.presets(effectCategory)
-        val selectedPreset = categoryPresets.firstOrNull { it.typeId == selectedEffectTypeId }
-            ?: categoryPresets.firstOrNull()
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                .padding(horizontal = 10.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            Text("Cor", style = MaterialTheme.typography.titleSmall)
-            Text("Filtros LocalCut", style = MaterialTheme.typography.labelLarge)
+            Text("Filtros", style = MaterialTheme.typography.labelLarge)
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -80,7 +66,7 @@ fun ColorToolsPanel(
                 }
             }
 
-            Text("Transformar imagem", style = MaterialTheme.typography.labelLarge)
+            Text("Espelhar", style = MaterialTheme.typography.labelLarge)
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -88,84 +74,24 @@ fun ColorToolsPanel(
                 if (FlipToolsUiPolicy.isHorizontalEnabled(clip.effects)) {
                     FilledTonalButton(
                         onClick = { onSetEffects(FlipToolsUiPolicy.toggleHorizontal(clip.effects)) },
-                    ) { Text("Flip H ✓") }
+                    ) { Text("Horizontal ✓") }
                 } else {
                     OutlinedButton(
                         onClick = { onSetEffects(FlipToolsUiPolicy.toggleHorizontal(clip.effects)) },
-                    ) { Text("Flip H") }
+                    ) { Text("Horizontal") }
                 }
                 if (FlipToolsUiPolicy.isVerticalEnabled(clip.effects)) {
                     FilledTonalButton(
                         onClick = { onSetEffects(FlipToolsUiPolicy.toggleVertical(clip.effects)) },
-                    ) { Text("Flip V ✓") }
+                    ) { Text("Vertical ✓") }
                 } else {
                     OutlinedButton(
                         onClick = { onSetEffects(FlipToolsUiPolicy.toggleVertical(clip.effects)) },
-                    ) { Text("Flip V") }
+                    ) { Text("Vertical") }
                 }
             }
 
-            Text("Efeitos rápidos", style = MaterialTheme.typography.labelLarge)
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                EffectBrowserUiPolicy.categories().forEach { category ->
-                    val label = EffectBrowserUiPolicy.label(category)
-                    if (category == effectCategory) {
-                        FilledTonalButton(onClick = {
-                            effectCategory = category
-                            selectedEffectTypeId = EffectBrowserUiPolicy.presets(category).firstOrNull()?.typeId
-                        }) { Text(label) }
-                    } else {
-                        OutlinedButton(onClick = {
-                            effectCategory = category
-                            selectedEffectTypeId = EffectBrowserUiPolicy.presets(category).firstOrNull()?.typeId
-                        }) { Text(label) }
-                    }
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                categoryPresets.forEach { preset ->
-                    val active = preset.typeId == selectedPreset?.typeId &&
-                        clip.effects.any { it.typeId == preset.typeId }
-                    val applyPreset = {
-                        selectedEffectTypeId = preset.typeId
-                        onSetEffects(
-                            CreativeToolsUiPolicy.setNumericEffect(
-                                effects = clip.effects,
-                                typeId = preset.typeId,
-                                parameterName = preset.parameterName,
-                                value = preset.value,
-                            ),
-                        )
-                    }
-                    if (active) {
-                        FilledTonalButton(onClick = applyPreset) { Text(preset.label) }
-                    } else {
-                        OutlinedButton(onClick = applyPreset) { Text(preset.label) }
-                    }
-                }
-                OutlinedButton(
-                    onClick = {
-                        onSetEffects(EffectBrowserUiPolicy.clearCategory(clip.effects, effectCategory))
-                    },
-                    enabled = EffectBrowserUiPolicy.hasEffectsInCategory(clip.effects, effectCategory),
-                ) { Text("Limpar categoria") }
-            }
-
-            selectedPreset?.let { preset ->
-                EffectAdvancedControls(
-                    effects = clip.effects,
-                    preset = preset,
-                    onSetEffects = onSetEffects,
-                )
-            }
-
-            Text("Ajustes", style = MaterialTheme.typography.labelLarge)
+            Text("Ajustar", style = MaterialTheme.typography.labelLarge)
             ColorCommitSlider(
                 label = "Brilho",
                 initial = ColorToolsUiPolicy.number(clip.effects, "localcut.color.brightness", "amount", 0.0),
@@ -218,7 +144,7 @@ fun ColorToolsPanel(
                 onSetEffects(ColorToolsUiPolicy.setNumber(clip.effects, "localcut.color.hsl", "hue", value))
             }
             ColorCommitSlider(
-                label = "HSL Saturação",
+                label = "Saturação HSL",
                 initial = ColorToolsUiPolicy.number(clip.effects, "localcut.color.hsl", "saturation", 0.0),
                 range = -100f..100f,
             ) { value ->
@@ -235,7 +161,7 @@ fun ColorToolsPanel(
             FilledTonalButton(
                 onClick = { onSetEffects(ColorToolsUiPolicy.resetColorEffects(clip.effects)) },
                 enabled = clip.effects.any { it.typeId.startsWith("localcut.color.") },
-            ) { Text("Resetar cor") }
+            ) { Text("Resetar ajustes") }
         }
     }
 }
@@ -247,7 +173,9 @@ private fun ColorCommitSlider(
     range: ClosedFloatingPointRange<Float>,
     onCommit: (Double) -> Unit,
 ) {
-    var value by remember(label, initial) { mutableFloatStateOf(initial.toFloat().coerceIn(range.start, range.endInclusive)) }
+    var value by remember(label, initial) {
+        mutableFloatStateOf(initial.toFloat().coerceIn(range.start, range.endInclusive))
+    }
     Text("$label ${"%.2f".format(value)}", style = MaterialTheme.typography.labelSmall)
     Slider(
         value = value,

@@ -90,6 +90,8 @@ object EffectRegistry {
                 EffectParameterSpec("center", EffectParameterType.POINT, EffectParameter.Point(0.5, 0.5)),
             ),
         ),
+        EffectDefinition("localcut.flip.horizontal", EffectCategory.DISTORTION, emptyList()),
+        EffectDefinition("localcut.flip.vertical", EffectCategory.DISTORTION, emptyList()),
         EffectDefinition(
             "localcut.motion_blur",
             EffectCategory.MOTION,

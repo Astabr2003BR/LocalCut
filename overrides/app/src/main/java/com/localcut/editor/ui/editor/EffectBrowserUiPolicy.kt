@@ -50,6 +50,8 @@ object EffectBrowserUiPolicy {
         EffectBrowserPreset(EffectBrowserCategory.COLOR, "Quente", "localcut.color.temperature", "amount", 0.35),
         EffectBrowserPreset(EffectBrowserCategory.COLOR, "Frio", "localcut.color.temperature", "amount", -0.35),
         EffectBrowserPreset(EffectBrowserCategory.COLOR, "Magenta", "localcut.color.tint", "amount", 0.3),
+        EffectBrowserPreset(EffectBrowserCategory.COLOR, "P&B", "localcut.color.monochrome", "amount", 1.0),
+        EffectBrowserPreset(EffectBrowserCategory.COLOR, "Sépia", "localcut.color.sepia", "amount", 1.0),
         EffectBrowserPreset(EffectBrowserCategory.LIGHT, "Glow", "localcut.glow", "radius", 10.0),
         EffectBrowserPreset(EffectBrowserCategory.LIGHT, "Vignette", "localcut.vignette", "amount", 0.55),
         EffectBrowserPreset(EffectBrowserCategory.DETAIL, "Sharpen", "localcut.sharpen", "amount", 1.0),

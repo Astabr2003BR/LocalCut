@@ -22,6 +22,13 @@ data class EffectBrowserPreset(
     val value: Double,
 )
 
+data class EffectNumericControl(
+    val name: String,
+    val label: String,
+    val value: Double,
+    val range: ClosedFloatingPointRange<Double>,
+)
+
 object EffectBrowserUiPolicy {
     private val orderedCategories = listOf(
         EffectBrowserCategory.COLOR,
@@ -56,15 +63,28 @@ object EffectBrowserUiPolicy {
     fun presets(category: EffectBrowserCategory): List<EffectBrowserPreset> =
         presets.filter { it.category == category }
 
-    fun adjustableRange(preset: EffectBrowserPreset): ClosedFloatingPointRange<Double>? {
-        val spec = EffectRegistry.definition(preset.typeId)
-            ?.parametersByName
-            ?.get(preset.parameterName)
-            ?: return null
-        if (spec.type != EffectParameterType.NUMBER) return null
-        val min = spec.min ?: return null
-        val max = spec.max ?: return null
-        return min..max
+    fun adjustableRange(preset: EffectBrowserPreset): ClosedFloatingPointRange<Double>? =
+        numericRange(preset.typeId, preset.parameterName)
+
+    fun adjustableParameters(
+        effects: List<EffectInstance>,
+        preset: EffectBrowserPreset,
+    ): List<EffectNumericControl> {
+        val definition = EffectRegistry.definition(preset.typeId) ?: return emptyList()
+        val effect = effects.firstOrNull { it.typeId == preset.typeId }
+        return definition.parameters.mapNotNull { spec ->
+            if (spec.type != EffectParameterType.NUMBER || spec.name == "seed") return@mapNotNull null
+            val min = spec.min ?: return@mapNotNull null
+            val max = spec.max ?: return@mapNotNull null
+            val explicit = effect?.parameters?.get(spec.name) as? EffectParameter.Number
+            val defaultValue = (spec.defaultValue as EffectParameter.Number).value
+            EffectNumericControl(
+                name = spec.name,
+                label = parameterLabel(spec.name),
+                value = explicit?.value ?: if (spec.name == preset.parameterName) preset.value else defaultValue,
+                range = min..max,
+            )
+        }
     }
 
     fun currentValue(
@@ -82,15 +102,23 @@ object EffectBrowserUiPolicy {
         effects: List<EffectInstance>,
         preset: EffectBrowserPreset,
         value: Double,
+    ): List<EffectInstance> =
+        setParameter(effects, preset, preset.parameterName, value)
+
+    fun setParameter(
+        effects: List<EffectInstance>,
+        preset: EffectBrowserPreset,
+        parameterName: String,
+        value: Double,
     ): List<EffectInstance> {
         require(value.isFinite()) { "effect value must be finite" }
-        val range = requireNotNull(adjustableRange(preset)) {
-            "effect ${preset.typeId}.${preset.parameterName} is not adjustable"
+        val range = requireNotNull(numericRange(preset.typeId, parameterName)) {
+            "effect ${preset.typeId}.$parameterName is not adjustable"
         }
         return CreativeToolsUiPolicy.setNumericEffect(
             effects = effects,
             typeId = preset.typeId,
-            parameterName = preset.parameterName,
+            parameterName = parameterName,
             value = value.coerceIn(range.start, range.endInclusive),
         )
     }
@@ -115,5 +143,28 @@ object EffectBrowserUiPolicy {
         EffectBrowserCategory.BLUR -> "Desfoque"
         EffectBrowserCategory.TEXTURE -> "Textura"
         EffectBrowserCategory.DISTORTION -> "Distorção"
+    }
+
+    private fun numericRange(typeId: String, parameterName: String): ClosedFloatingPointRange<Double>? {
+        val spec = EffectRegistry.definition(typeId)
+            ?.parametersByName
+            ?.get(parameterName)
+            ?: return null
+        if (spec.type != EffectParameterType.NUMBER) return null
+        val min = spec.min ?: return null
+        val max = spec.max ?: return null
+        return min..max
+    }
+
+    private fun parameterLabel(name: String): String = when (name) {
+        "amount" -> "Intensidade"
+        "radius" -> "Raio"
+        "intensity" -> "Intensidade"
+        "size" -> "Tamanho"
+        "blockSize" -> "Bloco"
+        "amplitude" -> "Amplitude"
+        "frequency" -> "Frequência"
+        "stops" -> "Exposição"
+        else -> name
     }
 }

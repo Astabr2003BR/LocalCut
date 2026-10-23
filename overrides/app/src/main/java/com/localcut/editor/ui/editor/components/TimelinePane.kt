@@ -52,15 +52,14 @@ import com.localcut.editor.audio.WaveformCacheKey
 import com.localcut.editor.audio.WaveformData
 import com.localcut.editor.audio.WaveformRepository
 import com.localcut.editor.domain.model.AssetType
-import com.localcut.editor.domain.model.BeatMarker
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.timeline.TimelineMath
-import com.localcut.editor.ui.editor.BeatMarkerUiPolicy
 import com.localcut.editor.ui.editor.KeyframeEditorPolicy
 import com.localcut.editor.ui.editor.TimelineEditBounds
+import com.localcut.editor.ui.editor.TimelineSnapUiPolicy
 import com.localcut.editor.ui.editor.TimelineTrackGeometry
 import com.localcut.editor.ui.editor.TimelineZoomUiPolicy
 import java.util.concurrent.Executors
@@ -108,8 +107,21 @@ fun TimelinePane(
         )
     }
     val scope = rememberCoroutineScope()
-    var beatSnapEnabled by remember(project.id) { mutableStateOf(true) }
-    val editBeatMarkers = if (beatSnapEnabled) project.beatMarkers else emptyList()
+    var snapEnabled by remember(project.id) { mutableStateOf(true) }
+    val snapClipEdges = if (snapEnabled) {
+        project.tracks.flatMap { track ->
+            track.clips.map { clip ->
+                TimelineSnapUiPolicy.ClipEdges(
+                    clipId = clip.id,
+                    startUs = clip.startUs,
+                    endUs = Math.addExact(clip.startUs, clip.durationUs),
+                )
+            }
+        }
+    } else {
+        emptyList()
+    }
+    val snapBeatTimesUs = if (snapEnabled) project.beatMarkers.map { it.timeUs } else emptyList()
 
     DisposableEffect(waveformExecutor) {
         onDispose { waveformExecutor.shutdownNow() }
@@ -177,18 +189,14 @@ fun TimelinePane(
                 enabled = timelineZoom < TimelineZoomUiPolicy.MAX_DP_PER_SECOND,
             ) { Text("+") }
 
+            if (snapEnabled) {
+                FilledTonalButton(onClick = { snapEnabled = false }) { Text("Ímã ON") }
+            } else {
+                OutlinedButton(onClick = { snapEnabled = true }) { Text("Ímã OFF") }
+            }
             if (project.beatMarkers.isNotEmpty()) {
-                if (beatSnapEnabled) {
-                    FilledTonalButton(onClick = { beatSnapEnabled = false }) {
-                        Text("Ímã batidas ON")
-                    }
-                } else {
-                    OutlinedButton(onClick = { beatSnapEnabled = true }) {
-                        Text("Ímã batidas OFF")
-                    }
-                }
                 Text(
-                    "${project.beatMarkers.size} marcas",
+                    "${project.beatMarkers.size} batidas",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -209,7 +217,9 @@ fun TimelinePane(
                 Box(modifier = Modifier.weight(1f).horizontalScroll(horizontalScroll).padding(start = 6.dp)) {
                     TrackLane(
                         track = track,
-                        beatMarkers = editBeatMarkers,
+                        snapEnabled = snapEnabled,
+                        snapClipEdges = snapClipEdges,
+                        snapBeatTimesUs = snapBeatTimesUs,
                         selectedClipId = selectedClipId,
                         playheadUs = playheadUs,
                         timelineWidth = timelineWidth,
@@ -304,7 +314,9 @@ private fun AudioTrackToggle(
 @Composable
 private fun TrackLane(
     track: Track,
-    beatMarkers: List<BeatMarker>,
+    snapEnabled: Boolean,
+    snapClipEdges: List<TimelineSnapUiPolicy.ClipEdges>,
+    snapBeatTimesUs: List<Long>,
     selectedClipId: String?,
     playheadUs: Long,
     timelineWidth: androidx.compose.ui.unit.Dp,
@@ -319,6 +331,7 @@ private fun TrackLane(
 ) {
     val density = LocalDensity.current
     val playheadColor = MaterialTheme.colorScheme.error
+    val snapToleranceUs = TimelineSnapUiPolicy.toleranceUs(dpPerSecond)
     Box(
         modifier = Modifier
             .width(timelineWidth)
@@ -353,6 +366,16 @@ private fun TrackLane(
             val waveformColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.52f)
             val keyframeMarkerColor = MaterialTheme.colorScheme.tertiary
             val keyframeFractions = KeyframeEditorPolicy.markerFractions(clip)
+            val snapCandidates = if (snapEnabled) {
+                TimelineSnapUiPolicy.candidates(
+                    clipEdgesUs = snapClipEdges,
+                    excludedClipId = clip.id,
+                    playheadUs = playheadUs,
+                    beatTimesUs = snapBeatTimesUs,
+                )
+            } else {
+                emptyList()
+            }
 
             Box(
                 modifier = Modifier
@@ -396,7 +419,16 @@ private fun TrackLane(
                             val deltaUs = (deltaDp / dpPerSecond * US_PER_SECOND).toLong()
                             bodyDragPx = 0f
                             val requested = (clip.startUs + deltaUs).coerceAtLeast(0L)
-                            val snapped = BeatMarkerUiPolicy.snapTimeUs(beatMarkers, requested)
+                            val snapped = if (snapEnabled) {
+                                TimelineSnapUiPolicy.snapMove(
+                                    requestedStartUs = requested,
+                                    clipDurationUs = clip.durationUs,
+                                    candidatesUs = snapCandidates,
+                                    toleranceUs = snapToleranceUs,
+                                )
+                            } else {
+                                requested
+                            }
                             onMoveClip(clip.id, TimelineEditBounds.clampMove(track, clip.id, snapped))
                         },
                     ),
@@ -417,7 +449,11 @@ private fun TrackLane(
                             val deltaDp = with(density) { deltaPx.toDp().value }
                             val deltaUs = (deltaDp / dpPerSecond * US_PER_SECOND).toLong()
                             val requested = (clip.startUs + deltaUs).coerceAtLeast(0L)
-                            val snapped = BeatMarkerUiPolicy.snapTimeUs(beatMarkers, requested)
+                            val snapped = if (snapEnabled) {
+                                TimelineSnapUiPolicy.snapEdge(requested, snapCandidates, snapToleranceUs)
+                            } else {
+                                requested
+                            }
                             onTrimLeft(clip.id, TimelineEditBounds.clampLeft(track, clip.id, snapped))
                         },
                     )
@@ -428,7 +464,11 @@ private fun TrackLane(
                             val deltaDp = with(density) { deltaPx.toDp().value }
                             val deltaUs = (deltaDp / dpPerSecond * US_PER_SECOND).toLong()
                             val requested = (clip.startUs + clip.durationUs + deltaUs).coerceAtLeast(0L)
-                            val snapped = BeatMarkerUiPolicy.snapTimeUs(beatMarkers, requested)
+                            val snapped = if (snapEnabled) {
+                                TimelineSnapUiPolicy.snapEdge(requested, snapCandidates, snapToleranceUs)
+                            } else {
+                                requested
+                            }
                             onTrimRight(clip.id, TimelineEditBounds.clampRight(track, clip.id, snapped))
                         },
                     )

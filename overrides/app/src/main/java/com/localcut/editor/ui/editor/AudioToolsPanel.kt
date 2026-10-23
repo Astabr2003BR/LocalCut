@@ -105,6 +105,40 @@ fun AudioToolsPanel(
                     onSetAudioProcessing(AudioToolsUiPolicy.setCompressorEnabled(settings, enabled))
                 },
             )
+            settings.compressor?.let { compressor ->
+                Text("Compressor", style = MaterialTheme.typography.labelLarge)
+                AudioCommitSlider(
+                    label = "Threshold",
+                    initial = compressor.thresholdDb,
+                    range = -80f..0f,
+                    suffix = " dB",
+                ) { value -> onSetAudioProcessing(AudioToolsUiPolicy.setCompressorThreshold(settings, value)) }
+                AudioCommitSlider(
+                    label = "Ratio",
+                    initial = compressor.ratio,
+                    range = 1f..100f,
+                    suffix = ":1",
+                ) { value -> onSetAudioProcessing(AudioToolsUiPolicy.setCompressorRatio(settings, value)) }
+                AudioCommitSlider(
+                    label = "Attack",
+                    initial = compressor.attackMs,
+                    range = 0.1f..1_000f,
+                    suffix = " ms",
+                ) { value -> onSetAudioProcessing(AudioToolsUiPolicy.setCompressorAttack(settings, value)) }
+                AudioCommitSlider(
+                    label = "Release",
+                    initial = compressor.releaseMs,
+                    range = 1f..5_000f,
+                    suffix = " ms",
+                ) { value -> onSetAudioProcessing(AudioToolsUiPolicy.setCompressorRelease(settings, value)) }
+                AudioCommitSlider(
+                    label = "Makeup",
+                    initial = compressor.makeupGainDb,
+                    range = -24f..24f,
+                    suffix = " dB",
+                ) { value -> onSetAudioProcessing(AudioToolsUiPolicy.setCompressorMakeupGain(settings, value)) }
+            }
+
             AudioToggle(
                 label = "Limiter",
                 checked = settings.limiter != null,
@@ -112,6 +146,21 @@ fun AudioToolsPanel(
                     onSetAudioProcessing(AudioToolsUiPolicy.setLimiterEnabled(settings, enabled))
                 },
             )
+            settings.limiter?.let { limiter ->
+                Text("Limiter", style = MaterialTheme.typography.labelLarge)
+                AudioCommitSlider(
+                    label = "Ceiling",
+                    initial = limiter.ceilingDb,
+                    range = -24f..0f,
+                    suffix = " dB",
+                ) { value -> onSetAudioProcessing(AudioToolsUiPolicy.setLimiterCeiling(settings, value)) }
+                Text(
+                    "Release do limiter fica oculto enquanto o DSP atual usar hard-clip.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
             AudioToggle(
                 label = "Noise gate",
                 checked = settings.noiseGate != null,
@@ -119,6 +168,27 @@ fun AudioToolsPanel(
                     onSetAudioProcessing(AudioToolsUiPolicy.setNoiseGateEnabled(settings, enabled))
                 },
             )
+            settings.noiseGate?.let { gate ->
+                Text("Noise gate", style = MaterialTheme.typography.labelLarge)
+                AudioCommitSlider(
+                    label = "Threshold",
+                    initial = gate.thresholdDb,
+                    range = -100f..0f,
+                    suffix = " dB",
+                ) { value -> onSetAudioProcessing(AudioToolsUiPolicy.setNoiseGateThreshold(settings, value)) }
+                AudioCommitSlider(
+                    label = "Attack",
+                    initial = gate.attackMs,
+                    range = 0.1f..1_000f,
+                    suffix = " ms",
+                ) { value -> onSetAudioProcessing(AudioToolsUiPolicy.setNoiseGateAttack(settings, value)) }
+                AudioCommitSlider(
+                    label = "Release",
+                    initial = gate.releaseMs,
+                    range = 1f..5_000f,
+                    suffix = " ms",
+                ) { value -> onSetAudioProcessing(AudioToolsUiPolicy.setNoiseGateRelease(settings, value)) }
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),

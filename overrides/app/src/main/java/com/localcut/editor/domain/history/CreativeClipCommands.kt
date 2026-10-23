@@ -1,5 +1,6 @@
 package com.localcut.editor.domain.history
 
+import com.localcut.editor.domain.model.AudioProcessingSettings
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.CompositingSettings
 import com.localcut.editor.domain.model.EffectInstance
@@ -49,6 +50,17 @@ data class SetClipTimeMapCommand(
     }
 }
 
+data class SetClipAudioProcessingCommand(
+    val clipId: String,
+    val audioProcessing: AudioProcessingSettings,
+) : EditorCommand {
+    override fun apply(project: Project): CommandResult = replaceCreativeClip(project, clipId) { clip ->
+        val issues = audioProcessing.validationIssues()
+        require(issues.isEmpty()) { "invalid audio processing: ${issues.first()}" }
+        clip.copy(audioProcessing = audioProcessing)
+    }
+}
+
 private data class RestoreCreativeClipCommand(
     val clip: Clip,
 ) : EditorCommand {
@@ -61,7 +73,6 @@ private fun replaceCreativeClip(
     transform: (Clip) -> Clip,
 ): CommandResult {
     var previous: Clip? = null
-    var replacement: Clip? = null
     var found = false
     val tracks = project.tracks.map { track ->
         val index = track.clips.indexOfFirst { it.id == clipId }
@@ -72,7 +83,6 @@ private fun replaceCreativeClip(
         val next = transform(old)
         require(next.id == old.id) { "creative clip edit cannot change clip id" }
         previous = old
-        replacement = next
         track.copy(clips = track.clips.toMutableList().also { it[index] = next })
     }
     require(found) { "clip $clipId not found" }

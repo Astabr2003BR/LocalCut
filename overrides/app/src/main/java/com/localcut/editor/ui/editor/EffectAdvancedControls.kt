@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.localcut.editor.domain.model.EffectInstance
 
 @Composable
@@ -26,7 +27,7 @@ fun EffectAdvancedControls(
 
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(androidx.compose.ui.unit.dp(2f)),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text("Ajustar ${preset.label}", style = MaterialTheme.typography.labelMedium)
         controls.forEach { control ->

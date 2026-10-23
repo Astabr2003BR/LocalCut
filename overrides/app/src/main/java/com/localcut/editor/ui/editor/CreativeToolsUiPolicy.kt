@@ -5,12 +5,15 @@ import com.localcut.editor.domain.model.ChromaKeySettings
 import com.localcut.editor.domain.model.CompositingSettings
 import com.localcut.editor.domain.model.CompressorSettings
 import com.localcut.editor.domain.model.CropMode
+import com.localcut.editor.domain.model.Easing
+import com.localcut.editor.domain.model.EasingKind
 import com.localcut.editor.domain.model.EffectInstance
 import com.localcut.editor.domain.model.EffectParameter
 import com.localcut.editor.domain.model.EqBand
 import com.localcut.editor.domain.model.LimiterSettings
 import com.localcut.editor.domain.model.MaskKind
 import com.localcut.editor.domain.model.MaskSpec
+import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.model.TimeMap
 
 object CreativeToolsUiPolicy {
@@ -80,6 +83,17 @@ object CreativeToolsUiPolicy {
 
     fun cropLayout(source: CompositingSettings, mode: CropMode): CompositingSettings =
         source.copy(crop = source.crop.copy(mode = mode))
+
+    fun setEasingPreset(
+        source: List<PropertyAnimation>,
+        kind: EasingKind,
+    ): List<PropertyAnimation> = source.map { animation ->
+        animation.copy(
+            keyframes = animation.keyframes.map { keyframe ->
+                keyframe.copy(easingToNext = Easing(kind = kind))
+            },
+        )
+    }
 
     fun voiceAudioPreset(source: AudioProcessingSettings): AudioProcessingSettings = source.copy(
         eqBands = listOf(

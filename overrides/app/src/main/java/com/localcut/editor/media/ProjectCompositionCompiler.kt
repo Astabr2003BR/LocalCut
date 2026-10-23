@@ -189,6 +189,7 @@ class ProjectCompositionCompiler(
                         presentationStartUs = presentationStartUs,
                     )
                 )
+                addAll(Media3EffectStackFactory.create(item.effects))
                 FadeToBlackEffectFactory.create(
                     durationUs = item.presentationDurationUs,
                     spec = transitionSpec,
@@ -200,6 +201,7 @@ class ProjectCompositionCompiler(
         val edited = EditedMediaItem.Builder(mediaBuilder.build())
             .setDurationUs(item.sourceMediaDurationUs)
             .setEffects(Effects(audioProcessors, videoEffects))
+        Media3TimeMapSupport.providerOrNull(item.timeMap)?.let(edited::setSpeed)
         if (item.imageFrameRate != null) edited.setFrameRate(item.imageFrameRate)
         return edited.build()
     }

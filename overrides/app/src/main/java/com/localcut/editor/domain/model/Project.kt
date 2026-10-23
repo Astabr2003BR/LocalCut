@@ -17,6 +17,7 @@ data class Project(
     val designElements: List<DesignElement> = emptyList(),
     val designCanvas: DesignCanvasSettings = DesignCanvasSettings(),
     val reusableComponents: List<ReusableComponent> = emptyList(),
+    val beatMarkers: List<BeatMarker> = emptyList(),
 ) {
     fun findClip(clipId: String): Clip? = tracks.asSequence().flatMap { it.clips.asSequence() }.firstOrNull { it.id == clipId }
 

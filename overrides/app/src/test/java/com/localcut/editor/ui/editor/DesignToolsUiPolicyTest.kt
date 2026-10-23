@@ -24,6 +24,31 @@ class DesignToolsUiPolicyTest {
     }
 
     @Test
+    fun socialCanvasPresetsUseStableProfessionalDimensions() {
+        assertEquals(
+            listOf(
+                DesignCanvasPreset.VERTICAL_9_16,
+                DesignCanvasPreset.LANDSCAPE_16_9,
+                DesignCanvasPreset.SQUARE_1_1,
+                DesignCanvasPreset.PORTRAIT_4_5,
+            ),
+            DesignToolsUiPolicy.canvasPresets(),
+        )
+        assertEquals(1080 to 1920, DesignCanvasPreset.VERTICAL_9_16.width to DesignCanvasPreset.VERTICAL_9_16.height)
+        assertEquals(1920 to 1080, DesignCanvasPreset.LANDSCAPE_16_9.width to DesignCanvasPreset.LANDSCAPE_16_9.height)
+        assertEquals(1080 to 1080, DesignCanvasPreset.SQUARE_1_1.width to DesignCanvasPreset.SQUARE_1_1.height)
+        assertEquals(1080 to 1350, DesignCanvasPreset.PORTRAIT_4_5.width to DesignCanvasPreset.PORTRAIT_4_5.height)
+    }
+
+    @Test
+    fun canvasPresetMatchingUsesProjectDimensionsOnly() {
+        val project = Project.create("Canvas", 1080, 1350, 30)
+
+        assertTrue(DesignToolsUiPolicy.isCanvasPresetActive(project, DesignCanvasPreset.PORTRAIT_4_5))
+        assertTrue(!DesignToolsUiPolicy.isCanvasPresetActive(project, DesignCanvasPreset.VERTICAL_9_16))
+    }
+
+    @Test
     fun createsTimedShapeAtPlayheadWithUniqueIdAndTopZIndex() {
         val first = DesignToolsUiPolicy.newShape(
             project = Project.create("Design", 1080, 1920, 30),

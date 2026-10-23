@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -178,7 +177,7 @@ fun EditorScreen(
     }
 
     Surface(
-        modifier = modifier.fillMaxSize().safeDrawingPadding(),
+        modifier = modifier.fillMaxSize(),
         color = EditorBackground,
     ) {
         Column(Modifier.fillMaxSize()) {
@@ -305,45 +304,47 @@ private fun ProfessionalEditorToolbar(
     ) {
         Column(Modifier.fillMaxWidth()) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 3.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(1.dp),
+                horizontalArrangement = Arrangement.spacedBy(0.dp),
             ) {
                 Text(
                     "LocalCut",
-                    modifier = Modifier.padding(start = 4.dp, end = 2.dp),
-                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(start = 3.dp, end = 1.dp),
+                    style = MaterialTheme.typography.labelLarge,
                     color = Color.White,
                     fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false,
                 )
                 TextButton(
                     onClick = onUndo,
                     enabled = canUndo && !exportState.running,
-                    contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
-                ) { Text("↶") }
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                ) { Text("↶", maxLines = 1, softWrap = false) }
                 TextButton(
                     onClick = onRedo,
                     enabled = canRedo && !exportState.running,
-                    contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
-                ) { Text("↷") }
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                ) { Text("↷", maxLines = 1, softWrap = false) }
                 TextButton(
                     onClick = { onLoopChange(!loopEnabled) },
-                    contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
-                ) { Text(if (loopEnabled) "∞ ON" else "∞") }
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                ) { Text(if (loopEnabled) "∞•" else "∞", maxLines = 1, softWrap = false) }
 
                 Spacer(Modifier.weight(1f))
 
                 TextButton(
                     onClick = onFinalPreviewRequested,
                     enabled = !exportState.running,
-                    contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
-                ) { Text("▷ Prévia") }
+                    contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+                ) { Text("Prévia", maxLines = 1, softWrap = false) }
 
                 if (exportState.running) {
                     Button(
                         onClick = onCancelExport,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                    ) { Text("Cancelar") }
+                        contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
+                    ) { Text("Cancelar", maxLines = 1, softWrap = false) }
                 } else {
                     Button(
                         onClick = onExportRequested,
@@ -351,8 +352,15 @@ private fun ProfessionalEditorToolbar(
                             containerColor = EditorAccent,
                             contentColor = Color.Black,
                         ),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
-                    ) { Text("Exportar", fontWeight = FontWeight.SemiBold) }
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    ) {
+                        Text(
+                            "Exportar",
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
                 }
             }
 
@@ -368,6 +376,7 @@ private fun ProfessionalEditorToolbar(
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFFB7B7BC),
+                    maxLines = 1,
                 )
             }
         }
@@ -448,7 +457,48 @@ private fun ProfessionalContextPanel(
                         )
                     }
                 }
-                EditorToolId.AUDIO,
+                EditorToolId.AUDIO -> {
+                    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                        val selectedClip = session.selectedClipId?.let(session.project::findClip)
+                        val selectedType = selectedClip?.let { clip ->
+                            session.project.assets.firstOrNull { it.id == clip.assetId }?.type
+                        }
+                        if (selectedType == AssetType.AUDIO) {
+                            BeatMarkerTimelineControls(
+                                project = session.project,
+                                selectedClipId = session.selectedClipId,
+                                playheadUs = playheadUs,
+                                onAddMarker = { marker ->
+                                    viewModel.dispatch(EditorAction.Execute(AddBeatMarkerCommand(marker)))
+                                },
+                                onDeleteMarker = { markerId ->
+                                    viewModel.dispatch(EditorAction.Execute(DeleteBeatMarkerCommand(markerId)))
+                                },
+                                onApplyDetectedMarkers = { clipId, markers ->
+                                    viewModel.dispatch(
+                                        EditorAction.Execute(
+                                            ApplyDetectedBeatMarkersCommand(
+                                                clipId = clipId,
+                                                detectedRelativeMarkers = markers,
+                                            ),
+                                        ),
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        CreativeToolsPanel(
+                            project = session.project,
+                            selectedClipId = session.selectedClipId,
+                            onSetEffects = { viewModel.dispatch(EditorAction.SetSelectedEffects(it)) },
+                            onSetCompositing = { viewModel.dispatch(EditorAction.SetSelectedCompositing(it)) },
+                            onSetTimeMap = { viewModel.dispatch(EditorAction.SetSelectedTimeMap(it)) },
+                            onSetAudioProcessing = { viewModel.dispatch(EditorAction.SetSelectedAudioProcessing(it)) },
+                            onSetPropertyAnimations = { viewModel.dispatch(EditorAction.SetSelectedPropertyAnimations(it)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
                 EditorToolId.EFFECTS,
                 EditorToolId.SPEED,
                 EditorToolId.MASK,
@@ -599,64 +649,32 @@ private fun TimelineForProfessionalState(
     viewModel: EditorViewModel,
     modifier: Modifier,
 ) {
-    val selectedClip = session.selectedClipId?.let(session.project::findClip)
-    val selectedAssetType = selectedClip?.let { clip ->
-        session.project.assets.firstOrNull { it.id == clip.assetId }?.type
-    }
-
-    Column(modifier = modifier) {
-        if (selectedAssetType == AssetType.AUDIO) {
-            BeatMarkerTimelineControls(
-                project = session.project,
-                selectedClipId = session.selectedClipId,
-                playheadUs = playheadUs,
-                onAddMarker = { marker ->
-                    viewModel.dispatch(EditorAction.Execute(AddBeatMarkerCommand(marker)))
-                },
-                onDeleteMarker = { markerId ->
-                    viewModel.dispatch(EditorAction.Execute(DeleteBeatMarkerCommand(markerId)))
-                },
-                onApplyDetectedMarkers = { clipId, markers ->
-                    viewModel.dispatch(
-                        EditorAction.Execute(
-                            ApplyDetectedBeatMarkersCommand(
-                                clipId = clipId,
-                                detectedRelativeMarkers = markers,
-                            ),
-                        ),
-                    )
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-
-        TimelinePane(
-            project = session.project,
-            selectedClipId = session.selectedClipId,
-            playheadUs = playheadUs,
-            onSelectClip = { viewModel.dispatch(EditorAction.SelectClip(it)) },
-            onSeek = viewModel::seekToUs,
-            onMoveClip = { clipId, newStart ->
-                viewModel.dispatch(EditorAction.SelectClip(clipId))
-                viewModel.dispatch(EditorAction.MoveSelected(newStart))
-            },
-            onTrimLeft = { clipId, newStart ->
-                viewModel.dispatch(EditorAction.SelectClip(clipId))
-                viewModel.dispatch(EditorAction.TrimSelectedLeftEdge(newStart))
-            },
-            onTrimRight = { clipId, newEnd ->
-                viewModel.dispatch(EditorAction.SelectClip(clipId))
-                viewModel.dispatch(EditorAction.TrimSelectedRightEdge(newEnd))
-            },
-            onSetTrackMuted = { trackId, muted ->
-                viewModel.dispatch(EditorAction.SetTrackMuted(trackId, muted))
-            },
-            onSetTrackSolo = { trackId, solo ->
-                viewModel.dispatch(EditorAction.SetTrackSolo(trackId, solo))
-            },
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-        )
-    }
+    TimelinePane(
+        project = session.project,
+        selectedClipId = session.selectedClipId,
+        playheadUs = playheadUs,
+        onSelectClip = { viewModel.dispatch(EditorAction.SelectClip(it)) },
+        onSeek = viewModel::seekToUs,
+        onMoveClip = { clipId, newStart ->
+            viewModel.dispatch(EditorAction.SelectClip(clipId))
+            viewModel.dispatch(EditorAction.MoveSelected(newStart))
+        },
+        onTrimLeft = { clipId, newStart ->
+            viewModel.dispatch(EditorAction.SelectClip(clipId))
+            viewModel.dispatch(EditorAction.TrimSelectedLeftEdge(newStart))
+        },
+        onTrimRight = { clipId, newEnd ->
+            viewModel.dispatch(EditorAction.SelectClip(clipId))
+            viewModel.dispatch(EditorAction.TrimSelectedRightEdge(newEnd))
+        },
+        onSetTrackMuted = { trackId, muted ->
+            viewModel.dispatch(EditorAction.SetTrackMuted(trackId, muted))
+        },
+        onSetTrackSolo = { trackId, solo ->
+            viewModel.dispatch(EditorAction.SetTrackSolo(trackId, solo))
+        },
+        modifier = modifier,
+    )
 }
 
 @Composable

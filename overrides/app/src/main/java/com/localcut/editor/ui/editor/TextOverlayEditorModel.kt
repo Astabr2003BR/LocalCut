@@ -173,6 +173,27 @@ data class TextOverlayEditorModel(
     fun withLoopAnimation(kind: TextAnimationKind): TextOverlayEditorModel =
         copy(draft = draft.copy(loop = animationDescriptor(draft.loop, kind, DEFAULT_LOOP_DURATION_US)))
 
+    fun withEntranceDurationUs(durationUs: Long): TextOverlayEditorModel =
+        copy(draft = draft.copy(entrance = draft.entrance.copy(durationUs = boundedAnimationDurationUs(durationUs))))
+
+    fun withExitDurationUs(durationUs: Long): TextOverlayEditorModel =
+        copy(draft = draft.copy(exit = draft.exit.copy(durationUs = boundedAnimationDurationUs(durationUs))))
+
+    fun withLoopDurationUs(durationUs: Long): TextOverlayEditorModel =
+        copy(draft = draft.copy(loop = draft.loop.copy(durationUs = boundedAnimationDurationUs(durationUs))))
+
+    fun withEntranceAmount(amount: Double): TextOverlayEditorModel =
+        copy(draft = draft.copy(entrance = draft.entrance.copy(amount = boundedAnimationAmount(amount))))
+
+    fun withExitAmount(amount: Double): TextOverlayEditorModel =
+        copy(draft = draft.copy(exit = draft.exit.copy(amount = boundedAnimationAmount(amount))))
+
+    fun withLoopAmount(amount: Double): TextOverlayEditorModel =
+        copy(draft = draft.copy(loop = draft.loop.copy(amount = boundedAnimationAmount(amount))))
+
+    fun withPerCharacterDelayUs(delayUs: Long): TextOverlayEditorModel =
+        copy(draft = draft.copy(perCharacterDelayUs = delayUs.coerceIn(0L, MAX_PER_CHARACTER_DELAY_US)))
+
     fun withDuration(project: Project, requestedDurationUs: Long): TextOverlayEditorModel {
         val updated = TextOverlayUiPolicy.withDuration(project, draft, requestedDurationUs) ?: return this
         return copy(draft = updated)
@@ -187,6 +208,14 @@ data class TextOverlayEditorModel(
         return copy(draft = draft.copy(style = draft.style.copy(shadows = shadows)))
     }
 
+    private fun boundedAnimationDurationUs(durationUs: Long): Long =
+        durationUs.coerceIn(MIN_ANIMATION_DURATION_US, MAX_ANIMATION_DURATION_US)
+
+    private fun boundedAnimationAmount(amount: Double): Double {
+        require(amount.isFinite()) { "text animation amount must be finite" }
+        return amount.coerceIn(0.0, 3.0)
+    }
+
     private fun animationDescriptor(
         previous: TextAnimationDescriptor,
         kind: TextAnimationKind,
@@ -199,6 +228,9 @@ data class TextOverlayEditorModel(
     companion object {
         private const val DEFAULT_ENTRANCE_DURATION_US = 350_000L
         private const val DEFAULT_LOOP_DURATION_US = 700_000L
+        private const val MIN_ANIMATION_DURATION_US = 50_000L
+        private const val MAX_ANIMATION_DURATION_US = 5_000_000L
+        private const val MAX_PER_CHARACTER_DELAY_US = 1_000_000L
 
         fun forNew(project: Project, playheadUs: Long): TextOverlayEditorModel? =
             TextOverlayUiPolicy.createNew(project, playheadUs, "Texto")?.let { overlay ->

@@ -392,20 +392,8 @@ private fun ProfessionalContextPanel(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val contextual = activeTool in setOf(
-        EditorToolId.EDIT,
-        EditorToolId.AUDIO,
-        EditorToolId.EFFECTS,
-        EditorToolId.COLOR,
-        EditorToolId.SPEED,
-        EditorToolId.MASK,
-        EditorToolId.CHROMA,
-        EditorToolId.ANIMATION,
-        EditorToolId.LAYERS,
-        EditorToolId.DESIGN,
-        EditorToolId.CANVAS,
-    )
-    if (!contextual || activeTool == null) return
+    val panel = EditorChromeUiPolicy.panelFor(activeTool) ?: return
+    val tool = activeTool ?: return
 
     Surface(
         modifier = modifier,
@@ -419,7 +407,7 @@ private fun ProfessionalContextPanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = toolTitle(activeTool),
+                    text = toolTitle(tool),
                     style = MaterialTheme.typography.labelLarge,
                     color = Color.White,
                     fontWeight = FontWeight.SemiBold,
@@ -431,8 +419,8 @@ private fun ProfessionalContextPanel(
                 ) { Text("Fechar") }
             }
 
-            when (activeTool) {
-                EditorToolId.EDIT -> {
+            when (panel) {
+                ContextPanelKind.EDIT -> {
                     Column(Modifier.weight(1f).fillMaxWidth()) {
                         ProfessionalClipQuickActions(session, playheadUs, viewModel)
                         InspectorPane(
@@ -457,8 +445,9 @@ private fun ProfessionalContextPanel(
                         )
                     }
                 }
-                EditorToolId.AUDIO -> {
-                    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+
+                ContextPanelKind.AUDIO -> {
+                    Column(Modifier.weight(1f).fillMaxWidth()) {
                         val selectedClip = session.selectedClipId?.let(session.project::findClip)
                         val selectedType = selectedClip?.let { clip ->
                             session.project.assets.firstOrNull { it.id == clip.assetId }?.type
@@ -487,36 +476,27 @@ private fun ProfessionalContextPanel(
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }
-                        CreativeToolsPanel(
+                        AudioToolsPanel(
                             project = session.project,
                             selectedClipId = session.selectedClipId,
-                            onSetEffects = { viewModel.dispatch(EditorAction.SetSelectedEffects(it)) },
-                            onSetCompositing = { viewModel.dispatch(EditorAction.SetSelectedCompositing(it)) },
-                            onSetTimeMap = { viewModel.dispatch(EditorAction.SetSelectedTimeMap(it)) },
                             onSetAudioProcessing = { viewModel.dispatch(EditorAction.SetSelectedAudioProcessing(it)) },
-                            onSetPropertyAnimations = { viewModel.dispatch(EditorAction.SetSelectedPropertyAnimations(it)) },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
                         )
                     }
                 }
-                EditorToolId.EFFECTS,
-                EditorToolId.SPEED,
-                EditorToolId.MASK,
-                EditorToolId.CHROMA -> {
+
+                ContextPanelKind.EFFECTS -> {
                     Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
-                        CreativeToolsPanel(
+                        FocusedEffectsPanel(
                             project = session.project,
                             selectedClipId = session.selectedClipId,
                             onSetEffects = { viewModel.dispatch(EditorAction.SetSelectedEffects(it)) },
-                            onSetCompositing = { viewModel.dispatch(EditorAction.SetSelectedCompositing(it)) },
-                            onSetTimeMap = { viewModel.dispatch(EditorAction.SetSelectedTimeMap(it)) },
-                            onSetAudioProcessing = { viewModel.dispatch(EditorAction.SetSelectedAudioProcessing(it)) },
-                            onSetPropertyAnimations = { viewModel.dispatch(EditorAction.SetSelectedPropertyAnimations(it)) },
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 }
-                EditorToolId.COLOR -> {
+
+                ContextPanelKind.COLOR -> {
                     ColorToolsPanel(
                         project = session.project,
                         selectedClipId = session.selectedClipId,
@@ -524,7 +504,41 @@ private fun ProfessionalContextPanel(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
                 }
-                EditorToolId.ANIMATION -> {
+
+                ContextPanelKind.SPEED -> {
+                    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                        FocusedSpeedPanel(
+                            project = session.project,
+                            selectedClipId = session.selectedClipId,
+                            onSetTimeMap = { viewModel.dispatch(EditorAction.SetSelectedTimeMap(it)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+
+                ContextPanelKind.MASK -> {
+                    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                        FocusedMaskPanel(
+                            project = session.project,
+                            selectedClipId = session.selectedClipId,
+                            onSetCompositing = { viewModel.dispatch(EditorAction.SetSelectedCompositing(it)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+
+                ContextPanelKind.CHROMA -> {
+                    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                        FocusedChromaPanel(
+                            project = session.project,
+                            selectedClipId = session.selectedClipId,
+                            onSetCompositing = { viewModel.dispatch(EditorAction.SetSelectedCompositing(it)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+
+                ContextPanelKind.ANIMATION -> {
                     AnimationCurvePanel(
                         project = session.project,
                         selectedClipId = session.selectedClipId,
@@ -532,7 +546,8 @@ private fun ProfessionalContextPanel(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
                 }
-                EditorToolId.LAYERS -> {
+
+                ContextPanelKind.LAYERS -> {
                     LayerPanel(
                         project = session.project,
                         selectedClipId = session.selectedClipId,
@@ -543,8 +558,9 @@ private fun ProfessionalContextPanel(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
                 }
-                EditorToolId.DESIGN,
-                EditorToolId.CANVAS -> {
+
+                ContextPanelKind.DESIGN,
+                ContextPanelKind.CANVAS -> {
                     Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
                         DesignToolsPanel(
                             project = session.project,
@@ -562,7 +578,6 @@ private fun ProfessionalContextPanel(
                         )
                     }
                 }
-                else -> Unit
             }
         }
     }

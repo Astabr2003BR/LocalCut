@@ -52,6 +52,26 @@ fun ColorToolsPanel(
         var effectCategory by remember(clip.id) {
             mutableStateOf(EffectBrowserCategory.COLOR)
         }
+        var selectedEffectTypeId by remember(clip.id) {
+            mutableStateOf<String?>(null)
+        }
+
+        val categoryPresets = EffectBrowserUiPolicy.presets(effectCategory)
+        val selectedPreset = categoryPresets.firstOrNull { it.typeId == selectedEffectTypeId }
+            ?: categoryPresets.firstOrNull()
+        val selectedRange = selectedPreset?.let(EffectBrowserUiPolicy::adjustableRange)
+        var selectedEffectValue by remember(
+            clip.id,
+            clip.effects,
+            selectedPreset?.typeId,
+            selectedPreset?.parameterName,
+        ) {
+            mutableFloatStateOf(
+                selectedPreset
+                    ?.let { EffectBrowserUiPolicy.currentValue(clip.effects, it).toFloat() }
+                    ?: 0f,
+            )
+        }
 
         Column(
             modifier = Modifier
@@ -81,9 +101,15 @@ fun ColorToolsPanel(
                 EffectBrowserUiPolicy.categories().forEach { category ->
                     val label = EffectBrowserUiPolicy.label(category)
                     if (category == effectCategory) {
-                        FilledTonalButton(onClick = { effectCategory = category }) { Text(label) }
+                        FilledTonalButton(onClick = {
+                            effectCategory = category
+                            selectedEffectTypeId = EffectBrowserUiPolicy.presets(category).firstOrNull()?.typeId
+                        }) { Text(label) }
                     } else {
-                        OutlinedButton(onClick = { effectCategory = category }) { Text(label) }
+                        OutlinedButton(onClick = {
+                            effectCategory = category
+                            selectedEffectTypeId = EffectBrowserUiPolicy.presets(category).firstOrNull()?.typeId
+                        }) { Text(label) }
                     }
                 }
             }
@@ -91,19 +117,25 @@ fun ColorToolsPanel(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                EffectBrowserUiPolicy.presets(effectCategory).forEach { preset ->
-                    FilledTonalButton(
-                        onClick = {
-                            onSetEffects(
-                                CreativeToolsUiPolicy.setNumericEffect(
-                                    effects = clip.effects,
-                                    typeId = preset.typeId,
-                                    parameterName = preset.parameterName,
-                                    value = preset.value,
-                                ),
-                            )
-                        },
-                    ) { Text(preset.label) }
+                categoryPresets.forEach { preset ->
+                    val active = preset.typeId == selectedPreset?.typeId &&
+                        clip.effects.any { it.typeId == preset.typeId }
+                    val applyPreset = {
+                        selectedEffectTypeId = preset.typeId
+                        onSetEffects(
+                            CreativeToolsUiPolicy.setNumericEffect(
+                                effects = clip.effects,
+                                typeId = preset.typeId,
+                                parameterName = preset.parameterName,
+                                value = preset.value,
+                            ),
+                        )
+                    }
+                    if (active) {
+                        FilledTonalButton(onClick = applyPreset) { Text(preset.label) }
+                    } else {
+                        OutlinedButton(onClick = applyPreset) { Text(preset.label) }
+                    }
                 }
                 OutlinedButton(
                     onClick = {
@@ -111,6 +143,29 @@ fun ColorToolsPanel(
                     },
                     enabled = EffectBrowserUiPolicy.hasEffectsInCategory(clip.effects, effectCategory),
                 ) { Text("Limpar categoria") }
+            }
+
+            if (selectedPreset != null && selectedRange != null) {
+                val min = selectedRange.start.toFloat()
+                val max = selectedRange.endInclusive.toFloat()
+                Text(
+                    "${selectedPreset.label} ${"%.2f".format(selectedEffectValue)}",
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                Slider(
+                    value = selectedEffectValue.coerceIn(min, max),
+                    onValueChange = { selectedEffectValue = it },
+                    onValueChangeFinished = {
+                        onSetEffects(
+                            EffectBrowserUiPolicy.setValue(
+                                effects = clip.effects,
+                                preset = selectedPreset,
+                                value = selectedEffectValue.toDouble(),
+                            ),
+                        )
+                    },
+                    valueRange = min..max,
+                )
             }
 
             Text("Ajustes", style = MaterialTheme.typography.labelLarge)

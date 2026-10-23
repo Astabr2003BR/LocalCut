@@ -128,6 +128,26 @@ object CreativeToolsUiPolicy {
         )
     }
 
+    fun customSpeedControlValues(source: TimeMap, pointCount: Int = 5): List<Double> {
+        require(pointCount >= 2) { "custom speed controls require at least two points" }
+        val reusable = source.speedPoints.takeIf {
+            !source.reverse && source.freezeSegments.isEmpty() && it.size == pointCount
+        }
+        if (reusable != null) {
+            return reusable.map { point -> point.speed.coerceIn(0.1, 10.0) }
+        }
+        val base = source.baseSpeed.coerceIn(0.1, 10.0)
+        return List(pointCount) { base }
+    }
+
+    fun updateCustomSpeedControl(source: List<Double>, index: Int, speed: Double): List<Double> {
+        require(source.size >= 2) { "custom speed controls require at least two points" }
+        require(index in source.indices) { "custom speed control index is out of bounds" }
+        require(speed.isFinite()) { "custom speed control value must be finite" }
+        val bounded = speed.coerceIn(0.1, 10.0)
+        return source.toMutableList().also { it[index] = bounded }
+    }
+
     fun setMaskPreset(source: CompositingSettings, kind: MaskKind): CompositingSettings {
         require(kind in setOf(MaskKind.RECTANGLE, MaskKind.ELLIPSE, MaskKind.FREEFORM)) {
             "mobile mask preset requires a renderable mask kind"

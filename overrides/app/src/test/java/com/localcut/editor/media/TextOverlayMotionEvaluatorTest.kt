@@ -77,7 +77,7 @@ class TextOverlayMotionEvaluatorTest {
         val loop = TextAnimationDescriptor(TextAnimationKind.WIGGLE, 1_000_000L, amount = 1.0)
         val a = TextOverlayMotionEvaluator.evaluate("A", 0L, 3_000_000L, 125_000L, loop = loop)
         val same = TextOverlayMotionEvaluator.evaluate("A", 0L, 3_000_000L, 125_000L, loop = loop)
-        val b = TextOverlayMotionEvaluator.evaluate("A", 0L, 3_000_000L, 375_000L, loop = loop)
+        val b = TextOverlayMotionEvaluator.evaluate("A", 0L, 3_000_000L, 625_000L, loop = loop)
 
         assertEquals(a.rotationOffsetDeg, same.rotationOffsetDeg, 0.0001f)
         assertTrue(kotlin.math.abs(a.rotationOffsetDeg - b.rotationOffsetDeg) > 0.1f)

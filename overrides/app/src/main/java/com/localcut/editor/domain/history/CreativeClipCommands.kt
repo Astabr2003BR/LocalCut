@@ -2,6 +2,7 @@ package com.localcut.editor.domain.history
 
 import com.localcut.editor.domain.model.AudioProcessingSettings
 import com.localcut.editor.domain.model.Clip
+import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.CompositingSettings
 import com.localcut.editor.domain.model.EffectInstance
 import com.localcut.editor.domain.model.Project
@@ -32,11 +33,18 @@ data class SetClipOpacityCommand(
     val clipId: String,
     val opacity: Double,
 ) : EditorCommand {
-    override fun apply(project: Project): CommandResult = replaceCreativeClip(project, clipId) { clip ->
-        require(opacity.isFinite() && opacity in 0.0..1.0) {
-            "clip opacity must be finite and in 0..1"
+    override fun apply(project: Project): CommandResult {
+        require(
+            project.compositionGraph.nodes.none { node ->
+                node.kind == CompositionNodeKind.LAYER && node.clipId == clipId && node.locked
+            },
+        ) { "clip $clipId is locked" }
+        return replaceCreativeClip(project, clipId) { clip ->
+            require(opacity.isFinite() && opacity in 0.0..1.0) {
+                "clip opacity must be finite and in 0..1"
+            }
+            clip.copy(opacity = opacity)
         }
-        clip.copy(opacity = opacity)
     }
 }
 

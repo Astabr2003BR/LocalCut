@@ -70,6 +70,11 @@ class ProjectCompositionCompiler(
                     targetFps = blueprint.fps,
                 )
             )
+            Media3DesignOverlayEffectFactory.create(
+                project = project,
+                outputWidth = blueprint.width,
+                outputHeight = blueprint.height,
+            )?.let(::add)
             Media3TextOverlayEffectFactory.create(
                 project = project,
                 outputWidth = blueprint.width,

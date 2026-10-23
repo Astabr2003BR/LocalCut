@@ -214,7 +214,10 @@ class ProjectCompositionCompiler(
         val edited = EditedMediaItem.Builder(mediaBuilder.build())
             .setDurationUs(item.sourceMediaDurationUs)
             .setEffects(Effects(audioProcessors, videoEffects))
-        Media3TimeMapSupport.providerOrNull(item.timeMap)?.let(edited::setSpeed)
+        if (item.assetType != com.localcut.editor.domain.model.AssetType.IMAGE) {
+            val sourceRangeUs = item.sourceOutUs - item.sourceInUs
+            Media3TimeMapSupport.providerOrNull(item.timeMap, sourceRangeUs)?.let(edited::setSpeed)
+        }
         if (item.imageFrameRate != null) edited.setFrameRate(item.imageFrameRate)
         return edited.build()
     }

@@ -1,11 +1,13 @@
 package com.localcut.editor.media
 
+import android.graphics.Matrix
 import androidx.annotation.OptIn
 import androidx.media3.common.Effect
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Contrast
 import androidx.media3.effect.GaussianBlur
 import androidx.media3.effect.HslAdjustment
+import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.RgbAdjustment
 import com.localcut.editor.domain.model.EffectInstance
 import com.localcut.editor.domain.model.EffectParameter
@@ -14,6 +16,11 @@ import kotlin.math.pow
 
 @OptIn(UnstableApi::class)
 internal object Media3EffectStackFactory {
+    private val matrixEffectTypes = setOf(
+        "localcut.flip.horizontal",
+        "localcut.flip.vertical",
+    )
+
     private val supportedTypeIds = setOf(
         "localcut.color.brightness",
         "localcut.color.contrast",
@@ -23,7 +30,7 @@ internal object Media3EffectStackFactory {
         "localcut.color.tint",
         "localcut.color.hsl",
         "localcut.blur.gaussian",
-    ) + LocalCutStylizeEffect.SUPPORTED_TYPES
+    ) + LocalCutStylizeEffect.SUPPORTED_TYPES + matrixEffectTypes
 
     fun canRender(effect: EffectInstance): Boolean =
         !effect.enabled ||
@@ -89,6 +96,12 @@ internal object Media3EffectStackFactory {
         "localcut.blur.gaussian" -> {
             val radius = number(effect, "radius")
             if (radius <= 0.0) null else GaussianBlur(radius.toFloat())
+        }
+        "localcut.flip.horizontal" -> MatrixTransformation {
+            Matrix().apply { postScale(-1f, 1f) }
+        }
+        "localcut.flip.vertical" -> MatrixTransformation {
+            Matrix().apply { postScale(1f, -1f) }
         }
         in LocalCutStylizeEffect.SUPPORTED_TYPES -> LocalCutStylizeEffect(effect)
         else -> error("unsupported Media3 effect: ${effect.typeId}")

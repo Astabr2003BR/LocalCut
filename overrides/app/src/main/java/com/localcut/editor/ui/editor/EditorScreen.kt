@@ -5,7 +5,9 @@ import androidx.annotation.OptIn
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,15 +15,17 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -29,7 +33,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -41,6 +47,7 @@ import com.localcut.editor.domain.history.DeleteBeatMarkerCommand
 import com.localcut.editor.domain.history.SetClipOpacityCommand
 import com.localcut.editor.domain.history.SetCompositionGraphCommand
 import com.localcut.editor.domain.history.SetProjectCanvasSizeCommand
+import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.ClipTransition
 import com.localcut.editor.media.ExportCapabilities
 import com.localcut.editor.media.ExportProfile
@@ -52,6 +59,11 @@ import com.localcut.editor.session.ProjectSessionState
 import com.localcut.editor.ui.editor.components.InspectorPane
 import com.localcut.editor.ui.editor.components.PreviewPane
 import com.localcut.editor.ui.editor.components.TimelinePane
+
+private val EditorBackground = Color(0xFF08080A)
+private val EditorSurface = Color(0xFF101012)
+private val EditorElevatedSurface = Color(0xFF17171A)
+private val EditorAccent = Color(0xFF20D5D2)
 
 data class ExportUiState(
     val running: Boolean = false,
@@ -156,18 +168,18 @@ fun EditorScreen(
             EditorToolId.OVERLAY -> onImportOverlayRequested()
             EditorToolId.AUDIO -> {
                 if (selectionKind == EditorSelectionKind.AUDIO) {
-                    activeTool = EditorToolId.AUDIO
+                    activeTool = if (activeTool == EditorToolId.AUDIO) null else EditorToolId.AUDIO
                 } else {
                     onImportAudioRequested()
                 }
             }
-            else -> activeTool = toolId
+            else -> activeTool = if (activeTool == toolId) null else toolId
         }
     }
 
     Surface(
         modifier = modifier.fillMaxSize().safeDrawingPadding(),
-        color = MaterialTheme.colorScheme.background,
+        color = EditorBackground,
     ) {
         Column(Modifier.fillMaxSize()) {
             ProfessionalEditorToolbar(
@@ -191,41 +203,41 @@ fun EditorScreen(
 
             if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
                 Row(
-                    modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
                 ) {
-                    Column(Modifier.weight(0.43f).fillMaxHeight()) {
+                    Column(
+                        modifier = Modifier.weight(0.45f).fillMaxHeight(),
+                    ) {
                         PreviewPane(
                             controller = previewController,
                             state = preview,
                             onPlayPause = { if (preview.playing) viewModel.pause() else viewModel.play() },
                             onSeek = viewModel::seekToUs,
                             onStepFrames = viewModel::stepFrames,
-                            viewportHeight = 190.dp,
-                            modifier = Modifier.fillMaxWidth(),
+                            viewportHeight = 205.dp,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
                         )
-                        ProfessionalContextPanel(
-                            activeTool = activeTool,
-                            session = session,
-                            playheadUs = preview.positionUs,
-                            viewModel = viewModel,
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                        )
-                    }
-                    Surface(
-                        modifier = Modifier.weight(0.57f).fillMaxHeight(),
-                        color = MaterialTheme.colorScheme.surface,
-                        shape = MaterialTheme.shapes.medium,
-                    ) {
-                        Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
-                            ProfessionalSectionTitle("Linha do tempo")
-                            TimelineForProfessionalState(
+                        if (activeTool != null) {
+                            ProfessionalContextPanel(
+                                activeTool = activeTool,
                                 session = session,
                                 playheadUs = preview.positionUs,
                                 viewModel = viewModel,
+                                onClose = { activeTool = null },
                                 modifier = Modifier.weight(1f).fillMaxWidth(),
                             )
                         }
+                    }
+                    Surface(
+                        modifier = Modifier.weight(0.55f).fillMaxHeight(),
+                        color = EditorSurface,
+                    ) {
+                        TimelineForProfessionalState(
+                            session = session,
+                            playheadUs = preview.positionUs,
+                            viewModel = viewModel,
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 3.dp),
+                        )
                     }
                 }
             } else {
@@ -235,31 +247,32 @@ fun EditorScreen(
                     onPlayPause = { if (preview.playing) viewModel.pause() else viewModel.play() },
                     onSeek = viewModel::seekToUs,
                     onStepFrames = viewModel::stepFrames,
-                    viewportHeight = 220.dp,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp),
+                    viewportHeight = if (activeTool == null) 292.dp else 238.dp,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 3.dp, vertical = 2.dp),
                 )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f))
+
                 Surface(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.surface,
+                    color = EditorSurface,
                 ) {
-                    Column(Modifier.padding(horizontal = 8.dp, vertical = 5.dp)) {
-                        ProfessionalSectionTitle("Linha do tempo")
-                        TimelineForProfessionalState(
-                            session = session,
-                            playheadUs = preview.positionUs,
-                            viewModel = viewModel,
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                        )
-                    }
+                    TimelineForProfessionalState(
+                        session = session,
+                        playheadUs = preview.positionUs,
+                        viewModel = viewModel,
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 3.dp, vertical = 2.dp),
+                    )
                 }
-                ProfessionalContextPanel(
-                    activeTool = activeTool,
-                    session = session,
-                    playheadUs = preview.positionUs,
-                    viewModel = viewModel,
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 238.dp),
-                )
+
+                if (activeTool != null) {
+                    ProfessionalContextPanel(
+                        activeTool = activeTool,
+                        session = session,
+                        playheadUs = preview.positionUs,
+                        viewModel = viewModel,
+                        onClose = { activeTool = null },
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 258.dp),
+                    )
+                }
             }
 
             ProfessionalStatusStrip(session)
@@ -286,33 +299,63 @@ private fun ProfessionalEditorToolbar(
     onCancelExport: () -> Unit,
     onFinalPreviewRequested: () -> Unit,
 ) {
-    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 5.dp) {
-        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+    Surface(
+        color = Color(0xFF0B0B0D),
+        shadowElevation = 4.dp,
+    ) {
+        Column(Modifier.fillMaxWidth()) {
             Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(1.dp),
             ) {
                 Text(
                     "LocalCut",
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 11.dp),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 4.dp, end = 2.dp),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
                 )
-                OutlinedButton(onClick = onUndo, enabled = canUndo && !exportState.running) { Text("↶") }
-                OutlinedButton(onClick = onRedo, enabled = canRedo && !exportState.running) { Text("↷") }
-                OutlinedButton(onClick = { onLoopChange(!loopEnabled) }) {
-                    Text(if (loopEnabled) "Loop ON" else "Loop")
-                }
-                FilledTonalButton(onClick = onFinalPreviewRequested, enabled = !exportState.running) {
-                    Text("Prévia")
-                }
-                FilledTonalButton(onClick = onExportRequested, enabled = !exportState.running) {
-                    Text("Exportar")
-                }
+                TextButton(
+                    onClick = onUndo,
+                    enabled = canUndo && !exportState.running,
+                    contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
+                ) { Text("↶") }
+                TextButton(
+                    onClick = onRedo,
+                    enabled = canRedo && !exportState.running,
+                    contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
+                ) { Text("↷") }
+                TextButton(
+                    onClick = { onLoopChange(!loopEnabled) },
+                    contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
+                ) { Text(if (loopEnabled) "∞ ON" else "∞") }
+
+                Spacer(Modifier.weight(1f))
+
+                TextButton(
+                    onClick = onFinalPreviewRequested,
+                    enabled = !exportState.running,
+                    contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
+                ) { Text("▷ Prévia") }
+
                 if (exportState.running) {
-                    Button(onClick = onCancelExport) { Text("Cancelar") }
+                    Button(
+                        onClick = onCancelExport,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                    ) { Text("Cancelar") }
+                } else {
+                    Button(
+                        onClick = onExportRequested,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = EditorAccent,
+                            contentColor = Color.Black,
+                        ),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                    ) { Text("Exportar", fontWeight = FontWeight.SemiBold) }
                 }
             }
+
             if (exportState.running || exportState.message != null) {
                 Text(
                     text = buildString {
@@ -322,9 +365,9 @@ private fun ProfessionalEditorToolbar(
                             append("$progress%")
                         }
                     },
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Color(0xFFB7B7BC),
                 )
             }
         }
@@ -337,6 +380,7 @@ private fun ProfessionalContextPanel(
     session: ProjectSessionState,
     playheadUs: Long,
     viewModel: EditorViewModel,
+    onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val contextual = activeTool in setOf(
@@ -352,105 +396,141 @@ private fun ProfessionalContextPanel(
         EditorToolId.DESIGN,
         EditorToolId.CANVAS,
     )
-    if (!contextual) return
+    if (!contextual || activeTool == null) return
 
     Surface(
         modifier = modifier,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f),
+        color = EditorElevatedSurface,
+        shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
+        shadowElevation = 12.dp,
     ) {
-        when (activeTool) {
-            EditorToolId.EDIT -> {
-                Column(Modifier.fillMaxSize()) {
-                    ProfessionalClipQuickActions(session, playheadUs, viewModel)
-                    InspectorPane(
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = toolTitle(activeTool),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.weight(1f))
+                TextButton(
+                    onClick = onClose,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                ) { Text("Fechar") }
+            }
+
+            when (activeTool) {
+                EditorToolId.EDIT -> {
+                    Column(Modifier.weight(1f).fillMaxWidth()) {
+                        ProfessionalClipQuickActions(session, playheadUs, viewModel)
+                        InspectorPane(
+                            project = session.project,
+                            selectedClipId = session.selectedClipId,
+                            playheadUs = playheadUs,
+                            onDelete = { viewModel.dispatch(EditorAction.DeleteSelected) },
+                            onSplit = { viewModel.dispatch(EditorAction.SplitSelected(it)) },
+                            onTransform = { viewModel.dispatch(EditorAction.SetSelectedTransform(it)) },
+                            onOpacity = { opacity ->
+                                session.selectedClipId?.let { clipId ->
+                                    viewModel.dispatch(EditorAction.Execute(SetClipOpacityCommand(clipId, opacity)))
+                                }
+                            },
+                            onSetKeyframes = { viewModel.dispatch(EditorAction.SetSelectedKeyframes(it)) },
+                            onSeek = viewModel::seekToUs,
+                            onVolume = { viewModel.dispatch(EditorAction.SetSelectedVolume(it)) },
+                            onAudioFades = { fadeInUs, fadeOutUs ->
+                                viewModel.dispatch(EditorAction.SetSelectedAudioFades(fadeInUs, fadeOutUs))
+                            },
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                        )
+                    }
+                }
+                EditorToolId.AUDIO,
+                EditorToolId.EFFECTS,
+                EditorToolId.SPEED,
+                EditorToolId.MASK,
+                EditorToolId.CHROMA -> {
+                    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                        CreativeToolsPanel(
+                            project = session.project,
+                            selectedClipId = session.selectedClipId,
+                            onSetEffects = { viewModel.dispatch(EditorAction.SetSelectedEffects(it)) },
+                            onSetCompositing = { viewModel.dispatch(EditorAction.SetSelectedCompositing(it)) },
+                            onSetTimeMap = { viewModel.dispatch(EditorAction.SetSelectedTimeMap(it)) },
+                            onSetAudioProcessing = { viewModel.dispatch(EditorAction.SetSelectedAudioProcessing(it)) },
+                            onSetPropertyAnimations = { viewModel.dispatch(EditorAction.SetSelectedPropertyAnimations(it)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+                EditorToolId.COLOR -> {
+                    ColorToolsPanel(
                         project = session.project,
                         selectedClipId = session.selectedClipId,
-                        playheadUs = playheadUs,
-                        onDelete = { viewModel.dispatch(EditorAction.DeleteSelected) },
-                        onSplit = { viewModel.dispatch(EditorAction.SplitSelected(it)) },
-                        onTransform = { viewModel.dispatch(EditorAction.SetSelectedTransform(it)) },
-                        onOpacity = { opacity ->
-                            session.selectedClipId?.let { clipId ->
-                                viewModel.dispatch(EditorAction.Execute(SetClipOpacityCommand(clipId, opacity)))
-                            }
-                        },
-                        onSetKeyframes = { viewModel.dispatch(EditorAction.SetSelectedKeyframes(it)) },
-                        onSeek = viewModel::seekToUs,
-                        onVolume = { viewModel.dispatch(EditorAction.SetSelectedVolume(it)) },
-                        onAudioFades = { fadeInUs, fadeOutUs ->
-                            viewModel.dispatch(EditorAction.SetSelectedAudioFades(fadeInUs, fadeOutUs))
+                        onSetEffects = { viewModel.dispatch(EditorAction.SetSelectedEffects(it)) },
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    )
+                }
+                EditorToolId.ANIMATION -> {
+                    AnimationCurvePanel(
+                        project = session.project,
+                        selectedClipId = session.selectedClipId,
+                        onSetPropertyAnimations = { viewModel.dispatch(EditorAction.SetSelectedPropertyAnimations(it)) },
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    )
+                }
+                EditorToolId.LAYERS -> {
+                    LayerPanel(
+                        project = session.project,
+                        selectedClipId = session.selectedClipId,
+                        onSelectClip = { viewModel.dispatch(EditorAction.SelectClip(it)) },
+                        onSetCompositionGraph = { graph ->
+                            viewModel.dispatch(EditorAction.Execute(SetCompositionGraphCommand(graph)))
                         },
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
                 }
-            }
-            EditorToolId.AUDIO,
-            EditorToolId.EFFECTS,
-            EditorToolId.SPEED,
-            EditorToolId.MASK,
-            EditorToolId.CHROMA -> {
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                    CreativeToolsPanel(
-                        project = session.project,
-                        selectedClipId = session.selectedClipId,
-                        onSetEffects = { viewModel.dispatch(EditorAction.SetSelectedEffects(it)) },
-                        onSetCompositing = { viewModel.dispatch(EditorAction.SetSelectedCompositing(it)) },
-                        onSetTimeMap = { viewModel.dispatch(EditorAction.SetSelectedTimeMap(it)) },
-                        onSetAudioProcessing = { viewModel.dispatch(EditorAction.SetSelectedAudioProcessing(it)) },
-                        onSetPropertyAnimations = { viewModel.dispatch(EditorAction.SetSelectedPropertyAnimations(it)) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                EditorToolId.DESIGN,
+                EditorToolId.CANVAS -> {
+                    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                        DesignToolsPanel(
+                            project = session.project,
+                            playheadUs = playheadUs,
+                            onAddElement = { viewModel.dispatch(EditorAction.AddDesignElement(it)) },
+                            onUpdateElement = { viewModel.dispatch(EditorAction.UpdateDesignElement(it)) },
+                            onDeleteElement = { viewModel.dispatch(EditorAction.DeleteDesignElement(it)) },
+                            onSetCanvas = { viewModel.dispatch(EditorAction.SetDesignCanvas(it)) },
+                            onSetProjectCanvasSize = { width, height ->
+                                viewModel.dispatch(EditorAction.Execute(SetProjectCanvasSizeCommand(width, height)))
+                            },
+                            onUpsertComponent = { viewModel.dispatch(EditorAction.UpsertReusableComponent(it)) },
+                            onDeleteComponent = { viewModel.dispatch(EditorAction.DeleteReusableComponent(it)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
+                else -> Unit
             }
-            EditorToolId.COLOR -> {
-                ColorToolsPanel(
-                    project = session.project,
-                    selectedClipId = session.selectedClipId,
-                    onSetEffects = { viewModel.dispatch(EditorAction.SetSelectedEffects(it)) },
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-            EditorToolId.ANIMATION -> {
-                AnimationCurvePanel(
-                    project = session.project,
-                    selectedClipId = session.selectedClipId,
-                    onSetPropertyAnimations = { viewModel.dispatch(EditorAction.SetSelectedPropertyAnimations(it)) },
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-            EditorToolId.LAYERS -> {
-                LayerPanel(
-                    project = session.project,
-                    selectedClipId = session.selectedClipId,
-                    onSelectClip = { viewModel.dispatch(EditorAction.SelectClip(it)) },
-                    onSetCompositionGraph = { graph ->
-                        viewModel.dispatch(EditorAction.Execute(SetCompositionGraphCommand(graph)))
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-            EditorToolId.DESIGN,
-            EditorToolId.CANVAS -> {
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                    DesignToolsPanel(
-                        project = session.project,
-                        playheadUs = playheadUs,
-                        onAddElement = { viewModel.dispatch(EditorAction.AddDesignElement(it)) },
-                        onUpdateElement = { viewModel.dispatch(EditorAction.UpdateDesignElement(it)) },
-                        onDeleteElement = { viewModel.dispatch(EditorAction.DeleteDesignElement(it)) },
-                        onSetCanvas = { viewModel.dispatch(EditorAction.SetDesignCanvas(it)) },
-                        onSetProjectCanvasSize = { width, height ->
-                            viewModel.dispatch(EditorAction.Execute(SetProjectCanvasSizeCommand(width, height)))
-                        },
-                        onUpsertComponent = { viewModel.dispatch(EditorAction.UpsertReusableComponent(it)) },
-                        onDeleteComponent = { viewModel.dispatch(EditorAction.DeleteReusableComponent(it)) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-            else -> Unit
         }
     }
+}
+
+private fun toolTitle(tool: EditorToolId): String = when (tool) {
+    EditorToolId.EDIT -> "Editar"
+    EditorToolId.AUDIO -> "Áudio"
+    EditorToolId.EFFECTS -> "Efeitos"
+    EditorToolId.COLOR -> "Ajustar"
+    EditorToolId.SPEED -> "Velocidade"
+    EditorToolId.MASK -> "Máscara"
+    EditorToolId.CHROMA -> "Chroma key"
+    EditorToolId.ANIMATION -> "Animação"
+    EditorToolId.LAYERS -> "Camadas"
+    EditorToolId.DESIGN -> "Design"
+    EditorToolId.CANVAS -> "Proporção"
+    else -> "Ferramenta"
 }
 
 @Composable
@@ -488,19 +568,27 @@ private fun ProfessionalClipQuickActions(
     }
 
     Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 3.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         FilledTonalButton(
             onClick = { viewModel.dispatch(EditorAction.SplitSelected(playheadUs)) },
             enabled = canSplit,
-        ) { Text("Dividir") }
-        FilledTonalButton(onClick = { viewModel.dispatch(EditorAction.DuplicateSelected) }) { Text("Duplicar") }
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+        ) { Text("✂ Dividir") }
+        FilledTonalButton(
+            onClick = { viewModel.dispatch(EditorAction.DuplicateSelected) },
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+        ) { Text("Duplicar") }
         FilledTonalButton(
             onClick = { showTransitionDialog = true },
             enabled = transitionCandidate != null,
-        ) { Text(if (existingFade == null) "Transição" else "Transição ativa") }
-        Button(onClick = { viewModel.dispatch(EditorAction.DeleteSelected) }) { Text("Excluir") }
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+        ) { Text(if (existingFade == null) "Transição" else "Transição ✓") }
+        Button(
+            onClick = { viewModel.dispatch(EditorAction.DeleteSelected) },
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+        ) { Text("Excluir") }
     }
 }
 
@@ -511,29 +599,37 @@ private fun TimelineForProfessionalState(
     viewModel: EditorViewModel,
     modifier: Modifier,
 ) {
+    val selectedClip = session.selectedClipId?.let(session.project::findClip)
+    val selectedAssetType = selectedClip?.let { clip ->
+        session.project.assets.firstOrNull { it.id == clip.assetId }?.type
+    }
+
     Column(modifier = modifier) {
-        BeatMarkerTimelineControls(
-            project = session.project,
-            selectedClipId = session.selectedClipId,
-            playheadUs = playheadUs,
-            onAddMarker = { marker ->
-                viewModel.dispatch(EditorAction.Execute(AddBeatMarkerCommand(marker)))
-            },
-            onDeleteMarker = { markerId ->
-                viewModel.dispatch(EditorAction.Execute(DeleteBeatMarkerCommand(markerId)))
-            },
-            onApplyDetectedMarkers = { clipId, markers ->
-                viewModel.dispatch(
-                    EditorAction.Execute(
-                        ApplyDetectedBeatMarkersCommand(
-                            clipId = clipId,
-                            detectedRelativeMarkers = markers,
+        if (selectedAssetType == AssetType.AUDIO) {
+            BeatMarkerTimelineControls(
+                project = session.project,
+                selectedClipId = session.selectedClipId,
+                playheadUs = playheadUs,
+                onAddMarker = { marker ->
+                    viewModel.dispatch(EditorAction.Execute(AddBeatMarkerCommand(marker)))
+                },
+                onDeleteMarker = { markerId ->
+                    viewModel.dispatch(EditorAction.Execute(DeleteBeatMarkerCommand(markerId)))
+                },
+                onApplyDetectedMarkers = { clipId, markers ->
+                    viewModel.dispatch(
+                        EditorAction.Execute(
+                            ApplyDetectedBeatMarkersCommand(
+                                clipId = clipId,
+                                detectedRelativeMarkers = markers,
+                            ),
                         ),
-                    ),
-                )
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
         TimelinePane(
             project = session.project,
             selectedClipId = session.selectedClipId,
@@ -568,24 +664,15 @@ private fun ProfessionalStatusStrip(session: ProjectSessionState) {
     val message = session.lastError?.let { "Erro: $it" }
         ?: session.issues.firstOrNull()?.let { "Aviso: ${it.message}" }
         ?: return
-    Text(
-        text = message,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 3.dp),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.error,
-        maxLines = 1,
-    )
-}
-
-@Composable
-private fun ProfessionalSectionTitle(text: String) {
-    Text(
-        text = text,
-        modifier = Modifier.padding(bottom = 4.dp),
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+    Surface(color = Color(0xFF2A1113)) {
+        Text(
+            text = message,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            maxLines = 1,
+        )
+    }
 }
 
 @Composable

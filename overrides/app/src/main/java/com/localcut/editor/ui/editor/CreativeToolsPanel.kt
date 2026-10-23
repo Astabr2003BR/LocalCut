@@ -13,6 +13,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.localcut.editor.domain.model.AssetType
@@ -41,6 +45,11 @@ fun CreativeToolsPanel(
 ) {
     val clip = selectedClipId?.let(project::findClip) ?: return
     val asset = project.assets.firstOrNull { it.id == clip.assetId }
+    val availableSections = CreativeToolsUiPolicy.availableSections(asset?.type)
+    var requestedSection by remember(clip.id) {
+        mutableStateOf(CreativeToolsUiPolicy.defaultSection(asset?.type))
+    }
+    val activeSection = requestedSection.takeIf { it in availableSections } ?: availableSections.first()
 
     Surface(
         modifier = modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
@@ -53,192 +62,218 @@ fun CreativeToolsPanel(
         ) {
             Text("Ferramentas profissionais", style = MaterialTheme.typography.labelLarge)
 
-            if (asset?.type != AssetType.AUDIO) {
-                Text("Cor e efeitos", style = MaterialTheme.typography.labelMedium)
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    FilledTonalButton(onClick = {
-                        onSetEffects(CreativeToolsUiPolicy.setNumericEffect(clip.effects, "localcut.color.brightness", "amount", 0.2))
-                    }) { Text("Brilho +") }
-                    FilledTonalButton(onClick = {
-                        onSetEffects(CreativeToolsUiPolicy.setNumericEffect(clip.effects, "localcut.color.contrast", "amount", 1.2))
-                    }) { Text("Contraste +") }
-                    FilledTonalButton(onClick = {
-                        onSetEffects(CreativeToolsUiPolicy.setNumericEffect(clip.effects, "localcut.color.saturation", "amount", 1.25))
-                    }) { Text("Saturação +") }
-                    FilledTonalButton(onClick = {
-                        onSetEffects(CreativeToolsUiPolicy.setNumericEffect(clip.effects, "localcut.blur.gaussian", "radius", 8.0))
-                    }) { Text("Blur") }
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                availableSections.forEach { section ->
+                    val label = when (section) {
+                        CreativeToolsSection.VISUAL -> "Visual"
+                        CreativeToolsSection.TIMING -> "Tempo"
+                        CreativeToolsSection.AUDIO -> "Áudio"
+                    }
+                    if (section == activeSection) {
+                        FilledTonalButton(onClick = { requestedSection = section }) { Text(label) }
+                    } else {
+                        OutlinedButton(onClick = { requestedSection = section }) { Text(label) }
+                    }
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    listOf(
-                        Triple("localcut.sharpen", "amount", 1.0) to "Sharpen",
-                        Triple("localcut.vignette", "amount", 0.55) to "Vignette",
-                        Triple("localcut.grain", "amount", 0.18) to "Grain",
-                        Triple("localcut.rgb_split", "amount", 8.0) to "RGB Split",
-                        Triple("localcut.mosaic", "blockSize", 12.0) to "Mosaic",
-                        Triple("localcut.glow", "radius", 10.0) to "Glow",
-                        Triple("localcut.ripple", "amplitude", 10.0) to "Ripple",
-                        Triple("localcut.displacement", "amount", 12.0) to "Displace",
-                    ).forEach { (preset, label) ->
+            }
+
+            when (activeSection) {
+                CreativeToolsSection.VISUAL -> {
+                    Text("Cor e efeitos", style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         FilledTonalButton(onClick = {
-                            onSetEffects(
-                                CreativeToolsUiPolicy.setNumericEffect(
-                                    clip.effects,
-                                    preset.first,
-                                    preset.second,
-                                    preset.third,
-                                ),
-                            )
-                        }) { Text(label) }
-                    }
-                    OutlinedButton(onClick = { onSetEffects(emptyList()) }, enabled = clip.effects.isNotEmpty()) {
-                        Text("Limpar FX")
-                    }
-                }
-
-                Text("Recorte e composição", style = MaterialTheme.typography.labelMedium)
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    FilledTonalButton(onClick = {
-                        onSetCompositing(CreativeToolsUiPolicy.setMaskPreset(clip.compositing, MaskKind.RECTANGLE))
-                    }) { Text("Máscara retângulo") }
-                    FilledTonalButton(onClick = {
-                        onSetCompositing(CreativeToolsUiPolicy.setMaskPreset(clip.compositing, MaskKind.ELLIPSE))
-                    }) { Text("Máscara elipse") }
-                    FilledTonalButton(onClick = {
-                        onSetCompositing(CreativeToolsUiPolicy.setMaskPreset(clip.compositing, MaskKind.FREEFORM))
-                    }) { Text("Máscara livre") }
-                    OutlinedButton(
-                        onClick = { onSetCompositing(CreativeToolsUiPolicy.clearMaskPreset(clip.compositing)) },
-                        enabled = clip.compositing.masks.any { it.id == CreativeToolsUiPolicy.UI_MASK_ID },
-                    ) { Text("Sem máscara") }
-                    FilledTonalButton(onClick = {
-                        onSetCompositing(CreativeToolsUiPolicy.greenScreen(clip.compositing, !clip.compositing.chromaKey.enabled))
-                    }) { Text(if (clip.compositing.chromaKey.enabled) "Chroma ON" else "Chroma verde") }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    listOf(
-                        CropMode.NONE to "Livre",
-                        CropMode.FIT to "Fit",
-                        CropMode.FILL to "Fill",
-                        CropMode.STRETCH to "Stretch",
-                    ).forEach { (mode, label) ->
-                        val selected = clip.compositing.crop.mode == mode
-                        if (selected) {
-                            FilledTonalButton(onClick = {
-                                onSetCompositing(CreativeToolsUiPolicy.cropLayout(clip.compositing, mode))
-                            }) { Text(label) }
-                        } else {
-                            OutlinedButton(onClick = {
-                                onSetCompositing(CreativeToolsUiPolicy.cropLayout(clip.compositing, mode))
-                            }) { Text(label) }
-                        }
-                    }
-                }
-
-                Text("Anime Mode", style = MaterialTheme.typography.labelMedium)
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    listOf(
-                        AnimeRecipe.IMPACT_ZOOM to "Impacto",
-                        AnimeRecipe.CAMERA_SHAKE to "Shake",
-                        AnimeRecipe.PARALLAX_PAN to "Parallax",
-                    ).forEach { (recipe, label) ->
+                            onSetEffects(CreativeToolsUiPolicy.setNumericEffect(clip.effects, "localcut.color.brightness", "amount", 0.2))
+                        }) { Text("Brilho +") }
                         FilledTonalButton(onClick = {
-                            onSetPropertyAnimations(
-                                AnimeRecipeApplicator.apply(clip, recipe, seed = clip.id.hashCode().toLong()).propertyAnimations,
-                            )
-                        }) { Text(label) }
+                            onSetEffects(CreativeToolsUiPolicy.setNumericEffect(clip.effects, "localcut.color.contrast", "amount", 1.2))
+                        }) { Text("Contraste +") }
+                        FilledTonalButton(onClick = {
+                            onSetEffects(CreativeToolsUiPolicy.setNumericEffect(clip.effects, "localcut.color.saturation", "amount", 1.25))
+                        }) { Text("Saturação +") }
+                        FilledTonalButton(onClick = {
+                            onSetEffects(CreativeToolsUiPolicy.setNumericEffect(clip.effects, "localcut.blur.gaussian", "radius", 8.0))
+                        }) { Text("Blur") }
                     }
-                    OutlinedButton(
-                        onClick = { onSetPropertyAnimations(emptyList()) },
-                        enabled = clip.propertyAnimations.isNotEmpty(),
-                    ) { Text("Limpar animação") }
-                }
-
-                if (clip.propertyAnimations.isNotEmpty()) {
-                    Text("Curvas / easing", style = MaterialTheme.typography.labelMedium)
                     Row(
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         listOf(
-                            EasingKind.LINEAR to "Linear",
-                            EasingKind.EASE_IN_OUT to "Suave",
-                            EasingKind.BOUNCE to "Bounce",
-                            EasingKind.ELASTIC to "Elastic",
-                            EasingKind.STEPS to "Steps",
-                        ).forEach { (kind, label) ->
-                            OutlinedButton(onClick = {
-                                onSetPropertyAnimations(CreativeToolsUiPolicy.setEasingPreset(clip.propertyAnimations, kind))
-                            }) { Text(label) }
-                        }
-                    }
-                }
-            }
-
-            if (asset?.type != AssetType.IMAGE) {
-                Text("Velocidade", style = MaterialTheme.typography.labelMedium)
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    listOf(0.5 to "0,5×", 1.0 to "1×", 2.0 to "2×").forEach { (speed, label) ->
-                        val selected = !clip.timeMap.reverse &&
-                            clip.timeMap.speedPoints.isEmpty() &&
-                            clip.timeMap.freezeSegments.isEmpty() &&
-                            kotlin.math.abs(clip.timeMap.baseSpeed - speed) < 1e-9
-                        if (selected) {
+                            Triple("localcut.sharpen", "amount", 1.0) to "Sharpen",
+                            Triple("localcut.vignette", "amount", 0.55) to "Vignette",
+                            Triple("localcut.grain", "amount", 0.18) to "Grain",
+                            Triple("localcut.rgb_split", "amount", 8.0) to "RGB Split",
+                            Triple("localcut.mosaic", "blockSize", 12.0) to "Mosaic",
+                            Triple("localcut.glow", "radius", 10.0) to "Glow",
+                            Triple("localcut.ripple", "amplitude", 10.0) to "Ripple",
+                            Triple("localcut.displacement", "amount", 12.0) to "Displace",
+                        ).forEach { (preset, label) ->
                             FilledTonalButton(onClick = {
-                                onSetTimeMap(CreativeToolsUiPolicy.constantSpeed(clip.timeMap, speed))
-                            }) { Text(label) }
-                        } else {
-                            OutlinedButton(onClick = {
-                                onSetTimeMap(CreativeToolsUiPolicy.constantSpeed(clip.timeMap, speed))
+                                onSetEffects(
+                                    CreativeToolsUiPolicy.setNumericEffect(
+                                        clip.effects,
+                                        preset.first,
+                                        preset.second,
+                                        preset.third,
+                                    ),
+                                )
                             }) { Text(label) }
                         }
+                        OutlinedButton(onClick = { onSetEffects(emptyList()) }, enabled = clip.effects.isNotEmpty()) {
+                            Text("Limpar FX")
+                        }
                     }
-                    val sourceRangeUs = clip.sourceOutUs - clip.sourceInUs
-                    val rampSelected = !clip.timeMap.reverse && clip.timeMap.speedPoints.size >= 2
-                    if (rampSelected) {
+
+                    Text("Recorte e composição", style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         FilledTonalButton(onClick = {
-                            onSetTimeMap(CreativeToolsUiPolicy.accelerationRamp(sourceRangeUs))
-                        }) { Text("Ramp 0,5→2×") }
-                    } else {
-                        OutlinedButton(onClick = {
-                            onSetTimeMap(CreativeToolsUiPolicy.accelerationRamp(sourceRangeUs))
-                        }) { Text("Ramp 0,5→2×") }
+                            onSetCompositing(CreativeToolsUiPolicy.setMaskPreset(clip.compositing, MaskKind.RECTANGLE))
+                        }) { Text("Máscara retângulo") }
+                        FilledTonalButton(onClick = {
+                            onSetCompositing(CreativeToolsUiPolicy.setMaskPreset(clip.compositing, MaskKind.ELLIPSE))
+                        }) { Text("Máscara elipse") }
+                        FilledTonalButton(onClick = {
+                            onSetCompositing(CreativeToolsUiPolicy.setMaskPreset(clip.compositing, MaskKind.FREEFORM))
+                        }) { Text("Máscara livre") }
+                        OutlinedButton(
+                            onClick = { onSetCompositing(CreativeToolsUiPolicy.clearMaskPreset(clip.compositing)) },
+                            enabled = clip.compositing.masks.any { it.id == CreativeToolsUiPolicy.UI_MASK_ID },
+                        ) { Text("Sem máscara") }
+                        FilledTonalButton(onClick = {
+                            onSetCompositing(CreativeToolsUiPolicy.greenScreen(clip.compositing, !clip.compositing.chromaKey.enabled))
+                        }) { Text(if (clip.compositing.chromaKey.enabled) "Chroma ON" else "Chroma verde") }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        listOf(
+                            CropMode.NONE to "Livre",
+                            CropMode.FIT to "Fit",
+                            CropMode.FILL to "Fill",
+                            CropMode.STRETCH to "Stretch",
+                        ).forEach { (mode, label) ->
+                            val selected = clip.compositing.crop.mode == mode
+                            if (selected) {
+                                FilledTonalButton(onClick = {
+                                    onSetCompositing(CreativeToolsUiPolicy.cropLayout(clip.compositing, mode))
+                                }) { Text(label) }
+                            } else {
+                                OutlinedButton(onClick = {
+                                    onSetCompositing(CreativeToolsUiPolicy.cropLayout(clip.compositing, mode))
+                                }) { Text(label) }
+                            }
+                        }
                     }
                 }
 
-                Text("Áudio profissional", style = MaterialTheme.typography.labelMedium)
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    FilledTonalButton(onClick = {
-                        onSetAudioProcessing(CreativeToolsUiPolicy.voiceAudioPreset(clip.audioProcessing))
-                    }) { Text("Voz clara") }
-                    FilledTonalButton(onClick = {
-                        onSetAudioProcessing(CreativeToolsUiPolicy.loudnessAudioPreset(clip.audioProcessing))
-                    }) { Text("Loudness") }
-                    OutlinedButton(
-                        onClick = { onSetAudioProcessing(AudioProcessingSettings()) },
-                        enabled = clip.audioProcessing != AudioProcessingSettings(),
-                    ) { Text("Reset áudio") }
+                CreativeToolsSection.TIMING -> {
+                    if (asset?.type != AssetType.AUDIO) {
+                        Text("Anime Mode", style = MaterialTheme.typography.labelMedium)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            listOf(
+                                AnimeRecipe.IMPACT_ZOOM to "Impacto",
+                                AnimeRecipe.CAMERA_SHAKE to "Shake",
+                                AnimeRecipe.PARALLAX_PAN to "Parallax",
+                            ).forEach { (recipe, label) ->
+                                FilledTonalButton(onClick = {
+                                    onSetPropertyAnimations(
+                                        AnimeRecipeApplicator.apply(clip, recipe, seed = clip.id.hashCode().toLong()).propertyAnimations,
+                                    )
+                                }) { Text(label) }
+                            }
+                            OutlinedButton(
+                                onClick = { onSetPropertyAnimations(emptyList()) },
+                                enabled = clip.propertyAnimations.isNotEmpty(),
+                            ) { Text("Limpar animação") }
+                        }
+
+                        if (clip.propertyAnimations.isNotEmpty()) {
+                            Text("Curvas / easing", style = MaterialTheme.typography.labelMedium)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                listOf(
+                                    EasingKind.LINEAR to "Linear",
+                                    EasingKind.EASE_IN_OUT to "Suave",
+                                    EasingKind.BOUNCE to "Bounce",
+                                    EasingKind.ELASTIC to "Elastic",
+                                    EasingKind.STEPS to "Steps",
+                                ).forEach { (kind, label) ->
+                                    OutlinedButton(onClick = {
+                                        onSetPropertyAnimations(CreativeToolsUiPolicy.setEasingPreset(clip.propertyAnimations, kind))
+                                    }) { Text(label) }
+                                }
+                            }
+                        }
+                    }
+
+                    if (asset?.type != AssetType.IMAGE) {
+                        Text("Velocidade", style = MaterialTheme.typography.labelMedium)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            listOf(0.5 to "0,5×", 1.0 to "1×", 2.0 to "2×").forEach { (speed, label) ->
+                                val selected = !clip.timeMap.reverse &&
+                                    clip.timeMap.speedPoints.isEmpty() &&
+                                    clip.timeMap.freezeSegments.isEmpty() &&
+                                    kotlin.math.abs(clip.timeMap.baseSpeed - speed) < 1e-9
+                                if (selected) {
+                                    FilledTonalButton(onClick = {
+                                        onSetTimeMap(CreativeToolsUiPolicy.constantSpeed(clip.timeMap, speed))
+                                    }) { Text(label) }
+                                } else {
+                                    OutlinedButton(onClick = {
+                                        onSetTimeMap(CreativeToolsUiPolicy.constantSpeed(clip.timeMap, speed))
+                                    }) { Text(label) }
+                                }
+                            }
+                            val sourceRangeUs = clip.sourceOutUs - clip.sourceInUs
+                            val rampSelected = !clip.timeMap.reverse && clip.timeMap.speedPoints.size >= 2
+                            if (rampSelected) {
+                                FilledTonalButton(onClick = {
+                                    onSetTimeMap(CreativeToolsUiPolicy.accelerationRamp(sourceRangeUs))
+                                }) { Text("Ramp 0,5→2×") }
+                            } else {
+                                OutlinedButton(onClick = {
+                                    onSetTimeMap(CreativeToolsUiPolicy.accelerationRamp(sourceRangeUs))
+                                }) { Text("Ramp 0,5→2×") }
+                            }
+                        }
+                    }
+                }
+
+                CreativeToolsSection.AUDIO -> {
+                    Text("Áudio profissional", style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        FilledTonalButton(onClick = {
+                            onSetAudioProcessing(CreativeToolsUiPolicy.voiceAudioPreset(clip.audioProcessing))
+                        }) { Text("Voz clara") }
+                        FilledTonalButton(onClick = {
+                            onSetAudioProcessing(CreativeToolsUiPolicy.loudnessAudioPreset(clip.audioProcessing))
+                        }) { Text("Loudness") }
+                        OutlinedButton(
+                            onClick = { onSetAudioProcessing(AudioProcessingSettings()) },
+                            enabled = clip.audioProcessing != AudioProcessingSettings(),
+                        ) { Text("Reset áudio") }
+                    }
                 }
             }
 

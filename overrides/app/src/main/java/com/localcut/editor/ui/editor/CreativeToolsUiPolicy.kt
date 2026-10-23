@@ -1,5 +1,6 @@
 package com.localcut.editor.ui.editor
 
+import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.AudioProcessingSettings
 import com.localcut.editor.domain.model.ChromaKeySettings
 import com.localcut.editor.domain.model.CompositingSettings
@@ -18,8 +19,23 @@ import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.model.SpeedPoint
 import com.localcut.editor.domain.model.TimeMap
 
+enum class CreativeToolsSection {
+    VISUAL,
+    TIMING,
+    AUDIO,
+}
+
 object CreativeToolsUiPolicy {
     const val UI_MASK_ID = "ui-primary-mask"
+
+    fun availableSections(assetType: AssetType?): List<CreativeToolsSection> = buildList {
+        if (assetType != AssetType.AUDIO) add(CreativeToolsSection.VISUAL)
+        add(CreativeToolsSection.TIMING)
+        if (assetType != AssetType.IMAGE) add(CreativeToolsSection.AUDIO)
+    }
+
+    fun defaultSection(assetType: AssetType?): CreativeToolsSection =
+        if (assetType == AssetType.AUDIO) CreativeToolsSection.AUDIO else CreativeToolsSection.VISUAL
 
     fun setNumericEffect(
         effects: List<EffectInstance>,

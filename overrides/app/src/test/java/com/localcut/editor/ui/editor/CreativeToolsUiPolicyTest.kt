@@ -10,6 +10,29 @@ import org.junit.Test
 
 class CreativeToolsUiPolicyTest {
     @Test
+    fun mobileSectionsAdaptToAssetTypeWithoutHidingValidToolFamilies() {
+        assertEquals(
+            listOf(CreativeToolsSection.VISUAL, CreativeToolsSection.TIMING, CreativeToolsSection.AUDIO),
+            CreativeToolsUiPolicy.availableSections(AssetType.VIDEO),
+        )
+        assertEquals(
+            listOf(CreativeToolsSection.VISUAL, CreativeToolsSection.TIMING),
+            CreativeToolsUiPolicy.availableSections(AssetType.IMAGE),
+        )
+        assertEquals(
+            listOf(CreativeToolsSection.TIMING, CreativeToolsSection.AUDIO),
+            CreativeToolsUiPolicy.availableSections(AssetType.AUDIO),
+        )
+    }
+
+    @Test
+    fun mobileSectionDefaultsPreferVisualForVisualMediaAndAudioForAudioOnly() {
+        assertEquals(CreativeToolsSection.VISUAL, CreativeToolsUiPolicy.defaultSection(AssetType.VIDEO))
+        assertEquals(CreativeToolsSection.VISUAL, CreativeToolsUiPolicy.defaultSection(AssetType.IMAGE))
+        assertEquals(CreativeToolsSection.AUDIO, CreativeToolsUiPolicy.defaultSection(AssetType.AUDIO))
+    }
+
+    @Test
     fun numericEffectUpsertReusesTypeAndPreservesOtherEffects() {
         val effects = listOf(EffectInstance("grain", "localcut.grain"))
         val once = CreativeToolsUiPolicy.setNumericEffect(effects, "localcut.color.brightness", "amount", 0.25)

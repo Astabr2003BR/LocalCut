@@ -188,6 +188,13 @@ object CreativeToolsUiPolicy {
         }
     }
 
+    fun setPrimaryMaskOpacity(source: CompositingSettings, opacity: Double): CompositingSettings {
+        require(opacity.isFinite()) { "mask opacity must be finite" }
+        return updatePrimaryMask(source) { mask ->
+            mask.copy(opacity = opacity.coerceIn(0.0, 1.0))
+        }
+    }
+
     fun setPrimaryMaskInverted(source: CompositingSettings, inverted: Boolean): CompositingSettings =
         updatePrimaryMask(source) { mask -> mask.copy(invert = inverted) }
 
@@ -205,6 +212,23 @@ object CreativeToolsUiPolicy {
             source.chromaKey.copy(enabled = false)
         },
     )
+
+    fun setChromaThreshold(source: CompositingSettings, threshold: Double): CompositingSettings {
+        require(threshold.isFinite()) { "chroma threshold must be finite" }
+        return source.copy(chromaKey = source.chromaKey.copy(threshold = threshold.coerceIn(0.0, 1.0)))
+    }
+
+    fun setChromaSoftness(source: CompositingSettings, softness: Double): CompositingSettings {
+        require(softness.isFinite()) { "chroma softness must be finite" }
+        return source.copy(chromaKey = source.chromaKey.copy(softness = softness.coerceIn(0.0, 1.0)))
+    }
+
+    fun setChromaSpillSuppression(source: CompositingSettings, spillSuppression: Double): CompositingSettings {
+        require(spillSuppression.isFinite()) { "chroma spill suppression must be finite" }
+        return source.copy(
+            chromaKey = source.chromaKey.copy(spillSuppression = spillSuppression.coerceIn(0.0, 1.0)),
+        )
+    }
 
     fun cropLayout(source: CompositingSettings, mode: CropMode): CompositingSettings =
         source.copy(crop = source.crop.copy(mode = mode))

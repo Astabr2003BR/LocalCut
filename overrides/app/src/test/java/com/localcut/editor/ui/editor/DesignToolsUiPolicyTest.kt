@@ -6,6 +6,7 @@ import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.ShapeKind
 import com.localcut.editor.domain.model.ShapeSpec
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -51,6 +52,47 @@ class DesignToolsUiPolicyTest {
         assertEquals(setOf(GuideAxis.HORIZONTAL, GuideAxis.VERTICAL), withGuides.guides.map { it.axis }.toSet())
         val withoutGuides = DesignToolsUiPolicy.toggleCenterGuides(withGuides)
         assertTrue(withoutGuides.guides.isEmpty())
+    }
+
+    @Test
+    fun vectorStyleControlsPreserveElementAndClampRenderableGeometry() {
+        val source = element("shape", 7).copy(startUs = 250_000L, durationUs = 2_500_000L)
+
+        val filled = DesignToolsUiPolicy.setShapeFill(source, 0xFFFF3B30.toInt())
+        val outlined = DesignToolsUiPolicy.setShapeStrokeColor(filled, 0xFF111111.toInt())
+        val wide = DesignToolsUiPolicy.setShapeStrokeWidth(outlined, 999.0)
+        val rounded = DesignToolsUiPolicy.setShapeCornerRadius(wide, 999.0)
+
+        assertEquals(source.id, rounded.id)
+        assertEquals(source.startUs, rounded.startUs)
+        assertEquals(source.durationUs, rounded.durationUs)
+        assertEquals(source.transform, rounded.transform)
+        assertEquals(source.zIndex, rounded.zIndex)
+        assertEquals(0xFFFF3B30.toInt(), rounded.shape!!.fillArgb)
+        assertEquals(0xFF111111.toInt(), rounded.shape!!.strokeArgb)
+        assertEquals(200.0, rounded.shape!!.strokeWidthPx, 0.0)
+        assertEquals(300.0, rounded.shape!!.cornerRadiusPx, 0.0)
+        assertTrue(rounded.validationIssues().isEmpty())
+    }
+
+    @Test
+    fun fillAndStrokeCanBeRemovedWithoutChangingShapeKind() {
+        val source = element("shape", 0).copy(
+            shape = ShapeSpec(
+                kind = ShapeKind.RECTANGLE,
+                fillArgb = 0xFFFFFFFF.toInt(),
+                strokeArgb = 0xFF000000.toInt(),
+                strokeWidthPx = 12.0,
+            ),
+        )
+
+        val noFill = DesignToolsUiPolicy.setShapeFill(source, null)
+        val noStroke = DesignToolsUiPolicy.setShapeStrokeColor(noFill, null)
+
+        assertEquals(ShapeKind.RECTANGLE, noStroke.shape!!.kind)
+        assertNull(noStroke.shape!!.fillArgb)
+        assertNull(noStroke.shape!!.strokeArgb)
+        assertTrue(noStroke.validationIssues().isEmpty())
     }
 
     @Test

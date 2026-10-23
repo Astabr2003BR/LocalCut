@@ -50,7 +50,7 @@ object Media3CompositionSupportPolicy {
         if (unsupportedTimeMap != null) {
             throw RenderPlanException(
                 RenderPlanErrorCode.UNSUPPORTED_TIME_MAP,
-                "clip time map requires ramp/reverse/freeze support that is not enabled yet: ${unsupportedTimeMap.clipId}",
+                "clip time map still requires reverse/freeze support that is not enabled yet: ${unsupportedTimeMap.clipId}",
             )
         }
     }

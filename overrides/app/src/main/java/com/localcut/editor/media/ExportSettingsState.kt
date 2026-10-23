@@ -20,14 +20,25 @@ data class ExportSettingsState(
     }
 
     fun selectResolution(resolution: ExportResolution): ExportSettingsState =
-        copy(selectedResolution = resolution)
+        copy(
+            resolutionOptions = prioritize(resolutionOptions, resolution),
+            selectedResolution = resolution,
+        )
 
-    fun selectFps(fps: Int): ExportSettingsState = copy(selectedFps = fps)
+    fun selectFps(fps: Int): ExportSettingsState = copy(
+        fpsOptions = prioritize(fpsOptions, fps),
+        selectedFps = fps,
+    )
 
-    fun selectBitrate(bitrateBitsPerSecond: Int): ExportSettingsState =
-        copy(selectedBitrateBitsPerSecond = bitrateBitsPerSecond)
+    fun selectBitrate(bitrateBitsPerSecond: Int): ExportSettingsState = copy(
+        bitrateOptions = prioritize(bitrateOptions, bitrateBitsPerSecond),
+        selectedBitrateBitsPerSecond = bitrateBitsPerSecond,
+    )
 
-    fun selectCodec(codec: ExportVideoCodec): ExportSettingsState = copy(selectedCodec = codec)
+    fun selectCodec(codec: ExportVideoCodec): ExportSettingsState = copy(
+        codecOptions = prioritize(codecOptions, codec),
+        selectedCodec = codec,
+    )
 
     fun toProfile(): ExportProfile = ExportProfile(
         width = selectedResolution.width,

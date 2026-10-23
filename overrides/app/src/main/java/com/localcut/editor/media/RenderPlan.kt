@@ -4,7 +4,7 @@ import com.localcut.editor.domain.model.*
 
 enum class RenderMode { FAST_PREVIEW, FULL_PREVIEW, EXPORT }
 
-enum class RenderPlanErrorCode { INVALID_PROJECT, ASSET_UNAVAILABLE, UNSUPPORTED_TRACK_LAYOUT }
+enum class RenderPlanErrorCode { INVALID_PROJECT, ASSET_UNAVAILABLE, UNSUPPORTED_TRACK_LAYOUT, UNSUPPORTED_COMPOSITING }
 
 class RenderPlanException(
     val code: RenderPlanErrorCode,

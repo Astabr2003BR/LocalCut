@@ -127,17 +127,17 @@ class MainActivity : ComponentActivity() {
             val bridgeState by runtime.bridgeControl.state.collectAsState()
             MaterialTheme(
                 colorScheme = darkColorScheme(
-                    primary = Color(0xFF9B8CFF),
-                    onPrimary = Color(0xFF15131E),
-                    secondaryContainer = Color(0xFF34323F),
-                    onSecondaryContainer = Color(0xFFF8F7FF),
-                    background = Color(0xFF0D0D11),
-                    onBackground = Color(0xFFF8F8FA),
-                    surface = Color(0xFF17171D),
-                    onSurface = Color(0xFFF8F8FA),
-                    surfaceVariant = Color(0xFF26262F),
-                    onSurfaceVariant = Color(0xFFD6D6DE),
-                    outline = Color(0xFF777783),
+                    primary = Color(0xFF20D5D2),
+                    onPrimary = Color(0xFF001817),
+                    secondaryContainer = Color(0xFF222226),
+                    onSecondaryContainer = Color(0xFFF5F5F7),
+                    background = Color(0xFF08080A),
+                    onBackground = Color(0xFFF5F5F7),
+                    surface = Color(0xFF111114),
+                    onSurface = Color(0xFFF5F5F7),
+                    surfaceVariant = Color(0xFF1B1B1F),
+                    onSurfaceVariant = Color(0xFFC4C4CA),
+                    outline = Color(0xFF4A4A50),
                     error = Color(0xFFFF7474),
                     errorContainer = Color(0xFF5A1F25),
                     onErrorContainer = Color(0xFFFFDADD),
@@ -151,7 +151,7 @@ class MainActivity : ComponentActivity() {
                         onAlwaysConnectedChange = runtime.bridgeControl::setAlwaysConnected,
                         onRelayEndpointSave = runtime.bridgeControl::setRelayBaseUrl,
                         onRevokePairing = runtime.bridgeControl::revokePairing,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
                     )
                     Box(modifier = Modifier.weight(1f)) {
                         EditorScreen(

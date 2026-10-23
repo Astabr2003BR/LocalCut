@@ -19,6 +19,14 @@ class EditorToolCatalogTest {
     }
 
     @Test
+    fun projectSelectionStartsWithCreationToolsInsteadOfClipTools() {
+        assertEquals(
+            listOf(EditorToolId.MEDIA, EditorToolId.AUDIO, EditorToolId.TEXT),
+            EditorToolCatalog.primaryToolsFor(EditorSelectionKind.PROJECT).take(3).map { it.id },
+        )
+    }
+
+    @Test
     fun creationToolsRemainReachableWhileVideoClipIsSelected() {
         val ids = EditorToolCatalog.primaryToolsFor(EditorSelectionKind.VIDEO).map { it.id }.toSet()
 
@@ -26,6 +34,42 @@ class EditorToolCatalogTest {
         assertTrue(EditorToolId.AUDIO in ids)
         assertTrue(EditorToolId.TEXT in ids)
         assertTrue(EditorToolId.OVERLAY in ids)
+    }
+
+    @Test
+    fun videoSelectionPrioritizesContextualEditingTools() {
+        assertEquals(
+            listOf(
+                EditorToolId.EDIT,
+                EditorToolId.EFFECTS,
+                EditorToolId.COLOR,
+                EditorToolId.SPEED,
+                EditorToolId.ANIMATION,
+            ),
+            EditorToolCatalog.primaryToolsFor(EditorSelectionKind.VIDEO).take(5).map { it.id },
+        )
+    }
+
+    @Test
+    fun imageSelectionPrioritizesContextualEditingTools() {
+        assertEquals(
+            listOf(
+                EditorToolId.EDIT,
+                EditorToolId.EFFECTS,
+                EditorToolId.COLOR,
+                EditorToolId.ANIMATION,
+                EditorToolId.MASK,
+            ),
+            EditorToolCatalog.primaryToolsFor(EditorSelectionKind.IMAGE).take(5).map { it.id },
+        )
+    }
+
+    @Test
+    fun audioSelectionPrioritizesEditAudioAndSpeed() {
+        assertEquals(
+            listOf(EditorToolId.EDIT, EditorToolId.AUDIO, EditorToolId.SPEED),
+            EditorToolCatalog.primaryToolsFor(EditorSelectionKind.AUDIO).take(3).map { it.id },
+        )
     }
 
     @Test

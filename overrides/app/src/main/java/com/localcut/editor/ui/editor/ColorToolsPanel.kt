@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -48,6 +49,10 @@ fun ColorToolsPanel(
             return@Surface
         }
 
+        var effectCategory by remember(clip.id) {
+            mutableStateOf(EffectBrowserCategory.COLOR)
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -66,6 +71,44 @@ fun ColorToolsPanel(
                         onClick = { onSetEffects(ColorFilterUiPolicy.applyPreset(clip.effects, preset)) },
                     ) { Text(preset.label) }
                 }
+            }
+
+            Text("Efeitos rápidos", style = MaterialTheme.typography.labelLarge)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                EffectBrowserUiPolicy.categories().forEach { category ->
+                    val label = EffectBrowserUiPolicy.label(category)
+                    if (category == effectCategory) {
+                        FilledTonalButton(onClick = { effectCategory = category }) { Text(label) }
+                    } else {
+                        OutlinedButton(onClick = { effectCategory = category }) { Text(label) }
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                EffectBrowserUiPolicy.presets(effectCategory).forEach { preset ->
+                    FilledTonalButton(
+                        onClick = {
+                            onSetEffects(
+                                CreativeToolsUiPolicy.setNumericEffect(
+                                    effects = clip.effects,
+                                    typeId = preset.typeId,
+                                    parameterName = preset.parameterName,
+                                    value = preset.value,
+                                ),
+                            )
+                        },
+                    ) { Text(preset.label) }
+                }
+                OutlinedButton(
+                    onClick = { onSetEffects(emptyList()) },
+                    enabled = clip.effects.isNotEmpty(),
+                ) { Text("Limpar FX") }
             }
 
             Text("Ajustes", style = MaterialTheme.typography.labelLarge)

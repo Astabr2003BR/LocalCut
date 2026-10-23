@@ -9,6 +9,7 @@ import androidx.media3.effect.GaussianBlur
 import androidx.media3.effect.HslAdjustment
 import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.RgbAdjustment
+import androidx.media3.effect.RgbMatrix
 import com.localcut.editor.domain.model.EffectInstance
 import com.localcut.editor.domain.model.EffectParameter
 import com.localcut.editor.effects.EffectRegistry
@@ -28,6 +29,8 @@ internal object Media3EffectStackFactory {
         "localcut.color.saturation",
         "localcut.color.temperature",
         "localcut.color.tint",
+        "localcut.color.monochrome",
+        "localcut.color.sepia",
         "localcut.color.hsl",
         "localcut.blur.gaussian",
     ) + LocalCutStylizeEffect.SUPPORTED_TYPES + matrixEffectTypes
@@ -87,6 +90,8 @@ internal object Media3EffectStackFactory {
                 .setBlueScale((1.0 + 0.125 * amount).toFloat())
                 .build()
         }
+        "localcut.color.monochrome" -> fixedMatrix(monochromeMatrix(number(effect, "amount")))
+        "localcut.color.sepia" -> fixedMatrix(sepiaMatrix(number(effect, "amount")))
         "localcut.color.hsl" ->
             HslAdjustment.Builder()
                 .adjustHue(number(effect, "hue").toFloat())
@@ -105,6 +110,35 @@ internal object Media3EffectStackFactory {
         }
         in LocalCutStylizeEffect.SUPPORTED_TYPES -> LocalCutStylizeEffect(effect)
         else -> error("unsupported Media3 effect: ${effect.typeId}")
+    }
+
+    private fun monochromeMatrix(amountValue: Double): FloatArray {
+        val amount = amountValue.coerceIn(0.0, 1.0).toFloat()
+        val keep = 1f - amount
+        val r = 0.2126f * amount
+        val g = 0.7152f * amount
+        val b = 0.0722f * amount
+        return floatArrayOf(
+            keep + r, g, b, 0f,
+            r, keep + g, b, 0f,
+            r, g, keep + b, 0f,
+            0f, 0f, 0f, 1f,
+        )
+    }
+
+    private fun sepiaMatrix(amountValue: Double): FloatArray {
+        val amount = amountValue.coerceIn(0.0, 1.0).toFloat()
+        val keep = 1f - amount
+        return floatArrayOf(
+            keep + 0.393f * amount, 0.769f * amount, 0.189f * amount, 0f,
+            0.349f * amount, keep + 0.686f * amount, 0.168f * amount, 0f,
+            0.272f * amount, 0.534f * amount, keep + 0.131f * amount, 0f,
+            0f, 0f, 0f, 1f,
+        )
+    }
+
+    private fun fixedMatrix(matrix: FloatArray): RgbMatrix = object : RgbMatrix {
+        override fun getMatrix(presentationTimeUs: Long, useHdr: Boolean): FloatArray = matrix
     }
 
     private fun number(effect: EffectInstance, name: String): Double =

@@ -1,0 +1,92 @@
+package com.localcut.editor.ui.editor
+
+import com.localcut.editor.domain.model.CanvasGuide
+import com.localcut.editor.domain.model.DesignCanvasSettings
+import com.localcut.editor.domain.model.DesignElement
+import com.localcut.editor.domain.model.GuideAxis
+import com.localcut.editor.domain.model.PathPoint
+import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.ReusableComponent
+import com.localcut.editor.domain.model.ShapeKind
+import com.localcut.editor.domain.model.ShapeSpec
+import com.localcut.editor.domain.model.VectorPath
+
+object DesignToolsUiPolicy {
+    const val DEFAULT_DURATION_US: Long = 3_000_000L
+    private const val CENTER_X_GUIDE_ID = "design-center-x"
+    private const val CENTER_Y_GUIDE_ID = "design-center-y"
+
+    fun newShape(project: Project, kind: ShapeKind, playheadUs: Long): DesignElement {
+        require(playheadUs >= 0L) { "playheadUs must be non-negative" }
+        val id = nextId("shape", project.designElements.map { it.id }.toSet())
+        val nextZ = (project.designElements.maxOfOrNull { it.zIndex } ?: -1) + 1
+        val shape = when (kind) {
+            ShapeKind.RECTANGLE -> ShapeSpec(
+                kind = kind,
+                fillArgb = 0xFFFFFFFF.toInt(),
+                cornerRadiusPx = 24.0,
+            )
+            ShapeKind.ELLIPSE -> ShapeSpec(kind = kind, fillArgb = 0xFFFFFFFF.toInt())
+            ShapeKind.LINE -> ShapeSpec(
+                kind = kind,
+                fillArgb = 0xFFFFFFFF.toInt(),
+                strokeWidthPx = 6.0,
+            )
+            ShapeKind.PATH -> ShapeSpec(
+                kind = kind,
+                path = VectorPath(
+                    points = listOf(
+                        PathPoint(0.5, 0.05),
+                        PathPoint(0.95, 0.95),
+                        PathPoint(0.05, 0.95),
+                    ),
+                    closed = true,
+                ),
+                fillArgb = 0xFFFFFFFF.toInt(),
+            )
+        }
+        return DesignElement(
+            id = id,
+            startUs = playheadUs,
+            durationUs = DEFAULT_DURATION_US,
+            shape = shape,
+            zIndex = nextZ,
+        )
+    }
+
+    fun toggleCenterGuides(settings: DesignCanvasSettings): DesignCanvasSettings {
+        val centerIds = setOf(CENTER_X_GUIDE_ID, CENTER_Y_GUIDE_ID)
+        val hasBoth = settings.guides.count { it.id in centerIds } == 2
+        val retained = settings.guides.filterNot { it.id in centerIds }
+        return if (hasBoth) {
+            settings.copy(guides = retained)
+        } else {
+            settings.copy(
+                guides = retained + listOf(
+                    CanvasGuide(CENTER_X_GUIDE_ID, GuideAxis.VERTICAL, 0.5),
+                    CanvasGuide(CENTER_Y_GUIDE_ID, GuideAxis.HORIZONTAL, 0.5),
+                ),
+            )
+        }
+    }
+
+    fun componentFromAllShapes(project: Project): ReusableComponent? {
+        val ids = project.designElements.filter { it.shape != null }.map { it.id }
+        if (ids.isEmpty()) return null
+        return ReusableComponent(
+            id = nextId("component", project.reusableComponents.map { it.id }.toSet()),
+            name = "Componente ${project.reusableComponents.size + 1}",
+            elementIds = ids,
+        )
+    }
+
+    private fun nextId(prefix: String, existing: Set<String>): String {
+        var index = 1L
+        while (true) {
+            val candidate = "$prefix-$index"
+            if (candidate !in existing) return candidate
+            check(index < Long.MAX_VALUE) { "unable to allocate $prefix id" }
+            index++
+        }
+    }
+}

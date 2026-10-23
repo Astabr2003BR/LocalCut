@@ -11,7 +11,7 @@ import org.junit.Test
 
 class MaskControlsUiPolicyTest {
     @Test
-    fun maskRefinementUpdatesOnlyPrimaryUiMaskAndStaysRenderable() {
+    fun maskRefinementUpdatesOnlyPrimaryUiMaskAndPreservesOtherMasks() {
         val other = MaskSpec(id = "other", kind = MaskKind.RECTANGLE)
         val source = CreativeToolsUiPolicy.setMaskPreset(
             CompositingSettings(masks = listOf(other)),
@@ -28,7 +28,21 @@ class MaskControlsUiPolicyTest {
         assertTrue(primary.invert)
         assertEquals(other, inverted.masks.single { it.id == "other" })
         assertTrue(inverted.validationIssues().isEmpty())
-        assertTrue(Media3CompositingEffectFactory.canRender(inverted))
+    }
+
+    @Test
+    fun refinedPrimaryMaskStaysRenderableForSupportedSingleMaskWorkflow() {
+        val source = CreativeToolsUiPolicy.setMaskPreset(CompositingSettings(), MaskKind.ELLIPSE)
+        val result = CreativeToolsUiPolicy.setPrimaryMaskInverted(
+            CreativeToolsUiPolicy.setPrimaryMaskExpansion(
+                CreativeToolsUiPolicy.setPrimaryMaskFeather(source, 24.0),
+                -12.0,
+            ),
+            true,
+        )
+
+        assertTrue(result.validationIssues().isEmpty())
+        assertTrue(Media3CompositingEffectFactory.canRender(result))
     }
 
     @Test

@@ -331,7 +331,8 @@ private class LocalCutCompositingShaderProgram(
                     maskAlpha *= uMaskOpacity;
                 }
 
-                gl_FragColor = vec4(outputRgb, source.a * chromaAlpha * maskAlpha);
+                float finalAlpha = chromaAlpha * maskAlpha;
+                gl_FragColor = vec4(outputRgb * finalAlpha, source.a * finalAlpha);
             }
         """.trimIndent()
 

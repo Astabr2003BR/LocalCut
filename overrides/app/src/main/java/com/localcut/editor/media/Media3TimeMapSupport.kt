@@ -97,7 +97,7 @@ internal object Media3TimeMapSupport {
                 cursor += dynamicStepUs
             }
             timeMap.speedPoints.forEach { point ->
-                if (point.offsetUs in 1 until presentationDurationUs) add(point.offsetUs)
+                if (point.offsetUs in 1L until presentationDurationUs) add(point.offsetUs)
             }
             add(presentationDurationUs)
         }.distinct().sorted()

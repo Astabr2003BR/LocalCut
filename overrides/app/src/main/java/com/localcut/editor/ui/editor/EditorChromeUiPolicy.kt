@@ -3,6 +3,12 @@ package com.localcut.editor.ui.editor
 import com.localcut.editor.domain.model.AssetType
 
 object EditorChromeUiPolicy {
+    private val transientCreationTools = setOf(
+        EditorToolId.MEDIA,
+        EditorToolId.TEXT,
+        EditorToolId.OVERLAY,
+    )
+
     fun selectionForAsset(assetType: AssetType?): EditorSelectionKind = when (assetType) {
         null -> EditorSelectionKind.PROJECT
         AssetType.VIDEO -> EditorSelectionKind.VIDEO
@@ -15,8 +21,12 @@ object EditorChromeUiPolicy {
         selection: EditorSelectionKind,
     ): EditorToolId? {
         val available = EditorToolCatalog.primaryToolsFor(selection).filter { it.enabled }
-        val preserved = available.firstOrNull { it.id == current }
-        if (preserved != null) return preserved.id
+        val transient = current in transientCreationTools ||
+            (current == EditorToolId.AUDIO && selection != EditorSelectionKind.AUDIO)
+        if (!transient) {
+            val preserved = available.firstOrNull { it.id == current }
+            if (preserved != null) return preserved.id
+        }
 
         val preferred = when (selection) {
             EditorSelectionKind.PROJECT -> EditorToolId.MEDIA

@@ -18,6 +18,16 @@ class EditorToolCatalogTest {
     }
 
     @Test
+    fun creationToolsRemainReachableWhileVideoClipIsSelected() {
+        val ids = EditorToolCatalog.primaryToolsFor(EditorSelectionKind.VIDEO).map { it.id }.toSet()
+
+        assertTrue(EditorToolId.MEDIA in ids)
+        assertTrue(EditorToolId.AUDIO in ids)
+        assertTrue(EditorToolId.TEXT in ids)
+        assertTrue(EditorToolId.OVERLAY in ids)
+    }
+
+    @Test
     fun videoSelectionExposesProfessionalClipTools() {
         val ids = EditorToolCatalog.primaryToolsFor(EditorSelectionKind.VIDEO).map { it.id }.toSet()
 

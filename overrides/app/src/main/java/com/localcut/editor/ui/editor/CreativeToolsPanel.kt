@@ -45,6 +45,17 @@ fun CreativeToolsPanel(
 ) {
     val clip = selectedClipId?.let(project::findClip) ?: return
     val asset = project.assets.firstOrNull { it.id == clip.assetId }
+
+    if (asset?.type == AssetType.AUDIO) {
+        AudioToolsPanel(
+            project = project,
+            selectedClipId = selectedClipId,
+            onSetAudioProcessing = onSetAudioProcessing,
+            modifier = modifier,
+        )
+        return
+    }
+
     val availableSections = CreativeToolsUiPolicy.availableSections(asset?.type)
     var requestedSection by remember(clip.id) {
         mutableStateOf(CreativeToolsUiPolicy.defaultSection(asset?.type))
@@ -177,46 +188,44 @@ fun CreativeToolsPanel(
                 }
 
                 CreativeToolsSection.TIMING -> {
-                    if (asset?.type != AssetType.AUDIO) {
-                        Text("Anime Mode", style = MaterialTheme.typography.labelMedium)
+                    Text("Anime Mode", style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        listOf(
+                            AnimeRecipe.IMPACT_ZOOM to "Impacto",
+                            AnimeRecipe.CAMERA_SHAKE to "Shake",
+                            AnimeRecipe.PARALLAX_PAN to "Parallax",
+                        ).forEach { (recipe, label) ->
+                            FilledTonalButton(onClick = {
+                                onSetPropertyAnimations(
+                                    AnimeRecipeApplicator.apply(clip, recipe, seed = clip.id.hashCode().toLong()).propertyAnimations,
+                                )
+                            }) { Text(label) }
+                        }
+                        OutlinedButton(
+                            onClick = { onSetPropertyAnimations(emptyList()) },
+                            enabled = clip.propertyAnimations.isNotEmpty(),
+                        ) { Text("Limpar animação") }
+                    }
+
+                    if (clip.propertyAnimations.isNotEmpty()) {
+                        Text("Curvas / easing", style = MaterialTheme.typography.labelMedium)
                         Row(
                             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             listOf(
-                                AnimeRecipe.IMPACT_ZOOM to "Impacto",
-                                AnimeRecipe.CAMERA_SHAKE to "Shake",
-                                AnimeRecipe.PARALLAX_PAN to "Parallax",
-                            ).forEach { (recipe, label) ->
-                                FilledTonalButton(onClick = {
-                                    onSetPropertyAnimations(
-                                        AnimeRecipeApplicator.apply(clip, recipe, seed = clip.id.hashCode().toLong()).propertyAnimations,
-                                    )
+                                EasingKind.LINEAR to "Linear",
+                                EasingKind.EASE_IN_OUT to "Suave",
+                                EasingKind.BOUNCE to "Bounce",
+                                EasingKind.ELASTIC to "Elastic",
+                                EasingKind.STEPS to "Steps",
+                            ).forEach { (kind, label) ->
+                                OutlinedButton(onClick = {
+                                    onSetPropertyAnimations(CreativeToolsUiPolicy.setEasingPreset(clip.propertyAnimations, kind))
                                 }) { Text(label) }
-                            }
-                            OutlinedButton(
-                                onClick = { onSetPropertyAnimations(emptyList()) },
-                                enabled = clip.propertyAnimations.isNotEmpty(),
-                            ) { Text("Limpar animação") }
-                        }
-
-                        if (clip.propertyAnimations.isNotEmpty()) {
-                            Text("Curvas / easing", style = MaterialTheme.typography.labelMedium)
-                            Row(
-                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                listOf(
-                                    EasingKind.LINEAR to "Linear",
-                                    EasingKind.EASE_IN_OUT to "Suave",
-                                    EasingKind.BOUNCE to "Bounce",
-                                    EasingKind.ELASTIC to "Elastic",
-                                    EasingKind.STEPS to "Steps",
-                                ).forEach { (kind, label) ->
-                                    OutlinedButton(onClick = {
-                                        onSetPropertyAnimations(CreativeToolsUiPolicy.setEasingPreset(clip.propertyAnimations, kind))
-                                    }) { Text(label) }
-                                }
                             }
                         }
                     }
@@ -258,22 +267,12 @@ fun CreativeToolsPanel(
                 }
 
                 CreativeToolsSection.AUDIO -> {
-                    Text("Áudio profissional", style = MaterialTheme.typography.labelMedium)
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        FilledTonalButton(onClick = {
-                            onSetAudioProcessing(CreativeToolsUiPolicy.voiceAudioPreset(clip.audioProcessing))
-                        }) { Text("Voz clara") }
-                        FilledTonalButton(onClick = {
-                            onSetAudioProcessing(CreativeToolsUiPolicy.loudnessAudioPreset(clip.audioProcessing))
-                        }) { Text("Loudness") }
-                        OutlinedButton(
-                            onClick = { onSetAudioProcessing(AudioProcessingSettings()) },
-                            enabled = clip.audioProcessing != AudioProcessingSettings(),
-                        ) { Text("Reset áudio") }
-                    }
+                    AudioToolsPanel(
+                        project = project,
+                        selectedClipId = selectedClipId,
+                        onSetAudioProcessing = onSetAudioProcessing,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             }
 

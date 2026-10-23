@@ -33,6 +33,7 @@ fun DesignToolsPanel(
     onDeleteElement: (String) -> Unit,
     onSetCanvas: (DesignCanvasSettings) -> Unit,
     onUpsertComponent: (ReusableComponent) -> Unit,
+    onInstantiateComponent: (ReusableComponent, String, Long) -> Unit,
     onDeleteComponent: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -104,6 +105,15 @@ fun DesignToolsPanel(
                     enabled = shapes.isNotEmpty(),
                 ) { Text("Salvar componente") }
                 project.reusableComponents.lastOrNull()?.let { component ->
+                    FilledTonalButton(
+                        onClick = {
+                            onInstantiateComponent(
+                                component,
+                                DesignToolsUiPolicy.nextInstancePrefix(project, component.id),
+                                playheadUs.coerceAtLeast(0L),
+                            )
+                        },
+                    ) { Text("Aplicar ${component.name}") }
                     OutlinedButton(onClick = { onDeleteComponent(component.id) }) {
                         Text("Remover ${component.name}")
                     }

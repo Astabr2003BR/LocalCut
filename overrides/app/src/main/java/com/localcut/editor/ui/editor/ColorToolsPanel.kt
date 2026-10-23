@@ -106,9 +106,11 @@ fun ColorToolsPanel(
                     ) { Text(preset.label) }
                 }
                 OutlinedButton(
-                    onClick = { onSetEffects(emptyList()) },
-                    enabled = clip.effects.isNotEmpty(),
-                ) { Text("Limpar FX") }
+                    onClick = {
+                        onSetEffects(EffectBrowserUiPolicy.clearCategory(clip.effects, effectCategory))
+                    },
+                    enabled = EffectBrowserUiPolicy.hasEffectsInCategory(clip.effects, effectCategory),
+                ) { Text("Limpar categoria") }
             }
 
             Text("Ajustes", style = MaterialTheme.typography.labelLarge)

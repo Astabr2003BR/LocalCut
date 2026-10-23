@@ -181,6 +181,12 @@ fun DesignToolsPanel(
                             Button(onClick = { onDeleteElement(element.id) }) { Text("Excluir forma") }
                         }
 
+                        DesignElementTransformControls(
+                            project = project,
+                            element = element,
+                            onUpdateElement = onUpdateElement,
+                        )
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,

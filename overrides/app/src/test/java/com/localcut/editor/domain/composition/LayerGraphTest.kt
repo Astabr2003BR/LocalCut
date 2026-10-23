@@ -1,5 +1,6 @@
 package com.localcut.editor.domain.composition
 
+import com.localcut.editor.domain.model.CameraSettings
 import com.localcut.editor.domain.model.CompositionGraph
 import com.localcut.editor.domain.model.CompositionNode
 import com.localcut.editor.domain.model.CompositionNodeKind

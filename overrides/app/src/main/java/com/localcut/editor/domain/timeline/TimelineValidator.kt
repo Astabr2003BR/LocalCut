@@ -1,6 +1,7 @@
 package com.localcut.editor.domain.timeline
 
 import com.localcut.editor.BuildContract
+import com.localcut.editor.domain.composition.LayerGraph
 import com.localcut.editor.domain.model.*
 
 enum class ProjectIssueCode {
@@ -29,6 +30,7 @@ enum class ProjectIssueCode {
     INVALID_TRANSITION,
     INVALID_TEXT_OVERLAY,
     INVALID_CREATIVE_STATE,
+    INVALID_COMPOSITION_GRAPH,
 }
 
 data class ProjectIssue(val code: ProjectIssueCode, val subjectId: String? = null, val detail: String? = null)
@@ -48,6 +50,9 @@ object TimelineValidator {
         duplicateIds(allClips.map { it.id }).forEach { issues += ProjectIssue(ProjectIssueCode.DUPLICATE_CLIP_ID, it) }
         duplicateIds(project.textOverlays.map { it.id }).forEach {
             issues += ProjectIssue(ProjectIssueCode.DUPLICATE_TEXT_OVERLAY_ID, it)
+        }
+        LayerGraph.validate(project.compositionGraph, allClips.map { it.id }.toSet()).firstOrNull()?.let { detail ->
+            issues += ProjectIssue(ProjectIssueCode.INVALID_COMPOSITION_GRAPH, project.id, detail)
         }
 
         val assets = project.assets.associateBy { it.id }

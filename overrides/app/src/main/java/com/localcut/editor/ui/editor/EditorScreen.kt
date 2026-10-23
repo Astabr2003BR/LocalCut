@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
@@ -22,6 +23,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,12 +35,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
+import com.localcut.editor.domain.model.ClipTransition
 import com.localcut.editor.media.ExportCapabilities
 import com.localcut.editor.media.ExportProfile
 import com.localcut.editor.media.ExportSettingsState
 import com.localcut.editor.media.ExportVideoCodec
 import com.localcut.editor.media.Media3PreviewController
 import com.localcut.editor.session.EditorAction
+import com.localcut.editor.session.ProjectSessionState
 import com.localcut.editor.ui.editor.components.InspectorPane
 import com.localcut.editor.ui.editor.components.PreviewPane
 import com.localcut.editor.ui.editor.components.TimelinePane
@@ -68,6 +72,13 @@ fun EditorScreen(
     val session by viewModel.sessionState.collectAsState()
     val preview by viewModel.previewState.collectAsState()
     val configuration = LocalConfiguration.current
+    val selectedClip = session.selectedClipId?.let(session.project::findClip)
+    val selectedAssetType = selectedClip?.let { clip ->
+        session.project.assets.firstOrNull { it.id == clip.assetId }?.type
+    }
+    val selectionKind = EditorChromeUiPolicy.selectionForAsset(selectedAssetType)
+
+    var activeTool by remember { mutableStateOf<EditorToolId?>(null) }
     var loopEnabled by remember { mutableStateOf(false) }
     var showExportSettings by remember { mutableStateOf(false) }
     var showTextManager by remember { mutableStateOf(false) }
@@ -81,8 +92,12 @@ fun EditorScreen(
         mutableStateOf(ExportSettingsState.from(session.project, exportCapabilities))
     }
 
+    LaunchedEffect(selectionKind) {
+        activeTool = EditorChromeUiPolicy.resolveActiveTool(activeTool, selectionKind)
+    }
+
     if (showExportSettings) {
-        ExportSettingsDialog(
+        ProfessionalExportSettingsDialog(
             state = exportSettings,
             onStateChange = { exportSettings = it },
             onDismiss = { showExportSettings = false },
@@ -128,138 +143,180 @@ fun EditorScreen(
         )
     }
 
+    fun selectTool(toolId: EditorToolId) {
+        when (toolId) {
+            EditorToolId.MEDIA -> onImportRequested()
+            EditorToolId.TEXT -> showTextManager = true
+            EditorToolId.OVERLAY -> onImportOverlayRequested()
+            EditorToolId.AUDIO -> {
+                if (selectionKind == EditorSelectionKind.AUDIO) {
+                    activeTool = EditorToolId.AUDIO
+                } else {
+                    onImportAudioRequested()
+                }
+            }
+            else -> activeTool = toolId
+        }
+    }
+
     Surface(
         modifier = modifier.fillMaxSize().safeDrawingPadding(),
         color = MaterialTheme.colorScheme.background,
     ) {
-        if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
-            Column(Modifier.fillMaxSize()) {
-                EditorToolbar(
-                    session.canUndo, session.canRedo, loopEnabled, exportState,
-                    onImportRequested, onImportAudioRequested, onImportOverlayRequested, { showTextManager = true }, { showExportSettings = true }, onCancelExport, onFinalPreviewRequested, viewModel
+        Column(Modifier.fillMaxSize()) {
+            ProfessionalEditorToolbar(
+                canUndo = session.canUndo,
+                canRedo = session.canRedo,
+                loopEnabled = loopEnabled,
+                exportState = exportState,
+                onUndo = { viewModel.dispatch(EditorAction.Undo) },
+                onRedo = { viewModel.dispatch(EditorAction.Redo) },
+                onLoopChange = { enabled ->
+                    loopEnabled = enabled
+                    viewModel.setLoopRange(
+                        0L,
+                        if (enabled && preview.durationUs > 0L) preview.durationUs else null,
+                    )
+                },
+                onExportRequested = { showExportSettings = true },
+                onCancelExport = onCancelExport,
+                onFinalPreviewRequested = onFinalPreviewRequested,
+            )
+
+            if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                Row(
+                    modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    loopEnabled = it
-                    viewModel.setLoopRange(0L, if (it && preview.durationUs > 0) preview.durationUs else null)
-                }
-                Row(Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 8.dp)) {
-                    Column(Modifier.weight(0.42f).fillMaxHeight().padding(end = 8.dp)) {
+                    Column(Modifier.weight(0.43f).fillMaxHeight()) {
                         PreviewPane(
                             controller = previewController,
                             state = preview,
                             onPlayPause = { if (preview.playing) viewModel.pause() else viewModel.play() },
                             onSeek = viewModel::seekToUs,
                             onStepFrames = viewModel::stepFrames,
-                            viewportHeight = 210.dp,
+                            viewportHeight = 190.dp,
                             modifier = Modifier.fillMaxWidth(),
                         )
-                        SectionTitle("Propriedades")
-                        InspectorForState(session, preview.positionUs, viewModel, Modifier.weight(1f))
+                        ProfessionalContextPanel(
+                            activeTool = activeTool,
+                            session = session,
+                            playheadUs = preview.positionUs,
+                            viewModel = viewModel,
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                        )
                     }
                     Surface(
-                        modifier = Modifier.weight(0.58f).fillMaxHeight(),
+                        modifier = Modifier.weight(0.57f).fillMaxHeight(),
                         color = MaterialTheme.colorScheme.surface,
                         shape = MaterialTheme.shapes.medium,
                     ) {
-                        Column(Modifier.padding(10.dp)) {
-                            SectionTitle("Linha do tempo")
-                            SelectedClipActions(session, preview.positionUs, viewModel)
-                            TimelineForState(session, preview.positionUs, viewModel, Modifier.weight(1f).fillMaxWidth())
+                        Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                            ProfessionalSectionTitle("Linha do tempo")
+                            TimelineForProfessionalState(
+                                session = session,
+                                playheadUs = preview.positionUs,
+                                viewModel = viewModel,
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                            )
                         }
                     }
                 }
-            }
-        } else {
-            Column(Modifier.fillMaxSize()) {
-                EditorToolbar(
-                    session.canUndo, session.canRedo, loopEnabled, exportState,
-                    onImportRequested, onImportAudioRequested, onImportOverlayRequested, { showTextManager = true }, { showExportSettings = true }, onCancelExport, onFinalPreviewRequested, viewModel
-                ) {
-                    loopEnabled = it
-                    viewModel.setLoopRange(0L, if (it && preview.durationUs > 0) preview.durationUs else null)
-                }
+            } else {
                 PreviewPane(
                     controller = previewController,
                     state = preview,
                     onPlayPause = { if (preview.playing) viewModel.pause() else viewModel.play() },
                     onSeek = viewModel::seekToUs,
                     onStepFrames = viewModel::stepFrames,
-                    viewportHeight = 180.dp,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                    viewportHeight = 220.dp,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp),
                 )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
-                Surface(
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 138.dp, max = 166.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                ) {
-                    Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                        SectionTitle("Linha do tempo")
-                        TimelineForState(session, preview.positionUs, viewModel, Modifier.fillMaxWidth())
-                    }
-                }
-                SelectedClipActions(session, preview.positionUs, viewModel)
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f))
                 Surface(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     color = MaterialTheme.colorScheme.surface,
                 ) {
-                    Column {
-                        SectionTitle("Propriedades", Modifier.padding(horizontal = 14.dp, vertical = 6.dp))
-                        InspectorForState(session, preview.positionUs, viewModel, Modifier.weight(1f))
+                    Column(Modifier.padding(horizontal = 8.dp, vertical = 5.dp)) {
+                        ProfessionalSectionTitle("Linha do tempo")
+                        TimelineForProfessionalState(
+                            session = session,
+                            playheadUs = preview.positionUs,
+                            viewModel = viewModel,
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                        )
                     }
                 }
+                ProfessionalContextPanel(
+                    activeTool = activeTool,
+                    session = session,
+                    playheadUs = preview.positionUs,
+                    viewModel = viewModel,
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 238.dp),
+                )
             }
+
+            ProfessionalStatusStrip(session)
+            EditorBottomToolRail(
+                selection = selectionKind,
+                activeTool = activeTool,
+                onToolSelected = ::selectTool,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
 
 @Composable
-private fun EditorToolbar(
+private fun ProfessionalEditorToolbar(
     canUndo: Boolean,
     canRedo: Boolean,
     loopEnabled: Boolean,
     exportState: ExportUiState,
-    onImportRequested: () -> Unit,
-    onImportAudioRequested: () -> Unit,
-    onImportOverlayRequested: () -> Unit,
-    onTextRequested: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+    onLoopChange: (Boolean) -> Unit,
     onExportRequested: () -> Unit,
     onCancelExport: () -> Unit,
     onFinalPreviewRequested: () -> Unit,
-    viewModel: EditorViewModel,
-    onLoopChange: (Boolean) -> Unit,
 ) {
-    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 4.dp) {
-        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 5.dp) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
                     "LocalCut",
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 11.dp),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
-                Button(onClick = onImportRequested, enabled = !exportState.running) { Text("Mídia") }
-                FilledTonalButton(onClick = onImportAudioRequested, enabled = !exportState.running) { Text("Áudio") }
-                FilledTonalButton(onClick = onImportOverlayRequested, enabled = !exportState.running) { Text("Overlay") }
-                FilledTonalButton(onClick = onTextRequested, enabled = !exportState.running) { Text("Texto") }
-                FilledTonalButton(onClick = onExportRequested, enabled = !exportState.running) { Text("Exportar") }
-                FilledTonalButton(onClick = onFinalPreviewRequested, enabled = !exportState.running) { Text("Prévia final") }
+                OutlinedButton(onClick = onUndo, enabled = canUndo && !exportState.running) { Text("↶") }
+                OutlinedButton(onClick = onRedo, enabled = canRedo && !exportState.running) { Text("↷") }
+                OutlinedButton(onClick = { onLoopChange(!loopEnabled) }) {
+                    Text(if (loopEnabled) "Loop ON" else "Loop")
+                }
+                FilledTonalButton(onClick = onFinalPreviewRequested, enabled = !exportState.running) {
+                    Text("Prévia")
+                }
+                FilledTonalButton(onClick = onExportRequested, enabled = !exportState.running) {
+                    Text("Exportar")
+                }
                 if (exportState.running) {
                     Button(onClick = onCancelExport) { Text("Cancelar") }
                 }
-                OutlinedButton(onClick = { viewModel.dispatch(EditorAction.Undo) }, enabled = canUndo && !exportState.running) { Text("Desfazer") }
-                OutlinedButton(onClick = { viewModel.dispatch(EditorAction.Redo) }, enabled = canRedo && !exportState.running) { Text("Refazer") }
-                OutlinedButton(onClick = { onLoopChange(!loopEnabled) }) { Text(if (loopEnabled) "Loop ON" else "Loop OFF") }
             }
             if (exportState.running || exportState.message != null) {
                 Text(
                     text = buildString {
-                        exportState.message?.let { append(it) }
-                        exportState.progressPercent?.let { if (isNotEmpty()) append(" • "); append("$it%") }
+                        exportState.message?.let(::append)
+                        exportState.progressPercent?.let { progress ->
+                            if (isNotEmpty()) append(" • ")
+                            append("$progress%")
+                        }
                     },
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -269,88 +326,96 @@ private fun EditorToolbar(
 }
 
 @Composable
-private fun ExportSettingsDialog(
-    state: ExportSettingsState,
-    onStateChange: (ExportSettingsState) -> Unit,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
+private fun ProfessionalContextPanel(
+    activeTool: EditorToolId?,
+    session: ProjectSessionState,
+    playheadUs: Long,
+    viewModel: EditorViewModel,
+    modifier: Modifier = Modifier,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Exportar vídeo") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                ExportChoiceRow(
-                    label = "Resolução",
-                    options = state.resolutionOptions,
-                    selected = state.selectedResolution,
-                    optionLabel = { "${it.width}×${it.height}" },
-                    onSelect = { onStateChange(state.selectResolution(it)) },
-                )
-                ExportChoiceRow(
-                    label = "FPS",
-                    options = state.fpsOptions,
-                    selected = state.selectedFps,
-                    optionLabel = { "$it fps" },
-                    onSelect = { onStateChange(state.selectFps(it)) },
-                )
-                ExportChoiceRow(
-                    label = "Bitrate",
-                    options = state.bitrateOptions,
-                    selected = state.selectedBitrateBitsPerSecond,
-                    optionLabel = { "${it / 1_000_000} Mbps" },
-                    onSelect = { onStateChange(state.selectBitrate(it)) },
-                )
-                ExportChoiceRow(
-                    label = "Codec",
-                    options = state.codecOptions,
-                    selected = state.selectedCodec,
-                    optionLabel = { if (it == ExportVideoCodec.HEVC) "HEVC" else "H.264" },
-                    onSelect = { onStateChange(state.selectCodec(it)) },
-                )
-            }
-        },
-        confirmButton = {
-            Button(onClick = onConfirm) { Text("Escolher arquivo") }
-        },
-        dismissButton = {
-            OutlinedButton(onClick = onDismiss) { Text("Cancelar") }
-        },
+    val contextual = activeTool in setOf(
+        EditorToolId.EDIT,
+        EditorToolId.AUDIO,
+        EditorToolId.EFFECTS,
+        EditorToolId.COLOR,
+        EditorToolId.SPEED,
+        EditorToolId.MASK,
+        EditorToolId.CHROMA,
+        EditorToolId.ANIMATION,
+        EditorToolId.DESIGN,
+        EditorToolId.CANVAS,
     )
-}
+    if (!contextual) return
 
-@Composable
-private fun <T> ExportChoiceRow(
-    label: String,
-    options: List<T>,
-    selected: T,
-    optionLabel: (T) -> String,
-    onSelect: (T) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            options.forEach { option ->
-                if (option == selected) {
-                    FilledTonalButton(onClick = { onSelect(option) }) { Text(optionLabel(option)) }
-                } else {
-                    OutlinedButton(onClick = { onSelect(option) }) { Text(optionLabel(option)) }
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f),
+    ) {
+        when (activeTool) {
+            EditorToolId.EDIT -> {
+                Column(Modifier.fillMaxSize()) {
+                    ProfessionalClipQuickActions(session, playheadUs, viewModel)
+                    InspectorPane(
+                        project = session.project,
+                        selectedClipId = session.selectedClipId,
+                        playheadUs = playheadUs,
+                        onDelete = { viewModel.dispatch(EditorAction.DeleteSelected) },
+                        onSplit = { viewModel.dispatch(EditorAction.SplitSelected(it)) },
+                        onTransform = { viewModel.dispatch(EditorAction.SetSelectedTransform(it)) },
+                        onSetKeyframes = { viewModel.dispatch(EditorAction.SetSelectedKeyframes(it)) },
+                        onSeek = viewModel::seekToUs,
+                        onVolume = { viewModel.dispatch(EditorAction.SetSelectedVolume(it)) },
+                        onAudioFades = { fadeInUs, fadeOutUs ->
+                            viewModel.dispatch(EditorAction.SetSelectedAudioFades(fadeInUs, fadeOutUs))
+                        },
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    )
                 }
             }
+            EditorToolId.AUDIO,
+            EditorToolId.EFFECTS,
+            EditorToolId.COLOR,
+            EditorToolId.SPEED,
+            EditorToolId.MASK,
+            EditorToolId.CHROMA,
+            EditorToolId.ANIMATION -> {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    CreativeToolsPanel(
+                        project = session.project,
+                        selectedClipId = session.selectedClipId,
+                        onSetEffects = { viewModel.dispatch(EditorAction.SetSelectedEffects(it)) },
+                        onSetCompositing = { viewModel.dispatch(EditorAction.SetSelectedCompositing(it)) },
+                        onSetTimeMap = { viewModel.dispatch(EditorAction.SetSelectedTimeMap(it)) },
+                        onSetAudioProcessing = { viewModel.dispatch(EditorAction.SetSelectedAudioProcessing(it)) },
+                        onSetPropertyAnimations = { viewModel.dispatch(EditorAction.SetSelectedPropertyAnimations(it)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+            EditorToolId.DESIGN,
+            EditorToolId.CANVAS -> {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    DesignToolsPanel(
+                        project = session.project,
+                        playheadUs = playheadUs,
+                        onAddElement = { viewModel.dispatch(EditorAction.AddDesignElement(it)) },
+                        onUpdateElement = { viewModel.dispatch(EditorAction.UpdateDesignElement(it)) },
+                        onDeleteElement = { viewModel.dispatch(EditorAction.DeleteDesignElement(it)) },
+                        onSetCanvas = { viewModel.dispatch(EditorAction.SetDesignCanvas(it)) },
+                        onUpsertComponent = { viewModel.dispatch(EditorAction.UpsertReusableComponent(it)) },
+                        onDeleteComponent = { viewModel.dispatch(EditorAction.DeleteReusableComponent(it)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+            else -> Unit
         }
     }
 }
 
 @Composable
-private fun SelectedClipActions(
-    session: com.localcut.editor.session.ProjectSessionState,
+private fun ProfessionalClipQuickActions(
+    session: ProjectSessionState,
     playheadUs: Long,
     viewModel: EditorViewModel,
 ) {
@@ -361,7 +426,7 @@ private fun SelectedClipActions(
     var showTransitionDialog by remember(clip.id) { mutableStateOf(false) }
 
     if (showTransitionDialog && transitionCandidate != null) {
-        FadeTransitionDialog(
+        ProfessionalFadeTransitionDialog(
             existing = existingFade,
             onDurationSelected = { durationUs ->
                 FadeTransitionUiPolicy.createOrUpdate(session.project, clip.id, durationUs)?.let { transition ->
@@ -382,96 +447,26 @@ private fun SelectedClipActions(
         )
     }
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
-            Text(
-                text = "Arraste as bordas roxas para cortar",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
-            ) {
-                FilledTonalButton(
-                    onClick = { viewModel.dispatch(EditorAction.SplitSelected(playheadUs)) },
-                    enabled = canSplit,
-                ) { Text("Dividir") }
-                FilledTonalButton(onClick = { viewModel.dispatch(EditorAction.DuplicateSelected) }) { Text("Duplicar") }
-                FilledTonalButton(
-                    onClick = { showTransitionDialog = true },
-                    enabled = transitionCandidate != null,
-                ) { Text(if (existingFade == null) "Transição" else "Transição ativa") }
-                Button(onClick = { viewModel.dispatch(EditorAction.DeleteSelected) }) { Text("Excluir") }
-                OutlinedButton(
-                    onClick = { viewModel.dispatch(EditorAction.Undo) },
-                    enabled = session.canUndo,
-                ) { Text("Desfazer") }
-                OutlinedButton(
-                    onClick = { viewModel.dispatch(EditorAction.Redo) },
-                    enabled = session.canRedo,
-                ) { Text("Refazer") }
-            }
-        }
+        FilledTonalButton(
+            onClick = { viewModel.dispatch(EditorAction.SplitSelected(playheadUs)) },
+            enabled = canSplit,
+        ) { Text("Dividir") }
+        FilledTonalButton(onClick = { viewModel.dispatch(EditorAction.DuplicateSelected) }) { Text("Duplicar") }
+        FilledTonalButton(
+            onClick = { showTransitionDialog = true },
+            enabled = transitionCandidate != null,
+        ) { Text(if (existingFade == null) "Transição" else "Transição ativa") }
+        Button(onClick = { viewModel.dispatch(EditorAction.DeleteSelected) }) { Text("Excluir") }
     }
 }
 
 @Composable
-private fun FadeTransitionDialog(
-    existing: com.localcut.editor.domain.model.ClipTransition?,
-    onDurationSelected: (Long) -> Unit,
-    onRemove: (() -> Unit)?,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Transição") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Fade para preto")
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    listOf(250_000L to "0,25 s", 500_000L to "0,5 s", 1_000_000L to "1 s").forEach { (durationUs, label) ->
-                        val selected = existing?.durationUs == durationUs
-                        if (selected) {
-                            FilledTonalButton(onClick = { onDurationSelected(durationUs) }) { Text(label) }
-                        } else {
-                            OutlinedButton(onClick = { onDurationSelected(durationUs) }) { Text(label) }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            OutlinedButton(onClick = onDismiss) { Text("Fechar") }
-        },
-        dismissButton = {
-            onRemove?.let { remove ->
-                Button(onClick = remove) { Text("Remover") }
-            }
-        },
-    )
-}
-
-@Composable
-private fun SectionTitle(text: String, modifier: Modifier = Modifier.padding(bottom = 6.dp)) {
-    Text(
-        text = text,
-        modifier = modifier,
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-}
-
-@Composable
-private fun TimelineForState(
-    session: com.localcut.editor.session.ProjectSessionState,
+private fun TimelineForProfessionalState(
+    session: ProjectSessionState,
     playheadUs: Long,
     viewModel: EditorViewModel,
     modifier: Modifier,
@@ -505,50 +500,139 @@ private fun TimelineForState(
 }
 
 @Composable
-private fun InspectorForState(
-    session: com.localcut.editor.session.ProjectSessionState,
-    playheadUs: Long,
-    viewModel: EditorViewModel,
-    modifier: Modifier = Modifier,
+private fun ProfessionalStatusStrip(session: ProjectSessionState) {
+    val message = session.lastError?.let { "Erro: $it" }
+        ?: session.issues.firstOrNull()?.let { "Aviso: ${it.message}" }
+        ?: return
+    Text(
+        text = message,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 3.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+        maxLines = 1,
+    )
+}
+
+@Composable
+private fun ProfessionalSectionTitle(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier.padding(bottom = 4.dp),
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun ProfessionalFadeTransitionDialog(
+    existing: ClipTransition?,
+    onDurationSelected: (Long) -> Unit,
+    onRemove: (() -> Unit)?,
+    onDismiss: () -> Unit,
 ) {
-    Column(modifier = modifier) {
-        DesignToolsPanel(
-            project = session.project,
-            playheadUs = playheadUs,
-            onAddElement = { viewModel.dispatch(EditorAction.AddDesignElement(it)) },
-            onUpdateElement = { viewModel.dispatch(EditorAction.UpdateDesignElement(it)) },
-            onDeleteElement = { viewModel.dispatch(EditorAction.DeleteDesignElement(it)) },
-            onSetCanvas = { viewModel.dispatch(EditorAction.SetDesignCanvas(it)) },
-            onUpsertComponent = { viewModel.dispatch(EditorAction.UpsertReusableComponent(it)) },
-            onDeleteComponent = { viewModel.dispatch(EditorAction.DeleteReusableComponent(it)) },
-            modifier = Modifier.fillMaxWidth(),
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Transição") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Fade para preto")
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    listOf(250_000L to "0,25 s", 500_000L to "0,5 s", 1_000_000L to "1 s").forEach { (durationUs, label) ->
+                        val selected = existing?.durationUs == durationUs
+                        if (selected) {
+                            FilledTonalButton(onClick = { onDurationSelected(durationUs) }) { Text(label) }
+                        } else {
+                            OutlinedButton(onClick = { onDurationSelected(durationUs) }) { Text(label) }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("Fechar") } },
+        dismissButton = {
+            onRemove?.let { remove ->
+                Button(onClick = remove) { Text("Remover") }
+            }
+        },
+    )
+}
+
+@Composable
+private fun ProfessionalExportSettingsDialog(
+    state: ExportSettingsState,
+    onStateChange: (ExportSettingsState) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Exportar vídeo") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ProfessionalExportChoiceRow(
+                    label = "Resolução",
+                    options = state.resolutionOptions,
+                    selected = state.selectedResolution,
+                    optionLabel = { "${it.width}×${it.height}" },
+                    onSelect = { onStateChange(state.selectResolution(it)) },
+                )
+                ProfessionalExportChoiceRow(
+                    label = "FPS",
+                    options = state.fpsOptions,
+                    selected = state.selectedFps,
+                    optionLabel = { "$it fps" },
+                    onSelect = { onStateChange(state.selectFps(it)) },
+                )
+                ProfessionalExportChoiceRow(
+                    label = "Bitrate",
+                    options = state.bitrateOptions,
+                    selected = state.selectedBitrateBitsPerSecond,
+                    optionLabel = { "${it / 1_000_000} Mbps" },
+                    onSelect = { onStateChange(state.selectBitrate(it)) },
+                )
+                ProfessionalExportChoiceRow(
+                    label = "Codec",
+                    options = state.codecOptions,
+                    selected = state.selectedCodec,
+                    optionLabel = { if (it == ExportVideoCodec.HEVC) "HEVC" else "H.264" },
+                    onSelect = { onStateChange(state.selectCodec(it)) },
+                )
+            }
+        },
+        confirmButton = { Button(onClick = onConfirm) { Text("Escolher arquivo") } },
+        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
+}
+
+@Composable
+private fun <T> ProfessionalExportChoiceRow(
+    label: String,
+    options: List<T>,
+    selected: T,
+    optionLabel: (T) -> String,
+    onSelect: (T) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        CreativeToolsPanel(
-            project = session.project,
-            selectedClipId = session.selectedClipId,
-            onSetEffects = { viewModel.dispatch(EditorAction.SetSelectedEffects(it)) },
-            onSetCompositing = { viewModel.dispatch(EditorAction.SetSelectedCompositing(it)) },
-            onSetTimeMap = { viewModel.dispatch(EditorAction.SetSelectedTimeMap(it)) },
-            onSetAudioProcessing = { viewModel.dispatch(EditorAction.SetSelectedAudioProcessing(it)) },
-            onSetPropertyAnimations = { viewModel.dispatch(EditorAction.SetSelectedPropertyAnimations(it)) },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        InspectorPane(
-            project = session.project,
-            selectedClipId = session.selectedClipId,
-            playheadUs = playheadUs,
-            onDelete = { viewModel.dispatch(EditorAction.DeleteSelected) },
-            onSplit = { viewModel.dispatch(EditorAction.SplitSelected(it)) },
-            onTransform = { viewModel.dispatch(EditorAction.SetSelectedTransform(it)) },
-            onSetKeyframes = { viewModel.dispatch(EditorAction.SetSelectedKeyframes(it)) },
-            onSeek = viewModel::seekToUs,
-            onVolume = { viewModel.dispatch(EditorAction.SetSelectedVolume(it)) },
-            onAudioFades = { fadeInUs, fadeOutUs ->
-                viewModel.dispatch(EditorAction.SetSelectedAudioFades(fadeInUs, fadeOutUs))
-            },
-            modifier = Modifier.weight(1f),
-        )
-        session.lastError?.let { Text("Erro: $it", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) }
-        session.issues.firstOrNull()?.let { Text("Aviso: ${it.message}", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) }
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            options.forEach { option ->
+                if (option == selected) {
+                    FilledTonalButton(onClick = { onSelect(option) }) { Text(optionLabel(option)) }
+                } else {
+                    OutlinedButton(onClick = { onSelect(option) }) { Text(optionLabel(option)) }
+                }
+            }
+        }
     }
 }

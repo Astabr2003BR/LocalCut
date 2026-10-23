@@ -65,6 +65,17 @@ object BeatMarkerUiPolicy {
             kotlin.math.abs(timeMap.baseSpeed - 1.0) < 1e-9
     }
 
+    fun autoMarkerPrefix(clipId: String): String {
+        require(clipId.isNotBlank()) { "clipId must not be blank" }
+        return "auto-beat-${clipId.replace(Regex("[^A-Za-z0-9_-]"), "_")}-"
+    }
+
+    fun hasAutoMarkersForClip(markers: List<BeatMarker>, clipId: String?): Boolean {
+        if (clipId.isNullOrBlank()) return false
+        val prefix = autoMarkerPrefix(clipId)
+        return markers.any { it.id.startsWith(prefix) }
+    }
+
     fun mergeAutoDetectedMarkers(
         existing: List<BeatMarker>,
         clipId: String,
@@ -99,7 +110,4 @@ object BeatMarkerUiPolicy {
             (marker.timeUs.toDouble() / durationUs.toDouble()).coerceIn(0.0, 1.0).toFloat()
         }
     }
-
-    private fun autoMarkerPrefix(clipId: String): String =
-        "auto-beat-${clipId.replace(Regex("[^A-Za-z0-9_-]"), "_")}-"
 }

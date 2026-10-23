@@ -72,7 +72,7 @@ fun AudioToolsPanel(
                 onSetAudioProcessing(AudioToolsUiPolicy.setNormalizationGain(settings, value))
             }
 
-            Text("EQ 3 bandas", style = MaterialTheme.typography.labelLarge)
+            Text("EQ paramétrico 3 bandas", style = MaterialTheme.typography.labelLarge)
             AudioCommitSlider(
                 label = "Graves 120 Hz",
                 initial = AudioToolsUiPolicy.eqGain(settings, AudioEqBand.LOW),
@@ -80,6 +80,13 @@ fun AudioToolsPanel(
                 suffix = " dB",
             ) { value ->
                 onSetAudioProcessing(AudioToolsUiPolicy.setEqGain(settings, AudioEqBand.LOW, value))
+            }
+            AudioCommitSlider(
+                label = "Q graves",
+                initial = AudioToolsUiPolicy.eqQ(settings, AudioEqBand.LOW),
+                range = 0.1f..20f,
+            ) { value ->
+                onSetAudioProcessing(AudioToolsUiPolicy.setEqQ(settings, AudioEqBand.LOW, value))
             }
             AudioCommitSlider(
                 label = "Médios 1 kHz",
@@ -90,12 +97,26 @@ fun AudioToolsPanel(
                 onSetAudioProcessing(AudioToolsUiPolicy.setEqGain(settings, AudioEqBand.MID, value))
             }
             AudioCommitSlider(
+                label = "Q médios",
+                initial = AudioToolsUiPolicy.eqQ(settings, AudioEqBand.MID),
+                range = 0.1f..20f,
+            ) { value ->
+                onSetAudioProcessing(AudioToolsUiPolicy.setEqQ(settings, AudioEqBand.MID, value))
+            }
+            AudioCommitSlider(
                 label = "Agudos 8 kHz",
                 initial = AudioToolsUiPolicy.eqGain(settings, AudioEqBand.HIGH),
                 range = -12f..12f,
                 suffix = " dB",
             ) { value ->
                 onSetAudioProcessing(AudioToolsUiPolicy.setEqGain(settings, AudioEqBand.HIGH, value))
+            }
+            AudioCommitSlider(
+                label = "Q agudos",
+                initial = AudioToolsUiPolicy.eqQ(settings, AudioEqBand.HIGH),
+                range = 0.1f..20f,
+            ) { value ->
+                onSetAudioProcessing(AudioToolsUiPolicy.setEqQ(settings, AudioEqBand.HIGH, value))
             }
 
             AudioToggle(

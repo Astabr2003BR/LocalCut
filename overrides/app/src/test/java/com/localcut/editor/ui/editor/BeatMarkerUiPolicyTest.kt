@@ -19,6 +19,17 @@ class BeatMarkerUiPolicyTest {
     }
 
     @Test
+    fun editSnapUsesEightyMillisecondToleranceAndOtherwisePreservesRequest() {
+        val markers = listOf(
+            BeatMarker("a", 1_000_000L, 1.0),
+            BeatMarker("b", 2_000_000L, 0.7),
+        )
+
+        assertEquals(2_000_000L, BeatMarkerUiPolicy.snapTimeUs(markers, 1_925_000L))
+        assertEquals(1_919_000L, BeatMarkerUiPolicy.snapTimeUs(markers, 1_919_000L))
+    }
+
+    @Test
     fun emptyProjectCannotCreateManualBeatMarker() {
         val project = Project.create("Beat", 1080, 1920, 30)
         assertNull(BeatMarkerUiPolicy.manualMarker(project, 0L))

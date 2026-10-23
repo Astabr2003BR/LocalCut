@@ -6,12 +6,30 @@ import com.localcut.editor.domain.model.CompositionNodeKind
 
 object LayerPanelUiPolicy {
     fun isClipVisible(graph: CompositionGraph, clipId: String): Boolean =
-        graph.nodes.firstOrNull { it.kind == CompositionNodeKind.LAYER && it.clipId == clipId }?.visible ?: true
+        layerNode(graph, clipId)?.visible ?: true
+
+    fun isClipLocked(graph: CompositionGraph, clipId: String): Boolean =
+        layerNode(graph, clipId)?.locked ?: false
 
     fun setClipVisible(
         graph: CompositionGraph,
         clipId: String,
         visible: Boolean,
+    ): CompositionGraph = updateLayerNode(graph, clipId) { node -> node.copy(visible = visible) }
+
+    fun setClipLocked(
+        graph: CompositionGraph,
+        clipId: String,
+        locked: Boolean,
+    ): CompositionGraph = updateLayerNode(graph, clipId) { node -> node.copy(locked = locked) }
+
+    private fun layerNode(graph: CompositionGraph, clipId: String): CompositionNode? =
+        graph.nodes.firstOrNull { it.kind == CompositionNodeKind.LAYER && it.clipId == clipId }
+
+    private fun updateLayerNode(
+        graph: CompositionGraph,
+        clipId: String,
+        transform: (CompositionNode) -> CompositionNode,
     ): CompositionGraph {
         require(clipId.isNotBlank()) { "clipId must not be blank" }
         val existingIndex = graph.nodes.indexOfFirst {
@@ -19,17 +37,18 @@ object LayerPanelUiPolicy {
         }
         if (existingIndex >= 0) {
             val nodes = graph.nodes.toMutableList()
-            nodes[existingIndex] = nodes[existingIndex].copy(visible = visible)
+            nodes[existingIndex] = transform(nodes[existingIndex])
             return graph.copy(nodes = nodes)
         }
 
         val nodeId = nextLayerNodeId(graph, clipId)
         return graph.copy(
-            nodes = graph.nodes + CompositionNode(
-                id = nodeId,
-                kind = CompositionNodeKind.LAYER,
-                clipId = clipId,
-                visible = visible,
+            nodes = graph.nodes + transform(
+                CompositionNode(
+                    id = nodeId,
+                    kind = CompositionNodeKind.LAYER,
+                    clipId = clipId,
+                ),
             ),
         )
     }

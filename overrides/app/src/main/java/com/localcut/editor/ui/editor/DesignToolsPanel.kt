@@ -41,6 +41,7 @@ fun DesignToolsPanel(
     onUpdateElement: (DesignElement) -> Unit,
     onDeleteElement: (String) -> Unit,
     onSetCanvas: (DesignCanvasSettings) -> Unit,
+    onSetProjectCanvasSize: (Int, Int) -> Unit,
     onUpsertComponent: (ReusableComponent) -> Unit,
     onInstantiateComponent: (ReusableComponent, String, Long) -> Unit = { component, prefix, startUs ->
         DesignToolsUiPolicy.instantiateComponentElements(project, component, prefix, startUs).forEach(onAddElement)
@@ -289,6 +290,30 @@ fun DesignToolsPanel(
                 }
 
                 DesignToolsSection.CANVAS -> {
+                    Text("Formato do projeto", style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        DesignToolsUiPolicy.canvasPresets().forEach { preset ->
+                            val selected = DesignToolsUiPolicy.isCanvasPresetActive(project, preset)
+                            if (selected) {
+                                FilledTonalButton(
+                                    onClick = { onSetProjectCanvasSize(preset.width, preset.height) },
+                                ) { Text("${preset.label} ✓") }
+                            } else {
+                                OutlinedButton(
+                                    onClick = { onSetProjectCanvasSize(preset.width, preset.height) },
+                                ) { Text(preset.label) }
+                            }
+                        }
+                    }
+                    Text(
+                        "${project.width}×${project.height}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
                     Text("Guias e alinhamento", style = MaterialTheme.typography.labelMedium)
                     Row(
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),

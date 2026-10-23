@@ -70,6 +70,20 @@ data class SetDesignCanvasCommand(
     }
 }
 
+data class SetProjectCanvasSizeCommand(
+    val width: Int,
+    val height: Int,
+) : EditorCommand {
+    override fun apply(project: Project): CommandResult {
+        require(width > 0 && height > 0) { "project canvas dimensions must be positive" }
+        if (project.width == width && project.height == height) {
+            return CommandResult(project, SetProjectCanvasSizeCommand(project.width, project.height))
+        }
+        val edited = validatedDesign(project.copy(width = width, height = height))
+        return CommandResult(edited, SetProjectCanvasSizeCommand(project.width, project.height))
+    }
+}
+
 data class UpsertReusableComponentCommand(
     val component: ReusableComponent,
 ) : EditorCommand {

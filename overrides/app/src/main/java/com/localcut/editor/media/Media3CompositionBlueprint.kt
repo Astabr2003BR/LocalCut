@@ -1,6 +1,7 @@
 package com.localcut.editor.media
 
 import com.localcut.editor.domain.model.AssetType
+import com.localcut.editor.domain.model.AudioProcessingSettings
 import com.localcut.editor.domain.model.CompositingSettings
 import com.localcut.editor.domain.model.EffectInstance
 import com.localcut.editor.domain.model.TimeMap
@@ -62,6 +63,7 @@ sealed interface Media3BlueprintItem {
         val compositing: CompositingSettings = CompositingSettings(),
         val effects: List<EffectInstance> = emptyList(),
         val timeMap: TimeMap = TimeMap(),
+        val audioProcessing: AudioProcessingSettings = AudioProcessingSettings(),
     ) : Media3BlueprintItem
 }
 
@@ -110,6 +112,7 @@ object Media3CompositionBlueprintCompiler {
                         compositing = segment.compositing,
                         effects = segment.effects,
                         timeMap = segment.timeMap,
+                        audioProcessing = segment.audioProcessing,
                     )
                 }
             },

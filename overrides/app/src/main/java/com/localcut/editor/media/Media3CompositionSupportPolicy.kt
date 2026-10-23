@@ -1,7 +1,6 @@
 package com.localcut.editor.media
 
 import com.localcut.editor.domain.model.AssetType
-import com.localcut.editor.domain.model.CompositingSettings
 import com.localcut.editor.domain.model.TimeMap
 
 object Media3CompositionSupportPolicy {
@@ -18,13 +17,13 @@ object Media3CompositionSupportPolicy {
             .filterIsInstance<RenderSegment.Media>()
             .toList()
 
-        val unsupportedCompositing = mediaSegments.firstOrNull {
-            it.assetType != AssetType.AUDIO && it.compositing != CompositingSettings()
+        val unsupportedCompositing = mediaSegments.firstOrNull { segment ->
+            segment.assetType != AssetType.AUDIO && !Media3CompositingEffectFactory.canRender(segment.compositing)
         }
         if (unsupportedCompositing != null) {
             throw RenderPlanException(
                 RenderPlanErrorCode.UNSUPPORTED_COMPOSITING,
-                "clip compositing is preserved in the render plan but its GPU backend is not enabled yet: ${unsupportedCompositing.clipId}",
+                "clip compositing requires a Media3 backend that is not enabled yet: ${unsupportedCompositing.clipId}",
             )
         }
 

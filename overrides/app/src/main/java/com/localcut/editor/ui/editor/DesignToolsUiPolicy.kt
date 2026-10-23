@@ -17,6 +17,17 @@ enum class DesignToolsSection {
     COMPONENTS,
 }
 
+enum class DesignCanvasPreset(
+    val label: String,
+    val width: Int,
+    val height: Int,
+) {
+    VERTICAL_9_16("9:16", 1080, 1920),
+    LANDSCAPE_16_9("16:9", 1920, 1080),
+    SQUARE_1_1("1:1", 1080, 1080),
+    PORTRAIT_4_5("4:5", 1080, 1350),
+}
+
 object DesignToolsUiPolicy {
     const val DEFAULT_DURATION_US: Long = 3_000_000L
     const val MAX_STROKE_WIDTH_PX: Double = 200.0
@@ -29,6 +40,16 @@ object DesignToolsUiPolicy {
         DesignToolsSection.CANVAS,
         DesignToolsSection.COMPONENTS,
     )
+
+    fun canvasPresets(): List<DesignCanvasPreset> = listOf(
+        DesignCanvasPreset.VERTICAL_9_16,
+        DesignCanvasPreset.LANDSCAPE_16_9,
+        DesignCanvasPreset.SQUARE_1_1,
+        DesignCanvasPreset.PORTRAIT_4_5,
+    )
+
+    fun isCanvasPresetActive(project: Project, preset: DesignCanvasPreset): Boolean =
+        project.width == preset.width && project.height == preset.height
 
     fun newShape(project: Project, kind: ShapeKind, playheadUs: Long): DesignElement {
         require(playheadUs >= 0L) { "playheadUs must be non-negative" }

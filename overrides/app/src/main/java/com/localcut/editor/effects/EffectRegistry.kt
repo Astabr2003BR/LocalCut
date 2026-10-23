@@ -41,6 +41,15 @@ object EffectRegistry {
         numeric("localcut.color.saturation", EffectCategory.COLOR, "amount", 1.0, 0.0, 2.0),
         numeric("localcut.color.temperature", EffectCategory.COLOR, "amount", 0.0, -1.0, 1.0),
         numeric("localcut.color.tint", EffectCategory.COLOR, "amount", 0.0, -1.0, 1.0),
+        EffectDefinition(
+            "localcut.color.hsl",
+            EffectCategory.COLOR,
+            listOf(
+                numberSpec("hue", 0.0, -180.0, 180.0),
+                numberSpec("saturation", 0.0, -100.0, 100.0),
+                numberSpec("lightness", 0.0, -100.0, 100.0),
+            ),
+        ),
         numeric("localcut.blur.gaussian", EffectCategory.BLUR, "radius", 0.0, 0.0, 100.0),
         numeric("localcut.sharpen", EffectCategory.DETAIL, "amount", 0.0, 0.0, 5.0),
         EffectDefinition(

@@ -96,6 +96,38 @@ class DesignToolsUiPolicyTest {
     }
 
     @Test
+    fun opacityControlClampsToRenderableRangeWithoutChangingTransform() {
+        val source = element("shape", 0).copy(opacity = 0.7)
+
+        val transparent = DesignToolsUiPolicy.setElementOpacity(source, -2.0)
+        val opaque = DesignToolsUiPolicy.setElementOpacity(source, 9.0)
+
+        assertEquals(0.0, transparent.opacity, 0.0)
+        assertEquals(1.0, opaque.opacity, 0.0)
+        assertEquals(source.transform, opaque.transform)
+        assertTrue(opaque.validationIssues().isEmpty())
+    }
+
+    @Test
+    fun canvasCenterAlignmentChangesOnlyRequestedAxis() {
+        val source = element("shape", 0).copy(
+            transform = element("template", 0).transform.copy(x = 280.0, y = -360.0),
+        )
+
+        val centeredX = DesignToolsUiPolicy.alignCenterX(source)
+        val centeredY = DesignToolsUiPolicy.alignCenterY(source)
+        val centered = DesignToolsUiPolicy.alignCenter(source)
+
+        assertEquals(0.0, centeredX.transform.x, 0.0)
+        assertEquals(source.transform.y, centeredX.transform.y, 0.0)
+        assertEquals(source.transform.x, centeredY.transform.x, 0.0)
+        assertEquals(0.0, centeredY.transform.y, 0.0)
+        assertEquals(0.0, centered.transform.x, 0.0)
+        assertEquals(0.0, centered.transform.y, 0.0)
+        assertEquals(source.shape, centered.shape)
+    }
+
+    @Test
     fun arrangeFrontAndBackUseDeterministicExtremes() {
         val back = element("back", 2)
         val active = element("active", 5)

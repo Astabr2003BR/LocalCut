@@ -68,6 +68,24 @@ class CreativeToolsUiPolicyTest {
     }
 
     @Test
+    fun customSpeedCurveMapsWholeSourceIntoItsPresentationDuration() {
+        val sourceRangeUs = 6_000_000L
+        val speeds = listOf(0.5, 1.0, 2.0, 1.0, 0.75)
+        val result = CreativeToolsUiPolicy.customSpeedCurve(sourceRangeUs, speeds)
+        val durationUs = TimeMapEvaluator.presentationDurationUs(sourceRangeUs, result)
+        val lastPointUs = result.speedPoints.last().offsetUs
+        val mappedEndUs = TimeMapEvaluator.forwardSourceOffsetAt(result, durationUs)
+
+        assertFalse(result.reverse)
+        assertTrue(result.freezeSegments.isEmpty())
+        assertEquals(speeds, result.speedPoints.map { it.speed })
+        assertTrue(result.speedPoints.zipWithNext().all { (left, right) -> right.offsetUs > left.offsetUs })
+        assertTrue(lastPointUs <= durationUs)
+        assertTrue(kotlin.math.abs(mappedEndUs - sourceRangeUs) <= 2L)
+        assertTrue(result.validationIssues().isEmpty())
+    }
+
+    @Test
     fun maskPresetIsStableAndCanBeRemoved() {
         val added = CreativeToolsUiPolicy.setMaskPreset(CompositingSettings(), MaskKind.ELLIPSE)
         assertEquals(MaskKind.ELLIPSE, added.masks.single { it.id == CreativeToolsUiPolicy.UI_MASK_ID }.kind)

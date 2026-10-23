@@ -28,7 +28,7 @@ class Media3CreativeSuiteBackendTest {
     }
 
     @Test
-    fun nativeEffectFactoryReportsCoreStaticEffectsAsRenderable() {
+    fun nativeEffectFactorySupportsCoreStaticEffects() {
         val effects = listOf(
             EffectInstance("brightness", "localcut.color.brightness", parameters = mapOf("amount" to EffectParameter.Number(0.2))),
             EffectInstance("contrast", "localcut.color.contrast", parameters = mapOf("amount" to EffectParameter.Number(1.2))),
@@ -43,8 +43,24 @@ class Media3CreativeSuiteBackendTest {
     }
 
     @Test
-    fun animatedOrCustomShaderEffectsAreNotReportedAsNative() {
-        val custom = EffectInstance("glow", "localcut.glow")
+    fun customShaderBackendSupportsStaticProfessionalEffects() {
+        val effects = listOf(
+            EffectInstance("sharpen", "localcut.sharpen", parameters = mapOf("amount" to EffectParameter.Number(1.0))),
+            EffectInstance("vignette", "localcut.vignette", parameters = mapOf("amount" to EffectParameter.Number(0.5))),
+            EffectInstance("grain", "localcut.grain", parameters = mapOf("amount" to EffectParameter.Number(0.2), "size" to EffectParameter.Number(1.0), "seed" to EffectParameter.Number(42.0))),
+            EffectInstance("split", "localcut.rgb_split", parameters = mapOf("amount" to EffectParameter.Number(8.0))),
+            EffectInstance("mosaic", "localcut.mosaic", parameters = mapOf("blockSize" to EffectParameter.Number(12.0))),
+            EffectInstance("glow", "localcut.glow", parameters = mapOf("radius" to EffectParameter.Number(8.0), "intensity" to EffectParameter.Number(1.0), "color" to EffectParameter.Color(0xFFFFFFFF.toInt()))),
+            EffectInstance("ripple", "localcut.ripple", parameters = mapOf("amplitude" to EffectParameter.Number(12.0), "frequency" to EffectParameter.Number(4.0), "center" to EffectParameter.Point(0.5, 0.5))),
+            EffectInstance("displacement", "localcut.displacement", parameters = mapOf("amount" to EffectParameter.Number(10.0), "center" to EffectParameter.Point(0.5, 0.5))),
+        )
+
+        assertTrue(effects.all(Media3EffectStackFactory::canRender))
+    }
+
+    @Test
+    fun animatedOrUnsupportedMotionBlurEffectsAreNotReportedAsNative() {
+        val motionBlur = EffectInstance("motion", "localcut.motion_blur")
         val animated = EffectInstance(
             "brightness",
             "localcut.color.brightness",
@@ -56,7 +72,7 @@ class Media3CreativeSuiteBackendTest {
             ),
         )
 
-        assertFalse(Media3EffectStackFactory.canRender(custom))
+        assertFalse(Media3EffectStackFactory.canRender(motionBlur))
         assertFalse(Media3EffectStackFactory.canRender(animated))
     }
 }

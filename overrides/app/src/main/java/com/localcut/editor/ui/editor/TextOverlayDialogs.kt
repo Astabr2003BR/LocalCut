@@ -35,30 +35,43 @@ internal fun TextOverlayManagerDialog(
     val canCreate = TextOverlayEditorModel.forNew(project, playheadUs) != null
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Textos") },
+        title = { Text("Textos e legendas") },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                FilledTonalButton(
-                    onClick = {
-                        TextOverlayEditorModel.forNew(project, playheadUs)?.let(onEditRequested)
-                    },
-                    enabled = canCreate,
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text("Novo texto")
+                    FilledTonalButton(
+                        onClick = {
+                            TextOverlayEditorModel.forNew(project, playheadUs)?.let(onEditRequested)
+                        },
+                        enabled = canCreate,
+                    ) {
+                        Text("Novo texto")
+                    }
+                    FilledTonalButton(
+                        onClick = {
+                            TextOverlayEditorModel.forNewCaption(project, playheadUs)?.let(onEditRequested)
+                        },
+                        enabled = canCreate,
+                    ) {
+                        Text("Nova legenda")
+                    }
                 }
                 if (!canCreate) {
                     Text(
-                        "Adicione uma mídia visual antes de criar texto.",
+                        "Adicione uma mídia visual antes de criar texto ou legenda.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 if (project.textOverlays.isEmpty()) {
                     Text(
-                        "Nenhum texto no projeto.",
+                        "Nenhum texto ou legenda no projeto.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -72,7 +85,10 @@ internal fun TextOverlayManagerDialog(
                             modifier = Modifier.fillMaxWidth().padding(10.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            Text(overlay.text, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                if (overlay.caption != null) "Legenda • ${overlay.text}" else overlay.text,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
                             Text(
                                 "${formatSeconds(overlay.startUs)} s → ${formatSeconds(overlay.startUs + overlay.durationUs)} s",
                                 style = MaterialTheme.typography.labelSmall,
@@ -110,7 +126,16 @@ internal fun TextOverlayEditorDialog(
     val saveOverlay = model.overlayForSave()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (model.isNew) "Novo texto" else "Editar texto") },
+        title = {
+            Text(
+                when {
+                    model.isNew && model.isCaption -> "Nova legenda"
+                    model.isNew -> "Novo texto"
+                    model.isCaption -> "Editar legenda"
+                    else -> "Editar texto"
+                },
+            )
+        },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
@@ -120,7 +145,7 @@ internal fun TextOverlayEditorDialog(
                     value = draft.text,
                     onValueChange = { onModelChange(model.withText(it)) },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Texto") },
+                    label = { Text(if (model.isCaption) "Legenda" else "Texto") },
                     minLines = 2,
                     maxLines = 4,
                 )

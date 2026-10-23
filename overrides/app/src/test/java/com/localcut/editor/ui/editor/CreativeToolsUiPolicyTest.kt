@@ -100,6 +100,41 @@ class CreativeToolsUiPolicyTest {
     }
 
     @Test
+    fun mobileCustomSpeedControlsReuseFivePointCurveOrFallBackToBaseSpeed() {
+        val existing = TimeMap(
+            baseSpeed = 1.0,
+            speedPoints = listOf(
+                SpeedPoint(0L, 0.5),
+                SpeedPoint(250_000L, 0.75),
+                SpeedPoint(500_000L, 1.0),
+                SpeedPoint(750_000L, 2.0),
+                SpeedPoint(1_000_000L, 1.25),
+            ),
+        )
+
+        assertEquals(
+            listOf(0.5, 0.75, 1.0, 2.0, 1.25),
+            CreativeToolsUiPolicy.customSpeedControlValues(existing),
+        )
+        assertEquals(
+            listOf(2.0, 2.0, 2.0, 2.0, 2.0),
+            CreativeToolsUiPolicy.customSpeedControlValues(TimeMap(baseSpeed = 2.0)),
+        )
+    }
+
+    @Test
+    fun mobileCustomSpeedControlUpdateClampsToSupportedRange() {
+        val source = listOf(1.0, 1.0, 1.0, 1.0, 1.0)
+
+        assertEquals(0.1, CreativeToolsUiPolicy.updateCustomSpeedControl(source, 0, -2.0)[0], 0.0)
+        assertEquals(10.0, CreativeToolsUiPolicy.updateCustomSpeedControl(source, 4, 50.0)[4], 0.0)
+        assertEquals(2.5, CreativeToolsUiPolicy.updateCustomSpeedControl(source, 2, 2.5)[2], 0.0)
+        assertThrows(IllegalArgumentException::class.java) {
+            CreativeToolsUiPolicy.updateCustomSpeedControl(source, 5, 1.0)
+        }
+    }
+
+    @Test
     fun maskPresetIsStableAndCanBeRemoved() {
         val added = CreativeToolsUiPolicy.setMaskPreset(CompositingSettings(), MaskKind.ELLIPSE)
         assertEquals(MaskKind.ELLIPSE, added.masks.single { it.id == CreativeToolsUiPolicy.UI_MASK_ID }.kind)

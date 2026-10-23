@@ -19,15 +19,25 @@ import com.localcut.editor.domain.history.SetAudioFadesCommand
 import com.localcut.editor.domain.history.SetTrackMutedCommand
 import com.localcut.editor.domain.history.SetTrackSoloCommand
 import com.localcut.editor.domain.history.SetKeyframesCommand
+import com.localcut.editor.domain.history.SetClipAudioProcessingCommand
+import com.localcut.editor.domain.history.SetClipCompositingCommand
+import com.localcut.editor.domain.history.SetClipEffectsCommand
+import com.localcut.editor.domain.history.SetClipPropertyAnimationsCommand
+import com.localcut.editor.domain.history.SetClipTimeMapCommand
 import com.localcut.editor.domain.history.DeleteClipWithTransitionsCommand
 import com.localcut.editor.domain.history.DuplicateClipCommand
 import com.localcut.editor.domain.history.UpdateTextOverlayCommand
 import com.localcut.editor.domain.history.UpdateClipTransitionCommand
 import com.localcut.editor.domain.model.Asset
+import com.localcut.editor.domain.model.AudioProcessingSettings
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.ClipTransition
+import com.localcut.editor.domain.model.CompositingSettings
+import com.localcut.editor.domain.model.EffectInstance
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.model.TextOverlay
+import com.localcut.editor.domain.model.TimeMap
 import com.localcut.editor.domain.model.TransformKeyframe
 import com.localcut.editor.domain.model.TransformValue
 
@@ -69,6 +79,11 @@ sealed interface EditorAction {
     data class SetTrackMuted(val trackId: String, val muted: Boolean) : EditorAction
     data class SetTrackSolo(val trackId: String, val solo: Boolean) : EditorAction
     data class SetSelectedKeyframes(val keyframes: List<TransformKeyframe>) : EditorAction
+    data class SetSelectedPropertyAnimations(val propertyAnimations: List<PropertyAnimation>) : EditorAction
+    data class SetSelectedEffects(val effects: List<EffectInstance>) : EditorAction
+    data class SetSelectedCompositing(val compositing: CompositingSettings) : EditorAction
+    data class SetSelectedTimeMap(val timeMap: TimeMap) : EditorAction
+    data class SetSelectedAudioProcessing(val audioProcessing: AudioProcessingSettings) : EditorAction
     data class TrimSelected(val newSourceInUs: Long, val newSourceOutUs: Long) : EditorAction
     data class TrimSelectedLeftEdge(val newProjectStartUs: Long) : EditorAction
     data class TrimSelectedRightEdge(val newProjectEndUs: Long) : EditorAction
@@ -134,6 +149,11 @@ class ProjectSession(
             is EditorAction.SetTrackMuted -> execute(SetTrackMutedCommand(action.trackId, action.muted))
             is EditorAction.SetTrackSolo -> execute(SetTrackSoloCommand(action.trackId, action.solo))
             is EditorAction.SetSelectedKeyframes -> withSelected { execute(SetKeyframesCommand(it, action.keyframes)) }
+            is EditorAction.SetSelectedPropertyAnimations -> withSelected { execute(SetClipPropertyAnimationsCommand(it, action.propertyAnimations)) }
+            is EditorAction.SetSelectedEffects -> withSelected { execute(SetClipEffectsCommand(it, action.effects)) }
+            is EditorAction.SetSelectedCompositing -> withSelected { execute(SetClipCompositingCommand(it, action.compositing)) }
+            is EditorAction.SetSelectedTimeMap -> withSelected { execute(SetClipTimeMapCommand(it, action.timeMap)) }
+            is EditorAction.SetSelectedAudioProcessing -> withSelected { execute(SetClipAudioProcessingCommand(it, action.audioProcessing)) }
             is EditorAction.TrimSelected -> withSelected { execute(TrimClipCommand(it, action.newSourceInUs, action.newSourceOutUs)) }
             is EditorAction.TrimSelectedLeftEdge -> withSelected { execute(TrimClipLeftEdgeCommand(it, action.newProjectStartUs)) }
             is EditorAction.TrimSelectedRightEdge -> withSelected { execute(TrimClipRightEdgeCommand(it, action.newProjectEndUs)) }

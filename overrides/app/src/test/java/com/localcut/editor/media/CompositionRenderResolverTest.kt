@@ -38,6 +38,24 @@ class CompositionRenderResolverTest {
     }
 
     @Test
+    fun hiddenLayerResolvesToZeroOpacityForPreviewAndExport() {
+        val graph = CompositionGraph(
+            nodes = listOf(
+                CompositionNode(
+                    id = "layer",
+                    kind = CompositionNodeKind.LAYER,
+                    clipId = clip.id,
+                    visible = false,
+                ),
+            ),
+        )
+
+        val resolved = CompositionRenderResolver.resolve(graph, clip).getOrThrow()
+
+        assertEquals(0.0, resolved.opacity, 0.0)
+    }
+
+    @Test
     fun parentingComposesContainerTransformIntoClipAndKeyframes() {
         val graph = CompositionGraph(
             nodes = listOf(

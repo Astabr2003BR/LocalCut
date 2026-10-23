@@ -55,4 +55,22 @@ class EditorChromeUiPolicyTest {
     fun audioImportActionDoesNotPinAudioPanelForVisualSelection() {
         assertNull(EditorChromeUiPolicy.resolveActiveTool(EditorToolId.AUDIO, EditorSelectionKind.VIDEO))
     }
+
+    @Test
+    fun contextualToolsRouteToDedicatedPanels() {
+        assertEquals(ContextPanelKind.EDIT, EditorChromeUiPolicy.panelFor(EditorToolId.EDIT))
+        assertEquals(ContextPanelKind.AUDIO, EditorChromeUiPolicy.panelFor(EditorToolId.AUDIO))
+        assertEquals(ContextPanelKind.EFFECTS, EditorChromeUiPolicy.panelFor(EditorToolId.EFFECTS))
+        assertEquals(ContextPanelKind.COLOR, EditorChromeUiPolicy.panelFor(EditorToolId.COLOR))
+        assertEquals(ContextPanelKind.SPEED, EditorChromeUiPolicy.panelFor(EditorToolId.SPEED))
+        assertEquals(ContextPanelKind.MASK, EditorChromeUiPolicy.panelFor(EditorToolId.MASK))
+        assertEquals(ContextPanelKind.CHROMA, EditorChromeUiPolicy.panelFor(EditorToolId.CHROMA))
+        assertEquals(ContextPanelKind.ANIMATION, EditorChromeUiPolicy.panelFor(EditorToolId.ANIMATION))
+        assertEquals(ContextPanelKind.LAYERS, EditorChromeUiPolicy.panelFor(EditorToolId.LAYERS))
+        assertEquals(ContextPanelKind.DESIGN, EditorChromeUiPolicy.panelFor(EditorToolId.DESIGN))
+        assertEquals(ContextPanelKind.CANVAS, EditorChromeUiPolicy.panelFor(EditorToolId.CANVAS))
+        assertNull(EditorChromeUiPolicy.panelFor(EditorToolId.MEDIA))
+        assertNull(EditorChromeUiPolicy.panelFor(EditorToolId.TEXT))
+        assertNull(EditorChromeUiPolicy.panelFor(EditorToolId.OVERLAY))
+    }
 }

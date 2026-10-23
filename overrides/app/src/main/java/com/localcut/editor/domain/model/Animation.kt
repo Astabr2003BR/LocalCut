@@ -1,6 +1,7 @@
 package com.localcut.editor.domain.model
 
 enum class EasingKind {
+    HOLD,
     LINEAR,
     EASE_IN,
     EASE_OUT,

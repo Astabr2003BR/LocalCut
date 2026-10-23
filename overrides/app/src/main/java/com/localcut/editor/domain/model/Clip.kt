@@ -17,4 +17,5 @@ data class Clip(
     val compositing: CompositingSettings = CompositingSettings(),
     val effects: List<EffectInstance> = emptyList(),
     val timeMap: TimeMap = TimeMap(),
+    val audioProcessing: AudioProcessingSettings = AudioProcessingSettings(),
 )

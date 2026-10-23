@@ -142,7 +142,7 @@ data class TextOverlayEditorModel(
     fun withExitAnimation(kind: TextAnimationKind): TextOverlayEditorModel =
         copy(draft = draft.copy(exit = animationDescriptor(draft.exit, kind, DEFAULT_ENTRANCE_DURATION_US)))
 
-    fun withLoopAnimation(kind: TextAnimationKind): TextOverlayEditorEditorModel =
+    fun withLoopAnimation(kind: TextAnimationKind): TextOverlayEditorModel =
         copy(draft = draft.copy(loop = animationDescriptor(draft.loop, kind, DEFAULT_LOOP_DURATION_US)))
 
     fun withDuration(project: Project, requestedDurationUs: Long): TextOverlayEditorModel {

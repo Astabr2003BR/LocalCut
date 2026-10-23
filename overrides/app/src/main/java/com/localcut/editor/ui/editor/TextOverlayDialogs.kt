@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.TextAnimationKind
 import com.localcut.editor.domain.model.TextHorizontalAlignment
 import com.localcut.editor.domain.model.TextOverlay
 
@@ -138,7 +139,7 @@ internal fun TextOverlayEditorDialog(
         },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 OutlinedTextField(
@@ -194,6 +195,66 @@ internal fun TextOverlayEditorDialog(
                     optionLabel = { it.first },
                     onSelect = { onModelChange(model.withFillArgb(it.second)) },
                 )
+                TextEditorChoiceRow(
+                    label = "Espaçamento",
+                    options = listOf(-0.05, 0.0, 0.05, 0.10, 0.20),
+                    selected = nearestSpacingOption(draft.style.letterSpacingEm),
+                    optionLabel = { if (it == 0.0) "Normal" else "${if (it > 0) "+" else ""}${"%.2f".format(it)}" },
+                    onSelect = { onModelChange(model.withLetterSpacingEm(it)) },
+                )
+                TextEditorChoiceRow(
+                    label = "Fundo",
+                    options = listOf(false, true),
+                    selected = draft.style.background != null,
+                    optionLabel = { if (it) "ON" else "OFF" },
+                    onSelect = { onModelChange(model.withBackgroundEnabled(it)) },
+                )
+                TextEditorChoiceRow(
+                    label = "Sombra",
+                    options = listOf(false, true),
+                    selected = draft.style.shadows.isNotEmpty() || (draft.style.shadowArgb != null && draft.style.shadowRadiusPx > 0.0),
+                    optionLabel = { if (it) "ON" else "OFF" },
+                    onSelect = { onModelChange(model.withShadowEnabled(it)) },
+                )
+
+                Text("Animação", style = MaterialTheme.typography.labelLarge)
+                TextEditorChoiceRow(
+                    label = "Entrada",
+                    options = listOf(
+                        TextAnimationKind.NONE,
+                        TextAnimationKind.FADE,
+                        TextAnimationKind.SLIDE_UP,
+                        TextAnimationKind.POP,
+                        TextAnimationKind.TYPEWRITER,
+                    ),
+                    selected = draft.entrance.kind,
+                    optionLabel = ::animationLabel,
+                    onSelect = { onModelChange(model.withEntranceAnimation(it)) },
+                )
+                TextEditorChoiceRow(
+                    label = "Saída",
+                    options = listOf(
+                        TextAnimationKind.NONE,
+                        TextAnimationKind.FADE,
+                        TextAnimationKind.SLIDE_DOWN,
+                        TextAnimationKind.POP,
+                    ),
+                    selected = draft.exit.kind,
+                    optionLabel = ::animationLabel,
+                    onSelect = { onModelChange(model.withExitAnimation(it)) },
+                )
+                TextEditorChoiceRow(
+                    label = "Loop",
+                    options = listOf(
+                        TextAnimationKind.NONE,
+                        TextAnimationKind.BOUNCE,
+                        TextAnimationKind.WIGGLE,
+                        TextAnimationKind.POP,
+                    ),
+                    selected = draft.loop.kind,
+                    optionLabel = ::animationLabel,
+                    onSelect = { onModelChange(model.withLoopAnimation(it)) },
+                )
             }
         },
         confirmButton = {
@@ -243,6 +304,23 @@ private fun colorOptionsSelected(fillArgb: Int): Pair<String, Int> = when (fillA
     0xFF40A0FF.toInt() -> "Azul" to fillArgb
     0xFF000000.toInt() -> "Preto" to fillArgb
     else -> "Branco" to 0xFFFFFFFF.toInt()
+}
+
+private fun nearestSpacingOption(value: Double): Double =
+    listOf(-0.05, 0.0, 0.05, 0.10, 0.20).minBy { kotlin.math.abs(it - value) }
+
+private fun animationLabel(kind: TextAnimationKind): String = when (kind) {
+    TextAnimationKind.NONE -> "Nenhuma"
+    TextAnimationKind.FADE -> "Fade"
+    TextAnimationKind.SLIDE_UP -> "Subir"
+    TextAnimationKind.SLIDE_DOWN -> "Descer"
+    TextAnimationKind.SLIDE_LEFT -> "Esquerda"
+    TextAnimationKind.SLIDE_RIGHT -> "Direita"
+    TextAnimationKind.POP -> "Pop"
+    TextAnimationKind.SCALE -> "Scale"
+    TextAnimationKind.TYPEWRITER -> "Typewriter"
+    TextAnimationKind.BOUNCE -> "Bounce"
+    TextAnimationKind.WIGGLE -> "Wiggle"
 }
 
 private fun formatSeconds(timeUs: Long): String {

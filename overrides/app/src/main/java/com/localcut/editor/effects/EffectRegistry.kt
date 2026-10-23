@@ -41,6 +41,8 @@ object EffectRegistry {
         numeric("localcut.color.saturation", EffectCategory.COLOR, "amount", 1.0, 0.0, 2.0),
         numeric("localcut.color.temperature", EffectCategory.COLOR, "amount", 0.0, -1.0, 1.0),
         numeric("localcut.color.tint", EffectCategory.COLOR, "amount", 0.0, -1.0, 1.0),
+        numeric("localcut.color.monochrome", EffectCategory.COLOR, "amount", 1.0, 0.0, 1.0),
+        numeric("localcut.color.sepia", EffectCategory.COLOR, "amount", 1.0, 0.0, 1.0),
         EffectDefinition(
             "localcut.color.hsl",
             EffectCategory.COLOR,

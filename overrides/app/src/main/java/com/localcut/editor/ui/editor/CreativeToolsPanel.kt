@@ -72,6 +72,13 @@ fun CreativeToolsPanel(
     var customSpeeds by remember(clip.id, clip.timeMap) {
         mutableStateOf(CreativeToolsUiPolicy.customSpeedControlValues(clip.timeMap))
     }
+    val primaryMask = clip.compositing.masks.firstOrNull { it.id == CreativeToolsUiPolicy.UI_MASK_ID }
+    var maskFeather by remember(clip.id, primaryMask?.featherPx) {
+        mutableStateOf(primaryMask?.featherPx ?: 0.0)
+    }
+    var maskExpansion by remember(clip.id, primaryMask?.expansionPx) {
+        mutableStateOf(primaryMask?.expansionPx ?: 0.0)
+    }
 
     Surface(
         modifier = modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
@@ -168,7 +175,7 @@ fun CreativeToolsPanel(
                         }) { Text("Máscara livre") }
                         OutlinedButton(
                             onClick = { onSetCompositing(CreativeToolsUiPolicy.clearMaskPreset(clip.compositing)) },
-                            enabled = clip.compositing.masks.any { it.id == CreativeToolsUiPolicy.UI_MASK_ID },
+                            enabled = primaryMask != null,
                         ) { Text("Sem máscara") }
                         FilledTonalButton(onClick = {
                             onSetCompositing(CreativeToolsUiPolicy.greenScreen(clip.compositing, !clip.compositing.chromaKey.enabled))
@@ -194,6 +201,73 @@ fun CreativeToolsPanel(
                                     onSetCompositing(CreativeToolsUiPolicy.cropLayout(clip.compositing, mode))
                                 }) { Text(label) }
                             }
+                        }
+                    }
+
+                    if (primaryMask != null) {
+                        Text("Ajuste da máscara", style = MaterialTheme.typography.labelMedium)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                "Suavizar ${maskFeather.roundToInt()} px",
+                                modifier = Modifier.width(116.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Slider(
+                                value = maskFeather.toFloat(),
+                                onValueChange = { maskFeather = it.toDouble() },
+                                onValueChangeFinished = {
+                                    onSetCompositing(
+                                        CreativeToolsUiPolicy.setPrimaryMaskFeather(
+                                            clip.compositing,
+                                            maskFeather,
+                                        ),
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                                valueRange = 0f..200f,
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                "Expandir ${maskExpansion.roundToInt()} px",
+                                modifier = Modifier.width(116.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Slider(
+                                value = maskExpansion.toFloat(),
+                                onValueChange = { maskExpansion = it.toDouble() },
+                                onValueChangeFinished = {
+                                    onSetCompositing(
+                                        CreativeToolsUiPolicy.setPrimaryMaskExpansion(
+                                            clip.compositing,
+                                            maskExpansion,
+                                        ),
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                                valueRange = -200f..200f,
+                            )
+                        }
+                        if (primaryMask.invert) {
+                            FilledTonalButton(onClick = {
+                                onSetCompositing(
+                                    CreativeToolsUiPolicy.setPrimaryMaskInverted(clip.compositing, false),
+                                )
+                            }) { Text("Inverter máscara ON") }
+                        } else {
+                            OutlinedButton(onClick = {
+                                onSetCompositing(
+                                    CreativeToolsUiPolicy.setPrimaryMaskInverted(clip.compositing, true),
+                                )
+                            }) { Text("Inverter máscara") }
                         }
                     }
                 }

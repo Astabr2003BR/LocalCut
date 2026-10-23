@@ -7,6 +7,7 @@ import kotlin.math.abs
 
 object BeatMarkerUiPolicy {
     const val NEAR_PLAYHEAD_TOLERANCE_US = 30_000L
+    const val EDIT_SNAP_TOLERANCE_US = 80_000L
 
     fun nearestMarker(
         markers: List<BeatMarker>,
@@ -18,6 +19,16 @@ object BeatMarkerUiPolicy {
         return markers
             .minWithOrNull(compareBy<BeatMarker> { abs(it.timeUs - target) }.thenBy { it.timeUs }.thenBy { it.id })
             ?.takeIf { abs(it.timeUs - target) <= toleranceUs }
+    }
+
+    fun snapTimeUs(
+        markers: List<BeatMarker>,
+        requestedUs: Long,
+        toleranceUs: Long = EDIT_SNAP_TOLERANCE_US,
+    ): Long {
+        require(toleranceUs >= 0L) { "beat snap tolerance must be non-negative" }
+        val target = requestedUs.coerceAtLeast(0L)
+        return nearestMarker(markers, target, toleranceUs)?.timeUs ?: target
     }
 
     fun manualMarker(project: Project, playheadUs: Long): BeatMarker? {

@@ -1,6 +1,9 @@
 package com.localcut.editor.ui.editor
 
 import com.localcut.editor.domain.model.EffectInstance
+import com.localcut.editor.domain.model.EffectParameter
+import com.localcut.editor.effects.EffectParameterType
+import com.localcut.editor.effects.EffectRegistry
 
 enum class EffectBrowserCategory {
     COLOR,
@@ -52,6 +55,45 @@ object EffectBrowserUiPolicy {
 
     fun presets(category: EffectBrowserCategory): List<EffectBrowserPreset> =
         presets.filter { it.category == category }
+
+    fun adjustableRange(preset: EffectBrowserPreset): ClosedFloatingPointRange<Double>? {
+        val spec = EffectRegistry.definition(preset.typeId)
+            ?.parametersByName
+            ?.get(preset.parameterName)
+            ?: return null
+        if (spec.type != EffectParameterType.NUMBER) return null
+        val min = spec.min ?: return null
+        val max = spec.max ?: return null
+        return min..max
+    }
+
+    fun currentValue(
+        effects: List<EffectInstance>,
+        preset: EffectBrowserPreset,
+    ): Double {
+        val explicit = effects
+            .firstOrNull { it.typeId == preset.typeId }
+            ?.parameters
+            ?.get(preset.parameterName) as? EffectParameter.Number
+        return explicit?.value ?: preset.value
+    }
+
+    fun setValue(
+        effects: List<EffectInstance>,
+        preset: EffectBrowserPreset,
+        value: Double,
+    ): List<EffectInstance> {
+        require(value.isFinite()) { "effect value must be finite" }
+        val range = requireNotNull(adjustableRange(preset)) {
+            "effect ${preset.typeId}.${preset.parameterName} is not adjustable"
+        }
+        return CreativeToolsUiPolicy.setNumericEffect(
+            effects = effects,
+            typeId = preset.typeId,
+            parameterName = preset.parameterName,
+            value = value.coerceIn(range.start, range.endInclusive),
+        )
+    }
 
     fun hasEffectsInCategory(effects: List<EffectInstance>, category: EffectBrowserCategory): Boolean {
         val typeIds = presets(category).mapTo(hashSetOf()) { it.typeId }

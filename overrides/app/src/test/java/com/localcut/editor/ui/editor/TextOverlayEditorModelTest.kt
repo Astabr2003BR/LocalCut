@@ -12,6 +12,7 @@ import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.model.TransformValue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -24,10 +25,30 @@ class TextOverlayEditorModelTest {
         val model = TextOverlayEditorModel.forNew(project, 9_500_000L)!!
 
         assertTrue(model.isNew)
+        assertFalse(model.isCaption)
         assertEquals("", model.draft.text)
         assertEquals(9_500_000L, model.draft.startUs)
         assertEquals(500_000L, model.draft.durationUs)
         assertNull(model.overlayForSave())
+    }
+
+    @Test
+    fun newCaptionUsesNormalTextOverlayPersistenceWithCaptionMetadata() {
+        val project = projectWithDuration(10_000_000L)
+
+        val model = TextOverlayEditorModel.forNewCaption(project, 2_000_000L)!!
+
+        assertTrue(model.isNew)
+        assertTrue(model.isCaption)
+        assertNotNull(model.draft.caption)
+        assertEquals("", model.draft.text)
+        assertTrue(model.draft.transform.y > 0.0)
+        assertNotNull(model.draft.style.background)
+        assertNull(model.overlayForSave())
+
+        val saved = model.withText("Legenda manual").overlayForSave()!!
+        assertEquals("Legenda manual", saved.text)
+        assertEquals("Legenda manual", saved.caption?.sourceText)
     }
 
     @Test

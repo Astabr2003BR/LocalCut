@@ -4,6 +4,7 @@ import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.TextAnimationKind
 import com.localcut.editor.domain.model.TextHorizontalAlignment
 import com.localcut.editor.domain.model.TextOverlay
 import com.localcut.editor.domain.model.TextStyle
@@ -49,6 +50,41 @@ class TextOverlayEditorModelTest {
         val saved = model.withText("Legenda manual").overlayForSave()!!
         assertEquals("Legenda manual", saved.text)
         assertEquals("Legenda manual", saved.caption?.sourceText)
+    }
+
+    @Test
+    fun rendererBackedTypographyControlsAreEditable() {
+        val project = projectWithDuration(5_000_000L)
+        val model = TextOverlayEditorModel.forNew(project, 0L)!!
+            .withText("Título")
+            .withLetterSpacingEm(0.08)
+            .withBackgroundEnabled(true)
+            .withShadowEnabled(true)
+            .withEntranceAnimation(TextAnimationKind.POP)
+            .withLoopAnimation(TextAnimationKind.WIGGLE)
+
+        assertEquals(0.08, model.draft.style.letterSpacingEm, 0.0)
+        assertNotNull(model.draft.style.background)
+        assertTrue(model.draft.style.shadows.isNotEmpty())
+        assertEquals(TextAnimationKind.POP, model.draft.entrance.kind)
+        assertEquals(TextAnimationKind.WIGGLE, model.draft.loop.kind)
+        assertTrue(model.draft.entrance.durationUs > 0L)
+        assertTrue(model.draft.loop.durationUs > 0L)
+    }
+
+    @Test
+    fun backgroundAndShadowCanBeDisabledWithoutChangingText() {
+        val project = projectWithDuration(5_000_000L)
+        val model = TextOverlayEditorModel.forNew(project, 0L)!!
+            .withText("Título")
+            .withBackgroundEnabled(true)
+            .withShadowEnabled(true)
+            .withBackgroundEnabled(false)
+            .withShadowEnabled(false)
+
+        assertEquals("Título", model.draft.text)
+        assertNull(model.draft.style.background)
+        assertTrue(model.draft.style.shadows.isEmpty())
     }
 
     @Test

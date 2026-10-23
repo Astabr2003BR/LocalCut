@@ -33,7 +33,9 @@ fun DesignToolsPanel(
     onDeleteElement: (String) -> Unit,
     onSetCanvas: (DesignCanvasSettings) -> Unit,
     onUpsertComponent: (ReusableComponent) -> Unit,
-    onInstantiateComponent: (ReusableComponent, String, Long) -> Unit,
+    onInstantiateComponent: (ReusableComponent, String, Long) -> Unit = { component, prefix, startUs ->
+        DesignToolsUiPolicy.instantiateComponentElements(project, component, prefix, startUs).forEach(onAddElement)
+    },
     onDeleteComponent: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {

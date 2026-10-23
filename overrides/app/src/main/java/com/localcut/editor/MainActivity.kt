@@ -39,6 +39,7 @@ import com.localcut.editor.ui.editor.BridgePanel
 import com.localcut.editor.ui.editor.EditorScreen
 import com.localcut.editor.ui.editor.EditorViewModel
 import com.localcut.editor.ui.editor.ExportUiState
+import com.localcut.editor.ui.editor.FinalPreviewUiPolicy
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -323,10 +324,11 @@ class MainActivity : ComponentActivity() {
                     exportUiState.value = ExportUiState(message = "Prévia final pronta")
                 } else {
                     file.delete()
-                    exportUiState.value = ExportUiState(message = "Falha ao abrir a prévia final")
+                    val error = loaded.exceptionOrNull() ?: IllegalStateException("preview load failed")
+                    exportUiState.value = ExportUiState(message = FinalPreviewUiPolicy.failureMessage(error))
                 }
-            }.onFailure {
-                exportUiState.value = ExportUiState(message = "Falha ao renderizar a prévia final")
+            }.onFailure { error ->
+                exportUiState.value = ExportUiState(message = FinalPreviewUiPolicy.failureMessage(error))
             }
         }
     }

@@ -190,7 +190,13 @@ class ProjectCompositionCompiler(
                         presentationStartUs = presentationStartUs,
                     )
                 )
-                addAll(Media3CompositingEffectFactory.create(item.compositing))
+                addAll(
+                    Media3CompositingEffectFactory.create(
+                        settings = item.compositing,
+                        outputWidth = blueprint.width,
+                        outputHeight = blueprint.height,
+                    )
+                )
                 addAll(Media3EffectStackFactory.create(item.effects))
                 FadeToBlackEffectFactory.create(
                     durationUs = item.presentationDurationUs,

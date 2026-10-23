@@ -40,6 +40,17 @@ class CreativeToolsUiPolicyTest {
     }
 
     @Test
+    fun freeformMaskPresetProducesBoundedRenderablePolygon() {
+        val added = CreativeToolsUiPolicy.setMaskPreset(CompositingSettings(), MaskKind.FREEFORM)
+        val mask = added.masks.single { it.id == CreativeToolsUiPolicy.UI_MASK_ID }
+
+        assertEquals(MaskKind.FREEFORM, mask.kind)
+        assertTrue(mask.points.size in 3..8)
+        assertTrue(mask.points.all { it.x in 0.0..1.0 && it.y in 0.0..1.0 })
+        assertTrue(Media3CompositingEffectFactory.canRender(added))
+    }
+
+    @Test
     fun greenScreenPresetEnablesAndDisablesChromaWithoutChangingMask() {
         val source = CreativeToolsUiPolicy.setMaskPreset(CompositingSettings(), MaskKind.RECTANGLE)
         val enabled = CreativeToolsUiPolicy.greenScreen(source, enabled = true)

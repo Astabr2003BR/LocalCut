@@ -84,10 +84,8 @@ internal object Media3TimeMapSupport {
 
     private fun compileRampProvider(timeMap: TimeMap, sourceRangeUs: Long): SegmentedSpeedProvider {
         val presentationDurationUs = TimeMapEvaluator.presentationDurationUs(sourceRangeUs, timeMap)
-        val dynamicStepUs = max(
-            TARGET_PRESENTATION_STEP_US,
-            (presentationDurationUs + MAX_SEGMENTS - 1L) / MAX_SEGMENTS,
-        )
+        val boundedStepUs = ceilDivPositive(presentationDurationUs, MAX_SEGMENTS)
+        val dynamicStepUs = max(TARGET_PRESENTATION_STEP_US, boundedStepUs)
         val boundaries = buildList {
             add(0L)
             var cursor = dynamicStepUs
@@ -128,5 +126,11 @@ internal object Media3TimeMapSupport {
             "compiled speed ramp did not cover the full source range: $lastSourceUs/$sourceRangeUs"
         }
         return SegmentedSpeedProvider(segments)
+    }
+
+    private fun ceilDivPositive(value: Long, divisor: Long): Long {
+        require(value > 0L) { "value must be positive" }
+        require(divisor > 0L) { "divisor must be positive" }
+        return value / divisor + if (value % divisor == 0L) 0L else 1L
     }
 }

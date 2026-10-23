@@ -79,6 +79,14 @@ class MobileHandoffActivity : Activity() {
             returnAfterHandoff(command.returnTarget)
             return
         }
+        val payloadJson = SelectedClipDeleteResolver.resolvePayload(
+            command = command,
+            selectedClipId = runtime.session.state.selectedClipId,
+        ).getOrElse { error ->
+            Toast.makeText(this, error.message ?: "CLIP_NOT_FOUND", Toast.LENGTH_LONG).show()
+            returnAfterHandoff(command.returnTarget)
+            return
+        }
         val now = System.currentTimeMillis()
         val project = runtime.session.state.project
         val result = runtime.bridgeCommandExecutor.execute(
@@ -93,7 +101,7 @@ class MobileHandoffActivity : Activity() {
                 expiresAtEpochMs = now + 60_000L,
                 nonce = UUID.randomUUID().toString(),
                 capability = capability,
-                payloadJson = command.payloadJson,
+                payloadJson = payloadJson,
             ),
         )
         runtime.editorViewModel.refreshSnapshot()

@@ -6,7 +6,6 @@ import com.localcut.editor.effects.EffectRegistry
 import com.localcut.editor.media.Media3EffectStackFactory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -45,7 +44,7 @@ class EffectBrowserUiPolicyTest {
     @Test
     fun adjustableRangeComesFromRegistryAndEndpointsRemainRenderable() {
         EffectBrowserUiPolicy.categories().flatMap(EffectBrowserUiPolicy::presets).forEach { preset ->
-            val range = assertNotNull(EffectBrowserUiPolicy.adjustableRange(preset))
+            val range = requireNotNull(EffectBrowserUiPolicy.adjustableRange(preset))
             assertTrue(preset.value in range)
 
             listOf(range.start, range.endInclusive).forEach { value ->

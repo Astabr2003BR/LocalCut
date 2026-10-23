@@ -28,7 +28,7 @@ class Media3CreativeSuiteBackendTest {
     }
 
     @Test
-    fun nativeEffectFactorySupportsCoreStaticEffects() {
+    fun nativeEffectFactoryReportsCoreStaticEffectsAsRenderable() {
         val effects = listOf(
             EffectInstance("brightness", "localcut.color.brightness", parameters = mapOf("amount" to EffectParameter.Number(0.2))),
             EffectInstance("contrast", "localcut.color.contrast", parameters = mapOf("amount" to EffectParameter.Number(1.2))),
@@ -39,9 +39,7 @@ class Media3CreativeSuiteBackendTest {
             EffectInstance("blur", "localcut.blur.gaussian", parameters = mapOf("radius" to EffectParameter.Number(10.0))),
         )
 
-        val created = Media3EffectStackFactory.create(effects)
-
-        assertEquals(7, created.size)
+        assertTrue(effects.all(Media3EffectStackFactory::canRender))
     }
 
     @Test

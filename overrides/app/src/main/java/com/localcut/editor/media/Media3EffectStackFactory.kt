@@ -22,7 +22,7 @@ internal object Media3EffectStackFactory {
         "localcut.color.temperature",
         "localcut.color.tint",
         "localcut.blur.gaussian",
-    )
+    ) + LocalCutStylizeEffect.SUPPORTED_TYPES
 
     fun canRender(effect: EffectInstance): Boolean =
         !effect.enabled ||
@@ -83,6 +83,7 @@ internal object Media3EffectStackFactory {
             val radius = number(effect, "radius")
             if (radius <= 0.0) null else GaussianBlur(radius.toFloat())
         }
+        in LocalCutStylizeEffect.SUPPORTED_TYPES -> LocalCutStylizeEffect(effect)
         else -> error("unsupported Media3 effect: ${effect.typeId}")
     }
 

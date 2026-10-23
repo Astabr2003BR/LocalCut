@@ -17,6 +17,20 @@ class EditorBottomToolRailPolicyTest {
     }
 
     @Test
+    fun collapsedRailKeepsActiveHiddenToolVisible() {
+        val tools = EditorToolCatalog.primaryToolsFor(EditorSelectionKind.VIDEO).filter { it.enabled }
+        val layout = EditorBottomToolRailPolicy.layout(
+            tools = tools,
+            expanded = false,
+            activeTool = EditorToolId.CHROMA,
+        )
+
+        assertEquals(6, layout.visible.size)
+        assertTrue(layout.visible.any { it.id == EditorToolId.CHROMA })
+        assertTrue(layout.hasMore)
+    }
+
+    @Test
     fun expandedRailShowsEveryEnabledTool() {
         val tools = EditorToolCatalog.primaryToolsFor(EditorSelectionKind.VIDEO).filter { it.enabled }
         val layout = EditorBottomToolRailPolicy.layout(tools, expanded = true)

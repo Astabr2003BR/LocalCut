@@ -113,6 +113,9 @@ fun CreativeToolsPanel(
                     FilledTonalButton(onClick = {
                         onSetCompositing(CreativeToolsUiPolicy.setMaskPreset(clip.compositing, MaskKind.ELLIPSE))
                     }) { Text("Máscara elipse") }
+                    FilledTonalButton(onClick = {
+                        onSetCompositing(CreativeToolsUiPolicy.setMaskPreset(clip.compositing, MaskKind.FREEFORM))
+                    }) { Text("Máscara livre") }
                     OutlinedButton(
                         onClick = { onSetCompositing(CreativeToolsUiPolicy.clearMaskPreset(clip.compositing)) },
                         enabled = clip.compositing.masks.any { it.id == CreativeToolsUiPolicy.UI_MASK_ID },
@@ -228,7 +231,7 @@ fun CreativeToolsPanel(
             }
 
             Text(
-                "Motion blur temporal, blend avançado e máscara freeform continuam bloqueados até os backends dedicados ficarem validados.",
+                "Motion blur temporal e blend avançado continuam bloqueados até os backends dedicados ficarem validados.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

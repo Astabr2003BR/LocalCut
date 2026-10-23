@@ -218,6 +218,7 @@ internal fun TextOverlayEditorDialog(
                 )
 
                 TextAdvancedStyleControls(
+                    project = project,
                     model = model,
                     onModelChange = onModelChange,
                 )

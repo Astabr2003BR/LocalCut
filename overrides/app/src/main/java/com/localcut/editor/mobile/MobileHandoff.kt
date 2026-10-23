@@ -22,6 +22,7 @@ data class MobileHandoffCommand(
     val returnTarget: MobileHandoffReturnTarget = MobileHandoffReturnTarget.EDITOR,
     val mobilePairingCode: String? = null,
     val remoteMediaUrl: String? = null,
+    val resolveSelectedClip: Boolean = false,
 )
 
 object MobileHandoffParser {
@@ -122,6 +123,12 @@ object MobileHandoffParser {
                     "Excluir o clipe $clipId",
                 )
             }
+            "delete_selected_clip" -> MobileHandoffCommand(
+                capability = BridgeCapability.DELETE_CLIP,
+                payloadJson = "{\"selectedClip\":true}",
+                description = "Excluir o clipe selecionado",
+                resolveSelectedClip = true,
+            )
             "set_volume" -> {
                 val clipId = requiredText(params, "clipId", 256)
                 val volume = requiredDouble(params, "volume", min = 0.0, max = 8.0)

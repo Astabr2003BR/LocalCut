@@ -1,6 +1,7 @@
 package com.localcut.editor.media
 
 import com.localcut.editor.domain.model.AssetType
+import com.localcut.editor.domain.model.CompositingSettings
 import com.localcut.editor.domain.model.TransformKeyframe
 import com.localcut.editor.domain.model.TransformValue
 import com.localcut.editor.domain.model.TrackCollisionPolicy
@@ -56,6 +57,7 @@ sealed interface Media3BlueprintItem {
         val imageFrameRate: Int?,
         val fadeInUs: Long = 0L,
         val fadeOutUs: Long = 0L,
+        val compositing: CompositingSettings = CompositingSettings(),
     ) : Media3BlueprintItem
 }
 
@@ -101,6 +103,7 @@ object Media3CompositionBlueprintCompiler {
                         imageFrameRate = segment.imageFrameRate,
                         fadeInUs = segment.fadeInUs,
                         fadeOutUs = segment.fadeOutUs,
+                        compositing = segment.compositing,
                     )
                 }
             },

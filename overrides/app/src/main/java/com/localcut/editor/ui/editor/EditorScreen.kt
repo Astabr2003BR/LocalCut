@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
 import com.localcut.editor.domain.history.AddBeatMarkerCommand
+import com.localcut.editor.domain.history.ApplyDetectedBeatMarkersCommand
 import com.localcut.editor.domain.history.DeleteBeatMarkerCommand
 import com.localcut.editor.domain.history.SetCompositionGraphCommand
 import com.localcut.editor.domain.history.SetProjectCanvasSizeCommand
@@ -507,12 +508,23 @@ private fun TimelineForProfessionalState(
     Column(modifier = modifier) {
         BeatMarkerTimelineControls(
             project = session.project,
+            selectedClipId = session.selectedClipId,
             playheadUs = playheadUs,
             onAddMarker = { marker ->
                 viewModel.dispatch(EditorAction.Execute(AddBeatMarkerCommand(marker)))
             },
             onDeleteMarker = { markerId ->
                 viewModel.dispatch(EditorAction.Execute(DeleteBeatMarkerCommand(markerId)))
+            },
+            onApplyDetectedMarkers = { clipId, markers ->
+                viewModel.dispatch(
+                    EditorAction.Execute(
+                        ApplyDetectedBeatMarkersCommand(
+                            clipId = clipId,
+                            detectedRelativeMarkers = markers,
+                        ),
+                    ),
+                )
             },
             modifier = Modifier.fillMaxWidth(),
         )

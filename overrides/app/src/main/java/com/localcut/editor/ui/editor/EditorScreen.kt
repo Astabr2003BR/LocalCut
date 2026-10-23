@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
+import com.localcut.editor.domain.history.SetCompositionGraphCommand
 import com.localcut.editor.domain.model.ClipTransition
 import com.localcut.editor.media.ExportCapabilities
 import com.localcut.editor.media.ExportProfile
@@ -342,6 +343,7 @@ private fun ProfessionalContextPanel(
         EditorToolId.MASK,
         EditorToolId.CHROMA,
         EditorToolId.ANIMATION,
+        EditorToolId.LAYERS,
         EditorToolId.DESIGN,
         EditorToolId.CANVAS,
     )
@@ -391,6 +393,17 @@ private fun ProfessionalContextPanel(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+            }
+            EditorToolId.LAYERS -> {
+                LayerPanel(
+                    project = session.project,
+                    selectedClipId = session.selectedClipId,
+                    onSelectClip = { viewModel.dispatch(EditorAction.SelectClip(it)) },
+                    onSetCompositionGraph = { graph ->
+                        viewModel.dispatch(EditorAction.Execute(SetCompositionGraphCommand(graph)))
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
             EditorToolId.DESIGN,
             EditorToolId.CANVAS -> {

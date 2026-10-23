@@ -10,7 +10,7 @@ import org.junit.Test
 
 class CreativeSuiteProjectJsonTest {
     @Test
-    fun schemaV4RoundTripsCreativeClipStateExactly() {
+    fun latestSchemaRoundTripsCreativeClipStateExactly() {
         val asset = Asset(
             id = "asset-1",
             type = AssetType.VIDEO,
@@ -96,8 +96,8 @@ class CreativeSuiteProjectJsonTest {
         val encoded = ProjectJson.encode(project)
         val decoded = ProjectJson.decode(encoded)
 
-        assertEquals(4, BuildContract.PROJECT_SCHEMA_VERSION)
-        assertTrue(encoded.contains("\"schemaVersion\":4"))
+        assertEquals(5, BuildContract.PROJECT_SCHEMA_VERSION)
+        assertTrue(encoded.contains("\"schemaVersion\":5"))
         assertEquals(clip.propertyAnimations, decoded.findClip("clip-1")!!.propertyAnimations)
         assertEquals(clip.compositing, decoded.findClip("clip-1")!!.compositing)
         assertEquals(clip.effects, decoded.findClip("clip-1")!!.effects)
@@ -109,7 +109,7 @@ class CreativeSuiteProjectJsonTest {
         val decoded = ProjectJson.decode(v3Fixture())
         val clip = decoded.findClip("clip-1")!!
 
-        assertEquals(4, decoded.schemaVersion)
+        assertEquals(5, decoded.schemaVersion)
         assertTrue(clip.propertyAnimations.isEmpty())
         assertEquals(CompositingSettings(), clip.compositing)
         assertTrue(clip.effects.isEmpty())

@@ -13,6 +13,7 @@ object EditorBottomToolRailPolicy {
     fun layout(
         tools: List<EditorToolDefinition>,
         expanded: Boolean,
+        activeTool: EditorToolId? = null,
     ): EditorBottomToolRailLayout {
         if (expanded || tools.size <= COLLAPSED_LIMIT) {
             return EditorBottomToolRailLayout(
@@ -20,9 +21,15 @@ object EditorBottomToolRailPolicy {
                 hiddenCount = 0,
             )
         }
+
+        val visible = tools.take(COLLAPSED_LIMIT).toMutableList()
+        val active = tools.firstOrNull { it.id == activeTool }
+        if (active != null && visible.none { it.id == active.id }) {
+            visible[visible.lastIndex] = active
+        }
         return EditorBottomToolRailLayout(
-            visible = tools.take(COLLAPSED_LIMIT),
-            hiddenCount = tools.size - COLLAPSED_LIMIT,
+            visible = visible,
+            hiddenCount = tools.size - visible.size,
         )
     }
 }

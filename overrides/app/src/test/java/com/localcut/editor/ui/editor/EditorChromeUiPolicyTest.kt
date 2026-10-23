@@ -22,7 +22,15 @@ class EditorChromeUiPolicyTest {
     }
 
     @Test
-    fun incompatibleToolFallsBackToFirstLiveToolForNewSelection() {
+    fun creationActionDoesNotPinTheClipInspectorContext() {
+        assertEquals(
+            EditorToolId.EDIT,
+            EditorChromeUiPolicy.resolveActiveTool(EditorToolId.MEDIA, EditorSelectionKind.VIDEO),
+        )
+    }
+
+    @Test
+    fun incompatibleToolFallsBackToPreferredLiveToolForNewSelection() {
         assertEquals(
             EditorToolId.AUDIO,
             EditorChromeUiPolicy.resolveActiveTool(EditorToolId.MASK, EditorSelectionKind.AUDIO),

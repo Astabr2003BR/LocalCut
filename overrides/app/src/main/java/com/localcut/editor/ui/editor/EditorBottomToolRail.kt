@@ -15,6 +15,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -30,6 +34,8 @@ fun EditorBottomToolRail(
     modifier: Modifier = Modifier,
 ) {
     val tools = EditorToolCatalog.primaryToolsFor(selection).filter { it.enabled }
+    var expanded by remember(selection) { mutableStateOf(false) }
+    val layout = EditorBottomToolRailPolicy.layout(tools, expanded)
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -44,38 +50,69 @@ fun EditorBottomToolRail(
             horizontalArrangement = Arrangement.spacedBy(1.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            tools.forEach { tool ->
+            layout.visible.forEach { tool ->
                 val target = EditorToolCatalog.actionTarget(tool.id)
                 val active = tool.id == activeTool
-                val itemColor = if (active) Color(0xFF26262B) else Color.Transparent
-                val contentColor = if (active) Color.White else Color(0xFFE7E7EA)
+                ToolRailItem(
+                    glyph = toolGlyph(tool.id),
+                    label = tool.label,
+                    active = active,
+                    onClick = { onToolSelected(target) },
+                )
+            }
 
-                Column(
-                    modifier = Modifier
-                        .width(68.dp)
-                        .background(itemColor, RoundedCornerShape(10.dp))
-                        .clickable { onToolSelected(target) }
-                        .padding(horizontal = 4.dp, vertical = 5.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    Text(
-                        text = toolGlyph(tool.id),
-                        color = contentColor,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                    )
-                    Text(
-                        text = tool.label,
-                        color = contentColor,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 10.sp,
-                        maxLines = 1,
-                    )
-                }
+            if (layout.hasMore) {
+                ToolRailItem(
+                    glyph = "⋯",
+                    label = "Mais +${layout.hiddenCount}",
+                    active = false,
+                    onClick = { expanded = true },
+                )
+            } else if (expanded && tools.size > EditorBottomToolRailPolicy.COLLAPSED_LIMIT) {
+                ToolRailItem(
+                    glyph = "‹",
+                    label = "Menos",
+                    active = false,
+                    onClick = { expanded = false },
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun ToolRailItem(
+    glyph: String,
+    label: String,
+    active: Boolean,
+    onClick: () -> Unit,
+) {
+    val itemColor = if (active) Color(0xFF26262B) else Color.Transparent
+    val contentColor = if (active) Color.White else Color(0xFFE7E7EA)
+
+    Column(
+        modifier = Modifier
+            .width(68.dp)
+            .background(itemColor, RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = glyph,
+            color = contentColor,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+        )
+        Text(
+            text = label,
+            color = contentColor,
+            style = MaterialTheme.typography.labelSmall,
+            fontSize = 10.sp,
+            maxLines = 1,
+        )
     }
 }
 

@@ -147,6 +147,8 @@ object ProjectRenderPlanCompiler {
                 fadeInUs = clip.fadeInUs,
                 fadeOutUs = clip.fadeOutUs,
                 compositing = clip.compositing,
+                effects = clip.effects,
+                timeMap = clip.timeMap,
             )
             cursorUs = Math.addExact(clip.startUs, clip.durationUs)
         }

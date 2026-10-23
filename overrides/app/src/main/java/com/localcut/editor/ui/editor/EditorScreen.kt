@@ -379,8 +379,7 @@ private fun ProfessionalContextPanel(
             EditorToolId.COLOR,
             EditorToolId.SPEED,
             EditorToolId.MASK,
-            EditorToolId.CHROMA,
-            EditorToolId.ANIMATION -> {
+            EditorToolId.CHROMA -> {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                     CreativeToolsPanel(
                         project = session.project,
@@ -393,6 +392,14 @@ private fun ProfessionalContextPanel(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+            }
+            EditorToolId.ANIMATION -> {
+                AnimationCurvePanel(
+                    project = session.project,
+                    selectedClipId = session.selectedClipId,
+                    onSetPropertyAnimations = { viewModel.dispatch(EditorAction.SetSelectedPropertyAnimations(it)) },
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
             EditorToolId.LAYERS -> {
                 LayerPanel(

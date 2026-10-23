@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
 import com.localcut.editor.domain.history.SetCompositionGraphCommand
+import com.localcut.editor.domain.history.SetProjectCanvasSizeCommand
 import com.localcut.editor.domain.model.ClipTransition
 import com.localcut.editor.media.ExportCapabilities
 import com.localcut.editor.media.ExportProfile
@@ -429,6 +430,9 @@ private fun ProfessionalContextPanel(
                         onUpdateElement = { viewModel.dispatch(EditorAction.UpdateDesignElement(it)) },
                         onDeleteElement = { viewModel.dispatch(EditorAction.DeleteDesignElement(it)) },
                         onSetCanvas = { viewModel.dispatch(EditorAction.SetDesignCanvas(it)) },
+                        onSetProjectCanvasSize = { width, height ->
+                            viewModel.dispatch(EditorAction.Execute(SetProjectCanvasSizeCommand(width, height)))
+                        },
                         onUpsertComponent = { viewModel.dispatch(EditorAction.UpsertReusableComponent(it)) },
                         onDeleteComponent = { viewModel.dispatch(EditorAction.DeleteReusableComponent(it)) },
                         modifier = Modifier.fillMaxWidth(),

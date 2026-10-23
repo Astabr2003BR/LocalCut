@@ -1,5 +1,7 @@
 package com.localcut.editor.ui.editor
 
+import com.localcut.editor.domain.model.EffectInstance
+
 enum class EffectBrowserCategory {
     COLOR,
     LIGHT,
@@ -18,6 +20,15 @@ data class EffectBrowserPreset(
 )
 
 object EffectBrowserUiPolicy {
+    private val orderedCategories = listOf(
+        EffectBrowserCategory.COLOR,
+        EffectBrowserCategory.LIGHT,
+        EffectBrowserCategory.DETAIL,
+        EffectBrowserCategory.BLUR,
+        EffectBrowserCategory.TEXTURE,
+        EffectBrowserCategory.DISTORTION,
+    )
+
     private val presets = listOf(
         EffectBrowserPreset(EffectBrowserCategory.COLOR, "Brilho +", "localcut.color.brightness", "amount", 0.2),
         EffectBrowserPreset(EffectBrowserCategory.COLOR, "Contraste +", "localcut.color.contrast", "amount", 1.2),
@@ -37,10 +48,23 @@ object EffectBrowserUiPolicy {
         EffectBrowserPreset(EffectBrowserCategory.DISTORTION, "Displace", "localcut.displacement", "amount", 12.0),
     )
 
-    fun categories(): List<EffectBrowserCategory> = EffectBrowserCategory.entries
+    fun categories(): List<EffectBrowserCategory> = orderedCategories
 
     fun presets(category: EffectBrowserCategory): List<EffectBrowserPreset> =
         presets.filter { it.category == category }
+
+    fun hasEffectsInCategory(effects: List<EffectInstance>, category: EffectBrowserCategory): Boolean {
+        val typeIds = presets(category).mapTo(hashSetOf()) { it.typeId }
+        return effects.any { it.typeId in typeIds }
+    }
+
+    fun clearCategory(
+        effects: List<EffectInstance>,
+        category: EffectBrowserCategory,
+    ): List<EffectInstance> {
+        val typeIds = presets(category).mapTo(hashSetOf()) { it.typeId }
+        return effects.filterNot { it.typeId in typeIds }
+    }
 
     fun label(category: EffectBrowserCategory): String = when (category) {
         EffectBrowserCategory.COLOR -> "Cor"

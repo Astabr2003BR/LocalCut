@@ -65,21 +65,23 @@ object EditorToolCatalog {
     private val any = EditorSelectionKind.entries.toSet()
 
     val all: List<EditorToolDefinition> = listOf(
+        // Clip editing leads the contextual rail, matching a timeline-first mobile editor.
+        // It is automatically filtered out for the project/no-selection state.
+        tool(EditorToolId.EDIT, "Editar", EditorToolGroup.EDIT, clip, EditorToolState.LIVE),
         tool(EditorToolId.MEDIA, "Mídia", EditorToolGroup.PROJECT, any, EditorToolState.LIVE),
         tool(EditorToolId.AUDIO, "Áudio", EditorToolGroup.AUDIO, any, EditorToolState.LIVE),
         tool(EditorToolId.TEXT, "Texto", EditorToolGroup.PROJECT, any, EditorToolState.LIVE),
         tool(EditorToolId.CAPTIONS, "Legendas", EditorToolGroup.PROJECT, any, EditorToolState.LIVE),
         tool(EditorToolId.OVERLAY, "Overlay", EditorToolGroup.PROJECT, any, EditorToolState.LIVE),
-        tool(EditorToolId.EDIT, "Editar", EditorToolGroup.EDIT, clip, EditorToolState.LIVE),
         tool(EditorToolId.EFFECTS, "Efeitos", EditorToolGroup.CREATIVE, visual, EditorToolState.LIVE),
-        tool(EditorToolId.COLOR, "Cor", EditorToolGroup.CREATIVE, visual, EditorToolState.LIVE),
+        tool(EditorToolId.COLOR, "Ajustar", EditorToolGroup.CREATIVE, visual, EditorToolState.LIVE),
         tool(EditorToolId.SPEED, "Velocidade", EditorToolGroup.TIME, setOf(EditorSelectionKind.VIDEO, EditorSelectionKind.AUDIO), EditorToolState.LIVE),
+        tool(EditorToolId.ANIMATION, "Animação", EditorToolGroup.CREATIVE, visual + EditorSelectionKind.TEXT + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
         tool(EditorToolId.MASK, "Máscara", EditorToolGroup.CREATIVE, visual, EditorToolState.LIVE),
         tool(EditorToolId.CHROMA, "Chroma", EditorToolGroup.CREATIVE, visual, EditorToolState.LIVE),
-        tool(EditorToolId.ANIMATION, "Animação", EditorToolGroup.CREATIVE, visual + EditorSelectionKind.TEXT + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
         tool(EditorToolId.LAYERS, "Camadas", EditorToolGroup.DESIGN, visual + EditorSelectionKind.TEXT + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
+        tool(EditorToolId.CANVAS, "Formato", EditorToolGroup.DESIGN, any, EditorToolState.LIVE),
         tool(EditorToolId.DESIGN, "Design", EditorToolGroup.DESIGN, project + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
-        tool(EditorToolId.CANVAS, "Canvas", EditorToolGroup.DESIGN, any, EditorToolState.LIVE),
         tool(EditorToolId.TRACKING, "Tracking", EditorToolGroup.ADVANCED, visual, EditorToolState.PLANNED),
         tool(EditorToolId.STABILIZE, "Estabilizar", EditorToolGroup.ADVANCED, setOf(EditorSelectionKind.VIDEO), EditorToolState.PLANNED),
         tool(EditorToolId.CAMERA, "Câmera", EditorToolGroup.ADVANCED, any, EditorToolState.PARTIAL),

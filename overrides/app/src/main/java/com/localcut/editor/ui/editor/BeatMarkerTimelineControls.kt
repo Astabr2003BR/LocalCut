@@ -41,6 +41,7 @@ internal fun BeatMarkerTimelineControls(
     onAddMarker: (BeatMarker) -> Unit,
     onDeleteMarker: (String) -> Unit,
     onApplyDetectedMarkers: (String, List<BeatMarker>) -> Unit,
+    onClearDetectedMarkers: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val durationUs = TimelineMath.durationUs(project)
@@ -49,9 +50,11 @@ internal fun BeatMarkerTimelineControls(
     val selectedClip = selectedClipId?.let(project::findClip)
     val selectedAsset = selectedClip?.let { clip -> project.assets.firstOrNull { it.id == clip.assetId } }
     val canAnalyze = BeatMarkerUiPolicy.canAutoAnalyzeSelectedClip(project, selectedClipId) && selectedAsset != null
+    val hasAutoMarkers = BeatMarkerUiPolicy.hasAutoMarkersForClip(project.beatMarkers, selectedClipId)
     val applicationContext = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     var analyzingClipId by remember { mutableStateOf<String?>(null) }
+    var sensitivity by remember(selectedClipId) { mutableStateOf(BeatDetectionSensitivity.STANDARD) }
     var analysisMessage by remember(selectedClipId) { mutableStateOf<String?>(null) }
     var analysisError by remember(selectedClipId) { mutableStateOf<String?>(null) }
     val markerColor = MaterialTheme.colorScheme.tertiary
@@ -91,6 +94,7 @@ internal fun BeatMarkerTimelineControls(
                     val requestedUri = asset.uri
                     val requestedSourceInUs = clip.sourceInUs
                     val requestedSourceOutUs = clip.sourceOutUs
+                    val requestedSettings = BeatDetectionUiPolicy.settings(sensitivity)
                     analyzingClipId = requestedClipId
                     analysisMessage = null
                     analysisError = null
@@ -100,6 +104,7 @@ internal fun BeatMarkerTimelineControls(
                                 uri = requestedUri,
                                 sourceInUs = requestedSourceInUs,
                                 sourceOutUs = requestedSourceOutUs,
+                                settings = requestedSettings,
                             )
                         }
                         result.fold(
@@ -122,12 +127,43 @@ internal fun BeatMarkerTimelineControls(
             ) {
                 Text(if (analyzingClipId != null) "Analisando…" else "Detectar batidas")
             }
+            OutlinedButton(
+                onClick = { selectedClipId?.let(onClearDetectedMarkers) },
+                enabled = selectedClipId != null && hasAutoMarkers && analyzingClipId == null,
+            ) {
+                Text("Limpar automáticas")
+            }
             Text(
                 "${project.beatMarkers.size} marcas",
                 modifier = Modifier.padding(vertical = 12.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+
+        if (selectedClip != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    "Sensibilidade",
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                BeatDetectionSensitivity.entries.forEach { option ->
+                    val label = BeatDetectionUiPolicy.label(option)
+                    if (option == sensitivity) {
+                        FilledTonalButton(onClick = { sensitivity = option }) { Text(label) }
+                    } else {
+                        OutlinedButton(onClick = { sensitivity = option }) { Text(label) }
+                    }
+                }
+            }
         }
 
         analysisMessage?.let { message ->

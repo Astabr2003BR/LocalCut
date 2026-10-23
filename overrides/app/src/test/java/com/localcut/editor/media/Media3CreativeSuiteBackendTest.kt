@@ -3,6 +3,8 @@ package com.localcut.editor.media
 import androidx.media3.common.C
 import com.localcut.editor.domain.model.EffectInstance
 import com.localcut.editor.domain.model.EffectParameter
+import com.localcut.editor.domain.model.FreezeSegment
+import com.localcut.editor.domain.model.SpeedPoint
 import com.localcut.editor.domain.model.TimeMap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -20,11 +22,15 @@ class Media3CreativeSuiteBackendTest {
     }
 
     @Test
-    fun media3TimeMapSupportAcceptsConstantForwardSpeedOnly() {
+    fun media3TimeMapSupportAcceptsConstantAndForwardRampOnly() {
         assertTrue(Media3TimeMapSupport.canRender(TimeMap(baseSpeed = 2.0)))
+        assertTrue(
+            Media3TimeMapSupport.canRender(
+                TimeMap(speedPoints = listOf(SpeedPoint(0L, 1.0), SpeedPoint(1_000_000L, 2.0))),
+            ),
+        )
         assertFalse(Media3TimeMapSupport.canRender(TimeMap(reverse = true)))
-        assertFalse(Media3TimeMapSupport.canRender(TimeMap(speedPoints = listOf(com.localcut.editor.domain.model.SpeedPoint(0L, 1.0)))))
-        assertFalse(Media3TimeMapSupport.canRender(TimeMap(freezeSegments = listOf(com.localcut.editor.domain.model.FreezeSegment(0L, 100L, 0L)))))
+        assertFalse(Media3TimeMapSupport.canRender(TimeMap(freezeSegments = listOf(FreezeSegment(0L, 100L, 0L)))))
     }
 
     @Test

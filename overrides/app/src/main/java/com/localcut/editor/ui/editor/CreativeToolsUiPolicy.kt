@@ -15,6 +15,7 @@ import com.localcut.editor.domain.model.MaskKind
 import com.localcut.editor.domain.model.MaskPoint
 import com.localcut.editor.domain.model.MaskSpec
 import com.localcut.editor.domain.model.PropertyAnimation
+import com.localcut.editor.domain.model.SpeedPoint
 import com.localcut.editor.domain.model.TimeMap
 
 object CreativeToolsUiPolicy {
@@ -50,7 +51,22 @@ object CreativeToolsUiPolicy {
         require(speed.isFinite() && speed > 0.0) { "speed must be finite and positive" }
         return source.copy(
             baseSpeed = speed,
+            reverse = false,
             speedPoints = emptyList(),
+            freezeSegments = emptyList(),
+        )
+    }
+
+    fun accelerationRamp(sourceRangeUs: Long): TimeMap {
+        require(sourceRangeUs > 0L) { "source range must be positive" }
+        val rampEndUs = minOf(1_000_000L, maxOf(1L, sourceRangeUs / 3L))
+        return TimeMap(
+            baseSpeed = 0.5,
+            reverse = false,
+            speedPoints = listOf(
+                SpeedPoint(0L, 0.5),
+                SpeedPoint(rampEndUs, 2.0),
+            ),
             freezeSegments = emptyList(),
         )
     }

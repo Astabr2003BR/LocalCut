@@ -523,16 +523,25 @@ private fun TimelineForProfessionalState(
             onSelectClip = { viewModel.dispatch(EditorAction.SelectClip(it)) },
             onSeek = viewModel::seekToUs,
             onMoveClip = { clipId, newStart ->
+                val track = session.project.tracks.firstOrNull { candidate -> candidate.clips.any { it.id == clipId } }
+                val snapped = BeatMarkerUiPolicy.snapTimeUs(session.project.beatMarkers, newStart)
+                val bounded = track?.let { TimelineEditBounds.clampMove(it, clipId, snapped) } ?: snapped
                 viewModel.dispatch(EditorAction.SelectClip(clipId))
-                viewModel.dispatch(EditorAction.MoveSelected(newStart))
+                viewModel.dispatch(EditorAction.MoveSelected(bounded))
             },
             onTrimLeft = { clipId, newStart ->
+                val track = session.project.tracks.firstOrNull { candidate -> candidate.clips.any { it.id == clipId } }
+                val snapped = BeatMarkerUiPolicy.snapTimeUs(session.project.beatMarkers, newStart)
+                val bounded = track?.let { TimelineEditBounds.clampLeft(it, clipId, snapped) } ?: snapped
                 viewModel.dispatch(EditorAction.SelectClip(clipId))
-                viewModel.dispatch(EditorAction.TrimSelectedLeftEdge(newStart))
+                viewModel.dispatch(EditorAction.TrimSelectedLeftEdge(bounded))
             },
             onTrimRight = { clipId, newEnd ->
+                val track = session.project.tracks.firstOrNull { candidate -> candidate.clips.any { it.id == clipId } }
+                val snapped = BeatMarkerUiPolicy.snapTimeUs(session.project.beatMarkers, newEnd)
+                val bounded = track?.let { TimelineEditBounds.clampRight(it, clipId, snapped) } ?: snapped
                 viewModel.dispatch(EditorAction.SelectClip(clipId))
-                viewModel.dispatch(EditorAction.TrimSelectedRightEdge(newEnd))
+                viewModel.dispatch(EditorAction.TrimSelectedRightEdge(bounded))
             },
             onSetTrackMuted = { trackId, muted ->
                 viewModel.dispatch(EditorAction.SetTrackMuted(trackId, muted))

@@ -143,6 +143,12 @@ fun DesignToolsPanel(
                                     onUpdateElement(element.copy(transform = element.transform.copy(rotationDeg = element.transform.rotationDeg + 15.0)))
                                 },
                             ) { Text("↻ 15°") }
+                            OutlinedButton(
+                                onClick = { onUpdateElement(DesignToolsUiPolicy.bringToFront(project, element)) },
+                            ) { Text("Frente") }
+                            OutlinedButton(
+                                onClick = { onUpdateElement(DesignToolsUiPolicy.sendToBack(project, element)) },
+                            ) { Text("Trás") }
                             Button(onClick = { onDeleteElement(element.id) }) { Text("Excluir forma") }
                         }
                     }

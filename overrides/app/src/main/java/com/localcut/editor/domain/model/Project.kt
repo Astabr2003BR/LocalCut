@@ -13,6 +13,7 @@ data class Project(
     val tracks: List<Track>,
     val textOverlays: List<TextOverlay> = emptyList(),
     val transitions: List<ClipTransition> = emptyList(),
+    val compositionGraph: CompositionGraph = CompositionGraph(),
 ) {
     fun findClip(clipId: String): Clip? = tracks.asSequence().flatMap { it.clips.asSequence() }.firstOrNull { it.id == clipId }
 

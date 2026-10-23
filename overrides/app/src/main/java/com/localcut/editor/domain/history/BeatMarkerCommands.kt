@@ -36,6 +36,20 @@ data class DeleteBeatMarkerCommand(
     }
 }
 
+data class SetBeatMarkersCommand(
+    val markers: List<BeatMarker>,
+) : EditorCommand {
+    override fun apply(project: Project): CommandResult {
+        val normalized = markers.sortedWith(compareBy<BeatMarker> { it.timeUs }.thenBy { it.id })
+        val previous = project.beatMarkers
+        val edited = validatedBeatProject(project.copy(beatMarkers = normalized))
+        return CommandResult(
+            project = edited,
+            inverse = SetBeatMarkersCommand(previous),
+        )
+    }
+}
+
 private data class RestoreBeatMarkerCommand(
     val index: Int,
     val marker: BeatMarker,

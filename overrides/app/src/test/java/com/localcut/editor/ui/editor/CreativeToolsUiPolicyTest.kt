@@ -1,6 +1,7 @@
 package com.localcut.editor.ui.editor
 
 import com.localcut.editor.domain.model.*
+import com.localcut.editor.media.Media3CompositingEffectFactory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

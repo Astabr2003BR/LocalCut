@@ -13,7 +13,11 @@ class ColorFilterPresetTest {
         ColorFilterPreset.entries.forEach { preset ->
             val effects = ColorFilterUiPolicy.applyPreset(emptyList(), preset)
 
-            assertTrue("$preset must generate effects", effects.isNotEmpty())
+            if (preset == ColorFilterPreset.NEUTRAL) {
+                assertTrue("NEUTRAL must preserve the original image without color effects", effects.isEmpty())
+            } else {
+                assertTrue("$preset must generate effects", effects.isNotEmpty())
+            }
             assertTrue(effects.all { it.typeId.startsWith("localcut.color.") })
             assertTrue(effects.all(Media3EffectStackFactory::canRender))
         }

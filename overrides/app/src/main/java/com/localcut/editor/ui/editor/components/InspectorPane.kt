@@ -42,6 +42,7 @@ fun InspectorPane(
     onSeek: (Long) -> Unit,
     onVolume: (Double) -> Unit,
     onAudioFades: (Long, Long) -> Unit,
+    onOpacity: (Double) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val clip = selectedClipId?.let(project::findClip)
@@ -91,6 +92,20 @@ fun InspectorPane(
                 FilledTonalButton(onClick = { onTransform(clip.transform.copy(rotationDeg = clip.transform.rotationDeg - 5.0)) }) { Text("↺ 5°") }
                 FilledTonalButton(onClick = { onTransform(clip.transform.copy(rotationDeg = clip.transform.rotationDeg + 5.0)) }) { Text("↻ 5°") }
             }
+
+            var opacityDraft by remember(clip.id, clip.opacity) {
+                mutableFloatStateOf(clip.opacity.coerceIn(0.0, 1.0).toFloat())
+            }
+            Text(
+                "Opacidade do clipe ${"%.0f".format(opacityDraft * 100f)}%",
+                style = MaterialTheme.typography.labelLarge,
+            )
+            Slider(
+                value = opacityDraft,
+                onValueChange = { opacityDraft = it },
+                onValueChangeFinished = { onOpacity(opacityDraft.toDouble()) },
+                valueRange = 0f..1f,
+            )
 
             val localOffsetUs = KeyframeEditorPolicy.localOffsetUs(clip, playheadUs)
             val valueAtCursor = KeyframeEditorPolicy.valueAtProjectTime(clip, playheadUs)

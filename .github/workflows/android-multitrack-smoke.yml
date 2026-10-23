@@ -99,13 +99,38 @@ jobs:
           test -x "$AVDMANAGER"
 
           SYSTEM_IMAGE='system-images;android-35;google_apis;x86_64'
+          SYSTEM_IMAGE_DIR="$SDK_ROOT/system-images/android-35/google_apis/x86_64"
+
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "$SYSTEM_IMAGE" 'platform-tools' 'emulator'
+
+          install_sdk_packages() {
+            local label="$1"
+            shift
+            local attempt
+            for attempt in 1 2 3; do
+              echo "Installing $label (attempt $attempt/3)"
+              if "$SDKMANAGER" "$@"; then
+                return 0
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "Failed to install $label after 3 attempts" >&2
+                return 1
+              fi
+              echo "Cleaning partial Android SDK downloads before retry" >&2
+              rm -rf "$SDK_ROOT/.temp" "$HOME/.android/cache"
+              sleep $((attempt * 5))
+            done
+          }
+
+          install_sdk_packages 'emulator and platform-tools' 'platform-tools' 'emulator'
+          install_sdk_packages 'Android 35 Google APIs x86_64 system image' "$SYSTEM_IMAGE"
 
           ADB="$SDK_ROOT/platform-tools/adb"
           EMULATOR="$SDK_ROOT/emulator/emulator"
           test -x "$ADB"
           test -x "$EMULATOR"
+          test -f "$SYSTEM_IMAGE_DIR/source.properties"
+          test -f "$SYSTEM_IMAGE_DIR/system.img"
 
           AVD_HOME="$RUNNER_TEMP/localcut-avd"
           rm -rf "$AVD_HOME"

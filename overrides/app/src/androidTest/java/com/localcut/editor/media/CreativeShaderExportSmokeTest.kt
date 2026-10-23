@@ -24,6 +24,7 @@ import com.localcut.editor.domain.model.CompositingSettings
 import com.localcut.editor.domain.model.EffectInstance
 import com.localcut.editor.domain.model.EffectParameter
 import com.localcut.editor.domain.model.MaskKind
+import com.localcut.editor.domain.model.MaskPoint
 import com.localcut.editor.domain.model.MaskSpec
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.Track
@@ -66,25 +67,7 @@ class CreativeShaderExportSmokeTest {
                     ),
                 ),
             )
-            val project = Project(
-                id = "creative-shader-smoke",
-                schemaVersion = BuildContract.PROJECT_SCHEMA_VERSION,
-                title = "Creative shader smoke",
-                width = WIDTH,
-                height = HEIGHT,
-                fps = 30,
-                assets = listOf(asset),
-                tracks = listOf(
-                    Track(
-                        id = "visual-1",
-                        type = TrackType.VISUAL,
-                        order = 0,
-                        collisionPolicy = TrackCollisionPolicy.EXCLUSIVE,
-                        clips = listOf(clip),
-                    ),
-                    Track("audio-1", TrackType.AUDIO, 1, TrackCollisionPolicy.EXCLUSIVE),
-                ),
-            )
+            val project = singleImageProject("creative-shader-smoke", asset, clip)
 
             val output = File(testDir, "creative-shaders.mp4")
             export(project, output, instrumentation, context)
@@ -101,6 +84,75 @@ class CreativeShaderExportSmokeTest {
             testDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun freeformMaskShaderCompilesAndCutsOutsidePolygon() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val testDir = File(context.cacheDir, "freeform-mask-smoke-${System.nanoTime()}").apply { mkdirs() }
+        try {
+            val whiteFile = createSolidPng(File(testDir, "white.png"), Color.WHITE)
+            val asset = imageAsset("freeform-white", whiteFile)
+            val clip = Clip(
+                id = "freeform",
+                assetId = asset.id,
+                startUs = 0L,
+                durationUs = 1_000_000L,
+                sourceInUs = 0L,
+                sourceOutUs = 1_000_000L,
+                compositing = CompositingSettings(
+                    masks = listOf(
+                        MaskSpec(
+                            id = "diamond",
+                            kind = MaskKind.FREEFORM,
+                            points = listOf(
+                                MaskPoint(0.50, 0.08),
+                                MaskPoint(0.92, 0.50),
+                                MaskPoint(0.50, 0.92),
+                                MaskPoint(0.08, 0.50),
+                            ),
+                            featherPx = 2.0,
+                        ),
+                    ),
+                ),
+            )
+            val project = singleImageProject("freeform-mask-smoke", asset, clip)
+
+            val output = File(testDir, "freeform-mask.mp4")
+            export(project, output, instrumentation, context)
+            val frame = extractFrame(output, 500_000L)
+            try {
+                val center = luma(frame.getPixel(frame.width / 2, frame.height / 2))
+                val corner = luma(frame.getPixel(4, 4))
+                assertTrue("polygon center should remain visible; center=$center", center >= 180)
+                assertTrue("outside polygon should be strongly cut; corner=$corner", corner <= 45)
+            } finally {
+                frame.recycle()
+            }
+        } finally {
+            testDir.deleteRecursively()
+        }
+    }
+
+    private fun singleImageProject(id: String, asset: Asset, clip: Clip): Project = Project(
+        id = id,
+        schemaVersion = BuildContract.PROJECT_SCHEMA_VERSION,
+        title = id,
+        width = WIDTH,
+        height = HEIGHT,
+        fps = 30,
+        assets = listOf(asset),
+        tracks = listOf(
+            Track(
+                id = "visual-1",
+                type = TrackType.VISUAL,
+                order = 0,
+                collisionPolicy = TrackCollisionPolicy.EXCLUSIVE,
+                clips = listOf(clip),
+            ),
+            Track("audio-1", TrackType.AUDIO, 1, TrackCollisionPolicy.EXCLUSIVE),
+        ),
+    )
 
     private fun export(
         project: Project,

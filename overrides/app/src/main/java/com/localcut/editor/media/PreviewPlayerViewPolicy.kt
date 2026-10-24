@@ -13,4 +13,10 @@ object PreviewPlayerViewPolicy {
             previousHeightDp.isFinite() &&
             currentHeightDp.isFinite() &&
             previousHeightDp != currentHeightDp
+
+    fun shouldRefreshAfterContentLoad(
+        loadSucceeded: Boolean,
+        durationUs: Long,
+        hasBoundView: Boolean,
+    ): Boolean = loadSucceeded && durationUs > 0L && hasBoundView
 }

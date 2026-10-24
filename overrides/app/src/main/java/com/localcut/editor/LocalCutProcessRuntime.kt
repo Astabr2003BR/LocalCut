@@ -150,6 +150,7 @@ class LocalCutProcessRuntime private constructor(context: Context) {
             playback = playbackPort,
             jobs = bridgeJobs,
             exportPort = bridgeExportPort,
+            previewFramePort = previewController.bridgePreviewFramePort,
         )
         val deviceId = AndroidKeystoreDeviceIdentityStore()
             .getOrCreatePublicIdentity()

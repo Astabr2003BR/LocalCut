@@ -34,6 +34,7 @@ import com.localcut.editor.media.ExportProfile
 import com.localcut.editor.media.FinalPreviewRenderer
 import com.localcut.editor.media.Media3ExportController
 import com.localcut.editor.media.Media3PreviewController
+import com.localcut.editor.media.PreviewResumePolicy
 import com.localcut.editor.media.SafExportDestination
 import com.localcut.editor.mobile.SharedMediaIntentParser
 import com.localcut.editor.ui.editor.BridgePanel
@@ -205,6 +206,15 @@ class MainActivity : ComponentActivity() {
         }
 
         consumeSharedMediaIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!::editorViewModel.isInitialized || !::previewController.isInitialized) return
+        val preview = editorViewModel.previewState.value
+        if (PreviewResumePolicy.shouldRefresh(preview.durationUs, preview.playing)) {
+            previewController.seekToUs(preview.positionUs)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {

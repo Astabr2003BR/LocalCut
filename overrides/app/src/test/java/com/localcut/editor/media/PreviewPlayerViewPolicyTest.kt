@@ -79,4 +79,22 @@ class PreviewPlayerViewPolicyTest {
             ),
         )
     }
+
+    @Test
+    fun surfaceRefreshDoesNotReassignAnAlreadyBoundPreviewPlayer() {
+        assertFalse(
+            PreviewPlayerViewPolicy.shouldAssignPreviewPlayer(
+                alreadyBoundToPreviewPlayer = true,
+            ),
+        )
+    }
+
+    @Test
+    fun surfaceRefreshAssignsPreviewPlayerWhenViewLostItsBinding() {
+        assertTrue(
+            PreviewPlayerViewPolicy.shouldAssignPreviewPlayer(
+                alreadyBoundToPreviewPlayer = false,
+            ),
+        )
+    }
 }

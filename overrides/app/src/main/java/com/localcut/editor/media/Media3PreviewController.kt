@@ -82,6 +82,17 @@ class Media3PreviewController(
         bridgePreviewFramePort.attach(view)
     }
 
+    fun refreshBoundView(view: PlayerView) {
+        val positionUs = state.value.positionUs
+        bridgePreviewFramePort.detach(view)
+        if (view.player === player) view.player = null
+        view.player = player
+        view.useController = false
+        bridgePreviewFramePort.attach(view)
+        delegate.seekToUs(positionUs)
+        bridgePreviewFramePort.requestRefresh()
+    }
+
     fun unbindFrom(view: PlayerView) {
         bridgePreviewFramePort.detach(view)
         if (view.player === player) view.player = null

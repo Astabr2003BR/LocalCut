@@ -14,6 +14,8 @@
         android:allowBackup="true"
         android:dataExtractionRules="@xml/localcut_backup_rules"
         android:fullBackupContent="@xml/localcut_full_backup_content"
+        android:icon="@drawable/localcut_app_icon"
+        android:roundIcon="@drawable/localcut_app_icon"
         android:label="LocalCut"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">

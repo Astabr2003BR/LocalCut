@@ -82,6 +82,7 @@ import com.localcut.editor.ui.editor.TimelineEditBounds
 import com.localcut.editor.ui.editor.TimelineScrubPolicy
 import com.localcut.editor.ui.editor.TimelineSnapUiPolicy
 import com.localcut.editor.ui.editor.TimelineThumbnailPolicy
+import com.localcut.editor.ui.editor.TimelineTouchTargetPolicy
 import com.localcut.editor.ui.editor.TimelineTrackGeometry
 import com.localcut.editor.ui.editor.TimelineViewportPolicy
 import com.localcut.editor.ui.editor.TimelineZoomUiPolicy
@@ -824,13 +825,14 @@ private fun DraggablePlayhead(
     val safeDurationUs = durationUs.coerceAtLeast(0L)
     val clampedPlayheadUs = playheadUs.coerceIn(0L, safeDurationUs)
     val playheadX = (clampedPlayheadUs / US_PER_SECOND * dpPerSecond).toFloat().dp
+    val hitWidth = TimelineTouchTargetPolicy.PLAYHEAD_HIT_WIDTH_DP.dp
     var dragStartUs by remember { mutableStateOf(clampedPlayheadUs) }
     var dragDeltaPx by remember { mutableFloatStateOf(0f) }
 
     Box(
         modifier = Modifier
-            .offset(x = playheadX - 18.dp)
-            .width(36.dp)
+            .offset(x = playheadX - (TimelineTouchTargetPolicy.PLAYHEAD_HIT_WIDTH_DP / 2f).dp)
+            .width(hitWidth)
             .height(58.dp)
             .zIndex(20f)
             .draggable(
@@ -880,9 +882,8 @@ private fun TrimHandle(
     var deltaPx by remember { mutableFloatStateOf(0f) }
     Box(
         modifier = modifier
-            .width(8.dp)
+            .width(TimelineTouchTargetPolicy.TRIM_HIT_WIDTH_DP.dp)
             .height(48.dp)
-            .background(AccentColor, RoundedCornerShape(4.dp))
             .draggable(
                 orientation = Orientation.Horizontal,
                 state = rememberDraggableState { deltaPx += it },
@@ -892,7 +893,15 @@ private fun TrimHandle(
                     onFinished(result)
                 },
             ),
-    )
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(TimelineTouchTargetPolicy.TRIM_GLYPH_WIDTH_DP.dp)
+                .fillMaxHeight()
+                .background(AccentColor, RoundedCornerShape(3.dp)),
+        )
+    }
 }
 
 private fun trackGlyph(track: Track): String = when {

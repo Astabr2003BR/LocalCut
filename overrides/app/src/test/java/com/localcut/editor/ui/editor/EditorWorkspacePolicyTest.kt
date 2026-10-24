@@ -1,6 +1,8 @@
 package com.localcut.editor.ui.editor
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -55,5 +57,28 @@ class EditorWorkspacePolicyTest {
                 )
             }
         }
+    }
+
+    @Test
+    fun switchingWorkspaceClosesContextPanelEvenWhenToolExistsInBothWorkspaces() {
+        assertNull(
+            EditorWorkspacePolicy.activeToolAfterWorkspaceChange(
+                currentWorkspace = EditorWorkspace.MOTION,
+                nextWorkspace = EditorWorkspace.DESIGN,
+                activeTool = EditorToolId.COLOR,
+            ),
+        )
+    }
+
+    @Test
+    fun selectingCurrentWorkspaceKeepsContextPanel() {
+        assertEquals(
+            EditorToolId.COLOR,
+            EditorWorkspacePolicy.activeToolAfterWorkspaceChange(
+                currentWorkspace = EditorWorkspace.MOTION,
+                nextWorkspace = EditorWorkspace.MOTION,
+                activeTool = EditorToolId.COLOR,
+            ),
+        )
     }
 }

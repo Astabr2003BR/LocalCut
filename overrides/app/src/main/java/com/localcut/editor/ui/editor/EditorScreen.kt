@@ -559,8 +559,7 @@ private fun ProfessionalContextPanel(
                     )
                 }
 
-                ContextPanelKind.DESIGN,
-                ContextPanelKind.CANVAS -> {
+                ContextPanelKind.DESIGN -> {
                     Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
                         DesignToolsPanel(
                             project = session.project,
@@ -574,6 +573,19 @@ private fun ProfessionalContextPanel(
                             },
                             onUpsertComponent = { viewModel.dispatch(EditorAction.UpsertReusableComponent(it)) },
                             onDeleteComponent = { viewModel.dispatch(EditorAction.DeleteReusableComponent(it)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+
+                ContextPanelKind.CANVAS -> {
+                    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                        CanvasToolsPanel(
+                            project = session.project,
+                            onSetCanvas = { viewModel.dispatch(EditorAction.SetDesignCanvas(it)) },
+                            onSetProjectCanvasSize = { width, height ->
+                                viewModel.dispatch(EditorAction.Execute(SetProjectCanvasSizeCommand(width, height)))
+                            },
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }

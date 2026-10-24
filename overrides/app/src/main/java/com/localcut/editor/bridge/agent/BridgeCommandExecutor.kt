@@ -6,7 +6,6 @@ import com.localcut.editor.bridge.protocol.BridgeErrorCode
 import com.localcut.editor.bridge.protocol.BridgeResultEnvelope
 import com.localcut.editor.data.project.JNull
 import com.localcut.editor.data.project.JObject
-import com.localcut.editor.data.project.JValue
 import com.localcut.editor.data.project.MiniJson
 import com.localcut.editor.data.project.asArray
 import com.localcut.editor.data.project.asDouble
@@ -36,6 +35,7 @@ import com.localcut.editor.domain.model.TransformValue
 import com.localcut.editor.domain.model.TransitionKind
 import com.localcut.editor.session.EditorAction
 import com.localcut.editor.session.ProjectSession
+import java.util.Base64
 
 interface BridgePlaybackPort {
     val positionUs: Long
@@ -47,6 +47,7 @@ class BridgeCommandExecutor(
     private val playback: BridgePlaybackPort,
     private val jobs: BridgeJobRegistry = BridgeJobRegistry(),
     private val exportPort: BridgeExportPort = UnavailableBridgeExportPort,
+    private val previewFramePort: BridgePreviewFramePort = UnavailableBridgePreviewFramePort,
 ) {
     private val reader = BridgeProjectReader(session, playback, jobs)
 
@@ -77,6 +78,7 @@ class BridgeCommandExecutor(
                     val payload = payload(command)
                     success(command, reader.exportStatusJson(payload.optionalString("jobId")))
                 }
+                BridgeCapability.GET_PREVIEW_FRAME -> executePreviewFrame(command)
                 BridgeCapability.SEEK -> executeSeek(command)
                 BridgeCapability.SELECT_CLIP -> executeSelect(command)
                 BridgeCapability.MOVE_CLIP -> executeMove(command)
@@ -97,12 +99,6 @@ class BridgeCommandExecutor(
                     "media reference is not authorized by LocalCut",
                     retryable = false,
                 )
-                BridgeCapability.GET_PREVIEW_FRAME -> error(
-                    command,
-                    BridgeErrorCode.PREVIEW_FAILED,
-                    "preview frame port not attached",
-                    retryable = true,
-                )
                 BridgeCapability.EXPORT_PROJECT -> executeExport(command)
                 BridgeCapability.CANCEL_EXPORT -> executeCancelExport(command)
             }
@@ -111,6 +107,34 @@ class BridgeCommandExecutor(
         } catch (error: Throwable) {
             error(command, BridgeErrorCode.INTERNAL_ERROR, error.message ?: "internal error", retryable = false)
         }
+    }
+
+    private fun executePreviewFrame(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val frameResult = previewFramePort.capture()
+        if (frameResult.isFailure) {
+            return error(
+                command,
+                BridgeErrorCode.PREVIEW_FAILED,
+                frameResult.exceptionOrNull()?.message ?: "preview capture failed",
+                retryable = true,
+            )
+        }
+        val frame = frameResult.getOrThrow()
+        val encoded = Base64.getEncoder().encodeToString(frame.bytes)
+        val resultJson = buildString {
+            append("{\"mimeType\":")
+            append(jsonString(frame.mimeType))
+            append(",\"base64\":")
+            append(jsonString(encoded))
+            append(",\"width\":")
+            append(frame.width)
+            append(",\"height\":")
+            append(frame.height)
+            append(",\"positionUs\":")
+            append(frame.positionUs)
+            append('}')
+        }
+        return success(command, resultJson)
     }
 
     private fun executeSeek(command: BridgeCommandEnvelope): BridgeResultEnvelope {

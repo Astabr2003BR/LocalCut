@@ -79,6 +79,7 @@ import com.localcut.editor.ui.editor.KeyframeEditorPolicy
 import com.localcut.editor.ui.editor.TimelineAddMediaPolicy
 import com.localcut.editor.ui.editor.TimelineAddTarget
 import com.localcut.editor.ui.editor.TimelineEditBounds
+import com.localcut.editor.ui.editor.TimelineGesturePolicy
 import com.localcut.editor.ui.editor.TimelineScrubPolicy
 import com.localcut.editor.ui.editor.TimelineSnapUiPolicy
 import com.localcut.editor.ui.editor.TimelineThumbnailPolicy
@@ -149,6 +150,7 @@ fun TimelinePane(
     val runtime = remember(context) { LocalCutProcessRuntime.get(context) }
     val currentPlayheadUs by rememberUpdatedState(playheadUs)
     var snapEnabled by remember(project.id) { mutableStateOf(true) }
+    var exclusiveHandleActive by remember(project.id) { mutableStateOf(false) }
     val snapClipEdges = if (snapEnabled) {
         project.tracks.flatMap { track ->
             track.clips.map { clip ->
@@ -284,7 +286,7 @@ fun TimelinePane(
                 sourceInUs = clip.sourceInUs,
                 sourceOutUs = clip.sourceOutUs,
                 clipWidthDp = clipWidthDp,
-                stillImage = false,
+                stillImage = asset.type == AssetType.IMAGE,
             )
             val signature = buildString {
                 append(asset.fingerprint)
@@ -426,7 +428,10 @@ fun TimelinePane(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .horizontalScroll(horizontalScroll)
+                        .horizontalScroll(
+                            state = horizontalScroll,
+                            enabled = TimelineGesturePolicy.isHorizontalScrollEnabled(exclusiveHandleActive),
+                        )
                         .padding(start = 3.dp),
                 ) {
                     TrackLane(
@@ -448,6 +453,7 @@ fun TimelinePane(
                         onTrimLeft = onTrimLeft,
                         onTrimRight = onTrimRight,
                         onAdd = addAction,
+                        onExclusiveHandleActiveChanged = { active -> exclusiveHandleActive = active },
                     )
                 }
             }
@@ -582,6 +588,7 @@ private fun TrackLane(
     onTrimLeft: (String, Long) -> Unit,
     onTrimRight: (String, Long) -> Unit,
     onAdd: (() -> Unit)?,
+    onExclusiveHandleActiveChanged: (Boolean) -> Unit,
 ) {
     val density = LocalDensity.current
     val snapToleranceUs = TimelineSnapUiPolicy.toleranceUs(dpPerSecond)
@@ -618,11 +625,12 @@ private fun TrackLane(
             var bodyDragPx by remember(clip.id, clip.startUs) { mutableFloatStateOf(0f) }
             val selected = clip.id == selectedClipId
             val waveform = if (track.type == TrackType.AUDIO) waveforms[clip.id] else null
-            val clipThumbnails = if (track.type == TrackType.VISUAL) {
-                visualThumbnails[clip.id].orEmpty().filterNotNull()
+            val clipThumbnailSlots: List<Bitmap?> = if (track.type == TrackType.VISUAL) {
+                visualThumbnails[clip.id].orEmpty()
             } else {
                 emptyList()
             }
+            val hasLoadedThumbnail = clipThumbnailSlots.any { it != null }
             val waveformColor = Color(0xFF9EEBE8).copy(alpha = 0.58f)
             val keyframeMarkerColor = Color(0xFFFFC857)
             val keyframeFractions = KeyframeEditorPolicy.markerFractions(clip)
@@ -661,7 +669,7 @@ private fun TrackLane(
                                 )
                             }
                         }
-                        if (clipThumbnails.isEmpty()) {
+                        if (!hasLoadedThumbnail) {
                             keyframeFractions.forEach { fraction ->
                                 drawCircle(
                                     color = keyframeMarkerColor,
@@ -700,24 +708,30 @@ private fun TrackLane(
                         },
                     ),
             ) {
-                if (clipThumbnails.isNotEmpty()) {
+                if (clipThumbnailSlots.isNotEmpty()) {
                     Row(
                         modifier = Modifier
                             .matchParentSize()
                             .clip(RoundedCornerShape(5.dp)),
                     ) {
-                        clipThumbnails.forEach { bitmap ->
-                            Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
+                        clipThumbnailSlots.forEach { bitmap ->
+                            Box(
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxHeight(),
-                            )
+                            ) {
+                                if (bitmap != null) {
+                                    Image(
+                                        bitmap = bitmap.asImageBitmap(),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.matchParentSize(),
+                                    )
+                                }
+                            }
                         }
                     }
-                    if (keyframeFractions.isNotEmpty()) {
+                    if (hasLoadedThumbnail && keyframeFractions.isNotEmpty()) {
                         Canvas(modifier = Modifier.matchParentSize()) {
                             keyframeFractions.forEach { fraction ->
                                 drawCircle(
@@ -730,13 +744,13 @@ private fun TrackLane(
                     }
                 }
 
-                if (clipThumbnails.isEmpty() || selected) {
+                if (!hasLoadedThumbnail || selected) {
                     Text(
                         text = assetNames[clip.assetId]?.take(24) ?: "Clipe",
                         modifier = Modifier
                             .align(Alignment.Center)
                             .background(
-                                if (clipThumbnails.isNotEmpty()) Color.Black.copy(alpha = 0.48f) else Color.Transparent,
+                                if (hasLoadedThumbnail) Color.Black.copy(alpha = 0.48f) else Color.Transparent,
                                 RoundedCornerShape(3.dp),
                             )
                             .padding(horizontal = 7.dp, vertical = 2.dp),
@@ -749,6 +763,7 @@ private fun TrackLane(
                 if (selected) {
                     TrimHandle(
                         modifier = Modifier.align(Alignment.CenterStart),
+                        onActiveChanged = onExclusiveHandleActiveChanged,
                         onFinished = { deltaPx ->
                             val deltaDp = with(density) { deltaPx.toDp().value }
                             val deltaUs = (deltaDp / dpPerSecond * US_PER_SECOND).toLong()
@@ -763,6 +778,7 @@ private fun TrackLane(
                     )
                     TrimHandle(
                         modifier = Modifier.align(Alignment.CenterEnd),
+                        onActiveChanged = onExclusiveHandleActiveChanged,
                         onFinished = { deltaPx ->
                             val deltaDp = with(density) { deltaPx.toDp().value }
                             val deltaUs = (deltaDp / dpPerSecond * US_PER_SECOND).toLong()
@@ -809,6 +825,7 @@ private fun TrackLane(
             dpPerSecond = dpPerSecond,
             onSelectClip = onSelectClip,
             onSeek = onSeek,
+            onActiveChanged = onExclusiveHandleActiveChanged,
         )
     }
 }
@@ -820,6 +837,7 @@ private fun DraggablePlayhead(
     dpPerSecond: Float,
     onSelectClip: (String?) -> Unit,
     onSeek: (Long) -> Unit,
+    onActiveChanged: (Boolean) -> Unit,
 ) {
     val density = LocalDensity.current
     val safeDurationUs = durationUs.coerceAtLeast(0L)
@@ -849,12 +867,17 @@ private fun DraggablePlayhead(
                         ),
                     )
                 },
+                startDragImmediately = true,
                 onDragStarted = {
+                    onActiveChanged(true)
                     dragStartUs = clampedPlayheadUs
                     dragDeltaPx = 0f
                     onSelectClip(null)
                 },
-                onDragStopped = { dragDeltaPx = 0f },
+                onDragStopped = {
+                    dragDeltaPx = 0f
+                    onActiveChanged(false)
+                },
             ),
         contentAlignment = Alignment.Center,
     ) {
@@ -877,6 +900,7 @@ private fun DraggablePlayhead(
 @Composable
 private fun TrimHandle(
     modifier: Modifier,
+    onActiveChanged: (Boolean) -> Unit,
     onFinished: (Float) -> Unit,
 ) {
     var deltaPx by remember { mutableFloatStateOf(0f) }
@@ -887,9 +911,12 @@ private fun TrimHandle(
             .draggable(
                 orientation = Orientation.Horizontal,
                 state = rememberDraggableState { deltaPx += it },
+                startDragImmediately = true,
+                onDragStarted = { onActiveChanged(true) },
                 onDragStopped = {
                     val result = deltaPx
                     deltaPx = 0f
+                    onActiveChanged(false)
                     onFinished(result)
                 },
             ),

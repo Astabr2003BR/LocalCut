@@ -49,8 +49,12 @@ class DefaultPreviewController(
     private val mutableState = MutableStateFlow(PreviewState())
     override val state: StateFlow<PreviewState> = mutableState.asStateFlow()
 
+    private var pendingSeekTargetUs: Long? = null
+    private var pendingSeekPollsRemaining = 0
+
     init {
         engine.setErrorCallback { message ->
+            clearPendingSeek()
             mutableState.value = mutableState.value.copy(errorMessage = message, playing = false)
             transport.pause()
         }
@@ -58,21 +62,24 @@ class DefaultPreviewController(
 
     override fun load(project: Project): Result<Unit> = loadResult(engine.load(project))
 
-    internal fun loadResult(result: Result<PreviewLoadResult>): Result<Unit> = result
-        .onFailure { error ->
-            ticker.stop()
-            transport.pause()
-            mutableState.value = mutableState.value.copy(
-                playing = false,
-                errorMessage = error.message ?: "Falha ao carregar a prévia",
-            )
-        }
-        .map { loaded ->
-            transport.load(loaded.durationUs, loaded.fps)
-            mutableState.value = PreviewState(durationUs = loaded.durationUs, fps = loaded.fps)
-            ticker.stop()
-            if (loaded.durationUs > 0L) ticker.start(::pollPosition)
-        }
+    internal fun loadResult(result: Result<PreviewLoadResult>): Result<Unit> {
+        clearPendingSeek()
+        return result
+            .onFailure { error ->
+                ticker.stop()
+                transport.pause()
+                mutableState.value = mutableState.value.copy(
+                    playing = false,
+                    errorMessage = error.message ?: "Falha ao carregar a prévia",
+                )
+            }
+            .map { loaded ->
+                transport.load(loaded.durationUs, loaded.fps)
+                mutableState.value = PreviewState(durationUs = loaded.durationUs, fps = loaded.fps)
+                ticker.stop()
+                if (loaded.durationUs > 0L) ticker.start(::pollPosition)
+            }
+    }
 
     override fun play() {
         if (mutableState.value.errorMessage != null) return
@@ -89,6 +96,7 @@ class DefaultPreviewController(
 
     override fun seekToUs(positionUs: Long) {
         val target = transport.seekToUs(positionUs)
+        beginPendingSeek(target)
         engine.seekToUs(target)
         publishTransportState()
     }
@@ -104,6 +112,7 @@ class DefaultPreviewController(
         )
         transport.pause()
         transport.seekToUs(target)
+        beginPendingSeek(target)
         engine.seekToUs(target)
         publishTransportState()
     }
@@ -114,6 +123,7 @@ class DefaultPreviewController(
     }
 
     override fun release() {
+        clearPendingSeek()
         ticker.stop()
         transport.pause()
         engine.release()
@@ -122,10 +132,20 @@ class DefaultPreviewController(
 
     private fun pollPosition() {
         try {
-            val seekTarget = transport.onPlayerPosition(engine.currentPositionUs())
-            if (seekTarget != null) engine.seekToUs(seekTarget)
+            val reportedPositionUs = engine.currentPositionUs()
+            if (ignoreStalePositionWhileSeekSettles(reportedPositionUs)) {
+                publishTransportState()
+                return
+            }
+
+            val seekTarget = transport.onPlayerPosition(reportedPositionUs)
+            if (seekTarget != null) {
+                beginPendingSeek(seekTarget)
+                engine.seekToUs(seekTarget)
+            }
             publishTransportState()
         } catch (error: Throwable) {
+            clearPendingSeek()
             ticker.stop()
             transport.pause()
             mutableState.value = mutableState.value.copy(
@@ -133,6 +153,34 @@ class DefaultPreviewController(
                 errorMessage = error.message ?: "Falha ao atualizar a prévia",
             )
         }
+    }
+
+    private fun beginPendingSeek(targetUs: Long) {
+        pendingSeekTargetUs = targetUs.coerceIn(0L, transport.state.durationUs)
+        pendingSeekPollsRemaining = SEEK_SETTLE_MAX_POLLS
+    }
+
+    private fun clearPendingSeek() {
+        pendingSeekTargetUs = null
+        pendingSeekPollsRemaining = 0
+    }
+
+    private fun ignoreStalePositionWhileSeekSettles(reportedPositionUs: Long): Boolean {
+        val targetUs = pendingSeekTargetUs ?: return false
+        val reported = reportedPositionUs.coerceIn(0L, transport.state.durationUs)
+        val distanceUs = if (reported >= targetUs) reported - targetUs else targetUs - reported
+
+        if (distanceUs <= SEEK_SETTLE_TOLERANCE_US) {
+            clearPendingSeek()
+            return false
+        }
+        if (pendingSeekPollsRemaining <= 0) {
+            clearPendingSeek()
+            return false
+        }
+
+        pendingSeekPollsRemaining -= 1
+        return true
     }
 
     private fun publishTransportState() {
@@ -143,5 +191,10 @@ class DefaultPreviewController(
             fps = t.fps,
             playing = t.playing,
         )
+    }
+
+    private companion object {
+        const val SEEK_SETTLE_TOLERANCE_US = 250_000L
+        const val SEEK_SETTLE_MAX_POLLS = 20
     }
 }

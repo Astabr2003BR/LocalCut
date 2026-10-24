@@ -32,7 +32,9 @@ class Media3PreviewController(
         .build()
     private val engine = Media3PreviewEngine(player, compositionCompiler, runtimeProvider)
     private val delegate = DefaultPreviewController(engine, AndroidPreviewTicker())
-    val bridgePreviewFramePort = AndroidPlayerPreviewFramePort { state.value.positionUs }
+    val bridgePreviewFramePort = AndroidPlayerPreviewFramePort(
+        positionUsProvider = { state.value.positionUs },
+    )
 
     override val state = delegate.state
     override fun load(project: Project): Result<Unit> = delegate.load(project).also {

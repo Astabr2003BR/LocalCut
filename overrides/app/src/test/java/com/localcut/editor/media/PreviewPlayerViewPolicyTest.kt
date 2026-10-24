@@ -43,4 +43,40 @@ class PreviewPlayerViewPolicyTest {
             ),
         )
     }
+
+    @Test
+    fun successfulContentLoadRefreshesBoundSurface() {
+        assertTrue(
+            PreviewPlayerViewPolicy.shouldRefreshAfterContentLoad(
+                loadSucceeded = true,
+                durationUs = 5_000_000L,
+                hasBoundView = true,
+            ),
+        )
+    }
+
+    @Test
+    fun contentLoadDoesNotRefreshWithoutMediaViewOrSuccess() {
+        assertFalse(
+            PreviewPlayerViewPolicy.shouldRefreshAfterContentLoad(
+                loadSucceeded = false,
+                durationUs = 5_000_000L,
+                hasBoundView = true,
+            ),
+        )
+        assertFalse(
+            PreviewPlayerViewPolicy.shouldRefreshAfterContentLoad(
+                loadSucceeded = true,
+                durationUs = 0L,
+                hasBoundView = true,
+            ),
+        )
+        assertFalse(
+            PreviewPlayerViewPolicy.shouldRefreshAfterContentLoad(
+                loadSucceeded = true,
+                durationUs = 5_000_000L,
+                hasBoundView = false,
+            ),
+        )
+    }
 }

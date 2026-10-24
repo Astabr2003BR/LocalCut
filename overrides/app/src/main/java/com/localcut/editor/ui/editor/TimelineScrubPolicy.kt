@@ -1,6 +1,10 @@
 package com.localcut.editor.ui.editor
 
+import kotlin.math.abs
+
 private const val TIMELINE_US_PER_SECOND = 1_000_000.0
+private const val MOBILE_SCRUB_SPAN_DP = 320.0
+private const val LONG_TIMELINE_THRESHOLD_US = 20_000_000L
 
 object TimelineScrubPolicy {
     fun positionForDrag(
@@ -16,17 +20,21 @@ object TimelineScrubPolicy {
         val safeStartUs = startUs.coerceIn(0L, safeDurationUs)
         if (!deltaDp.isFinite()) return safeStartUs
 
-        val deltaUs = deltaDp.toDouble() / dpPerSecond.toDouble() * TIMELINE_US_PER_SECOND
+        val timelineDeltaUs = deltaDp.toDouble() / dpPerSecond.toDouble() * TIMELINE_US_PER_SECOND
+        val deltaUs = if (safeDurationUs >= LONG_TIMELINE_THRESHOLD_US) {
+            // A long timeline can be thousands of dp wide. On a phone the finger cannot travel
+            // that distance in one gesture, so preserve direction but guarantee that a normal
+            // screen-width scrub can traverse the whole project.
+            val mobileDeltaUs = deltaDp.toDouble() / MOBILE_SCRUB_SPAN_DP * safeDurationUs.toDouble()
+            if (abs(mobileDeltaUs) > abs(timelineDeltaUs)) mobileDeltaUs else timelineDeltaUs
+        } else {
+            timelineDeltaUs
+        }
         return (safeStartUs.toDouble() + deltaUs)
             .coerceIn(0.0, safeDurationUs.toDouble())
             .toLong()
     }
 
-    /**
-     * Maps a bounded on-screen scrub gesture to the whole project duration.
-     * This is intended for mobile playheads where a long timeline may be much wider than
-     * the physical viewport. A full-width drag can therefore always reach 0 or duration.
-     */
     fun positionForViewportDrag(
         startUs: Long,
         deltaDp: Float,

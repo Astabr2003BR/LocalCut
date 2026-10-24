@@ -29,6 +29,7 @@ import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import com.localcut.editor.media.Media3PreviewController
+import com.localcut.editor.media.PreviewPlayerViewPolicy
 import com.localcut.editor.media.PreviewState
 import java.util.Locale
 
@@ -67,6 +68,12 @@ fun PreviewPane(
                             PlayerView(context).also {
                                 it.useController = false
                                 it.setShutterBackgroundColor(android.graphics.Color.BLACK)
+                                it.setEnableComposeSurfaceSyncWorkaround(
+                                    PreviewPlayerViewPolicy.ENABLE_COMPOSE_SURFACE_SYNC_WORKAROUND,
+                                )
+                                it.setKeepContentOnPlayerReset(
+                                    PreviewPlayerViewPolicy.KEEP_CONTENT_ON_PLAYER_RESET,
+                                )
                                 controller.bindTo(it)
                             }
                         },

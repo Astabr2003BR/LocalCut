@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -45,6 +46,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -127,6 +129,18 @@ class MainActivity : ComponentActivity() {
         setContent {
             val exportState by exportUiState.collectAsState()
             val bridgeState by runtime.bridgeControl.state.collectAsState()
+
+            LaunchedEffect(exportState.running, exportState.message) {
+                val completedMessage = exportState.message
+                if (!exportState.running && completedMessage != null) {
+                    delay(6_000L)
+                    val current = exportUiState.value
+                    if (!current.running && current.message == completedMessage) {
+                        exportUiState.value = ExportUiState()
+                    }
+                }
+            }
+
             MaterialTheme(
                 colorScheme = darkColorScheme(
                     primary = Color(0xFF20D5D2),

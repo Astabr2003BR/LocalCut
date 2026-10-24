@@ -121,4 +121,10 @@ object EditorWorkspacePolicy {
             )
             .toList()
     }
+
+    fun activeToolAfterWorkspaceChange(
+        currentWorkspace: EditorWorkspace,
+        nextWorkspace: EditorWorkspace,
+        activeTool: EditorToolId?,
+    ): EditorToolId? = if (currentWorkspace == nextWorkspace) activeTool else null
 }

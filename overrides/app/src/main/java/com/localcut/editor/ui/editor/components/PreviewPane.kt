@@ -18,20 +18,29 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import com.localcut.editor.media.Media3PreviewController
 import com.localcut.editor.media.PreviewPlayerViewPolicy
+import com.localcut.editor.media.PreviewResumePolicy
 import com.localcut.editor.media.PreviewState
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicReference
 
 @UnstableApi
 @OptIn(ExperimentalApi::class)
@@ -45,6 +54,36 @@ fun PreviewPane(
     modifier: Modifier = Modifier,
     viewportHeight: Dp = 190.dp,
 ) {
+    val hostView = LocalView.current
+    val latestState = rememberUpdatedState(state)
+    val playerViewRef = remember(controller) { AtomicReference<PlayerView?>(null) }
+
+    DisposableEffect(hostView, controller) {
+        val lifecycleOwner = hostView.findViewTreeLifecycleOwner()
+        if (lifecycleOwner == null) {
+            onDispose { }
+        } else {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    val snapshot = latestState.value
+                    val playerView = playerViewRef.get()
+                    if (
+                        playerView != null &&
+                        PreviewResumePolicy.shouldRefresh(snapshot.durationUs, snapshot.playing)
+                    ) {
+                        playerView.post {
+                            if (playerViewRef.get() === playerView) {
+                                controller.refreshBoundView(playerView)
+                            }
+                        }
+                    }
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
+    }
+
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(0.dp),
@@ -74,11 +113,18 @@ fun PreviewPane(
                                 it.setKeepContentOnPlayerReset(
                                     PreviewPlayerViewPolicy.KEEP_CONTENT_ON_PLAYER_RESET,
                                 )
+                                playerViewRef.set(it)
                                 controller.bindTo(it)
                             }
                         },
-                        update = controller::bindTo,
-                        onRelease = controller::unbindFrom,
+                        update = { playerView ->
+                            playerViewRef.set(playerView)
+                            controller.bindTo(playerView)
+                        },
+                        onRelease = { playerView ->
+                            playerViewRef.compareAndSet(playerView, null)
+                            controller.unbindFrom(playerView)
+                        },
                     )
                 } else {
                     Column(

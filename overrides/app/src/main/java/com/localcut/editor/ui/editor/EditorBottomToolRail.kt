@@ -52,13 +52,13 @@ fun EditorBottomToolRail(
                 current = workspace,
                 onSelected = { selected ->
                     if (selected == workspace) return@WorkspaceRail
-                    val nextTools = EditorWorkspacePolicy.toolsFor(selected, selection)
-                    val toolToClose = activeTool
-                    if (toolToClose != null && nextTools.none { definition ->
-                            EditorToolCatalog.actionTarget(definition.id) == toolToClose
-                        }
-                    ) {
-                        onToolSelected(toolToClose)
+                    val nextActiveTool = EditorWorkspacePolicy.activeToolAfterWorkspaceChange(
+                        currentWorkspace = workspace,
+                        nextWorkspace = selected,
+                        activeTool = activeTool,
+                    )
+                    if (activeTool != null && nextActiveTool == null) {
+                        onToolSelected(activeTool)
                     }
                     workspace = selected
                     expanded = false

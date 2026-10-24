@@ -43,7 +43,7 @@ internal fun TextOverlayManagerDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     FilledTonalButton(
@@ -51,16 +51,18 @@ internal fun TextOverlayManagerDialog(
                             TextOverlayEditorModel.forNew(project, playheadUs)?.let(onEditRequested)
                         },
                         enabled = canCreate,
+                        modifier = Modifier.weight(1f),
                     ) {
-                        Text("Novo texto")
+                        Text("Novo texto", maxLines = 1)
                     }
                     FilledTonalButton(
                         onClick = {
                             TextOverlayEditorModel.forNewCaption(project, playheadUs)?.let(onEditRequested)
                         },
                         enabled = canCreate,
+                        modifier = Modifier.weight(1f),
                     ) {
-                        Text("Nova legenda")
+                        Text("Nova legenda", maxLines = 1)
                     }
                 }
                 if (!canCreate) {

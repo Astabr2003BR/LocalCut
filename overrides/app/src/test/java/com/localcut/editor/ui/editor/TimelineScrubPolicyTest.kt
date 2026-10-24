@@ -44,6 +44,32 @@ class TimelineScrubPolicyTest {
     }
 
     @Test
+    fun viewportDragCanReachProjectStartInOneGesture() {
+        assertEquals(
+            0L,
+            TimelineScrubPolicy.positionForViewportDrag(
+                startUs = 45_000_000L,
+                deltaDp = -360f,
+                viewportWidthDp = 360f,
+                durationUs = 70_000_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun viewportDragCanReachProjectEndInOneGesture() {
+        assertEquals(
+            70_000_000L,
+            TimelineScrubPolicy.positionForViewportDrag(
+                startUs = 20_000_000L,
+                deltaDp = 360f,
+                viewportWidthDp = 360f,
+                durationUs = 70_000_000L,
+            ),
+        )
+    }
+
+    @Test
     fun tapClampsToProjectDuration() {
         assertEquals(
             10_000_000L,

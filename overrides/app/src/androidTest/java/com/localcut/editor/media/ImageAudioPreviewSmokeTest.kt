@@ -62,21 +62,23 @@ class ImageAudioPreviewSmokeTest {
             tracks = listOf(visualTrack, audioTrack),
         )
 
-        lateinit var controller: Media3PreviewController
+        var controller: Media3PreviewController? = null
         try {
             instrumentation.runOnMainSync {
-                controller = Media3PreviewController(
+                val createdController = Media3PreviewController(
                     context,
                     ProjectCompositionCompiler(AssetUriResolver(context.contentResolver)),
                 )
-                val load = controller.load(project)
+                controller = createdController
+                val load = createdController.load(project)
                 assertTrue("image+audio preview must load: ${load.exceptionOrNull()}", load.isSuccess)
-                controller.play()
+                createdController.play()
             }
 
+            val activeController = checkNotNull(controller)
             val settled = runBlocking {
                 withTimeout(15_000L) {
-                    controller.state.first { state ->
+                    activeController.state.first { state ->
                         state.errorMessage != null || state.positionUs >= 250_000L
                     }
                 }
@@ -91,8 +93,8 @@ class ImageAudioPreviewSmokeTest {
                 settled.positionUs >= 250_000L,
             )
         } finally {
-            if (::controller.isInitialized) {
-                instrumentation.runOnMainSync { controller.release() }
+            controller?.let { activeController ->
+                instrumentation.runOnMainSync { activeController.release() }
             }
             imageFile.delete()
             audioFile.delete()

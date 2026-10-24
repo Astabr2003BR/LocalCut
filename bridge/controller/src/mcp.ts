@@ -9,6 +9,8 @@ import {
   revisionRequiredCapabilities,
 } from "./protocol.ts";
 
+const MAX_PREVIEW_BASE64_CHARS = 2_000_000;
+
 const routingFields = {
   deviceId: z.string().min(1).max(128),
   projectId: z.string().min(1).max(256),
@@ -75,7 +77,7 @@ export function createLocalCutMcpServer(
           payload: parsed.payload,
         };
         const result = await router.execute(controllerId, command);
-        return toolResult(result, !result.success);
+        return toolResultForCapability(capability, result, !result.success);
       },
     );
   }
@@ -121,12 +123,49 @@ export function createLocalCutMcpServer(
   return server;
 }
 
+export function toolResultForCapability(
+  capability: BridgeCapability,
+  value: unknown,
+  isError: boolean,
+) {
+  const base = toolResult(value, isError);
+  const image = previewImageContent(capability, value, isError);
+  if (!image) return base;
+  return {
+    ...base,
+    content: [...base.content, image],
+  };
+}
+
 function toolResult(value: unknown, isError: boolean) {
   const structured = isRecord(value) ? value : { value };
   return {
     content: [{ type: "text" as const, text: JSON.stringify(value) }],
     structuredContent: structured,
     isError,
+  };
+}
+
+function previewImageContent(
+  capability: BridgeCapability,
+  value: unknown,
+  isError: boolean,
+): { type: "image"; data: string; mimeType: string } | null {
+  if (capability !== "get_preview_frame" || isError || !isRecord(value) || value.success !== true) {
+    return null;
+  }
+  const result = value.result;
+  if (!isRecord(result)) return null;
+  const mimeType = result.mimeType;
+  const base64 = result.base64;
+  if (mimeType !== "image/jpeg" && mimeType !== "image/png") return null;
+  if (typeof base64 !== "string" || base64.length === 0 || base64.length > MAX_PREVIEW_BASE64_CHARS) {
+    return null;
+  }
+  return {
+    type: "image",
+    data: base64,
+    mimeType,
   };
 }
 
@@ -144,6 +183,9 @@ function titleFor(capability: BridgeCapability): string {
 }
 
 function descriptionFor(capability: BridgeCapability): string {
+  if (capability === "get_preview_frame") {
+    return "Capture the latest bounded LocalCut preview frame from the paired APK so an agent can visually inspect the current edit. The response includes image content plus frame metadata.";
+  }
   if (revisionRequiredCapabilities.has(capability)) {
     return `Execute LocalCut '${capability}'. Read current project state first and pass its expectedRevision. Commands are TTL-bound and routed only to the paired device.`;
   }

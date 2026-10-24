@@ -1,9 +1,12 @@
 package com.localcut.editor.ui.editor.components
 
+import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,6 +24,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -42,11 +46,14 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -65,6 +72,8 @@ import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.timeline.TimelineMath
+import com.localcut.editor.media.TimelineThumbnailRepository
+import com.localcut.editor.media.TimelineThumbnailRequest
 import com.localcut.editor.mobile.MediaIngestResult
 import com.localcut.editor.ui.editor.KeyframeEditorPolicy
 import com.localcut.editor.ui.editor.TimelineAddMediaPolicy
@@ -72,6 +81,7 @@ import com.localcut.editor.ui.editor.TimelineAddTarget
 import com.localcut.editor.ui.editor.TimelineEditBounds
 import com.localcut.editor.ui.editor.TimelineScrubPolicy
 import com.localcut.editor.ui.editor.TimelineSnapUiPolicy
+import com.localcut.editor.ui.editor.TimelineThumbnailPolicy
 import com.localcut.editor.ui.editor.TimelineTrackGeometry
 import com.localcut.editor.ui.editor.TimelineViewportPolicy
 import com.localcut.editor.ui.editor.TimelineZoomUiPolicy
@@ -117,12 +127,20 @@ fun TimelinePane(
     val trackLayout = TimelineTrackGeometry.layout(project.tracks)
     val waveforms = remember { mutableStateMapOf<String, WaveformData>() }
     val requestedWaveforms = remember { mutableMapOf<String, WaveformCacheKey>() }
+    val visualThumbnails = remember { mutableStateMapOf<String, List<Bitmap?>>() }
+    val requestedThumbnailSets = remember { mutableMapOf<String, String>() }
     val context = LocalContext.current.applicationContext
     val waveformExecutor = remember { Executors.newFixedThreadPool(2) }
     val waveformRepository = remember(context, waveformExecutor) {
         WaveformRepository(
             cache = WaveformCache(WAVEFORM_CACHE_SAMPLES),
             decoder = AndroidWaveformDecoder(context.contentResolver),
+            executor = waveformExecutor,
+        )
+    }
+    val thumbnailRepository = remember(context, waveformExecutor) {
+        TimelineThumbnailRepository(
+            context = context,
             executor = waveformExecutor,
         )
     }
@@ -245,6 +263,77 @@ fun TimelinePane(
         }
     }
 
+    LaunchedEffect(project, timelineZoom) {
+        val assets = project.assets.associateBy { it.id }
+        val desired = project.tracks
+            .filter { it.type == TrackType.VISUAL }
+            .flatMap { track -> track.clips }
+            .mapNotNull { clip ->
+                val asset = assets[clip.assetId] ?: return@mapNotNull null
+                if (asset.type == AssetType.AUDIO) return@mapNotNull null
+                clip to asset
+            }
+        val desiredIds = desired.mapTo(mutableSetOf()) { it.first.id }
+        visualThumbnails.keys.filterNot(desiredIds::contains).forEach(visualThumbnails::remove)
+        requestedThumbnailSets.keys.filterNot(desiredIds::contains).forEach(requestedThumbnailSets::remove)
+
+        desired.forEach { (clip, asset) ->
+            val clipWidthDp = max(32f, (clip.durationUs / US_PER_SECOND * timelineZoom).toFloat())
+            val sampleTimesUs = TimelineThumbnailPolicy.sampleTimesUs(
+                sourceInUs = clip.sourceInUs,
+                sourceOutUs = clip.sourceOutUs,
+                clipWidthDp = clipWidthDp,
+                stillImage = false,
+            )
+            val signature = buildString {
+                append(asset.fingerprint)
+                append(':')
+                append(clip.sourceInUs)
+                append(':')
+                append(clip.sourceOutUs)
+                append(':')
+                sampleTimesUs.forEach { timeUs ->
+                    append(timeUs)
+                    append(',')
+                }
+            }
+            if (requestedThumbnailSets[clip.id] == signature) return@forEach
+
+            requestedThumbnailSets[clip.id] = signature
+            visualThumbnails[clip.id] = List(sampleTimesUs.size) { null }
+            sampleTimesUs.forEachIndexed { index, sourceTimeUs ->
+                val key = TimelineThumbnailPolicy.cacheKey(
+                    assetFingerprint = asset.fingerprint,
+                    sourceTimeUs = sourceTimeUs,
+                    widthPx = TimelineThumbnailPolicy.TARGET_WIDTH_PX,
+                    heightPx = TimelineThumbnailPolicy.TARGET_HEIGHT_PX,
+                )
+                thumbnailRepository.request(
+                    TimelineThumbnailRequest(
+                        key = key,
+                        uri = asset.uri,
+                        sourceTimeUs = sourceTimeUs,
+                        targetWidthPx = TimelineThumbnailPolicy.TARGET_WIDTH_PX,
+                        targetHeightPx = TimelineThumbnailPolicy.TARGET_HEIGHT_PX,
+                    ),
+                ) { result ->
+                    scope.launch {
+                        if (requestedThumbnailSets[clip.id] != signature) return@launch
+                        result.onSuccess { bitmap ->
+                            val current = visualThumbnails[clip.id]
+                                ?.toMutableList()
+                                ?: MutableList(sampleTimesUs.size) { null }
+                            if (index in current.indices) {
+                                current[index] = bitmap
+                                visualThumbnails[clip.id] = current
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     LaunchedEffect(playheadUs, timelineZoom, horizontalScroll.maxValue) {
         val maxScrollPx = horizontalScroll.maxValue
         if (maxScrollPx <= 0 || maxScrollPx == Int.MAX_VALUE) return@LaunchedEffect
@@ -351,6 +440,7 @@ fun TimelinePane(
                         dpPerSecond = timelineZoom,
                         assetNames = assetNames,
                         waveforms = waveforms,
+                        visualThumbnails = visualThumbnails,
                         onSelectClip = onSelectClip,
                         onMoveClip = onMoveClip,
                         onSeek = onSeek,
@@ -484,6 +574,7 @@ private fun TrackLane(
     dpPerSecond: Float,
     assetNames: Map<String, String>,
     waveforms: Map<String, WaveformData>,
+    visualThumbnails: Map<String, List<Bitmap?>>,
     onSelectClip: (String?) -> Unit,
     onMoveClip: (String, Long) -> Unit,
     onSeek: (Long) -> Unit,
@@ -526,6 +617,11 @@ private fun TrackLane(
             var bodyDragPx by remember(clip.id, clip.startUs) { mutableFloatStateOf(0f) }
             val selected = clip.id == selectedClipId
             val waveform = if (track.type == TrackType.AUDIO) waveforms[clip.id] else null
+            val clipThumbnails = if (track.type == TrackType.VISUAL) {
+                visualThumbnails[clip.id].orEmpty().filterNotNull()
+            } else {
+                emptyList()
+            }
             val waveformColor = Color(0xFF9EEBE8).copy(alpha = 0.58f)
             val keyframeMarkerColor = Color(0xFFFFC857)
             val keyframeFractions = KeyframeEditorPolicy.markerFractions(clip)
@@ -564,12 +660,14 @@ private fun TrackLane(
                                 )
                             }
                         }
-                        keyframeFractions.forEach { fraction ->
-                            drawCircle(
-                                color = keyframeMarkerColor,
-                                radius = 3.5f,
-                                center = Offset(size.width * fraction, 6f),
-                            )
+                        if (clipThumbnails.isEmpty()) {
+                            keyframeFractions.forEach { fraction ->
+                                drawCircle(
+                                    color = keyframeMarkerColor,
+                                    radius = 3.5f,
+                                    center = Offset(size.width * fraction, 6f),
+                                )
+                            }
                         }
                     }
                     .border(
@@ -601,14 +699,52 @@ private fun TrackLane(
                         },
                     ),
             ) {
-                Text(
-                    text = assetNames[clip.assetId]?.take(24) ?: "Clipe",
-                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 10.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFF1F1F3),
-                )
+                if (clipThumbnails.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clip(RoundedCornerShape(5.dp)),
+                    ) {
+                        clipThumbnails.forEach { bitmap ->
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight(),
+                            )
+                        }
+                    }
+                    if (keyframeFractions.isNotEmpty()) {
+                        Canvas(modifier = Modifier.matchParentSize()) {
+                            keyframeFractions.forEach { fraction ->
+                                drawCircle(
+                                    color = keyframeMarkerColor,
+                                    radius = 3.5f,
+                                    center = Offset(size.width * fraction, 6f),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (clipThumbnails.isEmpty() || selected) {
+                    Text(
+                        text = assetNames[clip.assetId]?.take(24) ?: "Clipe",
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .background(
+                                if (clipThumbnails.isNotEmpty()) Color.Black.copy(alpha = 0.48f) else Color.Transparent,
+                                RoundedCornerShape(3.dp),
+                            )
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFFF1F1F3),
+                    )
+                }
                 if (selected) {
                     TrimHandle(
                         modifier = Modifier.align(Alignment.CenterStart),

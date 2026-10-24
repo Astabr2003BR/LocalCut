@@ -1,5 +1,9 @@
 package com.localcut.editor.ui.editor.components
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,6 +38,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +52,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.localcut.editor.LocalCutProcessRuntime
 import com.localcut.editor.audio.AndroidWaveformDecoder
 import com.localcut.editor.audio.WaveformCache
 import com.localcut.editor.audio.WaveformCacheKey
@@ -58,7 +64,10 @@ import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.timeline.TimelineMath
+import com.localcut.editor.mobile.MediaIngestResult
 import com.localcut.editor.ui.editor.KeyframeEditorPolicy
+import com.localcut.editor.ui.editor.TimelineAddMediaPolicy
+import com.localcut.editor.ui.editor.TimelineAddTarget
 import com.localcut.editor.ui.editor.TimelineEditBounds
 import com.localcut.editor.ui.editor.TimelineSnapUiPolicy
 import com.localcut.editor.ui.editor.TimelineTrackGeometry
@@ -70,6 +79,7 @@ import kotlin.math.max
 private const val US_PER_SECOND = 1_000_000.0
 private const val WAVEFORM_BUCKETS = 96
 private const val WAVEFORM_CACHE_SAMPLES = 16_384
+private const val ADD_BUTTON_SPACE_DP = 56f
 private val TimelineBackground = Color(0xFF101012)
 private val LaneBackground = Color(0xFF17171A)
 private val VisualClipColor = Color(0xFF333338)
@@ -97,7 +107,7 @@ fun TimelinePane(
         mutableFloatStateOf(TimelineZoomUiPolicy.clamp(dpPerSecond))
     }
     val durationUs = max(TimelineMath.durationUs(project), 1_000_000L)
-    val timelineWidth = max(360f, durationUs / US_PER_SECOND.toFloat() * timelineZoom).dp
+    val timelineWidth = (max(360f, durationUs / US_PER_SECOND.toFloat() * timelineZoom) + ADD_BUTTON_SPACE_DP).dp
     val assetNames = project.assets.associate { it.id to it.displayName }
     val tracksById = project.tracks.associateBy { it.id }
     val trackLayout = TimelineTrackGeometry.layout(project.tracks)
@@ -113,6 +123,8 @@ fun TimelinePane(
         )
     }
     val scope = rememberCoroutineScope()
+    val runtime = remember(context) { LocalCutProcessRuntime.get(context) }
+    val currentPlayheadUs by rememberUpdatedState(playheadUs)
     var snapEnabled by remember(project.id) { mutableStateOf(true) }
     val snapClipEdges = if (snapEnabled) {
         project.tracks.flatMap { track ->
@@ -128,6 +140,64 @@ fun TimelinePane(
         emptyList()
     }
     val snapBeatTimesUs = if (snapEnabled) project.beatMarkers.map { it.timeUs } else emptyList()
+
+    fun reportImportResult(result: MediaIngestResult) {
+        result.errors.forEach { error ->
+            Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+        }
+        if (result.importedCount > 0) {
+            val message = if (result.importedCount == 1) {
+                "1 mídia adicionada"
+            } else {
+                "${result.importedCount} mídias adicionadas"
+            }
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val visualImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(maxItems = 50),
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            scope.launch {
+                reportImportResult(runtime.mediaIngestCoordinator.importUris(uris))
+            }
+        }
+    }
+    val overlayImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(maxItems = 20),
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            scope.launch {
+                reportImportResult(
+                    runtime.mediaIngestCoordinator.importOverlayUris(
+                        uris = uris,
+                        playheadUs = currentPlayheadUs,
+                    ),
+                )
+            }
+        }
+    }
+    val audioImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                reportImportResult(runtime.mediaIngestCoordinator.importUris(listOf(uri)))
+            }
+        }
+    }
+    val onAddToTrack: (Track) -> Unit = { track ->
+        when (TimelineAddMediaPolicy.targetFor(track.type, track.collisionPolicy)) {
+            TimelineAddTarget.MEDIA -> visualImportLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+            )
+            TimelineAddTarget.OVERLAY -> overlayImportLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+            )
+            TimelineAddTarget.AUDIO -> audioImportLauncher.launch(arrayOf("audio/*"))
+        }
+    }
 
     DisposableEffect(waveformExecutor) {
         onDispose { waveformExecutor.shutdownNow() }
@@ -227,12 +297,14 @@ fun TimelinePane(
 
         trackLayout.rows.forEach { rowGeometry ->
             val track = tracksById.getValue(rowGeometry.trackId)
+            val addAction = if (track.locked) null else ({ onAddToTrack(track) })
             Row(
                 modifier = Modifier.fillMaxWidth().height(62.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TrackHeader(
                     track = track,
+                    onAdd = addAction,
                     onSetMuted = onSetTrackMuted,
                     onSetSolo = onSetTrackSolo,
                 )
@@ -258,6 +330,7 @@ fun TimelinePane(
                         onSeek = onSeek,
                         onTrimLeft = onTrimLeft,
                         onTrimRight = onTrimRight,
+                        onAdd = addAction,
                     )
                 }
             }
@@ -268,36 +341,70 @@ fun TimelinePane(
 @Composable
 private fun TrackHeader(
     track: Track,
+    onAdd: (() -> Unit)?,
     onSetMuted: (String, Boolean) -> Unit,
     onSetSolo: (String, Boolean) -> Unit,
 ) {
     Box(
         modifier = Modifier
-            .width(46.dp)
+            .width(52.dp)
             .fillMaxHeight()
             .background(Color(0xFF0D0D0F)),
         contentAlignment = Alignment.Center,
     ) {
         if (track.type != TrackType.AUDIO) {
-            Text(
-                text = trackGlyph(track),
-                maxLines = 1,
-                overflow = TextOverflow.Clip,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFFBEBEC4),
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = trackGlyph(track),
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFBEBEC4),
+                )
+                if (onAdd != null) {
+                    Text(
+                        text = "+",
+                        color = AccentColor,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier
+                            .clickable(onClick = onAdd)
+                            .padding(horizontal = 12.dp, vertical = 1.dp),
+                    )
+                }
+            }
         } else {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(
-                    text = "A${track.order}",
-                    maxLines = 1,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFBEBEC4),
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "A${track.order}",
+                        maxLines = 1,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFFBEBEC4),
+                    )
+                    if (onAdd != null) {
+                        Text(
+                            text = "+",
+                            color = AccentColor,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier
+                                .clickable(onClick = onAdd)
+                                .padding(start = 5.dp, end = 2.dp),
+                        )
+                    }
+                }
                 Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     AudioTrackToggle(
                         label = "M",
@@ -355,6 +462,7 @@ private fun TrackLane(
     onSeek: (Long) -> Unit,
     onTrimLeft: (String, Long) -> Unit,
     onTrimRight: (String, Long) -> Unit,
+    onAdd: (() -> Unit)?,
 ) {
     val density = LocalDensity.current
     val snapToleranceUs = TimelineSnapUiPolicy.toleranceUs(dpPerSecond)
@@ -374,7 +482,7 @@ private fun TrackLane(
     ) {
         if (track.clips.isEmpty()) {
             Text(
-                text = "Vazio",
+                text = if (track.type == TrackType.AUDIO) "Áudio" else "Mídia",
                 color = Color(0xFF66666C),
                 style = MaterialTheme.typography.labelSmall,
                 modifier = Modifier.align(Alignment.CenterStart).padding(start = 10.dp),
@@ -500,6 +608,30 @@ private fun TrackLane(
                         },
                     )
                 }
+            }
+        }
+
+        if (onAdd != null) {
+            val trackEndUs = track.clips.maxOfOrNull { clip ->
+                Math.addExact(clip.startUs, clip.durationUs)
+            } ?: 0L
+            val addX = ((trackEndUs / US_PER_SECOND * dpPerSecond).toFloat() + 8f).dp
+            Box(
+                modifier = Modifier
+                    .offset(x = addX, y = 10.dp)
+                    .width(38.dp)
+                    .height(38.dp)
+                    .background(AccentColor.copy(alpha = 0.14f), RoundedCornerShape(9.dp))
+                    .border(1.dp, AccentColor.copy(alpha = 0.65f), RoundedCornerShape(9.dp))
+                    .clickable(onClick = onAdd),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "+",
+                    color = AccentColor,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium,
+                )
             }
         }
 

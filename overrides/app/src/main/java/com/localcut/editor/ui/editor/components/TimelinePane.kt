@@ -52,6 +52,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.localcut.editor.LocalCutProcessRuntime
 import com.localcut.editor.audio.AndroidWaveformDecoder
 import com.localcut.editor.audio.WaveformCache
@@ -69,6 +70,7 @@ import com.localcut.editor.ui.editor.KeyframeEditorPolicy
 import com.localcut.editor.ui.editor.TimelineAddMediaPolicy
 import com.localcut.editor.ui.editor.TimelineAddTarget
 import com.localcut.editor.ui.editor.TimelineEditBounds
+import com.localcut.editor.ui.editor.TimelineScrubPolicy
 import com.localcut.editor.ui.editor.TimelineSnapUiPolicy
 import com.localcut.editor.ui.editor.TimelineTrackGeometry
 import com.localcut.editor.ui.editor.TimelineZoomUiPolicy
@@ -321,6 +323,7 @@ fun TimelinePane(
                         snapBeatTimesUs = snapBeatTimesUs,
                         selectedClipId = selectedClipId,
                         playheadUs = playheadUs,
+                        durationUs = durationUs,
                         timelineWidth = timelineWidth,
                         dpPerSecond = timelineZoom,
                         assetNames = assetNames,
@@ -453,6 +456,7 @@ private fun TrackLane(
     snapBeatTimesUs: List<Long>,
     selectedClipId: String?,
     playheadUs: Long,
+    durationUs: Long,
     timelineWidth: androidx.compose.ui.unit.Dp,
     dpPerSecond: Float,
     assetNames: Map<String, String>,
@@ -471,10 +475,14 @@ private fun TrackLane(
             .width(timelineWidth)
             .height(58.dp)
             .background(LaneBackground, RoundedCornerShape(4.dp))
-            .pointerInput(track.id, dpPerSecond) {
+            .pointerInput(track.id, dpPerSecond, durationUs) {
                 detectTapGestures { offset ->
                     val xDp = with(density) { offset.x.toDp().value }
-                    val targetUs = (xDp / dpPerSecond * US_PER_SECOND).toLong().coerceAtLeast(0L)
+                    val targetUs = TimelineScrubPolicy.positionForTap(
+                        xDp = xDp,
+                        dpPerSecond = dpPerSecond,
+                        durationUs = durationUs,
+                    )
                     onSelectClip(null)
                     onSeek(targetUs)
                 }
@@ -635,13 +643,72 @@ private fun TrackLane(
             }
         }
 
-        val playheadX = (playheadUs.coerceAtLeast(0L) / US_PER_SECOND * dpPerSecond).toFloat().dp
+        DraggablePlayhead(
+            playheadUs = playheadUs,
+            durationUs = durationUs,
+            dpPerSecond = dpPerSecond,
+            onSelectClip = onSelectClip,
+            onSeek = onSeek,
+        )
+    }
+}
+
+@Composable
+private fun DraggablePlayhead(
+    playheadUs: Long,
+    durationUs: Long,
+    dpPerSecond: Float,
+    onSelectClip: (String?) -> Unit,
+    onSeek: (Long) -> Unit,
+) {
+    val density = LocalDensity.current
+    val safeDurationUs = durationUs.coerceAtLeast(0L)
+    val clampedPlayheadUs = playheadUs.coerceIn(0L, safeDurationUs)
+    val playheadX = (clampedPlayheadUs / US_PER_SECOND * dpPerSecond).toFloat().dp
+    var dragStartUs by remember { mutableStateOf(clampedPlayheadUs) }
+    var dragDeltaPx by remember { mutableFloatStateOf(0f) }
+
+    Box(
+        modifier = Modifier
+            .offset(x = playheadX - 14.dp)
+            .width(28.dp)
+            .height(58.dp)
+            .zIndex(20f)
+            .draggable(
+                orientation = Orientation.Horizontal,
+                state = rememberDraggableState { deltaPx ->
+                    dragDeltaPx += deltaPx
+                    val deltaDp = with(density) { dragDeltaPx.toDp().value }
+                    onSeek(
+                        TimelineScrubPolicy.positionForDrag(
+                            startUs = dragStartUs,
+                            deltaDp = deltaDp,
+                            dpPerSecond = dpPerSecond,
+                            durationUs = safeDurationUs,
+                        ),
+                    )
+                },
+                onDragStarted = {
+                    dragStartUs = clampedPlayheadUs
+                    dragDeltaPx = 0f
+                    onSelectClip(null)
+                },
+                onDragStopped = { dragDeltaPx = 0f },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
         Box(
             modifier = Modifier
-                .offset(x = playheadX)
                 .width(2.dp)
-                .height(58.dp)
-                .drawBehind { drawRect(Color.White) },
+                .fillMaxHeight()
+                .background(AccentColor),
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .width(12.dp)
+                .height(6.dp)
+                .background(AccentColor, RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp)),
         )
     }
 }

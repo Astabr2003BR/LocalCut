@@ -300,7 +300,7 @@ fun TimelinePane(
             if (requestedThumbnailSets[clip.id] == signature) return@forEach
 
             requestedThumbnailSets[clip.id] = signature
-            visualThumbnails[clip.id] = List(sampleTimesUs.size) { null }
+            visualThumbnails[clip.id] = List<Bitmap?>(sampleTimesUs.size) { null }
             sampleTimesUs.forEachIndexed { index, sourceTimeUs ->
                 val key = TimelineThumbnailPolicy.cacheKey(
                     assetFingerprint = asset.fingerprint,
@@ -322,7 +322,7 @@ fun TimelinePane(
                         result.onSuccess { bitmap ->
                             val current = visualThumbnails[clip.id]
                                 ?.toMutableList()
-                                ?: MutableList(sampleTimesUs.size) { null }
+                                ?: MutableList<Bitmap?>(sampleTimesUs.size) { null }
                             if (index in current.indices) {
                                 current[index] = bitmap
                                 visualThumbnails[clip.id] = current

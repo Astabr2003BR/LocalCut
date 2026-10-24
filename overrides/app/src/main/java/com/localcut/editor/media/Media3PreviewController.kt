@@ -19,6 +19,7 @@ import com.localcut.editor.bridge.agent.AndroidPlayerPreviewFramePort
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.timeline.TimelineMath
 import java.io.File
+import java.lang.ref.WeakReference
 
 @UnstableApi
 @OptIn(ExperimentalApi::class)
@@ -33,6 +34,8 @@ class Media3PreviewController(
     private val engine = Media3PreviewEngine(player, compositionCompiler, runtimeProvider)
     private val delegate = DefaultPreviewController(engine, AndroidPreviewTicker())
     private var lastProject: Project? = null
+    @Volatile
+    private var boundViewRef: WeakReference<PlayerView>? = null
     val bridgePreviewFramePort = AndroidPlayerPreviewFramePort(
         positionUsProvider = { state.value.positionUs },
     )
@@ -41,8 +44,8 @@ class Media3PreviewController(
     override fun load(project: Project): Result<Unit> = delegate.load(project).also { result ->
         if (result.isSuccess) {
             lastProject = project
-            bridgePreviewFramePort.requestRefresh()
         }
+        scheduleBoundSurfaceRefreshAfterContentLoad(result.isSuccess)
     }
 
     fun loadRenderedFile(file: File, durationUs: Long, fps: Int): Result<Unit> {
@@ -50,7 +53,7 @@ class Media3PreviewController(
         val editorPositionUs = state.value.positionUs
         val result = delegate.loadResult(engine.loadRenderedFile(file, durationUs, fps))
         if (result.isSuccess) {
-            bridgePreviewFramePort.requestRefresh()
+            scheduleBoundSurfaceRefreshAfterContentLoad(loadSucceeded = true)
         } else if (editorProject != null) {
             FinalPreviewRecovery.restore(
                 controller = this,
@@ -77,6 +80,7 @@ class Media3PreviewController(
     override fun release() = delegate.release()
 
     fun bindTo(view: PlayerView) {
+        boundViewRef = WeakReference(view)
         view.player = player
         view.useController = false
         bridgePreviewFramePort.attach(view)
@@ -84,6 +88,7 @@ class Media3PreviewController(
 
     fun refreshBoundView(view: PlayerView) {
         val positionUs = state.value.positionUs
+        boundViewRef = WeakReference(view)
         bridgePreviewFramePort.detach(view)
         if (view.player === player) view.player = null
         view.player = player
@@ -94,8 +99,29 @@ class Media3PreviewController(
     }
 
     fun unbindFrom(view: PlayerView) {
+        if (boundViewRef?.get() === view) {
+            boundViewRef = null
+        }
         bridgePreviewFramePort.detach(view)
         if (view.player === player) view.player = null
+    }
+
+    private fun scheduleBoundSurfaceRefreshAfterContentLoad(loadSucceeded: Boolean) {
+        val view = boundViewRef?.get()
+        if (!PreviewPlayerViewPolicy.shouldRefreshAfterContentLoad(
+                loadSucceeded = loadSucceeded,
+                durationUs = state.value.durationUs,
+                hasBoundView = view != null,
+            )
+        ) {
+            if (loadSucceeded) bridgePreviewFramePort.requestRefresh()
+            return
+        }
+
+        checkNotNull(view).post {
+            if (boundViewRef?.get() !== view || state.value.durationUs <= 0L) return@post
+            refreshBoundView(view)
+        }
     }
 }
 

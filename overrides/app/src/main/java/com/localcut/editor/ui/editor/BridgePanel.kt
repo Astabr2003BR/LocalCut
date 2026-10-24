@@ -74,7 +74,7 @@ fun BridgePanel(
                     maxLines = 1,
                 )
                 Text(
-                    text = "Bridge ›",
+                    text = "Agente ›",
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFF20D5D2),
                     maxLines = 1,
@@ -97,7 +97,7 @@ fun BridgePanel(
                     style = MaterialTheme.typography.labelMedium,
                 )
                 Text(
-                    text = "ChatGPT Bridge",
+                    text = "ChatGPT • Agente ao vivo",
                     modifier = Modifier.padding(start = 6.dp),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
@@ -117,6 +117,14 @@ fun BridgePanel(
                 },
             )
 
+            if (BridgePanelUiPolicy.agentReady(state)) {
+                Text(
+                    "ChatGPT pode ler o projeto, editar a timeline e ver a prévia enquanto o editor estiver aberto.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF20D5D2),
+                )
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
@@ -126,9 +134,9 @@ fun BridgePanel(
                     Button(
                         onClick = onConnect,
                         enabled = state.relayBaseUrl.isNotBlank(),
-                    ) { Text("Conectar") }
+                    ) { Text("Conectar ChatGPT") }
                 } else {
-                    OutlinedButton(onClick = onDisconnect) { Text("Desconectar") }
+                    OutlinedButton(onClick = onDisconnect) { Text("Pausar agente") }
                 }
             }
 
@@ -154,7 +162,7 @@ fun BridgePanel(
 
             if (state.paired) {
                 Text(
-                    "Revogue o pareamento antes de trocar o servidor Relay.",
+                    "Pareamento seguro ativo. Revogue antes de trocar o servidor Relay.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -165,6 +173,11 @@ fun BridgePanel(
                     "Código de pareamento: $code",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    "Use este código uma vez no LocalCut Bridge do ChatGPT para vincular este aparelho.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -186,7 +199,7 @@ fun BridgePanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Sempre conectado", style = MaterialTheme.typography.bodyMedium)
+                    Text("Manter agente conectado", style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "Tenta restaurar a conexão após reiniciar o app ou o celular.",
                         style = MaterialTheme.typography.bodySmall,

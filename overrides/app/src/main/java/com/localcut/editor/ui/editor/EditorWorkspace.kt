@@ -33,7 +33,6 @@ object EditorWorkspacePolicy {
         EditorToolId.CHROMA,
         EditorToolId.TEXT,
         EditorToolId.OVERLAY,
-        EditorToolId.MEDIA,
         EditorToolId.AUDIO,
         EditorToolId.CANVAS,
     )
@@ -76,7 +75,6 @@ object EditorWorkspacePolicy {
         EditorToolId.CHROMA,
         EditorToolId.TEXT,
         EditorToolId.OVERLAY,
-        EditorToolId.MEDIA,
         EditorToolId.AUDIO,
         EditorToolId.CANVAS,
     )

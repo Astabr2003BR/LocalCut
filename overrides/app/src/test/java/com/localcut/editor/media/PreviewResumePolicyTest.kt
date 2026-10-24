@@ -11,8 +11,8 @@ class PreviewResumePolicyTest {
     }
 
     @Test
-    fun playingPreviewDoesNotNeedForcedRefresh() {
-        assertFalse(PreviewResumePolicy.shouldRefresh(durationUs = 5_000_000L, playing = true))
+    fun playingPreviewWithMediaAlsoRefreshesSurfaceAfterResume() {
+        assertTrue(PreviewResumePolicy.shouldRefresh(durationUs = 5_000_000L, playing = true))
     }
 
     @Test

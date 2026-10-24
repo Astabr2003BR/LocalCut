@@ -32,19 +32,37 @@ class Media3PreviewController(
         .build()
     private val engine = Media3PreviewEngine(player, compositionCompiler, runtimeProvider)
     private val delegate = DefaultPreviewController(engine, AndroidPreviewTicker())
+    private var lastProject: Project? = null
     val bridgePreviewFramePort = AndroidPlayerPreviewFramePort(
         positionUsProvider = { state.value.positionUs },
     )
 
     override val state = delegate.state
-    override fun load(project: Project): Result<Unit> = delegate.load(project).also {
-        if (it.isSuccess) bridgePreviewFramePort.requestRefresh()
+    override fun load(project: Project): Result<Unit> = delegate.load(project).also { result ->
+        if (result.isSuccess) {
+            lastProject = project
+            bridgePreviewFramePort.requestRefresh()
+        }
     }
 
-    fun loadRenderedFile(file: File, durationUs: Long, fps: Int): Result<Unit> =
-        delegate.loadResult(engine.loadRenderedFile(file, durationUs, fps)).also {
-            if (it.isSuccess) bridgePreviewFramePort.requestRefresh()
+    fun loadRenderedFile(file: File, durationUs: Long, fps: Int): Result<Unit> {
+        val editorProject = lastProject
+        val editorPositionUs = state.value.positionUs
+        val result = delegate.loadResult(engine.loadRenderedFile(file, durationUs, fps))
+        if (result.isSuccess) {
+            bridgePreviewFramePort.requestRefresh()
+        } else if (editorProject != null) {
+            FinalPreviewRecovery.restore(
+                controller = this,
+                project = editorProject,
+                positionUs = editorPositionUs,
+                durationUs = TimelineMath.durationUs(editorProject),
+            )
+            bridgePreviewFramePort.requestRefresh()
         }
+        return result
+    }
+
     override fun play() = delegate.play()
     override fun pause() = delegate.pause()
     override fun seekToUs(positionUs: Long) {

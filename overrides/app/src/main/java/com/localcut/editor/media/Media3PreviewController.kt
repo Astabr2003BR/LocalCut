@@ -15,6 +15,7 @@ import androidx.media3.transformer.CompositionPlayer
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.ui.PlayerView
+import com.localcut.editor.bridge.agent.AndroidPlayerPreviewFramePort
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.timeline.TimelineMath
 import java.io.File
@@ -31,25 +32,38 @@ class Media3PreviewController(
         .build()
     private val engine = Media3PreviewEngine(player, compositionCompiler, runtimeProvider)
     private val delegate = DefaultPreviewController(engine, AndroidPreviewTicker())
+    val bridgePreviewFramePort = AndroidPlayerPreviewFramePort { state.value.positionUs }
 
     override val state = delegate.state
-    override fun load(project: Project): Result<Unit> = delegate.load(project)
+    override fun load(project: Project): Result<Unit> = delegate.load(project).also {
+        if (it.isSuccess) bridgePreviewFramePort.requestRefresh()
+    }
 
     fun loadRenderedFile(file: File, durationUs: Long, fps: Int): Result<Unit> =
-        delegate.loadResult(engine.loadRenderedFile(file, durationUs, fps))
+        delegate.loadResult(engine.loadRenderedFile(file, durationUs, fps)).also {
+            if (it.isSuccess) bridgePreviewFramePort.requestRefresh()
+        }
     override fun play() = delegate.play()
     override fun pause() = delegate.pause()
-    override fun seekToUs(positionUs: Long) = delegate.seekToUs(positionUs)
-    override fun stepFrames(deltaFrames: Int, fps: Int) = delegate.stepFrames(deltaFrames, fps)
+    override fun seekToUs(positionUs: Long) {
+        delegate.seekToUs(positionUs)
+        bridgePreviewFramePort.requestRefresh()
+    }
+    override fun stepFrames(deltaFrames: Int, fps: Int) {
+        delegate.stepFrames(deltaFrames, fps)
+        bridgePreviewFramePort.requestRefresh()
+    }
     override fun setLoopRange(startUs: Long, endUs: Long?) = delegate.setLoopRange(startUs, endUs)
     override fun release() = delegate.release()
 
     fun bindTo(view: PlayerView) {
         view.player = player
         view.useController = false
+        bridgePreviewFramePort.attach(view)
     }
 
     fun unbindFrom(view: PlayerView) {
+        bridgePreviewFramePort.detach(view)
         if (view.player === player) view.player = null
     }
 }

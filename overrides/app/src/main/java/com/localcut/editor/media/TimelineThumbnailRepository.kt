@@ -28,25 +28,44 @@ class TimelineThumbnailRepository(
 ) {
     private val appContext = context.applicationContext
     private val resolver = appContext.contentResolver
+    private val lock = Any()
     private val cache = object : LruCache<String, Bitmap>(cacheBytes.coerceAtLeast(1)) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
     }
+    private val inFlight = mutableMapOf<String, MutableList<(Result<Bitmap>) -> Unit>>()
 
     fun request(
         request: TimelineThumbnailRequest,
         callback: (Result<Bitmap>) -> Unit,
     ) {
-        synchronized(cache) { cache.get(request.key) }?.let { cached ->
-            callback(Result.success(cached))
+        var cached: Bitmap? = null
+        var shouldDecode = false
+        synchronized(lock) {
+            cached = cache.get(request.key)
+            if (cached == null) {
+                val callbacks = inFlight[request.key]
+                if (callbacks != null) {
+                    callbacks += callback
+                } else {
+                    inFlight[request.key] = mutableListOf(callback)
+                    shouldDecode = true
+                }
+            }
+        }
+
+        cached?.let {
+            callback(Result.success(it))
             return
         }
+        if (!shouldDecode) return
 
         executor.execute {
             val result = runCatching { decode(request) }
-            result.onSuccess { bitmap ->
-                synchronized(cache) { cache.put(request.key, bitmap) }
+            val callbacks = synchronized(lock) {
+                result.onSuccess { bitmap -> cache.put(request.key, bitmap) }
+                inFlight.remove(request.key).orEmpty()
             }
-            callback(result)
+            callbacks.forEach { pendingCallback -> pendingCallback(result) }
         }
     }
 
@@ -131,6 +150,8 @@ class TimelineThumbnailRepository(
 
         val scaledWidth = max(1, (bitmap.width * scale).roundToInt())
         val scaledHeight = max(1, (bitmap.height * scale).roundToInt())
-        return Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+        val scaled = Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+        if (scaled !== bitmap) bitmap.recycle()
+        return scaled
     }
 }

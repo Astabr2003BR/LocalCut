@@ -33,8 +33,9 @@ fun EditorBottomToolRail(
     onToolSelected: (EditorToolId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val tools = EditorToolCatalog.primaryToolsFor(selection).filter { it.enabled }
-    var expanded by remember(selection) { mutableStateOf(false) }
+    var workspace by remember { mutableStateOf(EditorWorkspace.EDIT) }
+    var expanded by remember(selection, workspace) { mutableStateOf(false) }
+    val tools = EditorWorkspacePolicy.toolsFor(workspace, selection)
     val layout = EditorBottomToolRailPolicy.layout(
         tools = tools,
         expanded = expanded,
@@ -46,40 +47,90 @@ fun EditorBottomToolRail(
         color = Color(0xFF0D0D0F),
         shadowElevation = 8.dp,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 5.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(1.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            layout.visible.forEach { tool ->
-                val target = EditorToolCatalog.actionTarget(tool.id)
-                val active = tool.id == activeTool
-                ToolRailItem(
-                    glyph = toolGlyph(tool.id),
-                    label = tool.label,
-                    active = active,
-                    onClick = { onToolSelected(target) },
-                )
-            }
+        Column(Modifier.fillMaxWidth()) {
+            WorkspaceRail(
+                current = workspace,
+                onSelected = { selected ->
+                    if (selected == workspace) return@WorkspaceRail
+                    val nextTools = EditorWorkspacePolicy.toolsFor(selected, selection)
+                    val currentToolStillVisible = activeTool == null || nextTools.any { definition ->
+                        EditorToolCatalog.actionTarget(definition.id) == activeTool
+                    }
+                    if (!currentToolStillVisible && activeTool != null) {
+                        onToolSelected(activeTool)
+                    }
+                    workspace = selected
+                    expanded = false
+                },
+            )
 
-            if (layout.hasMore) {
-                ToolRailItem(
-                    glyph = "⋯",
-                    label = "Mais +${layout.hiddenCount}",
-                    active = false,
-                    onClick = { expanded = true },
-                )
-            } else if (expanded && tools.size > EditorBottomToolRailPolicy.COLLAPSED_LIMIT) {
-                ToolRailItem(
-                    glyph = "‹",
-                    label = "Menos",
-                    active = false,
-                    onClick = { expanded = false },
-                )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 5.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(1.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                layout.visible.forEach { tool ->
+                    val target = EditorToolCatalog.actionTarget(tool.id)
+                    val active = target == activeTool
+                    ToolRailItem(
+                        glyph = toolGlyph(tool.id),
+                        label = tool.label,
+                        active = active,
+                        onClick = { onToolSelected(target) },
+                    )
+                }
+
+                if (layout.hasMore) {
+                    ToolRailItem(
+                        glyph = "⋯",
+                        label = "Mais +${layout.hiddenCount}",
+                        active = false,
+                        onClick = { expanded = true },
+                    )
+                } else if (expanded && tools.size > EditorBottomToolRailPolicy.COLLAPSED_LIMIT) {
+                    ToolRailItem(
+                        glyph = "‹",
+                        label = "Menos",
+                        active = false,
+                        onClick = { expanded = false },
+                    )
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceRail(
+    current: EditorWorkspace,
+    onSelected: (EditorWorkspace) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 7.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        EditorWorkspace.entries.forEach { workspace ->
+            val selected = workspace == current
+            Text(
+                text = workspace.label,
+                color = if (selected) Color.Black else Color(0xFFD0D0D5),
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier
+                    .background(
+                        color = if (selected) Color(0xFF20D5D2) else Color(0xFF1A1A1E),
+                        shape = RoundedCornerShape(10.dp),
+                    )
+                    .clickable { onSelected(workspace) }
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+            )
         }
     }
 }

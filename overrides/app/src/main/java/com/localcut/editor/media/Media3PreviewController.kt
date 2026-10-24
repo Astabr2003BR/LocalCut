@@ -81,7 +81,7 @@ class Media3PreviewController(
 
     fun bindTo(view: PlayerView) {
         boundViewRef = WeakReference(view)
-        view.player = player
+        if (view.player !== player) view.player = player
         view.useController = false
         bridgePreviewFramePort.attach(view)
     }
@@ -89,9 +89,10 @@ class Media3PreviewController(
     fun refreshBoundView(view: PlayerView) {
         val positionUs = state.value.positionUs
         boundViewRef = WeakReference(view)
-        bridgePreviewFramePort.detach(view)
-        if (view.player === player) view.player = null
-        view.player = player
+        // Keep the existing Media3 surface attached whenever it already belongs to this player.
+        // Detaching/re-attaching the same CompositionPlayer after returning from Android pickers
+        // can leave the SurfaceView black even though playback position continues advancing.
+        if (view.player !== player) view.player = player
         view.useController = false
         bridgePreviewFramePort.attach(view)
         delegate.seekToUs(positionUs)

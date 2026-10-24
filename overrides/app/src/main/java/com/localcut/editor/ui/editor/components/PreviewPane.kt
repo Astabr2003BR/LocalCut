@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -57,6 +58,7 @@ fun PreviewPane(
     val hostView = LocalView.current
     val latestState = rememberUpdatedState(state)
     val playerViewRef = remember(controller) { AtomicReference<PlayerView?>(null) }
+    val previousViewportHeightDp = remember(controller) { AtomicReference(viewportHeight.value) }
 
     DisposableEffect(hostView, controller) {
         val lifecycleOwner = hostView.findViewTreeLifecycleOwner()
@@ -81,6 +83,25 @@ fun PreviewPane(
             }
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
+    }
+
+    LaunchedEffect(viewportHeight, state.durationUs, controller) {
+        val currentHeightDp = viewportHeight.value
+        val previousHeightDp = previousViewportHeightDp.getAndSet(currentHeightDp)
+        if (
+            PreviewPlayerViewPolicy.shouldRefreshAfterViewportResize(
+                previousHeightDp = previousHeightDp,
+                currentHeightDp = currentHeightDp,
+                durationUs = state.durationUs,
+            )
+        ) {
+            val playerView = playerViewRef.get()
+            playerView?.post {
+                if (playerViewRef.get() === playerView) {
+                    controller.refreshBoundView(playerView)
+                }
+            }
         }
     }
 

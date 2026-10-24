@@ -22,9 +22,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -711,7 +711,7 @@ private fun TrackLane(
                 if (clipThumbnailSlots.isNotEmpty()) {
                     Row(
                         modifier = Modifier
-                            .matchParentSize()
+                            .fillMaxSize()
                             .clip(RoundedCornerShape(5.dp)),
                     ) {
                         clipThumbnailSlots.forEach { bitmap ->
@@ -725,14 +725,14 @@ private fun TrackLane(
                                         bitmap = bitmap.asImageBitmap(),
                                         contentDescription = null,
                                         contentScale = ContentScale.Crop,
-                                        modifier = Modifier.matchParentSize(),
+                                        modifier = Modifier.fillMaxSize(),
                                     )
                                 }
                             }
                         }
                     }
                     if (hasLoadedThumbnail && keyframeFractions.isNotEmpty()) {
-                        Canvas(modifier = Modifier.matchParentSize()) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
                             keyframeFractions.forEach { fraction ->
                                 drawCircle(
                                     color = keyframeMarkerColor,

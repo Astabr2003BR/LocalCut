@@ -31,6 +31,32 @@ class TimelineScrubPolicyTest {
     }
 
     @Test
+    fun longProjectDragCanReachStartWithinPhoneWidth() {
+        assertEquals(
+            0L,
+            TimelineScrubPolicy.positionForDrag(
+                startUs = 45_000_000L,
+                deltaDp = -320f,
+                dpPerSecond = 84f,
+                durationUs = 70_900_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun longProjectDragCanReachEndWithinPhoneWidth() {
+        assertEquals(
+            70_900_000L,
+            TimelineScrubPolicy.positionForDrag(
+                startUs = 20_000_000L,
+                deltaDp = 320f,
+                dpPerSecond = 84f,
+                durationUs = 70_900_000L,
+            ),
+        )
+    }
+
+    @Test
     fun dragClampsAtProjectEnd() {
         assertEquals(
             10_000_000L,

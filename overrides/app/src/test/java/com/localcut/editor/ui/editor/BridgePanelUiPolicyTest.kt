@@ -16,16 +16,31 @@ class BridgePanelUiPolicyTest {
     }
 
     @Test
-    fun onlineAndEditingStatesStayCompact() {
-        assertEquals("Online", BridgePanelUiPolicy.summary(BridgeUiState(phase = BridgeUiPhase.ONLINE, paired = true)))
-        assertEquals("Editando", BridgePanelUiPolicy.summary(BridgeUiState(phase = BridgeUiPhase.EDITING, paired = true)))
+    fun onlineAndEditingStatesDescribeLiveAgent() {
+        assertEquals(
+            "Agente ao vivo • pronto",
+            BridgePanelUiPolicy.summary(BridgeUiState(phase = BridgeUiPhase.ONLINE, paired = true)),
+        )
+        assertEquals(
+            "Agente ao vivo • editando",
+            BridgePanelUiPolicy.summary(BridgeUiState(phase = BridgeUiPhase.EDITING, paired = true)),
+        )
+    }
+
+    @Test
+    fun agentReadyRequiresPairedActiveConnection() {
+        assertTrue(BridgePanelUiPolicy.agentReady(BridgeUiState(phase = BridgeUiPhase.ONLINE, paired = true)))
+        assertTrue(BridgePanelUiPolicy.agentReady(BridgeUiState(phase = BridgeUiPhase.EDITING, paired = true)))
+        assertTrue(BridgePanelUiPolicy.agentReady(BridgeUiState(phase = BridgeUiPhase.EXPORTING, paired = true)))
+        assertFalse(BridgePanelUiPolicy.agentReady(BridgeUiState(phase = BridgeUiPhase.CONNECTING, paired = true)))
+        assertFalse(BridgePanelUiPolicy.agentReady(BridgeUiState(phase = BridgeUiPhase.ONLINE, paired = false)))
     }
 
     @Test
     fun exportingSummaryCarriesProgressWhenAvailable() {
         val state = BridgeUiState(phase = BridgeUiPhase.EXPORTING, paired = true, exportProgressPercent = 42)
 
-        assertEquals("Exportando • 42%", BridgePanelUiPolicy.summary(state))
+        assertEquals("Agente ao vivo • exportando 42%", BridgePanelUiPolicy.summary(state))
     }
 
     @Test

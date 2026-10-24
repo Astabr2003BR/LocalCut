@@ -11,7 +11,7 @@ class FinalPreviewRecoveryTest {
     @Test
     fun restoreReloadsProjectAndReturnsToPreviousPosition() {
         val controller = RecordingPreviewController()
-        val project = Project.createEmpty("test").copy(width = 1080, height = 1920, fps = 30)
+        val project = Project.create("test", width = 1080, height = 1920, fps = 30)
 
         val result = FinalPreviewRecovery.restore(
             controller = controller,
@@ -28,7 +28,7 @@ class FinalPreviewRecoveryTest {
     @Test
     fun restoreClampsPositionToDuration() {
         val controller = RecordingPreviewController()
-        val project = Project.createEmpty("test")
+        val project = Project.create("test", width = 1080, height = 1920, fps = 30)
 
         FinalPreviewRecovery.restore(
             controller = controller,

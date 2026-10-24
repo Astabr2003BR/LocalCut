@@ -24,6 +24,39 @@ class ExportSettingsStateTest {
     }
 
     @Test
+    fun initialSelectionsArePresentedFirstForCompactMobileExportUi() {
+        val project = Project.create("P", 1080, 1920, 30)
+        val state = ExportSettingsState.from(
+            project = project,
+            capabilities = ExportCapabilities(hevcEncoderAvailable = true),
+        )
+
+        assertEquals(state.selectedResolution, state.resolutionOptions.first())
+        assertEquals(state.selectedFps, state.fpsOptions.first())
+        assertEquals(state.selectedBitrateBitsPerSecond, state.bitrateOptions.first())
+        assertEquals(state.selectedCodec, state.codecOptions.first())
+    }
+
+    @Test
+    fun newlySelectedExportChoiceMovesToFront() {
+        val initial = ExportSettingsState.from(
+            project = Project.create("P", 1080, 1920, 30),
+            capabilities = ExportCapabilities(hevcEncoderAvailable = true),
+        )
+
+        val selected = initial
+            .selectResolution(ExportResolution(720, 1280))
+            .selectFps(25)
+            .selectBitrate(4_000_000)
+            .selectCodec(ExportVideoCodec.HEVC)
+
+        assertEquals(selected.selectedResolution, selected.resolutionOptions.first())
+        assertEquals(selected.selectedFps, selected.fpsOptions.first())
+        assertEquals(selected.selectedBitrateBitsPerSecond, selected.bitrateOptions.first())
+        assertEquals(selected.selectedCodec, selected.codecOptions.first())
+    }
+
+    @Test
     fun selectionUpdatesProduceRequestedProfile() {
         val project = Project.create("P", 1080, 1920, 60)
         val initial = ExportSettingsState.from(

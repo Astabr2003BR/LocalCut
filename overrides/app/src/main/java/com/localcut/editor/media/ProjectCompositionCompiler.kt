@@ -70,6 +70,11 @@ class ProjectCompositionCompiler(
                     targetFps = blueprint.fps,
                 )
             )
+            Media3DesignOverlayEffectFactory.create(
+                project = project,
+                outputWidth = blueprint.width,
+                outputHeight = blueprint.height,
+            )?.let(::add)
             Media3TextOverlayEffectFactory.create(
                 project = project,
                 outputWidth = blueprint.width,
@@ -151,6 +156,7 @@ class ProjectCompositionCompiler(
         }
 
         val audioProcessors = buildList<AudioProcessor> {
+            addAll(Media3AudioProcessingFactory.create(item.audioProcessing))
             if (item.volume != 1.0) {
                 add(GainProcessor(DefaultGainProvider.Builder(item.volume.toFloat()).build()))
             }
@@ -189,6 +195,14 @@ class ProjectCompositionCompiler(
                         presentationStartUs = presentationStartUs,
                     )
                 )
+                addAll(
+                    Media3CompositingEffectFactory.create(
+                        settings = item.compositing,
+                        outputWidth = blueprint.width,
+                        outputHeight = blueprint.height,
+                    )
+                )
+                addAll(Media3EffectStackFactory.create(item.effects))
                 FadeToBlackEffectFactory.create(
                     durationUs = item.presentationDurationUs,
                     spec = transitionSpec,
@@ -200,6 +214,10 @@ class ProjectCompositionCompiler(
         val edited = EditedMediaItem.Builder(mediaBuilder.build())
             .setDurationUs(item.sourceMediaDurationUs)
             .setEffects(Effects(audioProcessors, videoEffects))
+        if (item.assetType != com.localcut.editor.domain.model.AssetType.IMAGE) {
+            val sourceRangeUs = item.sourceOutUs - item.sourceInUs
+            Media3TimeMapSupport.providerOrNull(item.timeMap, sourceRangeUs)?.let(edited::setSpeed)
+        }
         if (item.imageFrameRate != null) edited.setFrameRate(item.imageFrameRate)
         return edited.build()
     }

@@ -43,6 +43,16 @@ fun main(){
             assertEquals(project(),store.load().getOrThrow())
         }finally{dir.toFile().deleteRecursively()}
     }
+    test("valid temp file recovers interrupted first save"){
+        val dir=Files.createTempDirectory("localcut-store-")
+        try{
+            val expected=project("interrupted-first-save")
+            Files.writeString(dir.resolve("project.json.tmp"),ProjectJson.encode(expected))
+            val loaded=AtomicProjectStore(dir).load().getOrThrow()
+            assertEquals(expected,loaded)
+            assertTrue(Files.exists(dir.resolve("project.json")),"valid temp recovery must promote project.json")
+        }finally{dir.toFile().deleteRecursively()}
+    }
     test("corrupted current file falls back to last known good backup"){
         val dir=Files.createTempDirectory("localcut-store-")
         try{

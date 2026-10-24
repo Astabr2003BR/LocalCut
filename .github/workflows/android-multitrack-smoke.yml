@@ -6,6 +6,9 @@ on:
     paths:
       - '.github/workflows/android-multitrack-smoke.yml'
       - 'overrides/app/src/main/java/com/localcut/editor/media/**'
+      - 'overrides/app/src/main/java/com/localcut/editor/audio/**'
+      - 'overrides/app/src/main/java/com/localcut/editor/bridge/**'
+      - 'overrides/app/src/main/java/com/localcut/editor/mobile/**'
       - 'overrides/app/src/androidTest/**'
       - 'localcut-source-full-build9.zip'
   push:
@@ -13,9 +16,16 @@ on:
     paths:
       - '.github/workflows/android-multitrack-smoke.yml'
       - 'overrides/app/src/main/java/com/localcut/editor/media/**'
+      - 'overrides/app/src/main/java/com/localcut/editor/audio/**'
+      - 'overrides/app/src/main/java/com/localcut/editor/bridge/**'
+      - 'overrides/app/src/main/java/com/localcut/editor/mobile/**'
       - 'overrides/app/src/androidTest/**'
       - 'localcut-source-full-build9.zip'
   workflow_dispatch:
+
+concurrency:
+  group: localcut-android-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -54,6 +64,23 @@ jobs:
           test -f work/app/src/androidTest/java/com/localcut/editor/media/MultitrackExportSmokeTest.kt
           test -f work/app/src/androidTest/java/com/localcut/editor/media/FadeToBlackExportSmokeTest.kt
           test -f work/app/src/androidTest/java/com/localcut/editor/media/KeyframeExportSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/media/LegacyUnavailablePreviewSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/media/MultivisualPreviewSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/media/ImageAudioPreviewSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/media/Media3CreativeSuiteBackendSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/media/CreativeShaderExportSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/media/SpeedRampExportSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/audio/AndroidBeatAnalyzerSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/bridge/security/AndroidKeystoreDeviceIdentitySmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/bridge/security/AndroidKeystoreCredentialStoreSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/bridge/agent/MediaStoreBridgeExportSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/bridge/agent/BridgeConnectionServiceSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/mobile/MobileHandoffIntentFilterSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/mobile/PackageCoexistenceSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/mobile/SharedMediaImportSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/mobile/SharedMediaPersistenceSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/mobile/RemoteMediaValidatorSmokeTest.kt
+          test -f work/app/src/androidTest/java/com/localcut/editor/mobile/RemoteMediaHandoffSmokeTest.kt
 
       - name: Set up Gradle 9.5.0
         uses: gradle/actions/setup-gradle@v6
@@ -75,13 +102,38 @@ jobs:
           test -x "$AVDMANAGER"
 
           SYSTEM_IMAGE='system-images;android-35;google_apis;x86_64'
+          SYSTEM_IMAGE_DIR="$SDK_ROOT/system-images/android-35/google_apis/x86_64"
+
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "$SYSTEM_IMAGE" 'platform-tools' 'emulator'
+
+          install_sdk_packages() {
+            local label="$1"
+            shift
+            local attempt
+            for attempt in 1 2 3; do
+              echo "Installing $label (attempt $attempt/3)"
+              if "$SDKMANAGER" "$@"; then
+                return 0
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "Failed to install $label after 3 attempts" >&2
+                return 1
+              fi
+              echo "Cleaning partial Android SDK downloads before retry" >&2
+              rm -rf "$SDK_ROOT/.temp" "$HOME/.android/cache"
+              sleep $((attempt * 5))
+            done
+          }
+
+          install_sdk_packages 'emulator and platform-tools' 'platform-tools' 'emulator'
+          install_sdk_packages 'Android 35 Google APIs x86_64 system image' "$SYSTEM_IMAGE"
 
           ADB="$SDK_ROOT/platform-tools/adb"
           EMULATOR="$SDK_ROOT/emulator/emulator"
           test -x "$ADB"
           test -x "$EMULATOR"
+          test -f "$SYSTEM_IMAGE_DIR/source.properties"
+          test -f "$SYSTEM_IMAGE_DIR/system.img"
 
           AVD_HOME="$RUNNER_TEMP/localcut-avd"
           rm -rf "$AVD_HOME"
@@ -96,7 +148,7 @@ jobs:
           echo "LOCALCUT_ADB=$ADB" >> "$GITHUB_ENV"
           echo "LOCALCUT_EMULATOR=$EMULATOR" >> "$GITHUB_ENV"
 
-      - name: Run real multitrack export on emulator
+      - name: Run real multitrack export, Bridge, mobile handoff, share-import, persistence, package-coexistence, multivisual, image-audio-preview, legacy-preview, creative-shader, speed-ramp, beat-analysis, and remote-media smoke on emulator
         shell: bash
         run: |
           set -euo pipefail
@@ -177,7 +229,7 @@ jobs:
           "$ADB" shell input keyevent 82 || true
 
           gradle --no-daemon -p work connectedDebugAndroidTest \
-            -Pandroid.testInstrumentationRunnerArguments.class=com.localcut.editor.media.MultitrackExportSmokeTest,com.localcut.editor.media.FadeToBlackExportSmokeTest,com.localcut.editor.media.KeyframeExportSmokeTest
+            -Pandroid.testInstrumentationRunnerArguments.class=com.localcut.editor.media.MultitrackExportSmokeTest,com.localcut.editor.media.FadeToBlackExportSmokeTest,com.localcut.editor.media.KeyframeExportSmokeTest,com.localcut.editor.media.LegacyUnavailablePreviewSmokeTest,com.localcut.editor.media.MultivisualPreviewSmokeTest,com.localcut.editor.media.ImageAudioPreviewSmokeTest,com.localcut.editor.media.Media3CreativeSuiteBackendSmokeTest,com.localcut.editor.media.CreativeShaderExportSmokeTest,com.localcut.editor.media.SpeedRampExportSmokeTest,com.localcut.editor.audio.AndroidBeatAnalyzerSmokeTest,com.localcut.editor.bridge.security.AndroidKeystoreDeviceIdentitySmokeTest,com.localcut.editor.bridge.security.AndroidKeystoreCredentialStoreSmokeTest,com.localcut.editor.bridge.agent.MediaStoreBridgeExportSmokeTest,com.localcut.editor.bridge.agent.BridgeConnectionServiceSmokeTest,com.localcut.editor.mobile.MobileHandoffIntentFilterSmokeTest,com.localcut.editor.mobile.PackageCoexistenceSmokeTest,com.localcut.editor.mobile.SharedMediaImportSmokeTest,com.localcut.editor.mobile.SharedMediaPersistenceSmokeTest,com.localcut.editor.mobile.RemoteMediaValidatorSmokeTest,com.localcut.editor.mobile.RemoteMediaHandoffSmokeTest
 
       - name: Upload instrumentation reports on failure
         if: failure()

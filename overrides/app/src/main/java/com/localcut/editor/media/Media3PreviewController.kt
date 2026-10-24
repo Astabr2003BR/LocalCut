@@ -9,14 +9,17 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.MultipleInputVideoGraph
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.CompositionPlayer
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.ui.PlayerView
+import com.localcut.editor.bridge.agent.AndroidPlayerPreviewFramePort
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.timeline.TimelineMath
 import java.io.File
+import java.lang.ref.WeakReference
 
 @UnstableApi
 @OptIn(ExperimentalApi::class)
@@ -25,29 +28,100 @@ class Media3PreviewController(
     compositionCompiler: ProjectCompositionCompiler,
     runtimeProvider: PreviewRuntimeProvider = AndroidPreviewRuntimeProvider(context),
 ) : PreviewController {
-    private val player = CompositionPlayer.Builder(context).build()
+    private val player = CompositionPlayer.Builder(context)
+        .setVideoGraphFactory(MultipleInputVideoGraph.Factory())
+        .build()
     private val engine = Media3PreviewEngine(player, compositionCompiler, runtimeProvider)
     private val delegate = DefaultPreviewController(engine, AndroidPreviewTicker())
+    private var lastProject: Project? = null
+    @Volatile
+    private var boundViewRef: WeakReference<PlayerView>? = null
+    val bridgePreviewFramePort = AndroidPlayerPreviewFramePort(
+        positionUsProvider = { state.value.positionUs },
+    )
 
     override val state = delegate.state
-    override fun load(project: Project): Result<Unit> = delegate.load(project)
+    override fun load(project: Project): Result<Unit> = delegate.load(project).also { result ->
+        if (result.isSuccess) {
+            lastProject = project
+        }
+        scheduleBoundSurfaceRefreshAfterContentLoad(result.isSuccess)
+    }
 
-    fun loadRenderedFile(file: File, durationUs: Long, fps: Int): Result<Unit> =
-        delegate.loadResult(engine.loadRenderedFile(file, durationUs, fps))
+    fun loadRenderedFile(file: File, durationUs: Long, fps: Int): Result<Unit> {
+        val editorProject = lastProject
+        val editorPositionUs = state.value.positionUs
+        val result = delegate.loadResult(engine.loadRenderedFile(file, durationUs, fps))
+        if (result.isSuccess) {
+            scheduleBoundSurfaceRefreshAfterContentLoad(loadSucceeded = true)
+        } else if (editorProject != null) {
+            FinalPreviewRecovery.restore(
+                controller = this,
+                project = editorProject,
+                positionUs = editorPositionUs,
+                durationUs = TimelineMath.durationUs(editorProject),
+            )
+            bridgePreviewFramePort.requestRefresh()
+        }
+        return result
+    }
+
     override fun play() = delegate.play()
     override fun pause() = delegate.pause()
-    override fun seekToUs(positionUs: Long) = delegate.seekToUs(positionUs)
-    override fun stepFrames(deltaFrames: Int, fps: Int) = delegate.stepFrames(deltaFrames, fps)
+    override fun seekToUs(positionUs: Long) {
+        delegate.seekToUs(positionUs)
+        bridgePreviewFramePort.requestRefresh()
+    }
+    override fun stepFrames(deltaFrames: Int, fps: Int) {
+        delegate.stepFrames(deltaFrames, fps)
+        bridgePreviewFramePort.requestRefresh()
+    }
     override fun setLoopRange(startUs: Long, endUs: Long?) = delegate.setLoopRange(startUs, endUs)
     override fun release() = delegate.release()
 
     fun bindTo(view: PlayerView) {
+        boundViewRef = WeakReference(view)
         view.player = player
         view.useController = false
+        bridgePreviewFramePort.attach(view)
+    }
+
+    fun refreshBoundView(view: PlayerView) {
+        val positionUs = state.value.positionUs
+        boundViewRef = WeakReference(view)
+        bridgePreviewFramePort.detach(view)
+        if (view.player === player) view.player = null
+        view.player = player
+        view.useController = false
+        bridgePreviewFramePort.attach(view)
+        delegate.seekToUs(positionUs)
+        bridgePreviewFramePort.requestRefresh()
     }
 
     fun unbindFrom(view: PlayerView) {
+        if (boundViewRef?.get() === view) {
+            boundViewRef = null
+        }
+        bridgePreviewFramePort.detach(view)
         if (view.player === player) view.player = null
+    }
+
+    private fun scheduleBoundSurfaceRefreshAfterContentLoad(loadSucceeded: Boolean) {
+        val view = boundViewRef?.get()
+        if (!PreviewPlayerViewPolicy.shouldRefreshAfterContentLoad(
+                loadSucceeded = loadSucceeded,
+                durationUs = state.value.durationUs,
+                hasBoundView = view != null,
+            )
+        ) {
+            if (loadSucceeded) bridgePreviewFramePort.requestRefresh()
+            return
+        }
+
+        checkNotNull(view).post {
+            if (boundViewRef?.get() !== view || state.value.durationUs <= 0L) return@post
+            refreshBoundView(view)
+        }
     }
 }
 

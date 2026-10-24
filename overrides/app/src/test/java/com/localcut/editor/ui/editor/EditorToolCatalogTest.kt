@@ -1,0 +1,138 @@
+package com.localcut.editor.ui.editor
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class EditorToolCatalogTest {
+    @Test
+    fun projectSelectionKeepsCoreCreationToolsReachable() {
+        val ids = EditorToolCatalog.primaryToolsFor(EditorSelectionKind.PROJECT).map { it.id }.toSet()
+
+        assertTrue(EditorToolId.MEDIA in ids)
+        assertTrue(EditorToolId.AUDIO in ids)
+        assertTrue(EditorToolId.TEXT in ids)
+        assertTrue(EditorToolId.OVERLAY in ids)
+        assertTrue(EditorToolId.DESIGN in ids)
+        assertTrue(EditorToolId.CANVAS in ids)
+    }
+
+    @Test
+    fun projectSelectionStartsWithCreationToolsInsteadOfClipTools() {
+        assertEquals(
+            listOf(EditorToolId.MEDIA, EditorToolId.AUDIO, EditorToolId.TEXT),
+            EditorToolCatalog.primaryToolsFor(EditorSelectionKind.PROJECT).take(3).map { it.id },
+        )
+    }
+
+    @Test
+    fun creationToolsRemainReachableWhileVideoClipIsSelected() {
+        val ids = EditorToolCatalog.primaryToolsFor(EditorSelectionKind.VIDEO).map { it.id }.toSet()
+
+        assertTrue(EditorToolId.MEDIA in ids)
+        assertTrue(EditorToolId.AUDIO in ids)
+        assertTrue(EditorToolId.TEXT in ids)
+        assertTrue(EditorToolId.OVERLAY in ids)
+    }
+
+    @Test
+    fun videoSelectionPrioritizesContextualEditingTools() {
+        assertEquals(
+            listOf(
+                EditorToolId.EDIT,
+                EditorToolId.EFFECTS,
+                EditorToolId.COLOR,
+                EditorToolId.SPEED,
+                EditorToolId.ANIMATION,
+            ),
+            EditorToolCatalog.primaryToolsFor(EditorSelectionKind.VIDEO).take(5).map { it.id },
+        )
+    }
+
+    @Test
+    fun imageSelectionPrioritizesContextualEditingTools() {
+        assertEquals(
+            listOf(
+                EditorToolId.EDIT,
+                EditorToolId.EFFECTS,
+                EditorToolId.COLOR,
+                EditorToolId.ANIMATION,
+                EditorToolId.MASK,
+            ),
+            EditorToolCatalog.primaryToolsFor(EditorSelectionKind.IMAGE).take(5).map { it.id },
+        )
+    }
+
+    @Test
+    fun audioSelectionPrioritizesEditAudioAndSpeed() {
+        assertEquals(
+            listOf(EditorToolId.EDIT, EditorToolId.AUDIO, EditorToolId.SPEED),
+            EditorToolCatalog.primaryToolsFor(EditorSelectionKind.AUDIO).take(3).map { it.id },
+        )
+    }
+
+    @Test
+    fun videoSelectionExposesProfessionalClipTools() {
+        val ids = EditorToolCatalog.primaryToolsFor(EditorSelectionKind.VIDEO).map { it.id }.toSet()
+
+        assertTrue(EditorToolId.EDIT in ids)
+        assertTrue(EditorToolId.EFFECTS in ids)
+        assertTrue(EditorToolId.COLOR in ids)
+        assertTrue(EditorToolId.SPEED in ids)
+        assertTrue(EditorToolId.MASK in ids)
+        assertTrue(EditorToolId.CHROMA in ids)
+        assertTrue(EditorToolId.ANIMATION in ids)
+        assertTrue(EditorToolId.LAYERS in ids)
+    }
+
+    @Test
+    fun layerPanelIsLiveOnlyAfterRealVisibilityBackendExists() {
+        val layers = EditorToolCatalog.all.single { it.id == EditorToolId.LAYERS }
+
+        assertTrue(layers.enabled)
+        assertTrue(layers.state == EditorToolState.LIVE)
+    }
+
+    @Test
+    fun manualCaptionsAreLiveAndReachableFromEverySelection() {
+        val captions = EditorToolCatalog.all.single { it.id == EditorToolId.CAPTIONS }
+
+        assertTrue(captions.enabled)
+        assertEquals(EditorToolState.LIVE, captions.state)
+        EditorSelectionKind.entries.forEach { selection ->
+            assertTrue(
+                "captions must stay reachable for $selection",
+                EditorToolCatalog.primaryToolsFor(selection).any { it.id == EditorToolId.CAPTIONS },
+            )
+        }
+        assertEquals(EditorToolId.TEXT, EditorToolCatalog.actionTarget(EditorToolId.CAPTIONS))
+    }
+
+    @Test
+    fun audioSelectionDoesNotOfferVisualOnlyTools() {
+        val ids = EditorToolCatalog.primaryToolsFor(EditorSelectionKind.AUDIO).map { it.id }.toSet()
+
+        assertTrue(EditorToolId.AUDIO in ids)
+        assertFalse(EditorToolId.MASK in ids)
+        assertFalse(EditorToolId.CHROMA in ids)
+        assertFalse(EditorToolId.COLOR in ids)
+    }
+
+    @Test
+    fun generativeAiIsNotPartOfTheActiveCatalog() {
+        assertTrue(EditorToolCatalog.all.none { tool ->
+            hasStandaloneAiToken(tool.id.name) || hasStandaloneAiToken(tool.label)
+        })
+    }
+
+    @Test
+    fun plannedToolsAreNeverEnabled() {
+        assertTrue(EditorToolCatalog.all.filter { it.state == EditorToolState.PLANNED }.all { !it.enabled })
+    }
+
+    private fun hasStandaloneAiToken(value: String): Boolean =
+        value.split(Regex("[^\\p{L}\\p{N}]+"))
+            .filter { it.isNotBlank() }
+            .any { token -> token.equals("AI", ignoreCase = true) || token.equals("IA", ignoreCase = true) }
+}

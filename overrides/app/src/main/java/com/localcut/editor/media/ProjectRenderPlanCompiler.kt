@@ -44,7 +44,7 @@ object ProjectRenderPlanCompiler {
         val (width, height) = outputSize(project.width, project.height, mode, outputSettings)
         val assets = project.assets.associateBy { it.id }
         val visualLayers = visualTracks.flatMap { track ->
-            buildVisualLayers(track, durationUs, outputFps, assets, resolver)
+            buildVisualLayers(track, durationUs, outputFps, assets, resolver, mode)
         }
         RenderPlan(
             width = width,
@@ -55,7 +55,7 @@ object ProjectRenderPlanCompiler {
             durationUs = durationUs,
             visualLayers = visualLayers,
             audioLayers = audibleAudioTracks.map { track ->
-                buildSequence(track, durationUs, outputFps, assets, resolver)
+                buildSequence(track, durationUs, outputFps, assets, resolver, mode = mode)
             },
         )
     }
@@ -66,9 +66,10 @@ object ProjectRenderPlanCompiler {
         fps: Int,
         assets: Map<String, Asset>,
         resolver: RenderAssetResolver,
+        mode: RenderMode,
     ): List<RenderSequencePlan> {
         if (track.collisionPolicy == TrackCollisionPolicy.EXCLUSIVE || track.clips.size <= 1) {
-            return listOf(buildSequence(track, totalDurationUs, fps, assets, resolver))
+            return listOf(buildSequence(track, totalDurationUs, fps, assets, resolver, mode = mode))
         }
 
         val lanes = mutableListOf<MutableList<Clip>>()
@@ -94,6 +95,7 @@ object ProjectRenderPlanCompiler {
                 assets,
                 resolver,
                 laneIndex = laneIndex,
+                mode = mode,
             )
         }
     }
@@ -105,6 +107,7 @@ object ProjectRenderPlanCompiler {
         assets: Map<String, Asset>,
         resolver: RenderAssetResolver,
         laneIndex: Int = 0,
+        mode: RenderMode,
     ): RenderSequencePlan {
         val segments = mutableListOf<RenderSegment>()
         var cursorUs = 0L
@@ -112,9 +115,21 @@ object ProjectRenderPlanCompiler {
             if (clip.startUs > cursorUs) segments += RenderSegment.Gap(clip.startUs - cursorUs)
             val asset = assets[clip.assetId]
                 ?: throw RenderPlanException(RenderPlanErrorCode.INVALID_PROJECT, "missing asset ${clip.assetId}", clip.assetId)
-            val uri = resolver.resolve(asset).getOrElse { cause ->
-                throw RenderPlanException(RenderPlanErrorCode.ASSET_UNAVAILABLE, "asset unavailable: ${asset.id}", asset.id, cause)
+            val resolvedUri = resolver.resolve(asset)
+            if (resolvedUri.isFailure) {
+                if (mode == RenderMode.FAST_PREVIEW) {
+                    segments += RenderSegment.Gap(clip.durationUs)
+                    cursorUs = Math.addExact(clip.startUs, clip.durationUs)
+                    continue
+                }
+                throw RenderPlanException(
+                    RenderPlanErrorCode.ASSET_UNAVAILABLE,
+                    "asset unavailable: ${asset.id}",
+                    asset.id,
+                    resolvedUri.exceptionOrNull(),
+                )
             }
+            val uri = resolvedUri.getOrThrow()
             segments += RenderSegment.Media(
                 clipId = clip.id,
                 assetId = asset.id,
@@ -131,6 +146,10 @@ object ProjectRenderPlanCompiler {
                 imageFrameRate = if (asset.type == AssetType.IMAGE) fps else null,
                 fadeInUs = clip.fadeInUs,
                 fadeOutUs = clip.fadeOutUs,
+                compositing = clip.compositing,
+                effects = clip.effects,
+                timeMap = clip.timeMap,
+                audioProcessing = clip.audioProcessing,
             )
             cursorUs = Math.addExact(clip.startUs, clip.durationUs)
         }

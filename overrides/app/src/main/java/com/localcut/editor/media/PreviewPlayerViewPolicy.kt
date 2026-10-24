@@ -19,4 +19,7 @@ object PreviewPlayerViewPolicy {
         durationUs: Long,
         hasBoundView: Boolean,
     ): Boolean = loadSucceeded && durationUs > 0L && hasBoundView
+
+    fun shouldAssignPreviewPlayer(alreadyBoundToPreviewPlayer: Boolean): Boolean =
+        !alreadyBoundToPreviewPlayer
 }

@@ -31,9 +31,9 @@ class TimelineScrubPolicyTest {
     }
 
     @Test
-    fun longProjectDragPreservesTimelineScale() {
+    fun longProjectDragCanReachStartWithinPhoneWidth() {
         assertEquals(
-            41_190_476L,
+            0L,
             TimelineScrubPolicy.positionForDrag(
                 startUs = 45_000_000L,
                 deltaDp = -320f,
@@ -44,9 +44,9 @@ class TimelineScrubPolicyTest {
     }
 
     @Test
-    fun longProjectForwardDragPreservesTimelineScale() {
+    fun longProjectDragCanReachEndWithinPhoneWidth() {
         assertEquals(
-            23_809_523L,
+            70_900_000L,
             TimelineScrubPolicy.positionForDrag(
                 startUs = 20_000_000L,
                 deltaDp = 320f,

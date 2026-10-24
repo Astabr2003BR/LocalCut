@@ -73,6 +73,7 @@ import com.localcut.editor.ui.editor.TimelineEditBounds
 import com.localcut.editor.ui.editor.TimelineScrubPolicy
 import com.localcut.editor.ui.editor.TimelineSnapUiPolicy
 import com.localcut.editor.ui.editor.TimelineTrackGeometry
+import com.localcut.editor.ui.editor.TimelineViewportPolicy
 import com.localcut.editor.ui.editor.TimelineZoomUiPolicy
 import java.util.concurrent.Executors
 import kotlinx.coroutines.launch
@@ -105,6 +106,7 @@ fun TimelinePane(
 ) {
     val horizontalScroll = rememberScrollState()
     val verticalScroll = rememberScrollState()
+    val density = LocalDensity.current
     var timelineZoom by remember(project.id) {
         mutableFloatStateOf(TimelineZoomUiPolicy.clamp(dpPerSecond))
     }
@@ -240,6 +242,27 @@ fun TimelinePane(
                     }
                 }
             }
+        }
+    }
+
+    LaunchedEffect(playheadUs, timelineZoom, horizontalScroll.maxValue) {
+        val maxScrollPx = horizontalScroll.maxValue
+        if (maxScrollPx <= 0 || maxScrollPx == Int.MAX_VALUE) return@LaunchedEffect
+
+        val contentWidthPx = with(density) { timelineWidth.roundToPx() }
+        val viewportWidthPx = (contentWidthPx - maxScrollPx).coerceAtLeast(1)
+        val playheadPx = with(density) {
+            ((playheadUs.coerceIn(0L, durationUs) / US_PER_SECOND * timelineZoom).toFloat().dp).toPx()
+        }
+        val targetScrollPx = TimelineViewportPolicy.targetScrollPx(
+            playheadPx = playheadPx,
+            currentScrollPx = horizontalScroll.value,
+            viewportWidthPx = viewportWidthPx,
+            maxScrollPx = maxScrollPx,
+            edgePaddingPx = with(density) { 36.dp.roundToPx() },
+        )
+        if (targetScrollPx != horizontalScroll.value) {
+            horizontalScroll.scrollTo(targetScrollPx)
         }
     }
 
@@ -670,8 +693,8 @@ private fun DraggablePlayhead(
 
     Box(
         modifier = Modifier
-            .offset(x = playheadX - 14.dp)
-            .width(28.dp)
+            .offset(x = playheadX - 18.dp)
+            .width(36.dp)
             .height(58.dp)
             .zIndex(20f)
             .draggable(
@@ -706,8 +729,8 @@ private fun DraggablePlayhead(
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .width(12.dp)
-                .height(6.dp)
+                .width(14.dp)
+                .height(8.dp)
                 .background(AccentColor, RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp)),
         )
     }

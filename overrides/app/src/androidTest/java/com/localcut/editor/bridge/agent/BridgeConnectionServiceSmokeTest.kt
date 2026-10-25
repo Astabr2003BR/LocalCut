@@ -16,6 +16,7 @@ import kotlinx.coroutines.cancel
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -89,13 +90,14 @@ class BridgeConnectionServiceSmokeTest {
     }
 
     @Test
-    fun discardedExpiredCredentialCannotLeaveGhostPairedStateWhenFreshPairingStartFails() {
+    fun expiredCredentialIsPreservedWhenRenewalTransportIsTemporarilyUnavailable() {
         val credentials = InMemoryBridgeCredentialStore().apply {
             save(
                 BridgeStoredCredential(
                     accessToken = "expired-access",
                     refreshToken = "expired-refresh",
                     expiresAtEpochMs = 1L,
+                    recoveryToken = "recovery-token",
                 ),
             )
         }
@@ -105,13 +107,12 @@ class BridgeConnectionServiceSmokeTest {
             relayBaseUrl = "https://127.0.0.1:1",
         )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        val identity = testIdentity()
         val control = LocalCutBridgeControl(
             context = context,
             scope = scope,
             settingsStore = settings,
             credentialStore = credentials,
-            identityStore = identity,
+            identityStore = testIdentity(),
             nowEpochMs = { 10_000L },
         )
 
@@ -120,24 +121,26 @@ class BridgeConnectionServiceSmokeTest {
             control.connect()
 
             waitUntil(timeoutMs = 10_000L) {
-                credentials.load() == null && control.state.value.phase == BridgeUiPhase.ERROR
+                control.state.value.phase == BridgeUiPhase.ERROR
             }
 
-            assertFalse("discarded credential must clear paired UI state", control.state.value.paired)
-            assertTrue("always-connected preference must survive credential discard", control.state.value.alwaysConnected)
+            assertNotNull("transient renewal failure must preserve local credential", credentials.load())
+            assertTrue("transient renewal failure must preserve paired UI state", control.state.value.paired)
+            assertTrue("always-connected preference must survive transient renewal failure", control.state.value.alwaysConnected)
         } finally {
             scope.cancel()
         }
     }
 
     @Test
-    fun unauthorizedSocketForcesCredentialRecoveryInsteadOfKeepingRejectedTokenPaired() {
+    fun unauthorizedSocketPreservesCredentialWhileRefreshTransportIsUnavailable() {
         val credentials = InMemoryBridgeCredentialStore().apply {
             save(
                 BridgeStoredCredential(
                     accessToken = "server-rejected-access",
                     refreshToken = "refresh-token",
                     expiresAtEpochMs = Long.MAX_VALUE,
+                    recoveryToken = "recovery-token",
                 ),
             )
         }
@@ -161,10 +164,11 @@ class BridgeConnectionServiceSmokeTest {
             control.connectionObserver.onDisconnected(401, "Unauthorized")
 
             waitUntil(timeoutMs = 10_000L) {
-                credentials.load() == null && control.state.value.phase == BridgeUiPhase.ERROR
+                control.state.value.phase == BridgeUiPhase.ERROR
             }
 
-            assertFalse("401 must invalidate the rejected paired state when refresh cannot recover", control.state.value.paired)
+            assertNotNull("temporary refresh transport failure must not erase paired credential", credentials.load())
+            assertTrue("temporary refresh transport failure must keep paired UI state", control.state.value.paired)
             assertTrue("always-connected preference must survive auth recovery", control.state.value.alwaysConnected)
         } finally {
             scope.cancel()

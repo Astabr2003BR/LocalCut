@@ -7,9 +7,12 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.os.Bundle
 import android.widget.Toast
+import com.localcut.editor.bridge.agent.BridgeColdStartRecovery
 import com.localcut.editor.diagnostics.ProcessExitDiagnostics
 
 class LocalCutApplication : Application(), Application.ActivityLifecycleCallbacks {
+    private var coldStartRecoveryAttempted = false
+
     override fun onCreate() {
         super.onCreate()
         ProcessExitDiagnostics.install(this)
@@ -22,6 +25,11 @@ class LocalCutApplication : Application(), Application.ActivityLifecycleCallback
 
     override fun onActivityStarted(activity: Activity) {
         ProcessExitDiagnostics.mark(activity, "activity:start:${activity.javaClass.simpleName}")
+        if (!coldStartRecoveryAttempted) {
+            coldStartRecoveryAttempted = true
+            val reconnected = BridgeColdStartRecovery(this).reconnectIfNeeded()
+            ProcessExitDiagnostics.mark(this, "bridge:cold-start-reconnect=$reconnected")
+        }
     }
 
     override fun onActivityResumed(activity: Activity) {

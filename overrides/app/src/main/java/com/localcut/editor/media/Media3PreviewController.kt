@@ -30,11 +30,9 @@ class Media3PreviewController(
     compositionCompiler: ProjectCompositionCompiler,
     runtimeProvider: PreviewRuntimeProvider = AndroidPreviewRuntimeProvider(context),
 ) : PreviewController {
-    private val player = CompositionPlayer.Builder(context)
-        .setVideoGraphFactory(MultipleInputVideoGraph.Factory())
-        .build()
-    private val engine = Media3PreviewEngine(player, compositionCompiler, runtimeProvider)
+    private val engine = Media3PreviewEngine(context, compositionCompiler, runtimeProvider)
     private val delegate = DefaultPreviewController(engine, AndroidPreviewTicker())
+    private val backgroundSession = PreviewBackgroundSession()
     private var lastProject: Project? = null
     @Volatile
     private var boundViewRef: WeakReference<PlayerView>? = null
@@ -81,6 +79,37 @@ class Media3PreviewController(
     override fun setLoopRange(startUs: Long, endUs: Long?) = delegate.setLoopRange(startUs, endUs)
     override fun release() = delegate.release()
 
+    /**
+     * Releases the Activity-owned Media3 player while the UI is backgrounded. The project model,
+     * history and Bridge runtime remain process-resident; only preview codecs/surfaces are dropped.
+     */
+    fun suspendForBackground(changingConfigurations: Boolean) {
+        if (!PreviewBackgroundMemoryPolicy.shouldSuspend(state.value.durationUs, changingConfigurations)) return
+        if (!backgroundSession.beginSuspend(state.value.positionUs)) return
+
+        delegate.suspendForBackground()
+        boundViewRef?.get()?.let { view ->
+            bridgePreviewFramePort.detach(view)
+            view.player = null
+        }
+        engine.releaseForBackground()
+    }
+
+    /** Recreates the preview player after background suspension and restores the previous position. */
+    fun resumeAfterBackground() {
+        val resumePositionUs = backgroundSession.takeResumePositionUs() ?: return
+        val project = lastProject
+        if (project == null) {
+            delegate.resumeAfterBackground()
+            return
+        }
+
+        val loaded = load(project)
+        if (loaded.isSuccess) {
+            seekToUs(resumePositionUs.coerceAtMost(state.value.durationUs))
+        }
+    }
+
     fun bindTo(view: PlayerView) {
         boundViewRef = WeakReference(view)
         assignPlayerIfNeeded(view)
@@ -90,6 +119,7 @@ class Media3PreviewController(
 
     fun refreshBoundView(view: PlayerView) {
         val positionUs = state.value.positionUs
+        val player = engine.player
         boundViewRef = WeakReference(view)
         assignPlayerIfNeeded(view)
         view.useController = false
@@ -128,10 +158,11 @@ class Media3PreviewController(
             boundViewRef = null
         }
         bridgePreviewFramePort.detach(view)
-        if (view.player === player) view.player = null
+        if (view.player === engine.currentPlayerOrNull()) view.player = null
     }
 
     private fun assignPlayerIfNeeded(view: PlayerView) {
+        val player = engine.player
         if (
             PreviewPlayerViewPolicy.shouldAssignPreviewPlayer(
                 alreadyBoundToPreviewPlayer = view.player === player,
@@ -163,21 +194,30 @@ class Media3PreviewController(
 @UnstableApi
 @OptIn(ExperimentalApi::class)
 private class Media3PreviewEngine(
-    private val player: CompositionPlayer,
+    context: Context,
     private val compiler: ProjectCompositionCompiler,
     private val runtimeProvider: PreviewRuntimeProvider,
 ) : PreviewEngine {
+    private val appContext = context.applicationContext
+    private var activePlayer: CompositionPlayer? = null
     private var errorCallback: (String) -> Unit = {}
 
+    val player: CompositionPlayer
+        get() = ensurePlayer()
+
     init {
-        player.addListener(object : Player.Listener {
-            override fun onPlayerError(error: PlaybackException) {
-                errorCallback(error.message ?: "Media3 playback error")
-            }
-        })
+        ensurePlayer()
+    }
+
+    fun currentPlayerOrNull(): CompositionPlayer? = activePlayer
+
+    fun releaseForBackground() {
+        activePlayer?.release()
+        activePlayer = null
     }
 
     override fun load(project: Project): Result<PreviewLoadResult> {
+        val player = ensurePlayer()
         val durationUs = TimelineMath.durationUs(project)
         if (durationUs == 0L) {
             player.pause()
@@ -203,6 +243,7 @@ private class Media3PreviewEngine(
         require(file.isFile && file.length() > 0L) { "Rendered preview file is missing or empty" }
         require(durationUs > 0L) { "Rendered preview duration must be > 0" }
         require(fps > 0) { "Rendered preview fps must be > 0" }
+        val player = ensurePlayer()
         val mediaItem = MediaItem.Builder().setUri(file.toURI().toString()).build()
         val edited = EditedMediaItem.Builder(mediaItem).setDurationUs(durationUs).build()
         val sequence = EditedMediaItemSequence.withAudioAndVideoFrom(listOf(edited))
@@ -211,12 +252,31 @@ private class Media3PreviewEngine(
         PreviewLoadResult(durationUs, fps)
     }
 
-    override fun play() = player.play()
-    override fun pause() = player.pause()
-    override fun seekToUs(positionUs: Long) = player.seekTo(positionUs.coerceAtLeast(0L) / 1_000L)
-    override fun currentPositionUs(): Long = player.currentPosition * 1_000L
-    override fun setErrorCallback(callback: (String) -> Unit) { errorCallback = callback }
-    override fun release() = player.release()
+    override fun play() = ensurePlayer().play()
+    override fun pause() {
+        activePlayer?.pause()
+    }
+    override fun seekToUs(positionUs: Long) = ensurePlayer().seekTo(positionUs.coerceAtLeast(0L) / 1_000L)
+    override fun currentPositionUs(): Long = (activePlayer?.currentPosition ?: 0L) * 1_000L
+    override fun setErrorCallback(callback: (String) -> Unit) {
+        errorCallback = callback
+    }
+    override fun release() = releaseForBackground()
+
+    private fun ensurePlayer(): CompositionPlayer {
+        activePlayer?.let { return it }
+        return CompositionPlayer.Builder(appContext)
+            .setVideoGraphFactory(MultipleInputVideoGraph.Factory())
+            .build()
+            .also { player ->
+                player.addListener(object : Player.Listener {
+                    override fun onPlayerError(error: PlaybackException) {
+                        errorCallback(error.message ?: "Media3 playback error")
+                    }
+                })
+                activePlayer = player
+            }
+    }
 }
 
 private class AndroidPreviewTicker(

@@ -32,6 +32,7 @@ class LocalCutBridgeControl(
     private val appContext = context.applicationContext
     private val pairingRunning = AtomicBoolean(false)
     private val oauthApprovalRunning = AtomicBoolean(false)
+    private val remoteApprovalRunning = AtomicBoolean(false)
     private val forcedRefreshPending = AtomicBoolean(false)
     private val renewalRetryScheduled = AtomicBoolean(false)
     private val endpointPreference = BridgeEndpointPreference(settingsStore, credentialStore)
@@ -223,6 +224,57 @@ class LocalCutBridgeControl(
                 onComplete(result)
             } finally {
                 oauthApprovalRunning.set(false)
+            }
+        }
+    }
+
+    fun approveRemoteControlRequest(requestId: String, onComplete: (Result<Unit>) -> Unit) {
+        if (!requestId.matches(OAUTH_REQUEST_ID)) {
+            onComplete(Result.failure(IllegalArgumentException("REMOTE_APPROVAL_REQUEST_INVALID")))
+            return
+        }
+        val endpoint = endpointPreference.current().getOrElse { error ->
+            onComplete(Result.failure(error))
+            return
+        }
+        if (!remoteApprovalRunning.compareAndSet(false, true)) {
+            onComplete(Result.failure(IllegalStateException("REMOTE_APPROVAL_IN_PROGRESS")))
+            return
+        }
+
+        scope.launch {
+            try {
+                val result = runCatching {
+                    val client = OkHttpBridgePairingClient(endpoint.httpsBaseUrl)
+                    var credential = BridgeOAuthCredentialBootstrap(
+                        client = client,
+                        identityStore = identityStore,
+                        credentialStore = credentialStore,
+                        pairingCodeProvider = {
+                            mutableState.value.takeIf { it.phase == BridgeUiPhase.PAIRING }?.pairingCode
+                        },
+                        startPairing = { connect() },
+                        nowEpochMs = nowEpochMs,
+                    ).ensureCredential()
+
+                    if (credential.expiresAtEpochMs <= nowEpochMs()) {
+                        credential = renewForOAuth(client, credential)
+                    }
+
+                    var approval = withContext(Dispatchers.IO) {
+                        client.approveRemoteControl(requestId, credential.accessToken)
+                    }
+                    if (approval.isFailure && isOAuthSessionAuthFailure(approval.exceptionOrNull())) {
+                        credential = renewForOAuth(client, credential)
+                        approval = withContext(Dispatchers.IO) {
+                            client.approveRemoteControl(requestId, credential.accessToken)
+                        }
+                    }
+                    approval.getOrThrow()
+                }
+                onComplete(result)
+            } finally {
+                remoteApprovalRunning.set(false)
             }
         }
     }

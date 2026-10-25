@@ -6,12 +6,10 @@ import org.junit.Test
 
 class PreviewBlackFrameRecoverySequenceTest {
     @Test
-    fun externalPickerReturnKeepsPlayerAndRebindsVideoOutput() {
+    fun externalPickerReturnKeepsPlayerAndRebindsVideoOutputOnlyWhenSurfaceIsReady() {
         assertTrue(PreviewPlayerViewPolicy.ENABLE_COMPOSE_SURFACE_SYNC_WORKAROUND)
         assertTrue(PreviewPlayerViewPolicy.KEEP_CONTENT_ON_PLAYER_RESET)
 
-        // Keep the CompositionPlayer instance stable, but explicitly re-register the
-        // current PlayerView video output after an external activity may recreate its surface.
         assertFalse(
             PreviewPlayerViewPolicy.shouldAssignPreviewPlayer(
                 alreadyBoundToPreviewPlayer = true,
@@ -21,6 +19,14 @@ class PreviewBlackFrameRecoverySequenceTest {
             PreviewSurfaceRecoveryPolicy.shouldRebindVideoOutput(
                 durationUs = 7_000_000L,
                 hasBoundView = true,
+                surfaceReady = true,
+            ),
+        )
+        assertFalse(
+            PreviewSurfaceRecoveryPolicy.shouldRebindVideoOutput(
+                durationUs = 7_000_000L,
+                hasBoundView = true,
+                surfaceReady = false,
             ),
         )
 
@@ -29,7 +35,7 @@ class PreviewBlackFrameRecoverySequenceTest {
     }
 
     @Test
-    fun contentReloadAfterExternalReturnRebindsTheBoundSurface() {
+    fun contentReloadAfterExternalReturnRebindsTheBoundSurfaceWhenReady() {
         assertTrue(
             PreviewPlayerViewPolicy.shouldRefreshAfterContentLoad(
                 loadSucceeded = true,
@@ -41,12 +47,13 @@ class PreviewBlackFrameRecoverySequenceTest {
             PreviewSurfaceRecoveryPolicy.shouldRebindVideoOutput(
                 durationUs = 7_000_000L,
                 hasBoundView = true,
+                surfaceReady = true,
             ),
         )
     }
 
     @Test
-    fun finalPreviewReloadUsesTheSameVideoOutputRecoveryContract() {
+    fun finalPreviewReloadUsesTheSameReadySurfaceRecoveryContract() {
         assertTrue(
             PreviewPlayerViewPolicy.shouldRefreshAfterContentLoad(
                 loadSucceeded = true,
@@ -58,6 +65,7 @@ class PreviewBlackFrameRecoverySequenceTest {
             PreviewSurfaceRecoveryPolicy.shouldRebindVideoOutput(
                 durationUs = 12_000_000L,
                 hasBoundView = true,
+                surfaceReady = true,
             ),
         )
         assertFalse(
@@ -68,17 +76,26 @@ class PreviewBlackFrameRecoverySequenceTest {
     }
 
     @Test
-    fun emptyPreviewOrMissingViewDoesNotAttemptSurfaceRecovery() {
+    fun emptyPreviewMissingViewOrUnreadySurfaceDoesNotAttemptSurfaceRecovery() {
         assertFalse(
             PreviewSurfaceRecoveryPolicy.shouldRebindVideoOutput(
                 durationUs = 0L,
                 hasBoundView = true,
+                surfaceReady = true,
             ),
         )
         assertFalse(
             PreviewSurfaceRecoveryPolicy.shouldRebindVideoOutput(
                 durationUs = 7_000_000L,
                 hasBoundView = false,
+                surfaceReady = true,
+            ),
+        )
+        assertFalse(
+            PreviewSurfaceRecoveryPolicy.shouldRebindVideoOutput(
+                durationUs = 7_000_000L,
+                hasBoundView = true,
+                surfaceReady = false,
             ),
         )
     }

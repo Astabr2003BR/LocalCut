@@ -4,6 +4,8 @@ import { pathToFileURL } from "node:url";
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { WebSocketServer, type WebSocket } from "ws";
+import { BrowserControlSessionService } from "./browserControl.ts";
+import { createBrowserControlHttpHandler } from "./browserControlHttp.ts";
 import { CommandRouter, DeviceRegistry } from "./commandRouter.ts";
 import { WebSocketDeviceChannel, type DeviceSocket } from "./deviceChannel.ts";
 import { createLocalCutMcpServer } from "./mcp.ts";
@@ -39,6 +41,7 @@ export type ControllerServerOptions = {
   pairing: PairingService;
   sessions: DeviceSessionService;
   nowEpochMs?: () => number;
+  remoteRandomToken?: () => string;
   registry?: DeviceRegistry;
   router?: CommandRouter;
 };
@@ -55,19 +58,36 @@ export function createControllerServer(options: ControllerServerOptions): Contro
   if (!options.controllerId) throw new Error("CONTROLLER_ID_REQUIRED");
 
   const nowEpochMs = options.nowEpochMs ?? Date.now;
+  const publicBaseUrl = options.publicBaseUrl ?? DEFAULT_PUBLIC_BASE_URL;
   const registry = options.registry ?? new DeviceRegistry();
   const router = options.router ?? new CommandRouter(options.store, registry);
   const mobileClaimNonces = new Map<string, number>();
   const recoveryNonces = new Map<string, number>();
   const recoveryTokens = new DeviceRecoveryTokenService(options.controllerApiToken);
+  const isDeviceAuthorized = (deviceId: string) => {
+    const device = options.store.getDevice(deviceId);
+    return !!device && device.controllerId === options.controllerId && device.revokedAtEpochMs == null;
+  };
   const oauth = new LocalCutOAuthService({
-    issuerBaseUrl: options.publicBaseUrl ?? DEFAULT_PUBLIC_BASE_URL,
+    issuerBaseUrl: publicBaseUrl,
     signingSecret: options.controllerApiToken,
     nowEpochMs,
-    isDeviceAuthorized(deviceId) {
-      const device = options.store.getDevice(deviceId);
-      return !!device && device.controllerId === options.controllerId && device.revokedAtEpochMs == null;
-    },
+    isDeviceAuthorized,
+  });
+  const browserSessions = new BrowserControlSessionService({
+    signingSecret: `${options.controllerApiToken}:browser-control`,
+    nowEpochMs,
+    isDeviceAuthorized,
+    ...(options.remoteRandomToken ? { randomToken: options.remoteRandomToken } : {}),
+  });
+  const browserControlHandler = createBrowserControlHttpHandler({
+    sessions: options.sessions,
+    browserSessions,
+    router,
+    controllerId: options.controllerId,
+    publicBaseUrl,
+    nowEpochMs,
+    ...(options.remoteRandomToken ? { randomToken: options.remoteRandomToken } : {}),
   });
   const wss = new WebSocketServer({ noServer: true, clientTracking: false });
   const mcpHandler = createMcpHandler(() => createLocalCutMcpServer(
@@ -95,6 +115,8 @@ export function createControllerServer(options: ControllerServerOptions): Contro
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://localcut.invalid");
+      if (await browserControlHandler(req, res, url)) return;
+
       if (req.method === "GET" && url.pathname === "/health") {
         return sendJson(res, 200, { ok: true, service: "localcut-bridge-controller" });
       }

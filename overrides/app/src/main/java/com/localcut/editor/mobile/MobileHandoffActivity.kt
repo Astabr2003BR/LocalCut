@@ -27,6 +27,10 @@ class MobileHandoffActivity : Activity() {
             handleOAuthApproval(dataString)
             return
         }
+        if (dataString?.startsWith(REMOTE_URI_PREFIX) == true) {
+            handleRemoteApproval(dataString)
+            return
+        }
 
         val parsed = MobileHandoffParser.parse(dataString)
         if (parsed.isFailure) {
@@ -82,6 +86,41 @@ class MobileHandoffActivity : Activity() {
                     Toast.makeText(
                         this,
                         error.message ?: "Falha ao autorizar ChatGPT no LocalCut",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    openEditorAndFinish()
+                }
+            }
+        }
+    }
+
+    private fun handleRemoteApproval(rawUri: String) {
+        val request = BridgeRemoteApprovalRequestParser.parse(rawUri).getOrElse { error ->
+            Toast.makeText(
+                this,
+                error.message ?: "Solicitação de controle remoto inválida",
+                Toast.LENGTH_LONG,
+            ).show()
+            openEditorAndFinish()
+            return
+        }
+
+        val runtime = LocalCutProcessRuntime.get(this)
+        runtime.bridgeControl.approveRemoteControlRequest(request.requestId) { approvalResult ->
+            runOnUiThread {
+                approvalResult.onSuccess {
+                    Toast.makeText(
+                        this,
+                        "Controle remoto autorizado",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    if (!openChatGptAndFinish()) {
+                        openEditorAndFinish()
+                    }
+                }.onFailure { error ->
+                    Toast.makeText(
+                        this,
+                        error.message ?: "Falha ao autorizar controle remoto",
                         Toast.LENGTH_LONG,
                     ).show()
                     openEditorAndFinish()
@@ -208,5 +247,6 @@ class MobileHandoffActivity : Activity() {
     companion object {
         private const val CHATGPT_PACKAGE = "com.openai.chatgpt"
         private const val OAUTH_URI_PREFIX = "localcut://oauth/"
+        private const val REMOTE_URI_PREFIX = "localcut://remote/"
     }
 }

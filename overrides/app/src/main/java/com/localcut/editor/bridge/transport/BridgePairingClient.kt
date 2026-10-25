@@ -38,6 +38,8 @@ interface BridgePairingClient {
         Result.failure(UnsupportedOperationException("Bridge session recovery is not implemented"))
     fun mobileClaim(proof: BridgeMobilePairingProof): Result<BridgeMobilePairingClaim> =
         Result.failure(UnsupportedOperationException("Bridge mobile pairing claim is not implemented"))
+    fun approveOAuth(requestId: String, accessToken: String): Result<String> =
+        Result.failure(UnsupportedOperationException("Bridge OAuth approval is not implemented"))
     fun unpair(accessToken: String): Result<Unit> =
         Result.failure(UnsupportedOperationException("Bridge self-unpair is not implemented"))
 }

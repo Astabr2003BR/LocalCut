@@ -11,11 +11,18 @@ object Media3CompositionSupportPolicy {
                 "multitrack visual full-preview remains disabled until the rendered-preview path is selected",
             )
         }
-        val mediaSegments = (plan.visualLayers + plan.audioLayers)
+
+        val visualMediaSegments = plan.visualLayers
             .asSequence()
             .flatMap { it.segments.asSequence() }
             .filterIsInstance<RenderSegment.Media>()
             .toList()
+        val audioMediaSegments = plan.audioLayers
+            .asSequence()
+            .flatMap { it.segments.asSequence() }
+            .filterIsInstance<RenderSegment.Media>()
+            .toList()
+        val mediaSegments = visualMediaSegments + audioMediaSegments
 
         val unsupportedCompositing = mediaSegments.firstOrNull { segment ->
             segment.assetType != AssetType.AUDIO && !Media3CompositingEffectFactory.canRender(segment.compositing)
@@ -39,18 +46,30 @@ object Media3CompositionSupportPolicy {
             )
         }
 
-        val unsupportedTimeMap = mediaSegments.firstOrNull { segment ->
+        val unsupportedVisualTimeMap = visualMediaSegments.firstOrNull { segment ->
             val map = segment.timeMap
             when {
                 map == TimeMap() -> false
                 segment.assetType == AssetType.IMAGE -> true
+                map.freezeSegments.isNotEmpty() -> !Media3FreezeFramePlanner.canRender(
+                    assetType = segment.assetType,
+                    timeMap = map,
+                    fadeInUs = segment.fadeInUs,
+                    fadeOutUs = segment.fadeOutUs,
+                    sourceRangeUs = segment.sourceOutUs - segment.sourceInUs,
+                    presentationDurationUs = segment.durationUs,
+                )
                 else -> !Media3TimeMapSupport.canRender(map)
             }
         }
+        val unsupportedAudioTimeMap = audioMediaSegments.firstOrNull { segment ->
+            segment.timeMap != TimeMap() && !Media3TimeMapSupport.canRender(segment.timeMap)
+        }
+        val unsupportedTimeMap = unsupportedVisualTimeMap ?: unsupportedAudioTimeMap
         if (unsupportedTimeMap != null) {
             throw RenderPlanException(
                 RenderPlanErrorCode.UNSUPPORTED_TIME_MAP,
-                "clip time map still requires reverse/freeze support that is not enabled yet: ${unsupportedTimeMap.clipId}",
+                "clip time map requires a renderer combination that is not enabled yet: ${unsupportedTimeMap.clipId}",
             )
         }
     }

@@ -13,6 +13,7 @@ import com.localcut.editor.bridge.transport.BridgeSocketClient
 import com.localcut.editor.bridge.transport.BridgeSocketListener
 import com.localcut.editor.bridge.transport.OkHttpBridgeSocketClient
 import com.localcut.editor.bridge.transport.StoredBridgeSessionProvider
+import com.localcut.editor.diagnostics.ProcessExitDiagnostics
 
 object BridgeServiceRuntime {
     @Volatile
@@ -24,7 +25,9 @@ object BridgeServiceRuntime {
         val endpoint = BridgeEndpointConfig.resolve(settingsStore.relayBaseUrl).getOrNull()
             ?: return unavailableCoordinator(settingsStore)
 
+        ProcessExitDiagnostics.mark(appContext, "bridge-runtime:before-editor-runtime")
         val editorRuntime = LocalCutProcessRuntime.get(appContext)
+        ProcessExitDiagnostics.mark(appContext, "bridge-runtime:editor-runtime-ready")
         val socketClient = OkHttpBridgeSocketClient()
         val sessionProvider = StoredBridgeSessionProvider(
             relayUrl = endpoint.wssUrl,

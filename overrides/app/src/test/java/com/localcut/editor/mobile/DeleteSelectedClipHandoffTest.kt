@@ -34,4 +34,22 @@ class DeleteSelectedClipHandoffTest {
 
         assertEquals("{\"clipId\":\"clip-42\",\"positionUs\":2300000}", payload)
     }
+
+    @Test
+    fun parsesAndResolvesTrimSelectedClipEndAt2300msWithoutClipId() {
+        val command = MobileHandoffParser.parse(
+            "https://localcut-bridge-v1.onrender.com/open?action=trim_selected_clip&newEndUs=2300000&returnTo=chatgpt",
+        ).getOrThrow()
+
+        assertEquals(BridgeCapability.TRIM_CLIP, command.capability)
+        assertEquals(MobileHandoffReturnTarget.CHATGPT, command.returnTarget)
+        assertTrue(command.resolveSelectedClip)
+
+        val payload = SelectedClipDeleteResolver.resolvePayload(
+            command = command,
+            selectedClipId = "clip-42",
+        ).getOrThrow()
+
+        assertEquals("{\"clipId\":\"clip-42\",\"newEndUs\":2300000}", payload)
+    }
 }

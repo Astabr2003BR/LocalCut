@@ -3,6 +3,7 @@ package com.localcut.editor.mobile
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.annotation.OptIn
@@ -10,6 +11,7 @@ import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
 import com.localcut.editor.LocalCutProcessRuntime
 import com.localcut.editor.MainActivity
+import com.localcut.editor.bridge.agent.SharedPreferencesBridgeSettingsStore
 import com.localcut.editor.bridge.protocol.BridgeCommandEnvelope
 import java.util.UUID
 import kotlinx.coroutines.launch
@@ -20,7 +22,13 @@ class MobileHandoffActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val parsed = MobileHandoffParser.parse(intent?.dataString)
+        val dataString = intent?.dataString
+        if (dataString?.startsWith(OAUTH_URI_PREFIX) == true) {
+            handleOAuthApproval(dataString)
+            return
+        }
+
+        val parsed = MobileHandoffParser.parse(dataString)
         if (parsed.isFailure) {
             Toast.makeText(
                 this,
@@ -39,6 +47,63 @@ class MobileHandoffActivity : Activity() {
             .setPositiveButton("Executar") { _, _ -> execute(command) }
             .setOnCancelListener { returnAfterHandoff(command.returnTarget) }
             .show()
+    }
+
+    private fun handleOAuthApproval(rawUri: String) {
+        val request = BridgeOAuthApprovalRequestParser.parse(rawUri).getOrElse { error ->
+            Toast.makeText(
+                this,
+                error.message ?: "Solicitação OAuth LocalCut inválida",
+                Toast.LENGTH_LONG,
+            ).show()
+            openEditorAndFinish()
+            return
+        }
+
+        val runtime = LocalCutProcessRuntime.get(this)
+        val relayBaseUrl = SharedPreferencesBridgeSettingsStore(this).relayBaseUrl
+        runtime.bridgeControl.approveOAuthRequest(request.requestId) { approvalResult ->
+            val validated = approvalResult.mapCatching { rawCompletionUrl ->
+                BridgeOAuthApprovalPolicy.validateCompletionUrl(
+                    relayBaseUrl = relayBaseUrl,
+                    requestId = request.requestId,
+                    rawCompletionUrl = rawCompletionUrl,
+                ).getOrThrow()
+            }
+            runOnUiThread {
+                validated.onSuccess { completionUrl ->
+                    Toast.makeText(
+                        this,
+                        "ChatGPT autorizado no LocalCut; concluindo conexão…",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    openOAuthCompletionAndFinish(completionUrl)
+                }.onFailure { error ->
+                    Toast.makeText(
+                        this,
+                        error.message ?: "Falha ao autorizar ChatGPT no LocalCut",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    openEditorAndFinish()
+                }
+            }
+        }
+    }
+
+    private fun openOAuthCompletionAndFinish(completionUrl: String) {
+        val opened = runCatching {
+            startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(completionUrl))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            true
+        }.getOrDefault(false)
+        if (!opened) {
+            Toast.makeText(this, "Não foi possível concluir a autorização no navegador", Toast.LENGTH_LONG).show()
+            openEditorAndFinish()
+            return
+        }
+        finish()
     }
 
     private fun execute(command: MobileHandoffCommand) {
@@ -142,5 +207,6 @@ class MobileHandoffActivity : Activity() {
 
     companion object {
         private const val CHATGPT_PACKAGE = "com.openai.chatgpt"
+        private const val OAUTH_URI_PREFIX = "localcut://oauth/"
     }
 }

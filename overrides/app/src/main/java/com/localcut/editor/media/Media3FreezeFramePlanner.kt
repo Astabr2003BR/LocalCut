@@ -39,11 +39,13 @@ internal object Media3FreezeFramePlanner {
                 }.getOrNull() ?: return false
                 if (expectedDurationUs != presentationDurationUs) return false
                 if (timeMap.freezeSegments.any { freeze ->
-                        freeze.startOffsetUs > presentationDurationUs - freeze.durationUs
+                        freeze.durationUs > presentationDurationUs ||
+                            freeze.startOffsetUs > presentationDurationUs - freeze.durationUs
                     }
                 ) {
                     return false
                 }
+                if (!movingRangesAdvance(timeMap, sourceRangeUs, presentationDurationUs)) return false
             }
         }
         return true
@@ -51,7 +53,7 @@ internal object Media3FreezeFramePlanner {
 
     fun plan(item: Media3BlueprintItem.Media, fps: Int): List<Media3FreezePiece> {
         require(fps > 0) { "fps must be positive" }
-        val sourceRangeUs = item.sourceOutUs - item.sourceInUs
+        val sourceRangeUs = Math.subtractExact(item.sourceOutUs, item.sourceInUs)
         require(sourceRangeUs > 0L) { "freeze source range must be positive" }
 
         if (item.timeMap.freezeSegments.isEmpty()) {
@@ -112,10 +114,36 @@ internal object Media3FreezeFramePlanner {
         }
 
         require(pieces.isNotEmpty()) { "freeze planner produced no media pieces" }
-        require(pieces.sumOf { it.presentationDurationUs } == item.presentationDurationUs) {
+        val expandedDurationUs = pieces.fold(0L) { totalUs, piece ->
+            Math.addExact(totalUs, piece.presentationDurationUs)
+        }
+        require(expandedDurationUs == item.presentationDurationUs) {
             "freeze planner duration mismatch"
         }
         return pieces
+    }
+
+    private fun movingRangesAdvance(
+        timeMap: TimeMap,
+        sourceRangeUs: Long,
+        presentationDurationUs: Long,
+    ): Boolean {
+        var cursorUs = 0L
+        timeMap.freezeSegments.sortedBy { it.startOffsetUs }.forEach { freeze ->
+            if (freeze.startOffsetUs > cursorUs) {
+                val sourceStartUs = TimeMapEvaluator.forwardSourceOffsetAt(timeMap, cursorUs).coerceAtMost(sourceRangeUs)
+                val sourceEndUs = TimeMapEvaluator.forwardSourceOffsetAt(timeMap, freeze.startOffsetUs).coerceAtMost(sourceRangeUs)
+                if (sourceEndUs <= sourceStartUs) return false
+            }
+            cursorUs = runCatching { Math.addExact(freeze.startOffsetUs, freeze.durationUs) }.getOrNull()
+                ?: return false
+        }
+        if (cursorUs < presentationDurationUs) {
+            val sourceStartUs = TimeMapEvaluator.forwardSourceOffsetAt(timeMap, cursorUs).coerceAtMost(sourceRangeUs)
+            val sourceEndUs = TimeMapEvaluator.forwardSourceOffsetAt(timeMap, presentationDurationUs).coerceAtMost(sourceRangeUs)
+            if (sourceEndUs <= sourceStartUs) return false
+        }
+        return true
     }
 
     private fun movingPiece(
@@ -167,10 +195,12 @@ internal object Media3FreezeFramePlanner {
         val sourceOutUs: Long
         if (requestedSourceUs >= item.sourceOutUs) {
             sourceOutUs = item.sourceOutUs
-            sourceInUs = maxOf(item.sourceInUs, sourceOutUs - frameWindowUs)
+            val availableUs = Math.subtractExact(sourceOutUs, item.sourceInUs)
+            sourceInUs = Math.subtractExact(sourceOutUs, minOf(frameWindowUs, availableUs))
         } else {
             sourceInUs = requestedSourceUs.coerceAtLeast(item.sourceInUs)
-            sourceOutUs = minOf(item.sourceOutUs, Math.addExact(sourceInUs, frameWindowUs))
+            val remainingUs = Math.subtractExact(item.sourceOutUs, sourceInUs)
+            sourceOutUs = Math.addExact(sourceInUs, minOf(frameWindowUs, remainingUs))
         }
         require(sourceOutUs > sourceInUs) { "freeze hold must reference a positive source-frame window" }
 

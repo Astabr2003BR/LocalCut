@@ -241,7 +241,7 @@ class LocalCutBridgeControl(
                     startBridgeService(BridgeConnectionService.ACTION_DISCONNECT, foreground = false)
                     update(BridgeUiEvent.PairingRevoked)
                 }.onFailure { error ->
-                    update(BridgeUiEvent.Error(error.message ?: "Não foi possível revogar o pareamento")
+                    update(BridgeUiEvent.Error(error.message ?: "Não foi possível revogar o pareamento"))
                 }
             } finally {
                 pairingRunning.set(false)

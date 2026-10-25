@@ -1,17 +1,26 @@
 package com.localcut.editor.bridge.agent
 
+import com.localcut.editor.bridge.protocol.BridgeCapability
 import com.localcut.editor.bridge.protocol.BridgeCodec
+import com.localcut.editor.bridge.protocol.BridgeCommandEnvelope
 import com.localcut.editor.bridge.protocol.BridgeErrorCode
 import com.localcut.editor.bridge.protocol.BridgeProtocolException
 import com.localcut.editor.bridge.protocol.BridgeResultEnvelope
 import com.localcut.editor.bridge.security.ReplayDecision
 import com.localcut.editor.bridge.security.ReplayGuard
+import com.localcut.editor.data.project.jsonString
+
+data class BridgeActiveProjectContext(
+    val projectId: String,
+    val revision: Long,
+)
 
 class BridgeMessageProcessor(
     private val deviceId: String,
     private val executor: BridgeCommandExecutor,
     private val replayGuard: ReplayGuard = ReplayGuard(),
     private val onExecuted: () -> Unit = {},
+    private val activeProjectContextProvider: () -> BridgeActiveProjectContext? = { null },
 ) {
     init {
         require(deviceId.isNotBlank()) { "deviceId must not be blank" }
@@ -45,10 +54,15 @@ class BridgeMessageProcessor(
             nowEpochMs = nowEpochMs,
         )) {
             ReplayDecision.Reserved -> {
-                val result = runCatching { executor.execute(command) }
-                    .getOrElse {
-                        errorResult(command.messageId, BridgeErrorCode.INTERNAL_ERROR, retryable = true)
+                val result = runCatching {
+                    if (isActiveProjectProbe(command)) {
+                        activeProjectStatusResult(command.messageId)
+                    } else {
+                        executor.execute(command)
                     }
+                }.getOrElse {
+                    errorResult(command.messageId, BridgeErrorCode.INTERNAL_ERROR, retryable = true)
+                }
                 runCatching(onExecuted)
                 replayGuard.complete(command.messageId, result)
                 BridgeCodec.encodeResult(result)
@@ -68,6 +82,29 @@ class BridgeMessageProcessor(
                 ),
             )
         }
+    }
+
+    private fun isActiveProjectProbe(command: BridgeCommandEnvelope): Boolean =
+        command.capability == BridgeCapability.GET_DEVICE_STATUS &&
+            command.projectId == ACTIVE_PROJECT_SENTINEL
+
+    private fun activeProjectStatusResult(messageId: String): BridgeResultEnvelope {
+        val context = activeProjectContextProvider()
+            ?: return errorResult(messageId, BridgeErrorCode.PROJECT_NOT_FOUND, retryable = false)
+        return BridgeResultEnvelope(
+            messageId = messageId,
+            success = true,
+            code = null,
+            projectRevision = context.revision,
+            resultJson = buildString {
+                append("{\"state\":\"READY\",\"projectId\":")
+                append(jsonString(context.projectId))
+                append(",\"revision\":")
+                append(context.revision)
+                append('}')
+            },
+            retryable = false,
+        )
     }
 
     private fun errorResult(
@@ -90,6 +127,7 @@ class BridgeMessageProcessor(
         ?.takeIf { it.isNotBlank() }
 
     private companion object {
+        const val ACTIVE_PROJECT_SENTINEL = "__localcut_active_project__"
         val MESSAGE_ID_REGEX = Regex("\\\"messageId\\\"\\s*:\\s*\\\"([^\\\"]{1,256})\\\"")
     }
 }

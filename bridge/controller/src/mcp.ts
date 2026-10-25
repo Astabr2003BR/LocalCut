@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
-import type { CommandRouter } from "./commandRouter.ts";
+import type { CommandRouter, DeviceRegistry } from "./commandRouter.ts";
 import {
   bridgeCapabilities,
   type BridgeCapability,
@@ -10,12 +10,16 @@ import {
 } from "./protocol.ts";
 
 const MAX_PREVIEW_BASE64_CHARS = 2_000_000;
+const ACTIVE_PROJECT_SENTINEL = "__localcut_active_project__";
+const COMMAND_TTL_MS = 30_000;
 
 const routingFields = {
   deviceId: z.string().min(1).max(128),
   projectId: z.string().min(1).max(256),
   payload: z.record(z.string(), z.unknown()).default({}),
 };
+
+type DeviceIdSource = Pick<DeviceRegistry, "listDeviceIds">;
 
 export interface ControllerAdminActions {
   claimPairing(code: string): Promise<unknown> | unknown;
@@ -27,7 +31,7 @@ export function controllerToolNames(): string[] {
 }
 
 export function controllerManagementToolNames(): string[] {
-  return ["claim_pairing", "revoke_device"];
+  return ["claim_pairing", "discover_active_contexts", "revoke_device"];
 }
 
 export function buildToolInputSchema(capability: BridgeCapability) {
@@ -43,6 +47,49 @@ export function buildToolInputSchema(capability: BridgeCapability) {
   }).strict();
 }
 
+export async function discoverActiveContexts(
+  router: CommandRouter,
+  devices: DeviceIdSource,
+  controllerId: string,
+  nowEpochMs: () => number = Date.now,
+): Promise<{ contexts: Array<{ deviceId: string; projectId: string; projectRevision: number; state: string }> }> {
+  const contexts: Array<{ deviceId: string; projectId: string; projectRevision: number; state: string }> = [];
+
+  for (const deviceId of devices.listDeviceIds()) {
+    const now = nowEpochMs();
+    const command: BridgeCommandEnvelope = {
+      protocolVersion: 1,
+      messageId: randomUUID(),
+      kind: "command",
+      deviceId,
+      projectId: ACTIVE_PROJECT_SENTINEL,
+      expectedRevision: null,
+      issuedAtEpochMs: now,
+      expiresAtEpochMs: now + COMMAND_TTL_MS,
+      nonce: randomBytes(18).toString("base64url"),
+      capability: "get_device_status",
+      payload: {},
+    };
+    const response = await router.execute(controllerId, command);
+    if (!response.success || !isRecord(response.result)) continue;
+
+    const projectId = response.result.projectId;
+    const state = response.result.state;
+    const projectRevision = response.projectRevision;
+    if (
+      typeof projectId !== "string" || projectId.length === 0 ||
+      typeof state !== "string" || state.length === 0 ||
+      typeof projectRevision !== "number" || !Number.isSafeInteger(projectRevision) || projectRevision < 0
+    ) {
+      continue;
+    }
+
+    contexts.push({ deviceId, projectId, projectRevision, state });
+  }
+
+  return { contexts };
+}
+
 export function createLocalCutMcpServer(
   router: CommandRouter,
   controllerId: string,
@@ -50,6 +97,24 @@ export function createLocalCutMcpServer(
 ): McpServer {
   if (!controllerId) throw new Error("controllerId is required");
   const server = new McpServer({ name: "LocalCut Controller", version: "0.1.0" });
+
+  const discoverySchema = z.object({}).strict();
+  server.registerTool(
+    "discover_active_contexts",
+    {
+      title: "LocalCut: discover active contexts",
+      description: "Discover currently connected LocalCut devices and their active project routing metadata. This is read-only and should be called before other tools when deviceId/projectId are unknown.",
+      inputSchema: discoverySchema,
+    },
+    async (input: unknown) => {
+      discoverySchema.parse(input);
+      try {
+        return toolResult(await discoverActiveContexts(router, router, controllerId), false);
+      } catch (error) {
+        return toolResult({ code: safeAdminError(error) }, true);
+      }
+    },
+  );
 
   for (const capability of bridgeCapabilities) {
     const inputSchema = buildToolInputSchema(capability);
@@ -71,7 +136,7 @@ export function createLocalCutMcpServer(
           projectId: parsed.projectId,
           expectedRevision: parsed.expectedRevision ?? null,
           issuedAtEpochMs: now,
-          expiresAtEpochMs: now + 30_000,
+          expiresAtEpochMs: now + COMMAND_TTL_MS,
           nonce: randomBytes(18).toString("base64url"),
           capability,
           payload: parsed.payload,

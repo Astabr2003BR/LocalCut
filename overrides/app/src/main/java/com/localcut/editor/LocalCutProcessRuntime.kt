@@ -7,6 +7,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
 import com.localcut.editor.bridge.agent.AndroidMediaStoreBridgeExportTargetFactory
+import com.localcut.editor.bridge.agent.BridgeActiveProjectContext
 import com.localcut.editor.bridge.agent.BridgeCommandExecutor
 import com.localcut.editor.bridge.agent.BridgeJobRegistry
 import com.localcut.editor.bridge.agent.BridgeMessageProcessor
@@ -159,6 +160,13 @@ class LocalCutProcessRuntime private constructor(context: Context) {
             deviceId = deviceId,
             executor = bridgeCommandExecutor,
             onExecuted = editorViewModel::refreshSnapshot,
+            activeProjectContextProvider = {
+                val current = session.state
+                BridgeActiveProjectContext(
+                    projectId = current.project.id,
+                    revision = current.revision,
+                )
+            },
         )
         bridgeInboundMessageHandler = BridgeInboundMessageHandler { text, reply ->
             mainHandler.post {

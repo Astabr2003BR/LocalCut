@@ -27,6 +27,10 @@ export class DeviceRegistry {
     return this.channels.get(deviceId) ?? null;
   }
 
+  listDeviceIds(): string[] {
+    return [...this.channels.keys()].sort();
+  }
+
   closeAll(reason = "registry_shutdown"): void {
     const uniqueChannels = new Set(this.channels.values());
     this.channels.clear();
@@ -54,6 +58,10 @@ export class CommandRouter {
     this.completedCacheSize = options.completedCacheSize ?? 1_000;
     if (this.timeoutMs <= 0) throw new Error("timeoutMs must be positive");
     if (this.completedCacheSize <= 0) throw new Error("completedCacheSize must be positive");
+  }
+
+  listDeviceIds(): string[] {
+    return this.registry.listDeviceIds();
   }
 
   async execute(controllerId: string, command: BridgeCommandEnvelope): Promise<BridgeResultEnvelope> {

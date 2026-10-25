@@ -1,6 +1,7 @@
 package com.localcut.editor.bridge.agent
 
 import com.localcut.editor.bridge.protocol.BridgeCapability
+import com.localcut.editor.bridge.protocol.BridgeCodec
 import com.localcut.editor.bridge.protocol.BridgeCommandEnvelope
 import com.localcut.editor.bridge.protocol.BridgeErrorCode
 import com.localcut.editor.data.project.ProjectStore
@@ -21,12 +22,16 @@ class BridgeActiveContextProbeTest {
     fun activeProjectProbeReturnsCurrentRoutingWithoutMutation() {
         val fixture = fixture()
 
-        val result = fixture.executor.execute(
-            command(
-                capability = BridgeCapability.GET_DEVICE_STATUS,
-                projectId = ACTIVE_PROJECT_SENTINEL,
+        val encoded = fixture.processor.process(
+            BridgeCodec.encodeCommand(
+                command(
+                    capability = BridgeCapability.GET_DEVICE_STATUS,
+                    projectId = ACTIVE_PROJECT_SENTINEL,
+                ),
             ),
+            nowEpochMs = 1_000L,
         )
+        val result = BridgeCodec.decodeResult(requireNotNull(encoded))
 
         assertTrue(result.success)
         assertEquals(5L, result.projectRevision)
@@ -40,12 +45,16 @@ class BridgeActiveContextProbeTest {
     fun activeProjectSentinelCannotBypassProjectBindingForOtherCapabilities() {
         val fixture = fixture()
 
-        val result = fixture.executor.execute(
-            command(
-                capability = BridgeCapability.GET_PROJECT_STATE,
-                projectId = ACTIVE_PROJECT_SENTINEL,
+        val encoded = fixture.processor.process(
+            BridgeCodec.encodeCommand(
+                command(
+                    capability = BridgeCapability.GET_PROJECT_STATE,
+                    projectId = ACTIVE_PROJECT_SENTINEL,
+                ),
             ),
+            nowEpochMs = 1_000L,
         )
+        val result = BridgeCodec.decodeResult(requireNotNull(encoded))
 
         assertFalse(result.success)
         assertEquals(BridgeErrorCode.PROJECT_NOT_FOUND, result.code)
@@ -54,7 +63,7 @@ class BridgeActiveContextProbeTest {
 
     private data class Fixture(
         val session: ProjectSession,
-        val executor: BridgeCommandExecutor,
+        val processor: BridgeMessageProcessor,
     )
 
     private fun fixture(): Fixture {
@@ -80,7 +89,16 @@ class BridgeActiveContextProbeTest {
             override val positionUs: Long = 0L
             override fun seekToUs(positionUs: Long): Result<Unit> = Result.success(Unit)
         }
-        return Fixture(session, BridgeCommandExecutor(session, playback))
+        val executor = BridgeCommandExecutor(session, playback)
+        val processor = BridgeMessageProcessor(
+            deviceId = "device-1",
+            executor = executor,
+            activeProjectContextProvider = {
+                val current = session.state
+                BridgeActiveProjectContext(current.project.id, current.revision)
+            },
+        )
+        return Fixture(session, processor)
     }
 
     private fun command(

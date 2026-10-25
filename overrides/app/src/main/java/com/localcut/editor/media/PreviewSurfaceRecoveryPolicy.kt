@@ -4,5 +4,6 @@ object PreviewSurfaceRecoveryPolicy {
     fun shouldRebindVideoOutput(
         durationUs: Long,
         hasBoundView: Boolean,
-    ): Boolean = durationUs > 0L && hasBoundView
+        surfaceReady: Boolean,
+    ): Boolean = durationUs > 0L && hasBoundView && surfaceReady
 }

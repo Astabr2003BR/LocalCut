@@ -7,6 +7,7 @@ import com.localcut.editor.bridge.security.AndroidKeystoreBridgeCredentialStore
 import com.localcut.editor.bridge.security.AndroidKeystoreDeviceIdentityStore
 import com.localcut.editor.bridge.security.BridgeCredentialStore
 import com.localcut.editor.bridge.security.BridgeMobilePairingProofFactory
+import com.localcut.editor.bridge.security.BridgeStoredCredential
 import com.localcut.editor.bridge.security.DeviceIdentityStore
 import com.localcut.editor.bridge.transport.BridgeConnectionObserver
 import com.localcut.editor.bridge.transport.OkHttpBridgePairingClient
@@ -30,6 +31,7 @@ class LocalCutBridgeControl(
 ) {
     private val appContext = context.applicationContext
     private val pairingRunning = AtomicBoolean(false)
+    private val oauthApprovalRunning = AtomicBoolean(false)
     private val forcedRefreshPending = AtomicBoolean(false)
     private val renewalRetryScheduled = AtomicBoolean(false)
     private val endpointPreference = BridgeEndpointPreference(settingsStore, credentialStore)
@@ -163,6 +165,49 @@ class LocalCutBridgeControl(
         }
     }
 
+    fun approveOAuthRequest(requestId: String, onComplete: (Result<String>) -> Unit) {
+        if (!requestId.matches(OAUTH_REQUEST_ID)) {
+            onComplete(Result.failure(IllegalArgumentException("OAUTH_APPROVAL_REQUEST_INVALID")))
+            return
+        }
+        val endpoint = endpointPreference.current().getOrElse { error ->
+            onComplete(Result.failure(error))
+            return
+        }
+        if (!oauthApprovalRunning.compareAndSet(false, true)) {
+            onComplete(Result.failure(IllegalStateException("OAUTH_APPROVAL_IN_PROGRESS")))
+            return
+        }
+
+        scope.launch {
+            try {
+                val result = runCatching {
+                    val client = OkHttpBridgePairingClient(endpoint.httpsBaseUrl)
+                    var credential = credentialStore.load()
+                        ?: throw IllegalStateException("PAIRING_REQUIRED")
+
+                    if (credential.expiresAtEpochMs <= nowEpochMs()) {
+                        credential = renewForOAuth(client, credential)
+                    }
+
+                    var approval = withContext(Dispatchers.IO) {
+                        client.approveOAuth(requestId, credential.accessToken)
+                    }
+                    if (approval.isFailure && isOAuthSessionAuthFailure(approval.exceptionOrNull())) {
+                        credential = renewForOAuth(client, credential)
+                        approval = withContext(Dispatchers.IO) {
+                            client.approveOAuth(requestId, credential.accessToken)
+                        }
+                    }
+                    approval.getOrThrow()
+                }
+                onComplete(result)
+            } finally {
+                oauthApprovalRunning.set(false)
+            }
+        }
+    }
+
     fun disconnect() {
         settingsStore.markManualDisconnect()
         renewalRetryScheduled.set(false)
@@ -196,12 +241,38 @@ class LocalCutBridgeControl(
                     startBridgeService(BridgeConnectionService.ACTION_DISCONNECT, foreground = false)
                     update(BridgeUiEvent.PairingRevoked)
                 }.onFailure { error ->
-                    update(BridgeUiEvent.Error(error.message ?: "Não foi possível revogar o pareamento"))
+                    update(BridgeUiEvent.Error(error.message ?: "Não foi possível revogar o pareamento")
                 }
             } finally {
                 pairingRunning.set(false)
             }
         }
+    }
+
+    private suspend fun renewForOAuth(
+        client: OkHttpBridgePairingClient,
+        current: BridgeStoredCredential,
+    ): BridgeStoredCredential {
+        val renewed = withContext(Dispatchers.IO) {
+            BridgeCredentialRenewal(
+                client = client,
+                identityStore = identityStore,
+                nowEpochMs = nowEpochMs,
+            ).renew(current)
+        }.getOrElse { throw it }
+            ?: run {
+                credentialStore.clear()
+                mutableState.value = mutableState.value.copy(paired = false)
+                throw IllegalStateException("PAIRING_REQUIRED")
+            }
+        credentialStore.save(renewed)
+        mutableState.value = mutableState.value.copy(paired = true)
+        return renewed
+    }
+
+    private fun isOAuthSessionAuthFailure(error: Throwable?): Boolean = when (error?.message) {
+        "AUTH_REQUIRED", "REFRESH_TOKEN_INVALID" -> true
+        else -> false
     }
 
     private fun scheduleCredentialRenewalRetry() {
@@ -241,5 +312,6 @@ class LocalCutBridgeControl(
     private companion object {
         const val HTTP_UNAUTHORIZED = 401
         const val CREDENTIAL_RETRY_DELAY_MS = 10_000L
+        val OAUTH_REQUEST_ID = Regex("^[A-Za-z0-9_-]{16,256}$")
     }
 }

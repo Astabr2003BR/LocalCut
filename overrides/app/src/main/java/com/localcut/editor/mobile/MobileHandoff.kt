@@ -23,6 +23,7 @@ data class MobileHandoffCommand(
     val mobilePairingCode: String? = null,
     val remoteMediaUrl: String? = null,
     val resolveSelectedClip: Boolean = false,
+    val resolveVisualClipAtPositionUs: Long? = null,
 )
 
 object MobileHandoffParser {
@@ -92,6 +93,15 @@ object MobileHandoffParser {
                     BridgeCapability.SPLIT_CLIP,
                     "{\"clipId\":${jsonString(clipId)},\"positionUs\":$positionUs}",
                     "Dividir o clipe $clipId em ${(positionUs / 1_000_000.0)} s",
+                )
+            }
+            "cut_delete_after" -> {
+                val positionUs = requiredLong(params, "positionUs", min = 1L)
+                MobileHandoffCommand(
+                    capability = BridgeCapability.TRIM_CLIP,
+                    payloadJson = "{}",
+                    description = "Cortar em ${(positionUs / 1_000_000.0)} s e apagar a parte da direita",
+                    resolveVisualClipAtPositionUs = positionUs,
                 )
             }
             "trim_clip" -> {

@@ -17,16 +17,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
@@ -42,7 +39,6 @@ import com.localcut.editor.media.SafExportDestination
 import com.localcut.editor.mobile.SharedMediaIntentParser
 import com.localcut.editor.ui.editor.BridgePanel
 import com.localcut.editor.ui.editor.EditorScreen
-import com.localcut.editor.ui.editor.EditorToolbarLayoutPolicy
 import com.localcut.editor.ui.editor.EditorViewModel
 import com.localcut.editor.ui.editor.ExportUiState
 import com.localcut.editor.ui.editor.FinalPreviewUiPolicy
@@ -134,10 +130,6 @@ class MainActivity : ComponentActivity() {
         setContent {
             val exportState by exportUiState.collectAsState()
             val bridgeState by runtime.bridgeControl.state.collectAsState()
-            val editorWidthDp = LocalConfiguration.current.screenWidthDp.toFloat()
-            val editorMinimumInteractiveSize = EditorToolbarLayoutPolicy
-                .minimumInteractiveSizeDp(editorWidthDp)
-                .dp
 
             LaunchedEffect(exportState.running, exportState.message) {
                 val completedMessage = exportState.message
@@ -183,35 +175,31 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
                     )
                     Box(modifier = Modifier.weight(1f)) {
-                        CompositionLocalProvider(
-                            LocalMinimumInteractiveComponentSize provides editorMinimumInteractiveSize,
-                        ) {
-                            EditorScreen(
-                                viewModel = editorViewModel,
-                                previewController = previewController,
-                                exportState = exportState,
-                                exportCapabilities = exportCapabilities,
-                                onImportRequested = {
-                                    visualImportLauncher.launch(
-                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                                    )
-                                },
-                                onImportAudioRequested = { audioImportLauncher.launch(arrayOf("audio/*")) },
-                                onImportOverlayRequested = {
-                                    overlayImportLauncher.launch(
-                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                                    )
-                                },
-                                onExportRequested = { profile ->
-                                    if (!exportUiState.value.running) {
-                                        pendingExportProfile = profile
-                                        exportLauncher.launch("LocalCut-${System.currentTimeMillis()}.mp4")
-                                    }
-                                },
-                                onCancelExport = { exportController.cancel() },
-                                onFinalPreviewRequested = ::startFinalPreview,
-                            )
-                        }
+                        EditorScreen(
+                            viewModel = editorViewModel,
+                            previewController = previewController,
+                            exportState = exportState,
+                            exportCapabilities = exportCapabilities,
+                            onImportRequested = {
+                                visualImportLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                )
+                            },
+                            onImportAudioRequested = { audioImportLauncher.launch(arrayOf("audio/*")) },
+                            onImportOverlayRequested = {
+                                overlayImportLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                )
+                            },
+                            onExportRequested = { profile ->
+                                if (!exportUiState.value.running) {
+                                    pendingExportProfile = profile
+                                    exportLauncher.launch("LocalCut-${System.currentTimeMillis()}.mp4")
+                                }
+                            },
+                            onCancelExport = { exportController.cancel() },
+                            onFinalPreviewRequested = ::startFinalPreview,
+                        )
                     }
                 }
             }

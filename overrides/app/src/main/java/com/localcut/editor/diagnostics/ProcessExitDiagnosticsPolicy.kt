@@ -1,8 +1,11 @@
 package com.localcut.editor.diagnostics
 
 import android.app.ApplicationExitInfo
+import kotlin.math.abs
 
 object ProcessExitDiagnosticsPolicy {
+    private const val CRASH_ASSOCIATION_WINDOW_MS = 2 * 60_000L
+
     fun shouldSurface(reason: Int): Boolean = when (reason) {
         ApplicationExitInfo.REASON_CRASH,
         ApplicationExitInfo.REASON_CRASH_NATIVE,
@@ -14,6 +17,16 @@ object ProcessExitDiagnosticsPolicy {
         ApplicationExitInfo.REASON_DEPENDENCY_DIED,
         ApplicationExitInfo.REASON_OTHER -> true
         else -> false
+    }
+
+    fun shouldAttachStoredCrash(
+        exitReason: Int,
+        exitTimestampMs: Long,
+        crashTimestampMs: Long,
+    ): Boolean {
+        if (exitReason != ApplicationExitInfo.REASON_CRASH) return false
+        if (exitTimestampMs <= 0L || crashTimestampMs <= 0L) return false
+        return abs(exitTimestampMs - crashTimestampMs) <= CRASH_ASSOCIATION_WINDOW_MS
     }
 
     fun labelFor(reason: Int): String = when (reason) {

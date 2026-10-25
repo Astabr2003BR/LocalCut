@@ -32,6 +32,26 @@ class BridgeConnectionService : Service() {
             "service:start:${intent?.action?.substringAfterLast('.') ?: "sticky"}:session=${settings.sessionEnabled}",
         )
         return when (intent?.action) {
+            ACTION_PREPARE_CONNECT -> {
+                // Pairing and credential renewal run outside the service. Keep this path deliberately
+                // lightweight: becoming foreground here protects the process before any editor/Media3
+                // runtime is requested by an authenticated Bridge connection.
+                if (!startAsForegroundSafely("Aguardando autorização do ChatGPT…", startId)) {
+                    return START_NOT_STICKY
+                }
+                ProcessExitDiagnostics.mark(this, "service:prepare-connect")
+                START_NOT_STICKY
+            }
+
+            ACTION_STOP_PREPARE_CONNECT -> {
+                if (!settings.sessionEnabled && !coordinatorLifecycle.isInitialized) {
+                    ProcessExitDiagnostics.mark(this, "service:stop-prepare-connect")
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf(startId)
+                }
+                START_NOT_STICKY
+            }
+
             ACTION_DISCONNECT -> {
                 if (coordinatorLifecycle.isInitialized) {
                     coordinator.disconnectFromUser()
@@ -149,6 +169,8 @@ class BridgeConnectionService : Service() {
     }
 
     companion object {
+        const val ACTION_PREPARE_CONNECT = "com.localcut.editor.bridge.action.PREPARE_CONNECT"
+        const val ACTION_STOP_PREPARE_CONNECT = "com.localcut.editor.bridge.action.STOP_PREPARE_CONNECT"
         const val ACTION_CONNECT = "com.localcut.editor.bridge.action.CONNECT"
         const val ACTION_DISCONNECT = "com.localcut.editor.bridge.action.DISCONNECT"
         const val ACTION_RECONNECT = "com.localcut.editor.bridge.action.RECONNECT"

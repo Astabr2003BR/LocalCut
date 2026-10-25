@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { CommandRouter, DeviceRegistry } from "../src/commandRouter.ts";
 import { bridgeCapabilities } from "../src/protocol.ts";
+import { InMemoryBridgeStore } from "../src/store.ts";
 import {
   buildToolInputSchema,
   controllerManagementToolNames,
@@ -10,7 +12,10 @@ import {
 
 test("MCP exposes only allowlisted LocalCut edit tools plus explicit management tools", () => {
   assert.deepEqual(controllerToolNames().sort(), [...bridgeCapabilities].sort());
-  assert.deepEqual(controllerManagementToolNames().sort(), ["claim_pairing", "revoke_device"].sort());
+  assert.deepEqual(
+    controllerManagementToolNames().sort(),
+    ["claim_pairing", "discover_active_contexts", "revoke_device"].sort(),
+  );
 });
 
 test("project writes and export require expectedRevision", () => {
@@ -41,6 +46,63 @@ test("tool schema rejects blank routing identifiers and negative revisions", () 
     move.safeParse({ deviceId: "lc", projectId: "p", expectedRevision: -1, payload: {} }).success,
     false,
   );
+});
+
+test("active context discovery probes the live paired device and returns routing metadata", async () => {
+  const module = await import("../src/mcp.ts");
+  type DiscoverActiveContexts = (
+    router: CommandRouter,
+    registry: DeviceRegistry,
+    controllerId: string,
+    nowEpochMs?: () => number,
+  ) => Promise<unknown>;
+  const discover = (module as unknown as { discoverActiveContexts?: DiscoverActiveContexts })
+    .discoverActiveContexts;
+
+  assert.equal(typeof discover, "function");
+  if (!discover) return;
+
+  const store = new InMemoryBridgeStore();
+  store.upsertDevice({
+    deviceId: "device-1",
+    publicKeySpkiBase64: "test-key",
+    controllerId: "controller-1",
+    revokedAtEpochMs: null,
+  });
+  const registry = new DeviceRegistry();
+  registry.register("device-1", {
+    close() {},
+    async send(command) {
+      assert.equal(command.capability, "get_device_status");
+      assert.equal(command.projectId, "__localcut_active_project__");
+      return {
+        messageId: command.messageId,
+        success: true,
+        code: null,
+        projectRevision: 5,
+        result: {
+          state: "READY",
+          projectId: "project-1",
+          revision: 5,
+        },
+        retryable: false,
+      };
+    },
+  });
+  const router = new CommandRouter(store, registry, { timeoutMs: 1_000 });
+
+  const result = await discover(router, registry, "controller-1", () => 1_000);
+
+  assert.deepEqual(result, {
+    contexts: [
+      {
+        deviceId: "device-1",
+        projectId: "project-1",
+        projectRevision: 5,
+        state: "READY",
+      },
+    ],
+  });
 });
 
 test("preview frame tool result includes MCP image content and keeps structured metadata", () => {

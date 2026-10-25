@@ -3,6 +3,8 @@ package com.localcut.editor.media
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.view.SurfaceView
+import android.view.TextureView
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -89,11 +91,26 @@ class Media3PreviewController(
     fun refreshBoundView(view: PlayerView) {
         val positionUs = state.value.positionUs
         boundViewRef = WeakReference(view)
-        // Preserve an already attached Media3 surface. Reassigning the same CompositionPlayer
-        // after returning from Android pickers can leave SurfaceView black while time still advances.
         assignPlayerIfNeeded(view)
         view.useController = false
         bridgePreviewFramePort.attach(view)
+
+        if (
+            PreviewSurfaceRecoveryPolicy.shouldRebindVideoOutput(
+                durationUs = state.value.durationUs,
+                hasBoundView = boundViewRef?.get() === view,
+            )
+        ) {
+            // Android can destroy/recreate the PlayerView SurfaceView while an external picker
+            // is on top of the editor. The CompositionPlayer instance remains valid, but its
+            // video output may still reference the old surface. Re-register the current output
+            // without replacing the player instance so Media3 tracks the new surface lifecycle.
+            when (val videoOutput = view.videoSurfaceView) {
+                is SurfaceView -> player.setVideoSurfaceView(videoOutput)
+                is TextureView -> player.setVideoTextureView(videoOutput)
+            }
+        }
+
         delegate.seekToUs(positionUs)
         bridgePreviewFramePort.requestRefresh()
     }

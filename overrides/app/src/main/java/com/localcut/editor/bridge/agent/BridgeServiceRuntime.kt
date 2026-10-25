@@ -25,9 +25,20 @@ object BridgeServiceRuntime {
         val endpoint = BridgeEndpointConfig.resolve(settingsStore.relayBaseUrl).getOrNull()
             ?: return unavailableCoordinator(settingsStore)
 
-        ProcessExitDiagnostics.mark(appContext, "bridge-runtime:before-editor-runtime")
-        val editorRuntime = LocalCutProcessRuntime.get(appContext)
-        ProcessExitDiagnostics.mark(appContext, "bridge-runtime:editor-runtime-ready")
+        var editorRuntime: LocalCutProcessRuntime? = null
+        val runtimeBinding = BridgeLazyRuntimeBinding(
+            inboundHandlerProvider = {
+                ProcessExitDiagnostics.mark(appContext, "bridge-runtime:before-editor-runtime")
+                LocalCutProcessRuntime.get(appContext).also { runtime ->
+                    editorRuntime = runtime
+                    ProcessExitDiagnostics.mark(appContext, "bridge-runtime:editor-runtime-ready")
+                }.bridgeInboundMessageHandler
+            },
+            observerIfInitialized = {
+                editorRuntime?.bridgeControl?.connectionObserver
+            },
+        )
+
         val socketClient = OkHttpBridgeSocketClient()
         val sessionProvider = StoredBridgeSessionProvider(
             relayUrl = endpoint.wssUrl,
@@ -39,8 +50,8 @@ object BridgeServiceRuntime {
             sessionProvider = sessionProvider,
             settingsStore = settingsStore,
             scheduler = AndroidHandlerBridgeReconnectScheduler(),
-            inboundMessageHandler = editorRuntime.bridgeInboundMessageHandler,
-            observer = editorRuntime.bridgeControl.connectionObserver,
+            inboundMessageHandler = runtimeBinding.inboundMessageHandler,
+            observer = runtimeBinding.observer,
         )
     }
 

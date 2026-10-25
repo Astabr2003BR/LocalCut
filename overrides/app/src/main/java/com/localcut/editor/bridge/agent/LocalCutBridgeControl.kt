@@ -90,6 +90,11 @@ class LocalCutBridgeControl(
         }
         if (forceRefreshCredential) forcedRefreshPending.set(true)
         if (!pairingRunning.compareAndSet(false, true)) return
+
+        BridgeAgentConnectionLifecyclePolicy.beforeConnectAttempt().let { transition ->
+            startBridgeService(transition.action, transition.foreground)
+        }
+
         scope.launch {
             try {
                 val forceRefresh = forcedRefreshPending.getAndSet(false)
@@ -138,6 +143,12 @@ class LocalCutBridgeControl(
                 startBridgeService(BridgeConnectionService.ACTION_CONNECT)
             } finally {
                 pairingRunning.set(false)
+                BridgeAgentConnectionLifecyclePolicy.afterConnectAttempt(
+                    sessionEnabled = settingsStore.sessionEnabled,
+                    credentialPresent = credentialStore.load() != null,
+                )?.let { transition ->
+                    startBridgeService(transition.action, transition.foreground)
+                }
                 if (forcedRefreshPending.get()) connect(forceRefreshCredential = true)
             }
         }
@@ -183,8 +194,16 @@ class LocalCutBridgeControl(
             try {
                 val result = runCatching {
                     val client = OkHttpBridgePairingClient(endpoint.httpsBaseUrl)
-                    var credential = credentialStore.load()
-                        ?: throw IllegalStateException("PAIRING_REQUIRED")
+                    var credential = BridgeOAuthCredentialBootstrap(
+                        client = client,
+                        identityStore = identityStore,
+                        credentialStore = credentialStore,
+                        pairingCodeProvider = {
+                            mutableState.value.takeIf { it.phase == BridgeUiPhase.PAIRING }?.pairingCode
+                        },
+                        startPairing = { connect() },
+                        nowEpochMs = nowEpochMs,
+                    ).ensureCredential()
 
                     if (credential.expiresAtEpochMs <= nowEpochMs()) {
                         credential = renewForOAuth(client, credential)

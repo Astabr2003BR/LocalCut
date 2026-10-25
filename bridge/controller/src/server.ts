@@ -7,6 +7,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { CommandRouter, DeviceRegistry } from "./commandRouter.ts";
 import { WebSocketDeviceChannel, type DeviceSocket } from "./deviceChannel.ts";
 import { createLocalCutMcpServer } from "./mcp.ts";
+import { LocalCutOAuthService } from "./oauth.ts";
 import { PairingService } from "./pairing.ts";
 import { DeviceRecoveryTokenService, publicKeySha256 } from "./recovery.ts";
 import { DeviceSessionService, SqliteSessionStore, type DeviceSessionStore } from "./session.ts";
@@ -18,6 +19,7 @@ const MOBILE_CLAIM_MAX_AGE_MS = 60 * 1_000;
 const MOBILE_CLAIM_PREFIX = "LOCALCUT_MOBILE_CLAIM_V1";
 const SESSION_RECOVERY_MAX_AGE_MS = 60 * 1_000;
 const SESSION_RECOVERY_PREFIX = "LOCALCUT_SESSION_RECOVERY_V1";
+const DEFAULT_PUBLIC_BASE_URL = "https://localcut-bridge-v1.onrender.com";
 const ANDROID_ASSET_LINKS = [{
   relation: ["delegate_permission/common.handle_all_urls"],
   target: {
@@ -32,6 +34,7 @@ const ANDROID_ASSET_LINKS = [{
 export type ControllerServerOptions = {
   controllerApiToken: string;
   controllerId: string;
+  publicBaseUrl?: string;
   store: BridgeStore;
   pairing: PairingService;
   sessions: DeviceSessionService;
@@ -57,6 +60,15 @@ export function createControllerServer(options: ControllerServerOptions): Contro
   const mobileClaimNonces = new Map<string, number>();
   const recoveryNonces = new Map<string, number>();
   const recoveryTokens = new DeviceRecoveryTokenService(options.controllerApiToken);
+  const oauth = new LocalCutOAuthService({
+    issuerBaseUrl: options.publicBaseUrl ?? DEFAULT_PUBLIC_BASE_URL,
+    signingSecret: options.controllerApiToken,
+    nowEpochMs,
+    isDeviceAuthorized(deviceId) {
+      const device = options.store.getDevice(deviceId);
+      return !!device && device.controllerId === options.controllerId && device.revokedAtEpochMs == null;
+    },
+  });
   const wss = new WebSocketServer({ noServer: true, clientTracking: false });
   const mcpHandler = createMcpHandler(() => createLocalCutMcpServer(
     router,
@@ -91,6 +103,97 @@ export function createControllerServer(options: ControllerServerOptions): Contro
         return sendJson(res, 200, ANDROID_ASSET_LINKS);
       }
 
+      if (req.method === "GET" && url.pathname === "/.well-known/oauth-protected-resource") {
+        return sendJson(res, 200, {
+          resource: oauth.resource,
+          authorization_servers: [oauth.issuerBaseUrl],
+          scopes_supported: [...oauth.scopes],
+        });
+      }
+
+      if (req.method === "GET" && url.pathname === "/.well-known/oauth-authorization-server") {
+        return sendJson(res, 200, {
+          issuer: oauth.issuerBaseUrl,
+          authorization_endpoint: `${oauth.issuerBaseUrl}/oauth/authorize`,
+          token_endpoint: `${oauth.issuerBaseUrl}/oauth/token`,
+          response_types_supported: ["code"],
+          grant_types_supported: ["authorization_code", "refresh_token"],
+          token_endpoint_auth_methods_supported: ["none"],
+          code_challenge_methods_supported: ["S256"],
+          scopes_supported: [...oauth.scopes],
+          authorization_response_iss_parameter_supported: true,
+        });
+      }
+
+      if (req.method === "GET" && url.pathname === "/oauth/authorize") {
+        const pending = oauth.beginAuthorization({
+          responseType: requiredSearchParam(url, "response_type", 32),
+          clientId: requiredSearchParam(url, "client_id", 256),
+          redirectUri: requiredSearchParam(url, "redirect_uri", 2_048),
+          state: requiredSearchParam(url, "state", 2_048),
+          codeChallenge: requiredSearchParam(url, "code_challenge", 256),
+          codeChallengeMethod: requiredSearchParam(url, "code_challenge_method", 32),
+          resource: requiredSearchParam(url, "resource", 2_048),
+          scope: requiredSearchParam(url, "scope", 512),
+        });
+        const completionUrl = new URL("/oauth/complete", oauth.issuerBaseUrl);
+        completionUrl.searchParams.set("requestId", pending.requestId);
+        const deepLink = new URL("localcut://oauth/approve");
+        deepLink.searchParams.set("requestId", pending.requestId);
+        return sendHtml(res, 200, authorizationPage(deepLink.toString(), pending.expiresAtEpochMs));
+      }
+
+      if (req.method === "GET" && url.pathname === "/oauth/complete") {
+        const requestId = requiredSearchParam(url, "requestId", 256);
+        const completed = oauth.completeAuthorization(requestId);
+        const callback = new URL(completed.redirectUri);
+        callback.searchParams.set("code", completed.code);
+        callback.searchParams.set("state", completed.state);
+        callback.searchParams.set("iss", oauth.issuerBaseUrl);
+        return sendRedirect(res, callback.toString());
+      }
+
+      if (url.pathname === "/mcp") {
+        const token = bearerToken(req);
+        try {
+          if (!token) throw new Error("OAUTH_TOKEN_INVALID");
+          oauth.verifyAccessToken(token, ["localcut:read", "localcut:write"]);
+        } catch {
+          return sendMcpAuthRequired(res, oauth.issuerBaseUrl);
+        }
+        await nodeMcpHandler(req, res);
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/oauth/token") {
+        const form = await readForm(req);
+        const grantType = requiredFormString(form, "grant_type", 64);
+        const result = grantType === "authorization_code" ?
+          oauth.exchangeAuthorizationCode({
+            grantType,
+            code: requiredFormString(form, "code", 512),
+            clientId: requiredFormString(form, "client_id", 256),
+            redirectUri: requiredFormString(form, "redirect_uri", 2_048),
+            codeVerifier: requiredFormString(form, "code_verifier", 256),
+            resource: requiredFormString(form, "resource", 2_048),
+          }) :
+          grantType === "refresh_token" ?
+            oauth.exchangeRefreshToken({
+              grantType,
+              refreshToken: requiredFormString(form, "refresh_token", 8_192),
+              clientId: requiredFormString(form, "client_id", 256),
+              resource: requiredFormString(form, "resource", 2_048),
+            }) :
+            (() => { throw new Error("OAUTH_GRANT_INVALID"); })();
+        return sendJson(res, 200, {
+          access_token: result.accessToken,
+          refresh_token: result.refreshToken,
+          token_type: result.tokenType,
+          expires_in: result.expiresIn,
+          scope: result.scope,
+        });
+      }
+
       if (req.method === "GET" && url.pathname === "/open") {
         if (url.search.length === 0 || !url.searchParams.get("action")) {
           return sendJson(res, 400, { code: "HANDOFF_ACTION_MISSING" });
@@ -101,16 +204,22 @@ export function createControllerServer(options: ControllerServerOptions): Contro
         return sendRedirect(res, `localcut://command${url.search}`);
       }
 
-      if (url.pathname === "/mcp") {
-        if (!isControllerAuthorized(req, options.controllerApiToken)) {
-          return sendJson(res, 401, { code: "AUTH_REQUIRED" });
-        }
-        await nodeMcpHandler(req, res);
-        return;
-      }
-
       if (req.method !== "POST") {
         return sendJson(res, 404, { code: "NOT_FOUND" });
+      }
+
+      if (url.pathname === "/v1/oauth/device-approve") {
+        const token = bearerToken(req);
+        const session = token ? options.sessions.authenticateAccess(token, nowEpochMs()) : null;
+        if (!session) {
+          return sendJson(res, 401, { code: "AUTH_REQUIRED" });
+        }
+        const body = await readJson(req);
+        const requestId = requiredString(body, "requestId", 256);
+        oauth.approveAuthorization(requestId, session.deviceId);
+        const completionUrl = new URL("/oauth/complete", oauth.issuerBaseUrl);
+        completionUrl.searchParams.set("requestId", requestId);
+        return sendJson(res, 200, { approved: true, completionUrl: completionUrl.toString() });
       }
 
       if (url.pathname === "/v1/pair/start") {
@@ -406,6 +515,19 @@ function bearerToken(req: IncomingMessage): string | null {
 }
 
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const body = await readBody(req);
+  if (body.length === 0) return {};
+  const parsed = JSON.parse(body.toString("utf8")) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("INVALID_JSON_BODY");
+  return parsed as Record<string, unknown>;
+}
+
+async function readForm(req: IncomingMessage): Promise<URLSearchParams> {
+  const body = await readBody(req);
+  return new URLSearchParams(body.toString("utf8"));
+}
+
+async function readBody(req: IncomingMessage): Promise<Buffer> {
   const contentLength = Number(req.headers["content-length"] ?? 0);
   if (Number.isFinite(contentLength) && contentLength > MAX_JSON_BODY_BYTES) {
     throw new Error("BODY_TOO_LARGE");
@@ -418,10 +540,19 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
     if (total > MAX_JSON_BODY_BYTES) throw new Error("BODY_TOO_LARGE");
     chunks.push(buffer);
   }
-  if (chunks.length === 0) return {};
-  const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("INVALID_JSON_BODY");
-  return parsed as Record<string, unknown>;
+  return Buffer.concat(chunks);
+}
+
+function requiredSearchParam(url: URL, key: string, maxLength: number): string {
+  const value = url.searchParams.get(key);
+  if (!value || value.length > maxLength) throw new Error("INVALID_ARGUMENT");
+  return value;
+}
+
+function requiredFormString(form: URLSearchParams, key: string, maxLength: number): string {
+  const value = form.get(key);
+  if (!value || value.length > maxLength) throw new Error("INVALID_ARGUMENT");
+  return value;
 }
 
 function requiredString(body: Record<string, unknown>, key: string, maxLength: number): string {
@@ -462,6 +593,31 @@ function pruneNonces(nonces: Map<string, number>, nowEpochMs: number): void {
   }
 }
 
+function authorizationPage(deepLink: string, expiresAtEpochMs: number): string {
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Autorizar LocalCut</title></head><body><main><h1>Autorizar ChatGPT no LocalCut</h1><p>Confirme esta conexão no aplicativo LocalCut já pareado.</p><p><a href="${escapeHtml(deepLink)}">Abrir LocalCut e autorizar</a></p><p>Solicitação válida até ${new Date(expiresAtEpochMs).toISOString()}.</p></main></body></html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function sendMcpAuthRequired(res: ServerResponse, issuerBaseUrl: string): void {
+  if (res.writableEnded) return;
+  const body = JSON.stringify({ code: "AUTH_REQUIRED" });
+  res.writeHead(401, {
+    "content-type": "application/json; charset=utf-8",
+    "content-length": Buffer.byteLength(body),
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+    "www-authenticate": `Bearer resource_metadata="${issuerBaseUrl}/.well-known/oauth-protected-resource"`,
+  });
+  res.end(body);
+}
+
 function sendRedirect(res: ServerResponse, location: string): void {
   if (res.writableEnded) return;
   res.writeHead(302, {
@@ -471,6 +627,18 @@ function sendRedirect(res: ServerResponse, location: string): void {
     "x-content-type-options": "nosniff",
   });
   res.end();
+}
+
+function sendHtml(res: ServerResponse, status: number, body: string): void {
+  if (res.writableEnded) return;
+  res.writeHead(status, {
+    "content-type": "text/html; charset=utf-8",
+    "content-length": Buffer.byteLength(body),
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+  });
+  res.end(body);
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -496,6 +664,7 @@ export function startControllerServerFromEnv(): ControllerServerRuntime {
   const dbPath = process.env.LOCALCUT_BRIDGE_DB_PATH ?? "./localcut-bridge.sqlite";
   const controllerApiToken = process.env.CONTROLLER_API_TOKEN ?? "";
   const controllerId = process.env.CONTROLLER_ID ?? "";
+  const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? DEFAULT_PUBLIC_BASE_URL;
   const port = Number(process.env.PORT ?? "3000");
   if (!Number.isInteger(port) || port <= 0 || port > 65_535) throw new Error("PORT_INVALID");
 
@@ -506,6 +675,7 @@ export function startControllerServerFromEnv(): ControllerServerRuntime {
   const runtime = createControllerServer({
     controllerApiToken,
     controllerId,
+    publicBaseUrl,
     store,
     pairing,
     sessions,

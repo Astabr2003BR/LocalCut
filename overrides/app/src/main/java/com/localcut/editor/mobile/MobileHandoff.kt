@@ -95,6 +95,15 @@ object MobileHandoffParser {
                     "Dividir o clipe $clipId em ${(positionUs / 1_000_000.0)} s",
                 )
             }
+            "split_selected_clip" -> {
+                val positionUs = requiredLong(params, "positionUs", min = 0L)
+                MobileHandoffCommand(
+                    capability = BridgeCapability.SPLIT_CLIP,
+                    payloadJson = "{\"positionUs\":$positionUs}",
+                    description = "Dividir o clipe selecionado em ${(positionUs / 1_000_000.0)} s",
+                    resolveSelectedClip = true,
+                )
+            }
             "cut_delete_after" -> {
                 val positionUs = requiredLong(params, "positionUs", min = 1L)
                 MobileHandoffCommand(
@@ -114,6 +123,22 @@ object MobileHandoffParser {
                     BridgeCapability.TRIM_CLIP,
                     "{\"clipId\":${jsonString(clipId)},$edgeJson}",
                     if (start != null) "Aparar o início do clipe $clipId" else "Aparar o fim do clipe $clipId",
+                )
+            }
+            "trim_selected_clip" -> {
+                val start = params["newStartUs"]?.let { parseLong(it, "newStartUs", 0L) }
+                val end = params["newEndUs"]?.let { parseLong(it, "newEndUs", 0L) }
+                require((start == null) != (end == null)) { "HANDOFF_TRIM_EDGE_REQUIRED" }
+                val edgeJson = if (start != null) "\"newStartUs\":$start" else "\"newEndUs\":$end"
+                MobileHandoffCommand(
+                    capability = BridgeCapability.TRIM_CLIP,
+                    payloadJson = "{$edgeJson}",
+                    description = if (start != null) {
+                        "Aparar o início do clipe selecionado"
+                    } else {
+                        "Aparar o fim do clipe selecionado"
+                    },
+                    resolveSelectedClip = true,
                 )
             }
             "move_clip" -> {

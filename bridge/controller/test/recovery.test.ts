@@ -89,10 +89,10 @@ test("paired session includes a durable recovery token", async t => {
 
 test("device can recover automatically after the relay loses its ephemeral sqlite state", async t => {
   const before = await createFixture();
+  t.after(() => before.runtime.close());
   const paired = await pairDevice(before.baseUrl);
   const recoveryToken = paired.credential.recoveryToken;
   assert.equal(typeof recoveryToken, "string");
-  await before.runtime.close();
 
   const after = await createFixture(2_000);
   t.after(() => after.runtime.close());
@@ -125,10 +125,10 @@ test("device can recover automatically after the relay loses its ephemeral sqlit
 
 test("recovery rejects a tampered recovery token", async t => {
   const before = await createFixture();
+  t.after(() => before.runtime.close());
   const paired = await pairDevice(before.baseUrl);
   const original = paired.credential.recoveryToken;
   assert.equal(typeof original, "string");
-  await before.runtime.close();
 
   const after = await createFixture(2_000);
   t.after(() => after.runtime.close());

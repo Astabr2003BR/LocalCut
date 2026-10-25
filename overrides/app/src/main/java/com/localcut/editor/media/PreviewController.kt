@@ -122,6 +122,19 @@ class DefaultPreviewController(
         publishTransportState()
     }
 
+    internal fun suspendForBackground() {
+        clearPendingSeek()
+        ticker.stop()
+        transport.pause()
+        engine.pause()
+        publishTransportState()
+    }
+
+    internal fun resumeAfterBackground() {
+        if (transport.state.durationUs > 0L) ticker.start(::pollPosition)
+        publishTransportState()
+    }
+
     override fun release() {
         clearPendingSeek()
         ticker.stop()

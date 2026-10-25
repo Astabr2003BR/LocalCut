@@ -8,6 +8,7 @@ import { CommandRouter, DeviceRegistry } from "./commandRouter.ts";
 import { WebSocketDeviceChannel, type DeviceSocket } from "./deviceChannel.ts";
 import { createLocalCutMcpServer } from "./mcp.ts";
 import { PairingService } from "./pairing.ts";
+import { DeviceRecoveryTokenService, publicKeySha256 } from "./recovery.ts";
 import { DeviceSessionService, SqliteSessionStore, type DeviceSessionStore } from "./session.ts";
 import { SqliteBridgeStore, type BridgeStore } from "./store.ts";
 
@@ -15,6 +16,8 @@ const MAX_JSON_BODY_BYTES = 64 * 1024;
 const MAX_HANDOFF_QUERY_BYTES = 8 * 1024;
 const MOBILE_CLAIM_MAX_AGE_MS = 60 * 1_000;
 const MOBILE_CLAIM_PREFIX = "LOCALCUT_MOBILE_CLAIM_V1";
+const SESSION_RECOVERY_MAX_AGE_MS = 60 * 1_000;
+const SESSION_RECOVERY_PREFIX = "LOCALCUT_SESSION_RECOVERY_V1";
 const ANDROID_ASSET_LINKS = [{
   relation: ["delegate_permission/common.handle_all_urls"],
   target: {
@@ -52,6 +55,8 @@ export function createControllerServer(options: ControllerServerOptions): Contro
   const registry = options.registry ?? new DeviceRegistry();
   const router = options.router ?? new CommandRouter(options.store, registry);
   const mobileClaimNonces = new Map<string, number>();
+  const recoveryNonces = new Map<string, number>();
+  const recoveryTokens = new DeviceRecoveryTokenService(options.controllerApiToken);
   const wss = new WebSocketServer({ noServer: true, clientTracking: false });
   const mcpHandler = createMcpHandler(() => createLocalCutMcpServer(
     router,
@@ -136,13 +141,11 @@ export function createControllerServer(options: ControllerServerOptions): Contro
         if (Math.abs(now - issuedAtEpochMs) > MOBILE_CLAIM_MAX_AGE_MS) {
           throw new Error("PAIRING_MOBILE_CLAIM_EXPIRED");
         }
-        const nonce = decodeBase64(nonceBase64);
+        const nonce = decodeBase64(nonceBase64, "PAIRING_MOBILE_CLAIM_NONCE_INVALID");
         if (nonce.length < 16 || nonce.length > 64) {
           throw new Error("PAIRING_MOBILE_CLAIM_NONCE_INVALID");
         }
-        for (const [key, expiresAtEpochMs] of mobileClaimNonces) {
-          if (expiresAtEpochMs < now) mobileClaimNonces.delete(key);
-        }
+        pruneNonces(mobileClaimNonces, now);
         const replayKey = `${code}:${nonceBase64}`;
         if (mobileClaimNonces.has(replayKey)) {
           throw new Error("PAIRING_MOBILE_CLAIM_REPLAY");
@@ -182,9 +185,13 @@ export function createControllerServer(options: ControllerServerOptions): Contro
         const code = requiredString(body, "code", 32);
         const signatureBase64 = optionalString(body, "signatureBase64", 16_384);
         if (signatureBase64) {
-          const completed = options.pairing.complete(code, signatureBase64, nowEpochMs());
-          const issued = options.sessions.issue(completed.deviceId, nowEpochMs());
-          return sendJson(res, 200, { state: "PAIRED", ...issued });
+          const now = nowEpochMs();
+          const completed = options.pairing.complete(code, signatureBase64, now);
+          const issued = options.sessions.issue(completed.deviceId, now);
+          const device = options.store.getDevice(completed.deviceId);
+          if (!device || device.revokedAtEpochMs != null) throw new Error("DEVICE_REVOKED");
+          const recoveryToken = recoveryTokens.issue(device, options.controllerId, now);
+          return sendJson(res, 200, { state: "PAIRED", ...issued, recoveryToken });
         }
         const status = options.pairing.status(code, nowEpochMs());
         const pairing = options.store.getPairing(code);
@@ -198,11 +205,93 @@ export function createControllerServer(options: ControllerServerOptions): Contro
         const body = await readJson(req);
         const refreshToken = requiredString(body, "refreshToken", 4_096);
         try {
-          const refreshed = options.sessions.refresh(refreshToken, nowEpochMs());
-          return sendJson(res, 200, refreshed);
+          const now = nowEpochMs();
+          const refreshed = options.sessions.refresh(refreshToken, now);
+          const device = options.store.getDevice(refreshed.deviceId);
+          if (!device || device.revokedAtEpochMs != null) throw new Error("AUTH_REQUIRED");
+          const recoveryToken = recoveryTokens.issue(device, options.controllerId, now);
+          return sendJson(res, 200, { ...refreshed, recoveryToken });
         } catch {
           return sendJson(res, 401, { code: "AUTH_REQUIRED" });
         }
+      }
+
+      if (url.pathname === "/v1/session/recover") {
+        const body = await readJson(req);
+        const deviceId = requiredString(body, "deviceId", 128);
+        const publicKeySpkiBase64 = requiredString(body, "publicKeySpkiBase64", 16_384);
+        const recoveryToken = requiredString(body, "recoveryToken", 4_096);
+        const issuedAtEpochMs = requiredInteger(body, "issuedAtEpochMs");
+        const nonceBase64 = requiredString(body, "nonceBase64", 256);
+        const signatureBase64 = requiredString(body, "signatureBase64", 16_384);
+        const now = nowEpochMs();
+        if (Math.abs(now - issuedAtEpochMs) > SESSION_RECOVERY_MAX_AGE_MS) {
+          throw new Error("RECOVERY_PROOF_EXPIRED");
+        }
+        const nonce = decodeBase64(nonceBase64, "RECOVERY_NONCE_INVALID");
+        if (nonce.length < 16 || nonce.length > 64) throw new Error("RECOVERY_NONCE_INVALID");
+        pruneNonces(recoveryNonces, now);
+        const replayKey = `${deviceId}:${nonceBase64}`;
+        if (recoveryNonces.has(replayKey)) throw new Error("RECOVERY_REPLAY");
+
+        const claims = recoveryTokens.verify(recoveryToken, options.controllerId, now);
+        if (claims.deviceId !== deviceId) throw new Error("RECOVERY_TOKEN_INVALID");
+        if (claims.publicKeySha256 !== publicKeySha256(publicKeySpkiBase64)) {
+          throw new Error("DEVICE_IDENTITY_MISMATCH");
+        }
+        let publicKey;
+        try {
+          publicKey = createPublicKey({
+            key: Buffer.from(publicKeySpkiBase64, "base64"),
+            format: "der",
+            type: "spki",
+          });
+        } catch {
+          throw new Error("DEVICE_IDENTITY_INVALID");
+        }
+        const signedPayload = Buffer.from(
+          `${SESSION_RECOVERY_PREFIX}\n${deviceId}\n${issuedAtEpochMs}\n${nonceBase64}\n${recoveryToken}`,
+          "utf8",
+        );
+        let valid = false;
+        try {
+          valid = verify(
+            "sha256",
+            signedPayload,
+            publicKey,
+            Buffer.from(signatureBase64, "base64"),
+          );
+        } catch {
+          valid = false;
+        }
+        if (!valid) throw new Error("RECOVERY_SIGNATURE_INVALID");
+
+        const existing = options.store.getDevice(deviceId);
+        if (existing?.revokedAtEpochMs != null) throw new Error("DEVICE_REVOKED");
+        if (existing && existing.publicKeySpkiBase64 !== publicKeySpkiBase64) {
+          throw new Error("DEVICE_IDENTITY_MISMATCH");
+        }
+        if (existing?.controllerId != null && existing.controllerId !== options.controllerId) {
+          throw new Error("AUTH_REQUIRED");
+        }
+
+        recoveryNonces.set(replayKey, now + SESSION_RECOVERY_MAX_AGE_MS);
+        if (!existing) {
+          options.store.upsertDevice({
+            deviceId,
+            publicKeySpkiBase64,
+            controllerId: options.controllerId,
+            revokedAtEpochMs: null,
+          });
+        } else if (existing.controllerId == null) {
+          options.store.bindDevice(deviceId, options.controllerId);
+        }
+        const issued = options.sessions.issue(deviceId, now);
+        const restoredDevice = options.store.getDevice(deviceId);
+        if (!restoredDevice) throw new Error("INTERNAL_ERROR");
+        const nextRecoveryToken = recoveryTokens.issue(restoredDevice, options.controllerId, now);
+        options.store.appendAudit("session_recovered", deviceId, "{}", now);
+        return sendJson(res, 200, { ...issued, recoveryToken: nextRecoveryToken });
       }
 
       if (url.pathname === "/v1/device/unpair-self") {
@@ -234,7 +323,8 @@ export function createControllerServer(options: ControllerServerOptions): Contro
       const code = safeErrorCode(error);
       const status = code === "BODY_TOO_LARGE" ? 413 :
         code.includes("NOT_FOUND") ? 404 :
-        code.includes("REVOKED") ? 403 : 400;
+        code.includes("REVOKED") ? 403 :
+        code === "AUTH_REQUIRED" ? 401 : 400;
       return sendJson(res, status, { code });
     }
   });
@@ -359,11 +449,17 @@ function optionalString(body: Record<string, unknown>, key: string, maxLength: n
   return value;
 }
 
-function decodeBase64(value: string): Buffer {
+function decodeBase64(value: string, errorCode: string): Buffer {
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value) || value.length % 4 !== 0) {
-    throw new Error("PAIRING_MOBILE_CLAIM_NONCE_INVALID");
+    throw new Error(errorCode);
   }
   return Buffer.from(value, "base64");
+}
+
+function pruneNonces(nonces: Map<string, number>, nowEpochMs: number): void {
+  for (const [key, expiresAtEpochMs] of nonces) {
+    if (expiresAtEpochMs < nowEpochMs) nonces.delete(key);
+  }
 }
 
 function sendRedirect(res: ServerResponse, location: string): void {

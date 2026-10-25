@@ -61,6 +61,22 @@ class OkHttpBridgePairingClient(
         credentialFrom(root)
     }
 
+    override fun recover(proof: BridgeSessionRecoveryProof): Result<BridgeStoredCredential> = runCatching {
+        val root = post(
+            "/v1/session/recover",
+            buildString {
+                append("{\"deviceId\":"); append(jsonString(proof.deviceId))
+                append(",\"publicKeySpkiBase64\":"); append(jsonString(proof.publicKeySpkiBase64))
+                append(",\"recoveryToken\":"); append(jsonString(proof.recoveryToken))
+                append(",\"issuedAtEpochMs\":"); append(proof.issuedAtEpochMs)
+                append(",\"nonceBase64\":"); append(jsonString(proof.nonceBase64))
+                append(",\"signatureBase64\":"); append(jsonString(proof.signatureBase64))
+                append('}')
+            },
+        )
+        credentialFrom(root)
+    }
+
     override fun mobileClaim(proof: BridgeMobilePairingProof): Result<BridgeMobilePairingClaim> = runCatching {
         val root = post(
             "/v1/pair/mobile-claim",
@@ -117,6 +133,10 @@ class OkHttpBridgePairingClient(
                 else -> value.asString()
             },
             expiresAtEpochMs = root.required("accessExpiresAtEpochMs").asLong(),
+            recoveryToken = when (val value = root.optional("recoveryToken")) {
+                null, JNull -> null
+                else -> value.asString()
+            },
         )
 
     private companion object {

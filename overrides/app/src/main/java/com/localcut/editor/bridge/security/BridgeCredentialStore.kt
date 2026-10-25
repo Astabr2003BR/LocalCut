@@ -4,13 +4,17 @@ data class BridgeStoredCredential(
     val accessToken: String,
     val refreshToken: String?,
     val expiresAtEpochMs: Long,
+    val recoveryToken: String? = null,
 ) {
     init {
         require(accessToken.isNotBlank()) { "accessToken must not be blank" }
+        require(refreshToken == null || refreshToken.isNotBlank()) { "refreshToken must not be blank" }
+        require(recoveryToken == null || recoveryToken.isNotBlank()) { "recoveryToken must not be blank" }
         require(expiresAtEpochMs >= 0L) { "expiresAtEpochMs must be non-negative" }
     }
 
-    override fun toString(): String = "BridgeStoredCredential(accessToken=<redacted>, refreshToken=<redacted>, expiresAtEpochMs=$expiresAtEpochMs)"
+    override fun toString(): String =
+        "BridgeStoredCredential(accessToken=<redacted>, refreshToken=<redacted>, expiresAtEpochMs=$expiresAtEpochMs, recoveryToken=<redacted>)"
 }
 
 interface BridgeCredentialStore {

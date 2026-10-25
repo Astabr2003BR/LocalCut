@@ -13,6 +13,7 @@ import com.localcut.editor.bridge.transport.OkHttpBridgePairingClient
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,6 +31,7 @@ class LocalCutBridgeControl(
     private val appContext = context.applicationContext
     private val pairingRunning = AtomicBoolean(false)
     private val forcedRefreshPending = AtomicBoolean(false)
+    private val renewalRetryScheduled = AtomicBoolean(false)
     private val endpointPreference = BridgeEndpointPreference(settingsStore, credentialStore)
     private val mutableState = MutableStateFlow(
         BridgeUiState(
@@ -42,6 +44,7 @@ class LocalCutBridgeControl(
 
     val connectionObserver: BridgeConnectionObserver = object : BridgeConnectionObserver {
         override fun onConnected() {
+            renewalRetryScheduled.set(false)
             update(BridgeUiEvent.Connected)
         }
 
@@ -63,9 +66,7 @@ class LocalCutBridgeControl(
 
     fun setRelayBaseUrl(rawBaseUrl: String) {
         endpointPreference.save(rawBaseUrl)
-            .onSuccess { endpoint ->
-                update(BridgeUiEvent.RelayBaseUrlChanged(endpoint.httpsBaseUrl))
-            }
+            .onSuccess { endpoint -> update(BridgeUiEvent.RelayBaseUrlChanged(endpoint.httpsBaseUrl)) }
             .onFailure { error ->
                 val message = if (error.message == "PAIRING_MUST_BE_REVOKED_BEFORE_ENDPOINT_CHANGE") {
                     "Revogue o pareamento atual antes de trocar o servidor Relay."
@@ -92,12 +93,24 @@ class LocalCutBridgeControl(
                 val forceRefresh = forcedRefreshPending.getAndSet(false)
                 val client = OkHttpBridgePairingClient(endpoint.httpsBaseUrl)
                 var credential = credentialStore.load()
-                if (credential != null && (forceRefresh || credential.expiresAtEpochMs <= nowEpochMs())) {
-                    credential = credential.refreshToken?.let { refresh ->
-                        withContext(Dispatchers.IO) { client.refresh(refresh).getOrNull() }
+                val currentCredential = credential
+                if (currentCredential != null && (forceRefresh || currentCredential.expiresAtEpochMs <= nowEpochMs())) {
+                    val renewal = withContext(Dispatchers.IO) {
+                        BridgeCredentialRenewal(
+                            client = client,
+                            identityStore = identityStore,
+                            nowEpochMs = nowEpochMs,
+                        ).renew(currentCredential)
                     }
+                    if (renewal.isFailure) {
+                        update(BridgeUiEvent.Error("Reconexão temporariamente indisponível. O pareamento foi preservado."))
+                        scheduleCredentialRenewalRetry()
+                        return@launch
+                    }
+                    credential = renewal.getOrThrow()
                     if (credential != null) {
                         credentialStore.save(credential)
+                        renewalRetryScheduled.set(false)
                     } else {
                         credentialStore.clear()
                         mutableState.value = mutableState.value.copy(paired = false)
@@ -123,9 +136,7 @@ class LocalCutBridgeControl(
                 startBridgeService(BridgeConnectionService.ACTION_CONNECT)
             } finally {
                 pairingRunning.set(false)
-                if (forcedRefreshPending.get()) {
-                    connect(forceRefreshCredential = true)
-                }
+                if (forcedRefreshPending.get()) connect(forceRefreshCredential = true)
             }
         }
     }
@@ -142,14 +153,9 @@ class LocalCutBridgeControl(
         scope.launch {
             val result = runCatching {
                 check(matchesPendingPairing(code)) { "PAIRING_CODE_MISMATCH" }
-                val proof = BridgeMobilePairingProofFactory(
-                    identityStore = identityStore,
-                    nowEpochMs = nowEpochMs,
-                ).create(code)
+                val proof = BridgeMobilePairingProofFactory(identityStore, nowEpochMs).create(code)
                 withContext(Dispatchers.IO) {
-                    OkHttpBridgePairingClient(endpoint.httpsBaseUrl)
-                        .mobileClaim(proof)
-                        .getOrThrow()
+                    OkHttpBridgePairingClient(endpoint.httpsBaseUrl).mobileClaim(proof).getOrThrow()
                 }
                 Unit
             }
@@ -159,6 +165,7 @@ class LocalCutBridgeControl(
 
     fun disconnect() {
         settingsStore.markManualDisconnect()
+        renewalRetryScheduled.set(false)
         startBridgeService(BridgeConnectionService.ACTION_DISCONNECT, foreground = false)
         update(BridgeUiEvent.Disconnected)
     }
@@ -185,6 +192,7 @@ class LocalCutBridgeControl(
                 )
                 val result = withContext(Dispatchers.IO) { coordinator.unpair() }
                 result.onSuccess {
+                    renewalRetryScheduled.set(false)
                     startBridgeService(BridgeConnectionService.ACTION_DISCONNECT, foreground = false)
                     update(BridgeUiEvent.PairingRevoked)
                 }.onFailure { error ->
@@ -192,6 +200,18 @@ class LocalCutBridgeControl(
                 }
             } finally {
                 pairingRunning.set(false)
+            }
+        }
+    }
+
+    private fun scheduleCredentialRenewalRetry() {
+        if (!settingsStore.sessionEnabled) return
+        if (!renewalRetryScheduled.compareAndSet(false, true)) return
+        scope.launch {
+            delay(CREDENTIAL_RETRY_DELAY_MS)
+            renewalRetryScheduled.set(false)
+            if (settingsStore.sessionEnabled && credentialStore.load() != null) {
+                connect(forceRefreshCredential = true)
             }
         }
     }
@@ -220,5 +240,6 @@ class LocalCutBridgeControl(
 
     private companion object {
         const val HTTP_UNAUTHORIZED = 401
+        const val CREDENTIAL_RETRY_DELAY_MS = 10_000L
     }
 }

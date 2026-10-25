@@ -74,6 +74,8 @@ class AndroidKeystoreBridgeCredentialStore(context: Context) : BridgeCredentialS
             data.writeBoolean(credential.refreshToken != null)
             credential.refreshToken?.let { refreshToken -> data.writeSizedUtf8(refreshToken) }
             data.writeLong(credential.expiresAtEpochMs)
+            data.writeBoolean(credential.recoveryToken != null)
+            credential.recoveryToken?.let { recoveryToken -> data.writeSizedUtf8(recoveryToken) }
         }
         return output.toByteArray()
     }
@@ -82,8 +84,15 @@ class AndroidKeystoreBridgeCredentialStore(context: Context) : BridgeCredentialS
         val accessToken = data.readSizedUtf8()
         val refreshToken = if (data.readBoolean()) data.readSizedUtf8() else null
         val expiresAtEpochMs = data.readLong()
+        val recoveryToken = if (data.available() == 0) {
+            null
+        } else if (data.readBoolean()) {
+            data.readSizedUtf8()
+        } else {
+            null
+        }
         require(data.available() == 0) { "unexpected credential payload data" }
-        BridgeStoredCredential(accessToken, refreshToken, expiresAtEpochMs)
+        BridgeStoredCredential(accessToken, refreshToken, expiresAtEpochMs, recoveryToken)
     }
 
     private fun DataOutputStream.writeSizedUtf8(value: String) {

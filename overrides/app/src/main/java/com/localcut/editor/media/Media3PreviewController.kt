@@ -95,19 +95,27 @@ class Media3PreviewController(
         view.useController = false
         bridgePreviewFramePort.attach(view)
 
+        val videoOutput = view.videoSurfaceView
+        val surfaceReady = when (videoOutput) {
+            is SurfaceView -> videoOutput.holder.surface.isValid
+            is TextureView -> videoOutput.isAvailable
+            else -> false
+        }
         if (
             PreviewSurfaceRecoveryPolicy.shouldRebindVideoOutput(
                 durationUs = state.value.durationUs,
                 hasBoundView = boundViewRef?.get() === view,
+                surfaceReady = surfaceReady,
             )
         ) {
-            // Android can destroy/recreate the PlayerView SurfaceView while an external picker
-            // is on top of the editor. The CompositionPlayer instance remains valid, but its
-            // video output may still reference the old surface. Re-register the current output
-            // without replacing the player instance so Media3 tracks the new surface lifecycle.
-            when (val videoOutput = view.videoSurfaceView) {
-                is SurfaceView -> player.setVideoSurfaceView(videoOutput)
-                is TextureView -> player.setVideoTextureView(videoOutput)
+            // PlayerView owns the normal Media3 surface lifecycle. Re-register only after the
+            // recreated surface is actually ready; returning from Home/pickers can briefly leave
+            // SurfaceView/TextureView present but not usable yet on Android 16.
+            runCatching {
+                when (videoOutput) {
+                    is SurfaceView -> player.setVideoSurfaceView(videoOutput)
+                    is TextureView -> player.setVideoTextureView(videoOutput)
+                }
             }
         }
 

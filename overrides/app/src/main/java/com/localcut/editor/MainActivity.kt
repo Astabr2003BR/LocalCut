@@ -211,10 +211,18 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (!::editorViewModel.isInitialized || !::previewController.isInitialized) return
+        previewController.resumeAfterBackground()
         val preview = editorViewModel.previewState.value
         if (PreviewResumePolicy.shouldRefresh(preview.durationUs, preview.playing)) {
             previewController.seekToUs(preview.positionUs)
         }
+    }
+
+    override fun onStop() {
+        if (::previewController.isInitialized) {
+            previewController.suspendForBackground(isChangingConfigurations)
+        }
+        super.onStop()
     }
 
     override fun onNewIntent(intent: Intent) {

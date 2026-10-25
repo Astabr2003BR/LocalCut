@@ -183,16 +183,23 @@ class MobileHandoffActivity : Activity() {
             returnAfterHandoff(command.returnTarget)
             return
         }
-        val payloadJson = SelectedClipDeleteResolver.resolvePayload(
+        val project = runtime.session.state.project
+        val selectedClipId = runtime.session.state.selectedClipId
+        val payloadJson = CutDeleteAfterResolver.resolvePayload(
             command = command,
-            selectedClipId = runtime.session.state.selectedClipId,
-        ).getOrElse { error ->
-            Toast.makeText(this, error.message ?: "CLIP_NOT_FOUND", Toast.LENGTH_LONG).show()
+            project = project,
+            selectedClipId = selectedClipId,
+        ).mapCatching { semanticPayload ->
+            SelectedClipDeleteResolver.resolvePayload(
+                command = command.copy(payloadJson = semanticPayload),
+                selectedClipId = selectedClipId,
+            ).getOrThrow()
+        }.getOrElse { error ->
+            Toast.makeText(this, error.message ?: "HANDOFF_PAYLOAD_INVALID", Toast.LENGTH_LONG).show()
             returnAfterHandoff(command.returnTarget)
             return
         }
         val now = System.currentTimeMillis()
-        val project = runtime.session.state.project
         val result = runtime.bridgeCommandExecutor.execute(
             BridgeCommandEnvelope(
                 protocolVersion = 1,

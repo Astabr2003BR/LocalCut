@@ -38,6 +38,14 @@ internal object PreviewFrameCapturePolicy {
     }
 }
 
+internal object PreviewFrameSurfacePolicy {
+    fun canCaptureSurfaceView(width: Int, height: Int, surfaceValid: Boolean): Boolean =
+        width > 0 && height > 0 && surfaceValid
+
+    fun canCaptureTextureView(width: Int, height: Int, available: Boolean): Boolean =
+        width > 0 && height > 0 && available
+}
+
 @UnstableApi
 @OptIn(ExperimentalApi::class)
 class AndroidPlayerPreviewFramePort(
@@ -83,11 +91,43 @@ class AndroidPlayerPreviewFramePort(
     }
 
     private fun captureFrom(playerView: PlayerView) {
-        val surface = playerView.videoSurfaceView
-        if (surface == null || surface.width <= 0 || surface.height <= 0) {
+        val surface = playerView.videoSurfaceView ?: run {
             finishFailure("preview surface is not ready")
             return
         }
+
+        when (surface) {
+            is SurfaceView -> {
+                val surfaceValid = runCatching { surface.holder.surface.isValid }.getOrDefault(false)
+                if (!PreviewFrameSurfacePolicy.canCaptureSurfaceView(
+                        width = surface.width,
+                        height = surface.height,
+                        surfaceValid = surfaceValid,
+                    )
+                ) {
+                    finishFailure("preview surface is not ready")
+                    return
+                }
+            }
+
+            is TextureView -> {
+                if (!PreviewFrameSurfacePolicy.canCaptureTextureView(
+                        width = surface.width,
+                        height = surface.height,
+                        available = surface.isAvailable,
+                    )
+                ) {
+                    finishFailure("preview surface is not ready")
+                    return
+                }
+            }
+
+            else -> {
+                finishFailure("preview surface type is not capturable")
+                return
+            }
+        }
+
         val size = runCatching { PreviewFrameCapturePolicy.targetSize(surface.width, surface.height) }
             .getOrElse {
                 finishFailure(it.message ?: "invalid preview surface")
@@ -97,25 +137,30 @@ class AndroidPlayerPreviewFramePort(
         when (surface) {
             is SurfaceView -> captureSurfaceView(surface, size)
             is TextureView -> captureTextureView(surface, size)
-            else -> finishFailure("preview surface type is not capturable")
         }
     }
 
     private fun captureSurfaceView(surface: SurfaceView, size: PreviewFrameSize) {
         val bitmap = Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888)
-        PixelCopy.request(
-            surface,
-            bitmap,
-            { result ->
-                if (result == PixelCopy.SUCCESS) {
-                    storeBitmap(bitmap)
-                } else {
-                    bitmap.recycle()
-                    finishFailure("preview capture failed: PixelCopy=$result")
-                }
-            },
-            mainHandler,
-        )
+        val request = runCatching {
+            PixelCopy.request(
+                surface,
+                bitmap,
+                { result ->
+                    if (result == PixelCopy.SUCCESS) {
+                        storeBitmap(bitmap)
+                    } else {
+                        bitmap.recycle()
+                        finishFailure("preview capture failed: PixelCopy=$result")
+                    }
+                },
+                mainHandler,
+            )
+        }
+        if (request.isFailure) {
+            if (!bitmap.isRecycled) bitmap.recycle()
+            finishFailure("preview surface is not ready")
+        }
     }
 
     private fun captureTextureView(texture: TextureView, size: PreviewFrameSize) {

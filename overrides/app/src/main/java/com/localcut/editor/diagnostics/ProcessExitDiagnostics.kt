@@ -65,10 +65,11 @@ object ProcessExitDiagnostics {
 
     fun latestRelevantExitReport(context: Context): String? {
         val appContext = context.applicationContext
-        val crash = appContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val preferences = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val storedCrash = preferences
             .getString(KEY_LAST_CRASH, null)
             ?.takeIf { it.isNotBlank() }
+        val storedCrashAt = preferences.getLong(KEY_LAST_CRASH_AT, 0L)
 
         val exit = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             runCatching {
@@ -79,6 +80,17 @@ object ProcessExitDiagnostics {
             }.getOrNull()
         } else {
             null
+        }
+
+        val crash = when {
+            storedCrash == null -> null
+            exit == null -> storedCrash
+            ProcessExitDiagnosticsPolicy.shouldAttachStoredCrash(
+                exitReason = exit.reason,
+                exitTimestampMs = exit.timestamp,
+                crashTimestampMs = storedCrashAt,
+            ) -> storedCrash
+            else -> null
         }
 
         if (exit == null && crash == null) return null
@@ -98,7 +110,7 @@ object ProcessExitDiagnostics {
             append("Otimização de bateria: ")
             append(if (batteryOptimized) "ATIVA" else "SEM RESTRIÇÃO")
             if (crash != null) {
-                append("\n\nÚltima exceção não tratada:\n")
+                append("\n\nÚltima exceção não tratada deste encerramento:\n")
                 append(crash.take(900))
             }
         }.take(MAX_REPORT_CHARS)

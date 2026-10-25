@@ -12,6 +12,18 @@ import {
 const MAX_PREVIEW_BASE64_CHARS = 2_000_000;
 const ACTIVE_PROJECT_SENTINEL = "__localcut_active_project__";
 const COMMAND_TTL_MS = 30_000;
+const READ_ONLY_CAPABILITIES = new Set<BridgeCapability>([
+  "get_device_status",
+  "get_project_state",
+  "get_timeline_summary",
+  "list_tracks",
+  "list_clips",
+  "get_selected_clip",
+  "get_playhead",
+  "get_export_status",
+  "get_errors",
+  "get_preview_frame",
+]);
 
 const routingFields = {
   deviceId: z.string().min(1).max(128),
@@ -32,6 +44,10 @@ export function controllerToolNames(): string[] {
 
 export function controllerManagementToolNames(): string[] {
   return ["claim_pairing", "discover_active_contexts", "revoke_device"];
+}
+
+export function securityScopesForCapability(capability: BridgeCapability): [string] {
+  return [READ_ONLY_CAPABILITIES.has(capability) ? "localcut:read" : "localcut:write"];
 }
 
 export function buildToolInputSchema(capability: BridgeCapability) {
@@ -105,6 +121,8 @@ export function createLocalCutMcpServer(
       title: "LocalCut: discover active contexts",
       description: "Discover currently connected LocalCut devices and their active project routing metadata. This is read-only and should be called before other tools when deviceId/projectId are unknown.",
       inputSchema: discoverySchema,
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      _meta: oauthToolMeta(["localcut:read"]),
     },
     async (input: unknown) => {
       discoverySchema.parse(input);
@@ -118,12 +136,20 @@ export function createLocalCutMcpServer(
 
   for (const capability of bridgeCapabilities) {
     const inputSchema = buildToolInputSchema(capability);
+    const scopes = securityScopesForCapability(capability);
+    const readOnly = scopes[0] === "localcut:read";
     server.registerTool(
       capability,
       {
         title: titleFor(capability),
         description: descriptionFor(capability),
         inputSchema,
+        annotations: {
+          readOnlyHint: readOnly,
+          destructiveHint: capability === "delete_clip",
+          openWorldHint: false,
+        },
+        _meta: oauthToolMeta(scopes),
       },
       async (input: unknown) => {
         const parsed = inputSchema.parse(input);
@@ -155,6 +181,8 @@ export function createLocalCutMcpServer(
         title: "LocalCut: claim pairing",
         description: "Claim the 6-digit pairing code shown by a LocalCut APK. The APK will independently sign the server challenge before pairing completes.",
         inputSchema: claimSchema,
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+        _meta: oauthToolMeta(["localcut:write"]),
       },
       async input => {
         const parsed = claimSchema.parse(input);
@@ -173,6 +201,8 @@ export function createLocalCutMcpServer(
         title: "LocalCut: revoke device",
         description: "Revoke a paired LocalCut device and terminate its active controller session.",
         inputSchema: revokeSchema,
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+        _meta: oauthToolMeta(["localcut:write"]),
       },
       async input => {
         const parsed = revokeSchema.parse(input);
@@ -199,6 +229,12 @@ export function toolResultForCapability(
   return {
     ...base,
     content: [...base.content, image],
+  };
+}
+
+function oauthToolMeta(scopes: readonly string[]): Record<string, unknown> {
+  return {
+    securitySchemes: [{ type: "oauth2", scopes: [...scopes] }],
   };
 }
 

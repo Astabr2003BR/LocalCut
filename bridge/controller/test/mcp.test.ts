@@ -7,6 +7,7 @@ import {
   buildToolInputSchema,
   controllerManagementToolNames,
   controllerToolNames,
+  securityScopesForCapability,
   toolResultForCapability,
 } from "../src/mcp.ts";
 
@@ -16,6 +17,14 @@ test("MCP exposes only allowlisted LocalCut edit tools plus explicit management 
     controllerManagementToolNames().sort(),
     ["claim_pairing", "discover_active_contexts", "revoke_device"].sort(),
   );
+});
+
+test("MCP OAuth scopes classify reads separately from editor actions", () => {
+  assert.deepEqual(securityScopesForCapability("get_project_state"), ["localcut:read"]);
+  assert.deepEqual(securityScopesForCapability("get_preview_frame"), ["localcut:read"]);
+  assert.deepEqual(securityScopesForCapability("seek"), ["localcut:write"]);
+  assert.deepEqual(securityScopesForCapability("move_clip"), ["localcut:write"]);
+  assert.deepEqual(securityScopesForCapability("export_project"), ["localcut:write"]);
 });
 
 test("project writes and export require expectedRevision", () => {

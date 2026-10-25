@@ -89,6 +89,17 @@ class OkHttpBridgePairingClient(
         )
     }
 
+    override fun approveOAuth(requestId: String, accessToken: String): Result<String> = runCatching {
+        require(requestId.matches(REQUEST_ID)) { "OAUTH_APPROVAL_REQUEST_INVALID" }
+        require(accessToken.isNotBlank()) { "AUTH_REQUIRED" }
+        val root = post(
+            path = "/v1/oauth/device-approve",
+            jsonBody = """{"requestId":${jsonString(requestId)}}""",
+            bearerToken = accessToken,
+        )
+        root.required("completionUrl").asString()
+    }
+
     override fun unpair(accessToken: String): Result<Unit> = runCatching {
         require(accessToken.isNotBlank()) { "accessToken must not be blank" }
         post(
@@ -141,5 +152,6 @@ class OkHttpBridgePairingClient(
 
     private companion object {
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+        val REQUEST_ID = Regex("^[A-Za-z0-9_-]{16,256}$")
     }
 }

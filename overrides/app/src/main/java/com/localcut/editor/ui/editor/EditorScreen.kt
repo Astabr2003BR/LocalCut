@@ -298,69 +298,107 @@ private fun ProfessionalEditorToolbar(
     onCancelExport: () -> Unit,
     onFinalPreviewRequested: () -> Unit,
 ) {
+    val compactLayout = EditorToolbarLayoutPolicy.useCompactLayout(
+        LocalConfiguration.current.screenWidthDp.toFloat(),
+    )
+
+    @Composable
+    fun OutputActions() {
+        TextButton(
+            onClick = onFinalPreviewRequested,
+            enabled = !exportState.running,
+            contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+        ) { Text("Prévia", maxLines = 1, softWrap = false) }
+
+        if (exportState.running) {
+            Button(
+                onClick = onCancelExport,
+                contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
+            ) { Text("Cancelar", maxLines = 1, softWrap = false) }
+        } else {
+            Button(
+                onClick = onExportRequested,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = EditorAccent,
+                    contentColor = Color.Black,
+                ),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+            ) {
+                Text(
+                    "Exportar",
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
+        }
+    }
+
+    @Composable
+    fun EditActions() {
+        TextButton(
+            onClick = onUndo,
+            enabled = canUndo && !exportState.running,
+            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+        ) { Text("↶", maxLines = 1, softWrap = false) }
+        TextButton(
+            onClick = onRedo,
+            enabled = canRedo && !exportState.running,
+            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+        ) { Text("↷", maxLines = 1, softWrap = false) }
+        TextButton(
+            onClick = { onLoopChange(!loopEnabled) },
+            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+        ) { Text(if (loopEnabled) "∞•" else "∞", maxLines = 1, softWrap = false) }
+    }
+
     Surface(
         color = Color(0xFF0B0B0D),
         shadowElevation = 4.dp,
     ) {
         Column(Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(0.dp),
-            ) {
-                Text(
-                    "LocalCut",
-                    modifier = Modifier.padding(start = 3.dp, end = 1.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    softWrap = false,
-                )
-                TextButton(
-                    onClick = onUndo,
-                    enabled = canUndo && !exportState.running,
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                ) { Text("↶", maxLines = 1, softWrap = false) }
-                TextButton(
-                    onClick = onRedo,
-                    enabled = canRedo && !exportState.running,
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                ) { Text("↷", maxLines = 1, softWrap = false) }
-                TextButton(
-                    onClick = { onLoopChange(!loopEnabled) },
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                ) { Text(if (loopEnabled) "∞•" else "∞", maxLines = 1, softWrap = false) }
-
-                Spacer(Modifier.weight(1f))
-
-                TextButton(
-                    onClick = onFinalPreviewRequested,
-                    enabled = !exportState.running,
-                    contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
-                ) { Text("Prévia", maxLines = 1, softWrap = false) }
-
-                if (exportState.running) {
-                    Button(
-                        onClick = onCancelExport,
-                        contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
-                    ) { Text("Cancelar", maxLines = 1, softWrap = false) }
-                } else {
-                    Button(
-                        onClick = onExportRequested,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = EditorAccent,
-                            contentColor = Color.Black,
-                        ),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                    ) {
-                        Text(
-                            "Exportar",
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            softWrap = false,
-                        )
-                    }
+            if (compactLayout) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 1.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "LocalCut",
+                        modifier = Modifier.padding(start = 3.dp, end = 1.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    OutputActions()
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 0.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(0.dp),
+                ) {
+                    EditActions()
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(0.dp),
+                ) {
+                    Text(
+                        "LocalCut",
+                        modifier = Modifier.padding(start = 3.dp, end = 1.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                    EditActions()
+                    Spacer(Modifier.weight(1f))
+                    OutputActions()
                 }
             }
 

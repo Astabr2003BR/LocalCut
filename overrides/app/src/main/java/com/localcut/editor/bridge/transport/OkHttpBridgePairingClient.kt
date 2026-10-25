@@ -100,6 +100,17 @@ class OkHttpBridgePairingClient(
         root.required("completionUrl").asString()
     }
 
+    override fun approveRemoteControl(requestId: String, accessToken: String): Result<Unit> = runCatching {
+        require(requestId.matches(REQUEST_ID)) { "REMOTE_APPROVAL_REQUEST_INVALID" }
+        require(accessToken.isNotBlank()) { "AUTH_REQUIRED" }
+        post(
+            path = "/v1/remote/device-approve",
+            jsonBody = """{"requestId":${jsonString(requestId)}}""",
+            bearerToken = accessToken,
+        )
+        Unit
+    }
+
     override fun unpair(accessToken: String): Result<Unit> = runCatching {
         require(accessToken.isNotBlank()) { "accessToken must not be blank" }
         post(

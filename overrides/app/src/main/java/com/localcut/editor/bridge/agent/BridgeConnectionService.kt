@@ -5,6 +5,7 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import com.localcut.editor.bridge.transport.BridgeConnectionCoordinator
+import com.localcut.editor.diagnostics.ProcessExitDiagnostics
 
 class BridgeConnectionService : Service() {
     private lateinit var settings: BridgeSettingsStore
@@ -16,6 +17,7 @@ class BridgeConnectionService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        ProcessExitDiagnostics.mark(this, "service:create")
         settings = SharedPreferencesBridgeSettingsStore(this)
         notificationFactory = BridgeNotificationFactory(this)
         coordinatorLifecycle = BridgeCoordinatorLifecycle(
@@ -25,6 +27,10 @@ class BridgeConnectionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        ProcessExitDiagnostics.mark(
+            this,
+            "service:start:${intent?.action?.substringAfterLast('.') ?: "sticky"}:session=${settings.sessionEnabled}",
+        )
         return when (intent?.action) {
             ACTION_DISCONNECT -> {
                 if (coordinatorLifecycle.isInitialized) {
@@ -32,6 +38,7 @@ class BridgeConnectionService : Service() {
                 } else {
                     settings.markManualDisconnect()
                 }
+                ProcessExitDiagnostics.mark(this, "service:disconnect")
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf(startId)
                 START_NOT_STICKY
@@ -61,6 +68,7 @@ class BridgeConnectionService : Service() {
                     coordinator.reconnectIfEnabled()
                     START_STICKY
                 } else {
+                    ProcessExitDiagnostics.mark(this, "service:sticky-disabled")
                     stopSelf(startId)
                     START_NOT_STICKY
                 }
@@ -68,7 +76,16 @@ class BridgeConnectionService : Service() {
         }
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        ProcessExitDiagnostics.mark(this, "service:task-removed:session=${settings.sessionEnabled}")
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
+        ProcessExitDiagnostics.mark(
+            this,
+            "service:destroy:init=${::coordinatorLifecycle.isInitialized && coordinatorLifecycle.isInitialized}",
+        )
         if (::coordinatorLifecycle.isInitialized) {
             coordinatorLifecycle.shutdownIfInitialized()
         }
@@ -79,8 +96,12 @@ class BridgeConnectionService : Service() {
 
     private fun startAsForegroundSafely(status: String, startId: Int): Boolean =
         BridgeForegroundServiceGuard.tryStart(
-            start = { startAsForeground(status) },
+            start = {
+                startAsForeground(status)
+                ProcessExitDiagnostics.mark(this, "service:foreground")
+            },
             onFailure = {
+                ProcessExitDiagnostics.mark(this, "service:foreground-failed")
                 runCatching { notificationFactory.postReconnectFallback() }
                 stopSelf(startId)
             },
@@ -101,6 +122,7 @@ class BridgeConnectionService : Service() {
                 notificationFactory.foreground(status),
             )
         }.onFailure {
+            ProcessExitDiagnostics.mark(this, "service:notify-failed")
             runCatching { notificationFactory.postReconnectFallback() }
         }
     }

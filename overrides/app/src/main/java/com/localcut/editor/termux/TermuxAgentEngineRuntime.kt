@@ -7,6 +7,11 @@ class TermuxAgentEngineRuntime private constructor(context: Context) {
 
     val tokenStore: TermuxEngineTokenStore = AndroidKeystoreTermuxEngineTokenStore(appContext)
     val client: TermuxEngineClient = SocketTermuxEngineClient(tokenProvider = tokenStore::load)
+    val jobClient: TermuxEngineJobClient = SocketTermuxEngineJobClient(tokenProvider = tokenStore::load)
+    val mediaAnalyzeCoordinator = TermuxMediaAnalyzeCoordinator(
+        client = jobClient,
+        sourceResolver = AndroidTermuxMediaSourceResolver(appContext.contentResolver),
+    )
     private val pairingService = TermuxEnginePairingService(client, tokenStore)
 
     suspend fun pair(pairingCode: String): Result<Unit> = pairingService.pair(pairingCode)

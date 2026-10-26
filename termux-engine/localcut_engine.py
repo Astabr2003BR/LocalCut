@@ -1,28 +1,37 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import hmac
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import socketserver
 import threading
 import time
 
+from localcut_jobs import FfprobeMediaAnalyzer, JobStore, MediaSpool
+
 PROTOCOL_VERSION = 1
-ENGINE_VERSION = "0.2.0"
+ENGINE_VERSION = "0.4.0"
 PROJECT_ID = "localcut"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 43127
 CAPABILITIES = ("PING", "GET_STATUS", "GET_CAPABILITIES")
 TOKEN_MIN_LENGTH = 32
 TOKEN_MAX_LENGTH = 256
-MAX_REQUEST_BYTES = 4096
+MAX_REQUEST_BYTES = 16_384
 PAIRING_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 PAIRING_CODE_LENGTH = 12
 PAIRING_TTL_SECONDS = 300
 PAIRING_MAX_ATTEMPTS = 5
-DEFAULT_CREDENTIALS_FILE = Path.home() / ".localcut-engine" / "credentials.json"
+DEFAULT_ENGINE_DIR = Path.home() / ".localcut-engine"
+DEFAULT_CREDENTIALS_FILE = DEFAULT_ENGINE_DIR / "credentials.json"
+DEFAULT_JOBS_FILE = DEFAULT_ENGINE_DIR / "jobs.sqlite3"
+DEFAULT_SPOOL_DIR = DEFAULT_ENGINE_DIR / "spool"
+ERROR_CODE_RE = re.compile(r"^[A-Z0-9_]{3,96}$")
 
 
 def _validate_token(token: str) -> str:
@@ -51,6 +60,50 @@ def _normalize_pairing_code(raw: str) -> str:
 def format_pairing_code(code: str) -> str:
     normalized = _normalize_pairing_code(code)
     return "-".join(normalized[index:index + 4] for index in range(0, len(normalized), 4))
+
+
+def _error_code(error: BaseException, default: str = "TERMUX_ENGINE_FAILED") -> str:
+    message = str(error)
+    return message if ERROR_CODE_RE.fullmatch(message) else default
+
+
+def _safe_int(value, code: str, minimum: int = 0, maximum: int | None = None) -> int:
+    if isinstance(value, bool):
+        raise ValueError(code)
+    try:
+        result = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(code) from exc
+    if result < minimum or (maximum is not None and result > maximum):
+        raise ValueError(code)
+    return result
+
+
+def _validate_descriptor(input_data: dict) -> dict:
+    if not isinstance(input_data, dict):
+        raise ValueError("JOB_INPUT_INVALID")
+    asset_id = input_data.get("assetId")
+    mime_type = input_data.get("mimeType")
+    if not isinstance(asset_id, str) or not (1 <= len(asset_id) <= 160):
+        raise ValueError("ASSET_ID_INVALID")
+    if not isinstance(mime_type, str) or not (1 <= len(mime_type) <= 160):
+        raise ValueError("MEDIA_TYPE_INVALID")
+    display_name = input_data.get("displayName")
+    if display_name is not None and (not isinstance(display_name, str) or len(display_name) > 512):
+        raise ValueError("MEDIA_DISPLAY_NAME_INVALID")
+    size_bytes = input_data.get("sizeBytes")
+    if size_bytes is not None:
+        size_bytes = _safe_int(size_bytes, "MEDIA_SIZE_INVALID", 0)
+    duration_us = input_data.get("sourceDurationUs")
+    if duration_us is not None:
+        duration_us = _safe_int(duration_us, "MEDIA_DURATION_INVALID", 0)
+    return {
+        "assetId": asset_id,
+        "displayName": display_name,
+        "mimeType": mime_type,
+        "sizeBytes": size_bytes,
+        "sourceDurationUs": duration_us,
+    }
 
 
 class PairingWindow:
@@ -147,17 +200,39 @@ def _response(ok: bool, request_id: str | None, **fields) -> bytes:
     if request_id:
         payload["requestId"] = request_id
     payload.update(fields)
-    return (json.dumps(payload, separators=(",", ":")) + "\n").encode("utf-8")
+    return (json.dumps(payload, separators=(",", ":"), ensure_ascii=False) + "\n").encode("utf-8")
 
 
 class LocalCutTermuxEngineServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, handler, auth_token: str, pairing_window: PairingWindow | None = None):
+    def __init__(
+        self,
+        address,
+        handler,
+        auth_token: str,
+        pairing_window: PairingWindow | None = None,
+        job_store: JobStore | None = None,
+        media_spool: MediaSpool | None = None,
+        analyzer: FfprobeMediaAnalyzer | None = None,
+    ):
         self.auth_token = _validate_token(auth_token)
         self.pairing_window = pairing_window
+        self.job_store = job_store
+        self.media_spool = media_spool
+        self.analyzer = analyzer
         super().__init__(address, handler, bind_and_activate=True)
+
+    def capabilities(self) -> list[str]:
+        result = list(CAPABILITIES)
+        if self.job_store is not None:
+            result.extend(["CREATE_JOB", "GET_JOB", "CANCEL_JOB", "ANALYZE_MEDIA"])
+        if self.job_store is not None and self.media_spool is not None:
+            result.append("STAGE_MEDIA")
+        if self.analyzer is not None and bool(getattr(self.analyzer, "available", False)):
+            result.append("FFPROBE")
+        return result
 
 
 class LocalCutTermuxEngineHandler(socketserver.StreamRequestHandler):
@@ -188,15 +263,7 @@ class LocalCutTermuxEngineHandler(socketserver.StreamRequestHandler):
 
         operation = request.get("operation")
         if operation == "PAIR":
-            pairing_window = self.server.pairing_window
-            if pairing_window is None:
-                self.wfile.write(_response(False, request_id, code="PAIRING_NOT_AVAILABLE"))
-                return
-            result = pairing_window.claim(request.get("pairingCode", ""))
-            if result != "PAIRING_OK":
-                self.wfile.write(_response(False, request_id, code=result))
-                return
-            self.wfile.write(_response(True, request_id, token=self.server.auth_token))
+            self._handle_pair(request_id, request)
             return
 
         supplied_token = request.get("token")
@@ -204,21 +271,175 @@ class LocalCutTermuxEngineHandler(socketserver.StreamRequestHandler):
             self.wfile.write(_response(False, request_id, code="AUTH_INVALID"))
             return
 
-        if operation == "PING":
-            self.wfile.write(_response(True, request_id, status="READY"))
-        elif operation == "GET_STATUS":
-            self.wfile.write(_response(
-                True,
-                request_id,
-                engineVersion=ENGINE_VERSION,
-                projectId=PROJECT_ID,
-                status="READY",
-                pid=os.getpid(),
-            ))
-        elif operation == "GET_CAPABILITIES":
-            self.wfile.write(_response(True, request_id, capabilities=list(CAPABILITIES)))
-        else:
-            self.wfile.write(_response(False, request_id, code="OPERATION_NOT_ALLOWED"))
+        try:
+            if operation == "PING":
+                self.wfile.write(_response(True, request_id, status="READY"))
+            elif operation == "GET_STATUS":
+                self.wfile.write(_response(
+                    True,
+                    request_id,
+                    engineVersion=ENGINE_VERSION,
+                    projectId=PROJECT_ID,
+                    status="READY",
+                    pid=os.getpid(),
+                ))
+            elif operation == "GET_CAPABILITIES":
+                self.wfile.write(_response(True, request_id, capabilities=self.server.capabilities()))
+            elif operation == "CREATE_JOB":
+                self._handle_create_job(request_id, request)
+            elif operation == "GET_JOB":
+                self._handle_get_job(request_id, request)
+            elif operation == "CANCEL_JOB":
+                self._handle_cancel_job(request_id, request)
+            elif operation == "STAGE_MEDIA":
+                self._handle_stage_media(request_id, request)
+            else:
+                self.wfile.write(_response(False, request_id, code="OPERATION_NOT_ALLOWED"))
+        except (ValueError, KeyError, FileNotFoundError, RuntimeError) as error:
+            self.wfile.write(_response(False, request_id, code=_error_code(error)))
+
+    def _handle_pair(self, request_id: str, request: dict) -> None:
+        pairing_window = self.server.pairing_window
+        if pairing_window is None:
+            self.wfile.write(_response(False, request_id, code="PAIRING_NOT_AVAILABLE"))
+            return
+        result = pairing_window.claim(request.get("pairingCode", ""))
+        if result != "PAIRING_OK":
+            self.wfile.write(_response(False, request_id, code=result))
+            return
+        self.wfile.write(_response(True, request_id, token=self.server.auth_token))
+
+    def _require_jobs(self) -> JobStore:
+        if self.server.job_store is None:
+            raise ValueError("OPERATION_NOT_ALLOWED")
+        return self.server.job_store
+
+    def _handle_create_job(self, request_id: str, request: dict) -> None:
+        store = self._require_jobs()
+        job = store.create_job(
+            project_id=PROJECT_ID,
+            job_type=request.get("jobType"),
+            idempotency_key=request.get("idempotencyKey"),
+            input_data=request.get("input"),
+        )
+        if job["status"] == "QUEUED" and job["type"] == "ANALYZE_MEDIA":
+            mode = job["input"].get("mode", "DESCRIPTOR")
+            if mode == "DESCRIPTOR":
+                job = self._execute_descriptor(job)
+            elif mode != "MEDIA":
+                job = store.update_job(
+                    job["id"],
+                    status="FAILED",
+                    progress=100,
+                    error={"code": "ANALYZE_MODE_INVALID", "message": "Unsupported analyze mode"},
+                    log={"operation": "ANALYZE_MEDIA", "status": "FAILED"},
+                )
+        self.wfile.write(_response(True, request_id, job=job))
+
+    def _execute_descriptor(self, job: dict) -> dict:
+        store = self._require_jobs()
+        try:
+            store.update_job(
+                job["id"],
+                status="RUNNING",
+                progress=25,
+                log={"operation": "ANALYZE_MEDIA", "status": "RUNNING"},
+            )
+            descriptor = _validate_descriptor(job["input"])
+            return store.update_job(
+                job["id"],
+                status="SUCCEEDED",
+                progress=100,
+                output={"analysisMode": "descriptor-v1", "asset": descriptor},
+                log={"operation": "ANALYZE_MEDIA", "status": "SUCCEEDED", "exitCode": 0},
+            )
+        except (ValueError, RuntimeError) as error:
+            return store.update_job(
+                job["id"],
+                status="FAILED",
+                progress=100,
+                error={"code": _error_code(error, "ANALYZE_MEDIA_FAILED"), "message": "Descriptor analysis failed"},
+                log={"operation": "ANALYZE_MEDIA", "status": "FAILED"},
+            )
+
+    def _handle_get_job(self, request_id: str, request: dict) -> None:
+        job = self._require_jobs().get_job(request.get("jobId"))
+        self.wfile.write(_response(True, request_id, job=job))
+
+    def _handle_cancel_job(self, request_id: str, request: dict) -> None:
+        job = self._require_jobs().cancel_job(request.get("jobId"))
+        self.wfile.write(_response(True, request_id, job=job))
+
+    def _handle_stage_media(self, request_id: str, request: dict) -> None:
+        store = self._require_jobs()
+        spool = self.server.media_spool
+        if spool is None:
+            raise ValueError("OPERATION_NOT_ALLOWED")
+        job_id = request.get("jobId")
+        job = store.get_job(job_id)
+        if job["type"] != "ANALYZE_MEDIA" or job["input"].get("mode") != "MEDIA":
+            raise ValueError("MEDIA_JOB_INVALID")
+        if job["status"] != "QUEUED":
+            raise ValueError("JOB_NOT_QUEUED")
+        content_length = _safe_int(request.get("contentLength"), "MEDIA_LENGTH_INVALID", 1)
+        transfer = spool.stage_bytes(job_id, content_length, self._body_chunks(content_length))
+        store.update_job(
+            job_id,
+            status="RUNNING",
+            progress=35,
+            log={"operation": "STAGE_MEDIA", "status": "SUCCEEDED", "bytes": transfer["sizeBytes"]},
+        )
+        job = self._execute_staged_analysis(job_id, transfer)
+        public_transfer = {"sizeBytes": transfer["sizeBytes"], "sha256": transfer["sha256"]}
+        self.wfile.write(_response(True, request_id, job=job, transfer=public_transfer))
+
+    def _execute_staged_analysis(self, job_id: str, transfer: dict) -> dict:
+        store = self._require_jobs()
+        analyzer = self.server.analyzer
+        if analyzer is None:
+            return store.update_job(
+                job_id,
+                status="FAILED",
+                progress=100,
+                error={"code": "FFPROBE_UNAVAILABLE", "message": "ffprobe is not available"},
+                log={"operation": "ANALYZE_MEDIA", "status": "FAILED"},
+            )
+        try:
+            analysis = analyzer.analyze(self.server.media_spool.path_for(job_id))
+            current = store.get_job(job_id)
+            if current["status"] == "CANCELLED":
+                return current
+            return store.update_job(
+                job_id,
+                status="SUCCEEDED",
+                progress=100,
+                output={
+                    "analysisMode": "ffprobe-v1",
+                    "transfer": {"sizeBytes": transfer["sizeBytes"], "sha256": transfer["sha256"]},
+                    "analysis": analysis,
+                },
+                log={"operation": "ANALYZE_MEDIA", "status": "SUCCEEDED", "exitCode": 0},
+            )
+        except (ValueError, KeyError, FileNotFoundError, RuntimeError) as error:
+            current = store.get_job(job_id)
+            if current["status"] == "CANCELLED":
+                return current
+            return store.update_job(
+                job_id,
+                status="FAILED",
+                progress=100,
+                error={"code": _error_code(error, "ANALYZE_MEDIA_FAILED"), "message": "Media analysis failed"},
+                log={"operation": "ANALYZE_MEDIA", "status": "FAILED"},
+            )
+
+    def _body_chunks(self, content_length: int):
+        remaining = content_length
+        while remaining > 0:
+            chunk = self.rfile.read(min(64 * 1024, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+            yield chunk
 
 
 def create_server(
@@ -226,6 +447,9 @@ def create_server(
     port: int,
     token: str,
     pairing_window: PairingWindow | None = None,
+    job_store: JobStore | None = None,
+    media_spool: MediaSpool | None = None,
+    analyzer: FfprobeMediaAnalyzer | None = None,
 ) -> LocalCutTermuxEngineServer:
     if host != DEFAULT_HOST:
         raise ValueError("ENGINE_BIND_LOOPBACK_ONLY")
@@ -237,25 +461,30 @@ def create_server(
         LocalCutTermuxEngineHandler,
         validated_token,
         pairing_window,
+        job_store,
+        media_spool,
+        analyzer,
     )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="LocalCut Termux Agent Engine V1")
+    parser = argparse.ArgumentParser(description="LocalCut Termux Agent Engine")
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--pair", action="store_true", help="Open one short-lived, one-time pairing window")
     parser.add_argument("--credentials-file", default=str(DEFAULT_CREDENTIALS_FILE))
+    parser.add_argument("--jobs-file", default=str(DEFAULT_JOBS_FILE))
+    parser.add_argument("--spool-dir", default=str(DEFAULT_SPOOL_DIR))
     args = parser.parse_args()
 
     env_token = os.environ.get("LOCALCUT_ENGINE_TOKEN", "").strip()
-    store = EngineCredentialStore(args.credentials_file)
+    credential_store = EngineCredentialStore(args.credentials_file)
     if env_token:
         token = _validate_token(env_token)
     elif args.pair:
-        token = store.load_or_create()
+        token = credential_store.load_or_create()
     else:
-        token = store.load()
+        token = credential_store.load()
         if token is None:
             raise SystemExit("ENGINE_NOT_INITIALIZED: start once with --pair")
 
@@ -265,7 +494,22 @@ def main() -> None:
         pairing_window = PairingWindow(pairing_code)
         print(f"LOCALCUT_PAIRING_CODE={format_pairing_code(pairing_code)}", flush=True)
 
-    server = create_server(args.host, args.port, token, pairing_window=pairing_window)
+    job_store = JobStore(args.jobs_file)
+    recovered = job_store.recover_interrupted_jobs()
+    if recovered:
+        print(f"LOCALCUT_RECOVERED_INTERRUPTED_JOBS={recovered}", flush=True)
+    media_spool = MediaSpool(args.spool_dir)
+    analyzer = FfprobeMediaAnalyzer()
+
+    server = create_server(
+        args.host,
+        args.port,
+        token,
+        pairing_window=pairing_window,
+        job_store=job_store,
+        media_spool=media_spool,
+        analyzer=analyzer,
+    )
     try:
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:

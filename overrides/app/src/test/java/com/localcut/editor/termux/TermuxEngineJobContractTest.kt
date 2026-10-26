@@ -46,7 +46,7 @@ class TermuxEngineJobContractTest {
         val sha = "b".repeat(64)
         val parsed = TermuxEngineJobResponseParser.parseStage(
             MiniJson.parse(
-                """{"job":{"id":"123e4567-e89b-12d3-a456-426614174000","type":"ANALYZE_MEDIA","status":"SUCCEEDED","progress":100,"output":{"analysis":{"formatName":"mov,mp4","durationUs":2000000,"sizeBytes":5,"bitRate":64000,"streams":[{"codecType":"video","codecName":"h264","width":1920,"height":1080,"frameRate":30.0}]}},"error":null},"transfer":{"sizeBytes":5,"sha256":"$sha"}}""",
+                """{"protocolVersion":1,"job":{"id":"123e4567-e89b-12d3-a456-426614174000","type":"ANALYZE_MEDIA","status":"SUCCEEDED","progress":100,"output":{"analysis":{"formatName":"mov,mp4","durationUs":2000000,"sizeBytes":5,"bitRate":64000,"streams":[{"codecType":"video","codecName":"h264","width":1920,"height":1080,"frameRate":30.0}]}},"error":null},"transfer":{"sizeBytes":5,"sha256":"$sha"}}""",
             ).asObject(),
         )
         assertEquals(TermuxEngineJobStatus.SUCCEEDED, parsed.job.status)

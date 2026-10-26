@@ -62,9 +62,7 @@ internal object TermuxEngineJobRequestEncoder {
         require(REQUEST_ID.matches(requestId)) { "TERMUX_ENGINE_REQUEST_ID_INVALID" }
         TermuxEngineTokenPolicy.normalize(token)
     }
-
     private fun validateJobId(jobId: String) = require(JOB_ID.matches(jobId)) { "TERMUX_ENGINE_JOB_ID_INVALID" }
-
     private fun StringBuilder.appendCommon(requestId: String, token: String, operation: String) {
         append("\"protocolVersion\":"); append(TermuxEngineProtocol.PROTOCOL_VERSION)
         append(",\"projectId\":"); append(jsonString(TermuxEngineProtocol.PROJECT_ID))
@@ -75,7 +73,10 @@ internal object TermuxEngineJobRequestEncoder {
 }
 
 internal object TermuxEngineJobResponseParser {
-    fun parseJob(root: JObject): TermuxEngineJob = parseJobObject(root.required("job").asObject())
+    fun parseJob(root: JObject): TermuxEngineJob {
+        requireProtocol(root)
+        return parseJobObject(root.required("job").asObject())
+    }
 
     fun parseStage(root: JObject): TermuxEngineStageResult {
         val transfer = root.required("transfer").asObject()
@@ -86,6 +87,13 @@ internal object TermuxEngineJobResponseParser {
             sizeBytes = transfer.required("sizeBytes").asLong().also { require(it > 0L) },
             sha256 = sha,
         )
+    }
+
+    private fun requireProtocol(root: JObject) {
+        val protocol = root.required("protocolVersion").asInt()
+        require(protocol == TermuxEngineProtocol.PROTOCOL_VERSION) {
+            "TERMUX_ENGINE_PROTOCOL_MISMATCH"
+        }
     }
 
     private fun parseJobObject(job: JObject): TermuxEngineJob {

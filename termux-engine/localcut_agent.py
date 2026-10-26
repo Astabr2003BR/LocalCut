@@ -14,13 +14,14 @@ import uuid
 
 PROJECT_ID = "localcut"
 ALLOWED_REPOSITORY = "Astabr2003BR/LocalCut"
-APPROVAL_STATUSES = {"PENDING", "APPROVED", "DENIED"}
+APPROVAL_STATUSES = {"WAITING_APPROVAL", "APPROVED", "DENIED"}
 CRITICAL_OPERATIONS = {
     "MERGE_MAIN",
     "FORCE_PUSH",
     "DELETE_PROJECT",
     "DELETE_REPOSITORY",
     "DELETE_DATABASE",
+    "DELETE_PRODUCTION_DATA",
     "DROP_DATABASE",
     "DROP_TABLE",
     "CHANGE_APK_SIGNING",
@@ -39,9 +40,16 @@ SAFE_OPERATIONS = {
     "RUN_ANDROID_UNIT_TESTS",
     "BUILD_DEBUG_APK",
 }
+SECRET_KEYS = {
+    "token", "secret", "password", "authorization", "apikey", "api_key",
+    "keystorepassword", "keystore_password", "privatekey", "private_key",
+}
 OP_RE = re.compile(r"^[A-Z0-9_]{3,96}$")
 BRANCH_RE = re.compile(r"^[A-Za-z0-9._/-]{1,200}$")
 MAX_CAPTURE_BYTES = 1_048_576
+MAX_CONTEXT_DEPTH = 5
+MAX_CONTEXT_ITEMS = 200
+MAX_CONTEXT_STRING = 2048
 
 
 def _now_ms() -> int:
@@ -50,6 +58,30 @@ def _now_ms() -> int:
 
 def _json(value) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def _sanitize_value(value, depth: int = 0):
+    if depth > MAX_CONTEXT_DEPTH:
+        return "[TRUNCATED]"
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return value[:MAX_CONTEXT_STRING]
+    if isinstance(value, dict):
+        clean = {}
+        for index, (key, item) in enumerate(value.items()):
+            if index >= MAX_CONTEXT_ITEMS:
+                break
+            if not isinstance(key, str) or len(key) > 120:
+                continue
+            normalized = key.replace("-", "_").lower()
+            if normalized in SECRET_KEYS:
+                continue
+            clean[key] = _sanitize_value(item, depth + 1)
+        return clean
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_value(item, depth + 1) for item in list(value)[:MAX_CONTEXT_ITEMS]]
+    return str(value)[:MAX_CONTEXT_STRING]
 
 
 class DeveloperAgentPolicy:
@@ -179,6 +211,8 @@ class ApprovalStore:
             raise ValueError("APPROVAL_NOT_REQUIRED")
         if not isinstance(payload, dict) or not isinstance(checkpoint, dict):
             raise ValueError("APPROVAL_PAYLOAD_INVALID")
+        safe_payload = _sanitize_value(payload)
+        safe_checkpoint = _sanitize_value(checkpoint)
         with self._connect() as connection:
             existing = connection.execute("SELECT * FROM approvals WHERE job_id=?", (job_id,)).fetchone()
             if existing is not None:
@@ -186,14 +220,26 @@ class ApprovalStore:
             approval_id = str(uuid.uuid4())
             connection.execute(
                 "INSERT INTO approvals(id,job_id,project_id,operation,status,requested_at,resolved_at,payload_json,checkpoint_json) VALUES(?,?,?,?,?,?,?,?,?)",
-                (approval_id, job_id, PROJECT_ID, operation, "PENDING", _now_ms(), None, _json(payload), _json(checkpoint)),
+                (
+                    approval_id,
+                    job_id,
+                    PROJECT_ID,
+                    operation,
+                    "WAITING_APPROVAL",
+                    _now_ms(),
+                    None,
+                    _json(safe_payload),
+                    _json(safe_checkpoint),
+                ),
             )
             row = connection.execute("SELECT * FROM approvals WHERE id=?", (approval_id,)).fetchone()
             return self._row(row)
 
     def pending(self) -> list[dict]:
         with self._connect() as connection:
-            rows = connection.execute("SELECT * FROM approvals WHERE status='PENDING' ORDER BY requested_at ASC").fetchall()
+            rows = connection.execute(
+                "SELECT * FROM approvals WHERE status='WAITING_APPROVAL' ORDER BY requested_at ASC"
+            ).fetchall()
         return [self._row(row) for row in rows]
 
     def resolve(self, approval_id: str, decision: str) -> dict:
@@ -206,7 +252,7 @@ class ApprovalStore:
                 connection.execute("ROLLBACK")
                 raise KeyError("APPROVAL_NOT_FOUND")
             current = self._row(row)
-            if current["status"] != "PENDING":
+            if current["status"] != "WAITING_APPROVAL":
                 connection.execute("COMMIT")
                 return current
             status = "APPROVED" if decision == "APPROVE" else "DENIED"
@@ -258,3 +304,33 @@ class TermuxNotificationSink:
         except (OSError, subprocess.TimeoutExpired):
             return False
         return getattr(result, "returncode", 1) == 0
+
+
+class DeveloperAgentController:
+    def __init__(
+        self,
+        policy: DeveloperAgentPolicy,
+        executor: SafeAgentExecutor,
+        approval_store: ApprovalStore,
+        notifier: TermuxNotificationSink | None = None,
+    ):
+        self.policy = policy
+        self.executor = executor
+        self.approval_store = approval_store
+        self.notifier = notifier
+
+    def request(
+        self,
+        job_id: str,
+        operation: str,
+        *,
+        payload: dict | None = None,
+        checkpoint: dict | None = None,
+    ) -> dict:
+        classification = self.policy.classify(operation)
+        if classification == "SAFE":
+            return {"status": "READY", "result": self.executor.execute(operation)}
+        approval = self.approval_store.request(job_id, operation, payload or {}, checkpoint or {})
+        if self.notifier is not None:
+            self.notifier.approval_required(approval)
+        return {"status": "WAITING_APPROVAL", "approval": approval}

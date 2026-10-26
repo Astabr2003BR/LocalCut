@@ -3,7 +3,13 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from localcut_agent import ApprovalStore, DeveloperAgentPolicy, SafeAgentExecutor, TermuxNotificationSink
+from localcut_agent import (
+    ApprovalStore,
+    DeveloperAgentController,
+    DeveloperAgentPolicy,
+    SafeAgentExecutor,
+    TermuxNotificationSink,
+)
 
 
 class AgentPolicyTest(unittest.TestCase):
@@ -12,6 +18,7 @@ class AgentPolicyTest(unittest.TestCase):
             policy = DeveloperAgentPolicy(td)
             self.assertEqual("SAFE", policy.classify("GIT_STATUS"))
             self.assertEqual("REQUIRES_APPROVAL", policy.classify("MERGE_MAIN"))
+            self.assertEqual("REQUIRES_APPROVAL", policy.classify("DELETE_PRODUCTION_DATA"))
             with self.assertRaisesRegex(ValueError, "AGENT_OPERATION_REQUIRES_APPROVAL"):
                 policy.command_for("MERGE_MAIN")
             with self.assertRaisesRegex(ValueError, "AGENT_OPERATION_NOT_ALLOWED"):
@@ -49,7 +56,7 @@ class ApprovalStoreTest(unittest.TestCase):
             first = store.request("job-1", "MERGE_MAIN", {"branch": "feature/x"}, {"commit": "abc123"})
             second = store.request("job-1", "MERGE_MAIN", {"branch": "feature/x"}, {"commit": "abc123"})
             self.assertEqual(first["id"], second["id"])
-            self.assertEqual("PENDING", first["status"])
+            self.assertEqual("WAITING_APPROVAL", first["status"])
             self.assertEqual(1, len(store.pending()))
             reopened = ApprovalStore(path)
             self.assertEqual(first["id"], reopened.pending()[0]["id"])
@@ -57,6 +64,20 @@ class ApprovalStoreTest(unittest.TestCase):
             self.assertEqual("DENIED", denied["status"])
             self.assertEqual([], reopened.pending())
             self.assertEqual(0o600, path.stat().st_mode & 0o777)
+
+    def test_secrets_are_removed_before_persistence(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = ApprovalStore(Path(td) / "approvals.sqlite3")
+            approval = store.request(
+                "job-secret",
+                "ALTER_SECRETS",
+                {"branch": "feature/x", "token": "never", "nested": {"password": "never", "ok": "yes"}},
+                {"commit": "abc", "authorization": "never"},
+            )
+            self.assertNotIn("token", approval["payload"])
+            self.assertNotIn("password", approval["payload"]["nested"])
+            self.assertEqual("yes", approval["payload"]["nested"]["ok"])
+            self.assertNotIn("authorization", approval["checkpoint"])
 
     def test_noncritical_operation_cannot_create_approval(self):
         with tempfile.TemporaryDirectory() as td:
@@ -83,6 +104,39 @@ class NotificationTest(unittest.TestCase):
         self.assertEqual("termux-notification", argv[0])
         self.assertFalse(kwargs["shell"])
         self.assertNotIn("sh", argv[:1])
+
+
+class ControllerTest(unittest.TestCase):
+    def test_critical_request_notifies_but_does_not_execute(self):
+        with tempfile.TemporaryDirectory() as td:
+            policy = DeveloperAgentPolicy(td)
+            calls = []
+
+            class FakeExecutor:
+                def execute(self, operation):
+                    calls.append(operation)
+                    return {"operation": operation}
+
+            class FakeNotifier:
+                def __init__(self): self.seen = None
+                def approval_required(self, approval): self.seen = approval; return True
+
+            notifier = FakeNotifier()
+            controller = DeveloperAgentController(
+                policy,
+                FakeExecutor(),
+                ApprovalStore(Path(td) / "approvals.sqlite3"),
+                notifier,
+            )
+            result = controller.request(
+                "job-merge",
+                "MERGE_MAIN",
+                payload={"branch": "feature/x", "token": "never"},
+                checkpoint={"commit": "abc"},
+            )
+            self.assertEqual("WAITING_APPROVAL", result["status"])
+            self.assertEqual([], calls)
+            self.assertEqual("MERGE_MAIN", notifier.seen["operation"])
 
 
 if __name__ == "__main__":

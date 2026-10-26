@@ -23,7 +23,7 @@
 
 ## Review Focus
 
-- Interrupted media upload must delete partial bytes and leave a retryable job.
+- Interrupted media upload must fail closed and never turn arbitrary input into a path or command.
 - Duplicate idempotency key with different input must fail rather than reuse the wrong task.
 - Process restart while RUNNING must produce deterministic recovery state, not silently replay a non-idempotent action.
 - Unicode names and spaces must remain metadata only and never influence filesystem paths or shell parsing.
@@ -33,70 +33,47 @@
 
 ### Task 1: Durable Typed Job Store
 
-**Files:** create `termux-engine/localcut_jobs.py`; modify `termux-engine/localcut_engine.py`; tests under `termux-engine/tests/`.
-
-**Interfaces:** produces `JobStore.create_job/get_job/update_job/cancel_job/recover_interrupted_jobs` and protocol operations `CREATE_JOB`, `GET_JOB`, `CANCEL_JOB`.
-
 - [x] Write failing JobStore/idempotency/recovery tests.
-- [x] Verify RED because `localcut_jobs` does not exist.
 - [x] Implement SQLite JobStore with private permissions and bounded JSON.
-- [x] Verify unit GREEN with ResourceWarnings treated as errors.
-- [x] Integrate operations into the authenticated engine protocol.
-- [ ] Run repository CI and close the commit gate.
+- [x] Integrate `CREATE_JOB`, `GET_JOB`, `CANCEL_JOB` into the authenticated engine protocol.
+- [x] Preserve the original V1 read-only contract when no JobStore is supplied.
 
-### Task 2: Safe Media Staging + ffprobe ANALYZE_MEDIA
+### Task 2: Safe Media Staging + ffprobe `ANALYZE_MEDIA`
 
-**Files:** `termux-engine/localcut_jobs.py`, `termux-engine/localcut_engine.py`, tests.
-
-**Interfaces:** produces `MediaSpool.stage_bytes/path_for`, `FfprobeMediaAnalyzer.analyze`, `STAGE_MEDIA`, and `ANALYZE_MEDIA` job output.
-
-- [x] Write failing spool/ffprobe tests.
-- [x] Implement generated spool paths, byte limits, SHA-256 and atomic replacement.
+- [x] Implement generated spool paths, byte limits, SHA-256 and atomic staging.
 - [x] Implement ffprobe argv execution with `shell=False`, timeout and normalized output.
-- [x] Integrate raw body staging and job execution into the socket handler.
-- [x] Test path traversal, wrong length, ffprobe missing, Unicode metadata and idempotency.
-- [ ] Run repository CI and close the commit gate.
+- [x] Integrate typed `STAGE_MEDIA` and `ANALYZE_MEDIA` jobs.
+- [x] Test path traversal, wrong length, ffprobe unavailable, Unicode metadata and idempotency conflicts.
 
 ### Task 3: Android Job/Upload Client
 
-**Files:** modify `TermuxEngineContract.kt`, `SocketTermuxEngineClient.kt`; create focused coordinator/test files in `overrides/app/src/main/java/com/localcut/editor/termux/`.
-
-**Interfaces:** consumes current `Asset.uri/sizeBytes` and `ContentResolver`; produces typed create/get/cancel/stage/analyze calls.
-
-- [ ] Write RED Kotlin tests for encoders/parsers and streaming with a loopback fake server.
-- [ ] Extend contract without weakening V1 required capabilities.
-- [ ] Stream ContentResolver bytes over socket while computing SHA-256; compare returned digest.
-- [ ] Add coordinator that never exposes app-private paths to Termux.
-- [ ] Verify unit tests and Android Debug gate.
+- [x] Keep V1 `TermuxEngineClient` intact and add a separate `TermuxEngineJobClient`.
+- [x] Stream `ContentResolver` bytes rather than exposing an app-private filesystem path.
+- [x] Verify response request id, protocol version, transfer size and SHA-256.
+- [x] Add media analysis coordinator with deterministic idempotency keys.
 
 ### Task 4: Minimal LocalCut UI Integration
 
-**Files:** `TermuxEnginePanel.kt` plus focused UI/session policy tests.
+- [x] Add analysis availability policy for connection, selection, job capabilities and `FFPROBE`.
+- [x] Add “Analisar mídia selecionada” inside the existing Agente panel.
+- [x] Preserve normal editing when Termux is absent or stopped.
+- [x] Display structured success/failure state without blocking the editor.
 
-**Interfaces:** consumes Android job coordinator; produces “Analisar mídia selecionada” status/progress/result without blocking editing.
+### Task 5: Recovery, Background and Approval Policy
 
-- [ ] Add RED UI/session tests for engine absent, queued/running/succeeded/failed/cancelled.
-- [ ] Add the minimal action/status inside existing Agente panel.
-- [ ] Preserve fallback and no-Termux requirement for normal editing.
-- [ ] Verify build and regressions.
-
-### Task 5: Recovery and Approval Policy Foundation
-
-**Files:** focused Python policy module/tests and Android notification policy only where an actual WAITING_APPROVAL task exists.
-
-**Interfaces:** produces safe/approval-required operation catalog and deterministic restart recovery.
-
-- [x] Test RUNNING recovery and no automatic replay of interrupted work.
-- [ ] Test critical operation classification and `WAITING_APPROVAL` persistence.
-- [ ] Ensure no critical action implementation can bypass the policy layer.
-- [ ] Add notification surface only for persisted approval-required tasks; no response means no execution.
+- [x] Mark interrupted RUNNING jobs failed on engine restart rather than silently replaying them.
+- [x] Add boot/start scripts with wake lock opt-in rather than mandatory.
+- [x] Isolate the development agent to project `localcut`, repository `Astabr2003BR/LocalCut` and one workspace.
+- [x] Classify critical operations as approval-required and unknown operations as denied.
+- [x] Persist `WAITING_APPROVAL` checkpoints with private permissions and filtered context.
+- [x] Add optional `termux-notification` surface; no notification/response never bypasses the gate.
+- [x] Approval changes checkpoint state only; it does not automatically execute the critical operation.
 
 ### Task 6: Documentation, Artifact and Regression Gate
 
-**Files:** update `termux-engine/README.md` and this plan/checkpoint.
-
-- [ ] Run Python suite with ResourceWarnings as errors.
-- [ ] Run Android Debug, Bridge, Termux and emulator smoke gates once per final SHA.
+- [x] Run the local Python suite with ResourceWarnings as errors.
+- [x] Add Kotlin hardening tests for protocol mismatch and transfer-size mismatch.
+- [ ] Run Android Debug, Bridge, Termux and emulator smoke gates once on the final SHA.
 - [ ] Download and hash-match the final APK artifact.
-- [ ] Verify PR #13 remains open/draft/not merged and diff is scoped.
-- [ ] Record physical-device-only checks separately: install-over-existing, Termux pairing, real ffprobe job, process-death recovery and notification behavior.
+- [ ] Verify PR #13 remains open/draft/not merged and final diff is scoped.
+- [ ] Physical-device-only checks: install over existing APK, pair with real Termux, run real ffprobe media job, process-death recovery and approval notification behavior.

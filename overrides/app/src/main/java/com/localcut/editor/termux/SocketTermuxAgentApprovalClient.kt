@@ -131,7 +131,9 @@ internal object TermuxAgentApprovalResponseParser {
         val operation = root.required("operation").asString()
         require(operation.matches(Regex("^[A-Z0-9_]{3,96}$"))) { "TERMUX_AGENT_OPERATION_INVALID" }
         val status = root.required("status").asString()
-        require(status in setOf("PENDING", "APPROVED", "DENIED")) { "TERMUX_AGENT_APPROVAL_STATUS_INVALID" }
+        require(status in setOf("WAITING_APPROVAL", "APPROVED", "DENIED")) {
+            "TERMUX_AGENT_APPROVAL_STATUS_INVALID"
+        }
         return TermuxAgentApproval(
             id = id.lowercase(),
             operation = operation,

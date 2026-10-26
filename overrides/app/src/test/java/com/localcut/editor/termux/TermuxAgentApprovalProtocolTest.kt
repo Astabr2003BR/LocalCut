@@ -19,12 +19,12 @@ class TermuxAgentApprovalProtocolTest {
     @Test
     fun parsesPendingAndResolveApproval() {
         val pendingRoot = MiniJson.parse(
-            """{"ok":true,"protocolVersion":1,"requestId":"request-12345678","approvals":[{"id":"12345678-1234-1234-1234-123456789abc","jobId":"task-12345678","projectId":"localcut","operation":"MERGE_MAIN","status":"PENDING","requestedAt":123,"resolvedAt":null,"payload":{},"checkpoint":{}}]}""",
+            """{"ok":true,"protocolVersion":1,"requestId":"request-12345678","approvals":[{"id":"12345678-1234-1234-1234-123456789abc","jobId":"task-12345678","projectId":"localcut","operation":"MERGE_MAIN","status":"WAITING_APPROVAL","requestedAt":123,"resolvedAt":null,"payload":{},"checkpoint":{}}]}""",
         ).asObject()
         val pending = TermuxAgentApprovalResponseParser.parsePending(pendingRoot)
         assertEquals(1, pending.size)
         assertEquals("MERGE_MAIN", pending.single().operation)
-        assertEquals("PENDING", pending.single().status)
+        assertEquals("WAITING_APPROVAL", pending.single().status)
 
         val resolvedRoot = MiniJson.parse(
             """{"ok":true,"protocolVersion":1,"requestId":"request-12345678","approval":{"id":"12345678-1234-1234-1234-123456789abc","jobId":"task-12345678","projectId":"localcut","operation":"MERGE_MAIN","status":"DENIED","requestedAt":123,"resolvedAt":456,"payload":{},"checkpoint":{}}}""",

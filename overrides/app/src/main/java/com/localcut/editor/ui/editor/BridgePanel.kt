@@ -215,6 +215,8 @@ fun BridgePanel(
             if (state.paired) {
                 OutlinedButton(onClick = onRevokePairing) { Text("Revogar pareamento") }
             }
+
+            TermuxEnginePanel()
         }
     }
 }

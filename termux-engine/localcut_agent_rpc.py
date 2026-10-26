@@ -6,12 +6,13 @@ import re
 import socketserver
 
 from localcut_agent import ApprovalStore, DeveloperAgentPolicy, SafeAgentExecutor, TermuxNotificationSink
+from localcut_workspace import WorkspaceAccess
 
 PROTOCOL_VERSION = 1
 PROJECT_ID = "localcut"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_AGENT_PORT = 43128
-MAX_REQUEST_BYTES = 16_384
+MAX_REQUEST_BYTES = 65_536
 TASK_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 TOKEN_MIN_LENGTH = 32
 TOKEN_MAX_LENGTH = 256
@@ -48,12 +49,17 @@ class LocalCutAgentRpcServer(socketserver.ThreadingMixIn, socketserver.TCPServer
         self.executor = executor
         self.approvals = approvals
         self.notifications = notifications
+        self.workspace = WorkspaceAccess(policy.workspace)
         super().__init__(address, handler, bind_and_activate=True)
 
     def capabilities(self) -> list[str]:
         return [
             "PING_AGENT",
             "GET_AGENT_CAPABILITIES",
+            "GET_WORKSPACE_STATUS",
+            "LIST_WORKSPACE_FILES",
+            "READ_WORKSPACE_FILE",
+            "APPLY_TEXT_PATCH",
             "RUN_AGENT_OPERATION",
             "GET_PENDING_APPROVALS",
             "RESOLVE_APPROVAL",
@@ -95,6 +101,23 @@ class LocalCutAgentRpcHandler(socketserver.StreamRequestHandler):
                 self.wfile.write(_response(True, request_id, status="READY"))
             elif operation == "GET_AGENT_CAPABILITIES":
                 self.wfile.write(_response(True, request_id, capabilities=self.server.capabilities()))
+            elif operation == "GET_WORKSPACE_STATUS":
+                self.wfile.write(_response(True, request_id, workspace=self.server.workspace.status()))
+            elif operation == "LIST_WORKSPACE_FILES":
+                prefix = request.get("path", "")
+                limit = request.get("limit", 200)
+                self.wfile.write(_response(True, request_id, **self.server.workspace.list_files(prefix, limit)))
+            elif operation == "READ_WORKSPACE_FILE":
+                file_result = self.server.workspace.read_file(request.get("path"))
+                self.wfile.write(_response(True, request_id, file=file_result))
+            elif operation == "APPLY_TEXT_PATCH":
+                file_result = self.server.workspace.apply_text_patch(
+                    request.get("path"),
+                    request.get("expectedSha256"),
+                    request.get("oldText"),
+                    request.get("newText"),
+                )
+                self.wfile.write(_response(True, request_id, file=file_result))
             elif operation == "RUN_AGENT_OPERATION":
                 self._run_agent_operation(request_id, request)
             elif operation == "GET_PENDING_APPROVALS":

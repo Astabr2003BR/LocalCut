@@ -1,5 +1,7 @@
+import hashlib
 import json
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -33,11 +35,19 @@ class FakeNotifications:
 class AgentRpcTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        subprocess.run(["git", "init", "-b", "feature/agent-rpc"], cwd=self.root, check=True, stdout=subprocess.DEVNULL)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=self.root, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=self.root, check=True)
+        subprocess.run(["git", "remote", "add", "origin", "https://github.com/Astabr2003BR/LocalCut.git"], cwd=self.root, check=True)
+        (self.root / "demo.txt").write_text("before\n", encoding="utf-8")
+        subprocess.run(["git", "add", "demo.txt"], cwd=self.root, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=self.root, check=True, stdout=subprocess.DEVNULL)
         self.token = "t" * 43
         self.policy = DeveloperAgentPolicy(self.temp.name)
         self.executor = FakeExecutor()
         self.notifications = FakeNotifications()
-        self.approvals = ApprovalStore(Path(self.temp.name) / "approvals.sqlite3")
+        self.approvals = ApprovalStore(self.root / "approvals.sqlite3")
         probe = socket.socket()
         probe.bind(("127.0.0.1", 0))
         self.port = probe.getsockname()[1]
@@ -72,6 +82,44 @@ class AgentRpcTest(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual("SUCCEEDED", result["status"])
         self.assertEqual(["GIT_STATUS"], self.executor.calls)
+
+    def test_workspace_read_and_patch_are_typed_and_revision_checked(self):
+        caps = self.exchange("GET_AGENT_CAPABILITIES")
+        self.assertIn("READ_WORKSPACE_FILE", caps["capabilities"])
+        self.assertIn("APPLY_TEXT_PATCH", caps["capabilities"])
+        status = self.exchange("GET_WORKSPACE_STATUS")
+        self.assertEqual("feature/agent-rpc", status["workspace"]["branch"])
+        read = self.exchange("READ_WORKSPACE_FILE", path="demo.txt")
+        self.assertTrue(read["ok"])
+        digest = hashlib.sha256(b"before\n").hexdigest()
+        self.assertEqual(digest, read["file"]["sha256"])
+        patched = self.exchange(
+            "APPLY_TEXT_PATCH",
+            path="demo.txt",
+            expectedSha256=digest,
+            oldText="before",
+            newText="after",
+        )
+        self.assertTrue(patched["ok"])
+        self.assertEqual("after\n", (self.root / "demo.txt").read_text())
+        stale = self.exchange(
+            "APPLY_TEXT_PATCH",
+            path="demo.txt",
+            expectedSha256=digest,
+            oldText="after",
+            newText="again",
+        )
+        self.assertFalse(stale["ok"])
+        self.assertEqual("WORKSPACE_REVISION_CONFLICT", stale["code"])
+
+    def test_workspace_path_escape_and_secrets_fail_closed(self):
+        (self.root / ".env").write_text("SECRET=yes\n", encoding="utf-8")
+        traversal = self.exchange("READ_WORKSPACE_FILE", path="../outside.txt")
+        self.assertFalse(traversal["ok"])
+        self.assertEqual("WORKSPACE_PATH_INVALID", traversal["code"])
+        secret = self.exchange("READ_WORKSPACE_FILE", path=".env")
+        self.assertFalse(secret["ok"])
+        self.assertEqual("WORKSPACE_PATH_DENIED", secret["code"])
 
     def test_critical_operation_waits_for_approval_and_does_not_execute(self):
         result = self.exchange(

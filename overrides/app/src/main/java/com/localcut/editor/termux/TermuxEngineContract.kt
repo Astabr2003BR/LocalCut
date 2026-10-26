@@ -1,0 +1,59 @@
+package com.localcut.editor.termux
+
+object TermuxEngineProtocol {
+    const val PROTOCOL_VERSION = 1
+    const val PROJECT_ID = "localcut"
+    const val DEFAULT_HOST = "127.0.0.1"
+    const val DEFAULT_PORT = 43127
+    const val MAX_RESPONSE_BYTES = 16_384
+
+    val REQUIRED_CAPABILITIES: Set<String> = setOf(
+        "PING",
+        "GET_STATUS",
+        "GET_CAPABILITIES",
+    )
+}
+
+enum class TermuxEngineOperation {
+    PING,
+    GET_STATUS,
+    GET_CAPABILITIES,
+}
+
+data class TermuxEnginePing(val protocolVersion: Int, val status: String)
+data class TermuxEngineStatus(
+    val protocolVersion: Int,
+    val engineVersion: String,
+    val projectId: String,
+    val status: String,
+    val pid: Long,
+)
+data class TermuxEngineCapabilities(val protocolVersion: Int, val capabilities: Set<String>)
+
+interface TermuxEngineClient {
+    suspend fun ping(): Result<TermuxEnginePing>
+    suspend fun getStatus(): Result<TermuxEngineStatus>
+    suspend fun getCapabilities(): Result<TermuxEngineCapabilities>
+}
+
+interface TermuxEngineTokenStore {
+    fun save(token: String)
+    fun load(): String?
+    fun clear()
+}
+
+object TermuxEngineEndpointPolicy {
+    fun validate(host: String, port: Int) {
+        require(host == TermuxEngineProtocol.DEFAULT_HOST) { "TERMUX_ENGINE_ENDPOINT_LOOPBACK_ONLY" }
+        require(port in 1..65535) { "TERMUX_ENGINE_ENDPOINT_PORT_INVALID" }
+    }
+}
+
+object TermuxEngineTokenPolicy {
+    private val TOKEN_REGEX = Regex("^[A-Za-z0-9._~-]{32,256}$")
+    fun normalize(raw: String): String {
+        val token = raw.trim()
+        require(TOKEN_REGEX.matches(token)) { "TERMUX_ENGINE_TOKEN_INVALID" }
+        return token
+    }
+}

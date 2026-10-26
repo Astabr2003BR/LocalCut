@@ -29,6 +29,11 @@ class SocketTermuxEngineClient(
         require(readTimeoutMs in 1..60_000) { "TERMUX_ENGINE_READ_TIMEOUT_INVALID" }
     }
 
+    override suspend fun pair(pairingCode: String): Result<TermuxEnginePairing> =
+        exchangeRequest { requestId ->
+            TermuxEnginePairingRequestEncoder.encode(requestId, pairingCode)
+        }.mapCatching(TermuxEngineResponseParser::parsePairing)
+
     override suspend fun ping(): Result<TermuxEnginePing> = exchange(TermuxEngineOperation.PING)
         .mapCatching(TermuxEngineResponseParser::parsePing)
 
@@ -39,35 +44,41 @@ class SocketTermuxEngineClient(
         .mapCatching(TermuxEngineResponseParser::parseCapabilities)
 
     private suspend fun exchange(operation: TermuxEngineOperation): Result<com.localcut.editor.data.project.JObject> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val token = TermuxEngineTokenPolicy.normalize(
-                    tokenProvider() ?: error("TERMUX_ENGINE_NOT_PAIRED"),
-                )
-                val requestId = UUID.randomUUID().toString()
-                val request = TermuxEngineRequestEncoder.encode(requestId, operation, token)
-                Socket().use { socket ->
-                    socket.soTimeout = readTimeoutMs
-                    socket.connect(InetSocketAddress(host, port), connectTimeoutMs)
-                    socket.getOutputStream().apply {
-                        write(request.toByteArray(Charsets.UTF_8))
-                        flush()
-                    }
-                    val rawResponse = readBoundedLine(socket)
-                    val root = runCatching { MiniJson.parse(rawResponse).asObject() }
-                        .getOrElse { throw IllegalStateException("TERMUX_ENGINE_RESPONSE_INVALID") }
-                    val responseRequestId = root.required("requestId").asString()
-                    require(responseRequestId == requestId) { "TERMUX_ENGINE_REQUEST_ID_MISMATCH" }
-                    if (!root.required("ok").asBoolean()) {
-                        throw IllegalStateException(
-                            runCatching { root.required("code").asString() }
-                                .getOrDefault("TERMUX_ENGINE_FAILED"),
-                        )
-                    }
-                    root
+        exchangeRequest { requestId ->
+            val token = TermuxEngineTokenPolicy.normalize(
+                tokenProvider() ?: error("TERMUX_ENGINE_NOT_PAIRED"),
+            )
+            TermuxEngineRequestEncoder.encode(requestId, operation, token)
+        }
+
+    private suspend fun exchangeRequest(
+        requestFactory: (requestId: String) -> String,
+    ): Result<com.localcut.editor.data.project.JObject> = withContext(Dispatchers.IO) {
+        runCatching {
+            val requestId = UUID.randomUUID().toString()
+            val request = requestFactory(requestId)
+            Socket().use { socket ->
+                socket.soTimeout = readTimeoutMs
+                socket.connect(InetSocketAddress(host, port), connectTimeoutMs)
+                socket.getOutputStream().apply {
+                    write(request.toByteArray(Charsets.UTF_8))
+                    flush()
                 }
+                val rawResponse = readBoundedLine(socket)
+                val root = runCatching { MiniJson.parse(rawResponse).asObject() }
+                    .getOrElse { throw IllegalStateException("TERMUX_ENGINE_RESPONSE_INVALID") }
+                val responseRequestId = root.required("requestId").asString()
+                require(responseRequestId == requestId) { "TERMUX_ENGINE_REQUEST_ID_MISMATCH" }
+                if (!root.required("ok").asBoolean()) {
+                    throw IllegalStateException(
+                        runCatching { root.required("code").asString() }
+                            .getOrDefault("TERMUX_ENGINE_FAILED"),
+                    )
+                }
+                root
             }
         }
+    }
 
     private fun readBoundedLine(socket: Socket): String {
         val input = socket.getInputStream()
@@ -79,6 +90,22 @@ class SocketTermuxEngineClient(
             output.write(next)
         }
         error("TERMUX_ENGINE_RESPONSE_TOO_LARGE")
+    }
+}
+
+internal object TermuxEnginePairingRequestEncoder {
+    fun encode(requestId: String, pairingCode: String): String {
+        require(requestId.matches(Regex("^[A-Za-z0-9_-]{8,128}$"))) { "TERMUX_ENGINE_REQUEST_ID_INVALID" }
+        val normalizedCode = TermuxEnginePairingCodePolicy.normalize(pairingCode)
+        return buildString {
+            append('{')
+            append("\"protocolVersion\":"); append(TermuxEngineProtocol.PROTOCOL_VERSION); append(',')
+            append("\"projectId\":"); append(jsonString(TermuxEngineProtocol.PROJECT_ID)); append(',')
+            append("\"requestId\":"); append(jsonString(requestId)); append(',')
+            append("\"operation\":\"PAIR\",")
+            append("\"pairingCode\":"); append(jsonString(normalizedCode))
+            append("}\n")
+        }
     }
 }
 
@@ -99,6 +126,12 @@ internal object TermuxEngineRequestEncoder {
 }
 
 internal object TermuxEngineResponseParser {
+    fun parsePairing(root: com.localcut.editor.data.project.JObject): TermuxEnginePairing {
+        val protocol = requireProtocol(root)
+        val token = TermuxEngineTokenPolicy.normalize(root.required("token").asString())
+        return TermuxEnginePairing(protocol, token)
+    }
+
     fun parsePing(root: com.localcut.editor.data.project.JObject): TermuxEnginePing {
         val protocol = requireProtocol(root)
         val status = root.required("status").asString()

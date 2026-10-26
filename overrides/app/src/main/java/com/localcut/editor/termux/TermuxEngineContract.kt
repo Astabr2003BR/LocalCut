@@ -6,6 +6,7 @@ object TermuxEngineProtocol {
     const val DEFAULT_HOST = "127.0.0.1"
     const val DEFAULT_PORT = 43127
     const val MAX_RESPONSE_BYTES = 16_384
+    const val PAIRING_CODE_LENGTH = 12
 
     val REQUIRED_CAPABILITIES: Set<String> = setOf(
         "PING",
@@ -20,6 +21,7 @@ enum class TermuxEngineOperation {
     GET_CAPABILITIES,
 }
 
+data class TermuxEnginePairing(val protocolVersion: Int, val token: String)
 data class TermuxEnginePing(val protocolVersion: Int, val status: String)
 data class TermuxEngineStatus(
     val protocolVersion: Int,
@@ -31,6 +33,7 @@ data class TermuxEngineStatus(
 data class TermuxEngineCapabilities(val protocolVersion: Int, val capabilities: Set<String>)
 
 interface TermuxEngineClient {
+    suspend fun pair(pairingCode: String): Result<TermuxEnginePairing>
     suspend fun ping(): Result<TermuxEnginePing>
     suspend fun getStatus(): Result<TermuxEngineStatus>
     suspend fun getCapabilities(): Result<TermuxEngineCapabilities>
@@ -51,9 +54,26 @@ object TermuxEngineEndpointPolicy {
 
 object TermuxEngineTokenPolicy {
     private val TOKEN_REGEX = Regex("^[A-Za-z0-9._~-]{32,256}$")
+
     fun normalize(raw: String): String {
         val token = raw.trim()
         require(TOKEN_REGEX.matches(token)) { "TERMUX_ENGINE_TOKEN_INVALID" }
         return token
+    }
+}
+
+object TermuxEnginePairingCodePolicy {
+    private const val ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+
+    fun normalize(raw: String): String {
+        val normalized = raw.trim()
+            .replace("-", "")
+            .replace(" ", "")
+            .uppercase()
+        require(
+            normalized.length == TermuxEngineProtocol.PAIRING_CODE_LENGTH &&
+                normalized.all(ALPHABET::contains),
+        ) { "TERMUX_ENGINE_PAIRING_CODE_INVALID" }
+        return normalized
     }
 }

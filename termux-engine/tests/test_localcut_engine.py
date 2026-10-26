@@ -1,12 +1,20 @@
 import json
 import socket
+import stat
+import tempfile
 import threading
 import unittest
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from localcut_engine import create_server, generate_token
+from localcut_engine import (
+    EngineCredentialStore,
+    PairingWindow,
+    create_server,
+    generate_pairing_code,
+    generate_token,
+)
 
 
 class LocalCutEngineTest(unittest.TestCase):
@@ -79,6 +87,113 @@ class LocalCutEngineTest(unittest.TestCase):
             create_server("0.0.0.0", 43127, self.token)
         with self.assertRaisesRegex(ValueError, "ENGINE_TOKEN_INVALID"):
             create_server("127.0.0.1", 43127, "short")
+
+
+class LocalCutEnginePairingTest(unittest.TestCase):
+    def free_port(self):
+        probe = socket.socket()
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+        probe.close()
+        return port
+
+    def exchange(self, port, payload):
+        raw = (json.dumps(payload, separators=(",", ":")) + "\n").encode()
+        with socket.create_connection(("127.0.0.1", port), timeout=2) as sock:
+            sock.sendall(raw)
+            return json.loads(sock.makefile("rb").readline().decode())
+
+    def test_pairing_code_is_high_entropy_and_human_safe(self):
+        code = generate_pairing_code()
+        self.assertEqual(12, len(code))
+        self.assertTrue(all(ch in "23456789ABCDEFGHJKLMNPQRSTUVWXYZ" for ch in code))
+
+    def test_pairing_is_one_time_then_token_authenticates_ping(self):
+        token = "t" * 43
+        code = "23456789ABCD"
+        window = PairingWindow(code=code, ttl_seconds=300, max_attempts=5)
+        port = self.free_port()
+        server = create_server("127.0.0.1", port, token, pairing_window=window)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            pair = self.exchange(port, {
+                "protocolVersion": 1,
+                "projectId": "localcut",
+                "requestId": "pair-12345678",
+                "operation": "PAIR",
+                "pairingCode": "2345-6789-ABCD",
+            })
+            self.assertTrue(pair["ok"])
+            self.assertEqual(token, pair["token"])
+            second = self.exchange(port, {
+                "protocolVersion": 1,
+                "projectId": "localcut",
+                "requestId": "pair-87654321",
+                "operation": "PAIR",
+                "pairingCode": code,
+            })
+            self.assertFalse(second["ok"])
+            self.assertEqual("PAIRING_NOT_AVAILABLE", second["code"])
+            ping = self.exchange(port, {
+                "protocolVersion": 1,
+                "projectId": "localcut",
+                "requestId": "ping-12345678",
+                "token": token,
+                "operation": "PING",
+            })
+            self.assertTrue(ping["ok"])
+            self.assertEqual("READY", ping["status"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_pairing_wrong_code_locks_after_bounded_attempts(self):
+        token = "t" * 43
+        window = PairingWindow(code="23456789ABCD", ttl_seconds=300, max_attempts=2)
+        port = self.free_port()
+        server = create_server("127.0.0.1", port, token, pairing_window=window)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            for request_id, expected in [
+                ("pair-wrong-01", "PAIRING_INVALID"),
+                ("pair-wrong-02", "PAIRING_LOCKED"),
+            ]:
+                result = self.exchange(port, {
+                    "protocolVersion": 1,
+                    "projectId": "localcut",
+                    "requestId": request_id,
+                    "operation": "PAIR",
+                    "pairingCode": "ZZZZZZZZZZZZ",
+                })
+                self.assertEqual(expected, result["code"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_pairing_expires_fail_closed(self):
+        now = [100.0]
+        window = PairingWindow(
+            code="23456789ABCD",
+            ttl_seconds=30,
+            max_attempts=5,
+            clock=lambda: now[0],
+        )
+        now[0] = 131.0
+        result = window.claim("23456789ABCD")
+        self.assertEqual("PAIRING_EXPIRED", result)
+
+    def test_credentials_are_private_and_round_trip(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "engine" / "credentials.json"
+            store = EngineCredentialStore(path)
+            token = store.load_or_create()
+            self.assertEqual(token, store.load())
+            self.assertEqual(0o600, stat.S_IMODE(path.stat().st_mode))
+            self.assertEqual(0o700, stat.S_IMODE(path.parent.stat().st_mode))
 
 
 if __name__ == "__main__":

@@ -129,5 +129,7 @@ fun TermuxEnginePanel(modifier: Modifier = Modifier) {
                 color = MaterialTheme.colorScheme.error,
             )
         }
+
+        TermuxMediaAnalyzePanel(engineState = state)
     }
 }

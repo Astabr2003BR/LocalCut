@@ -78,7 +78,7 @@ fun TermuxEnginePanel(modifier: Modifier = Modifier) {
                 placeholder = { Text("ABCD-EFGH-JKLM") },
             )
             Text(
-                "No Termux, execute: python localcut_engine.py --pair",
+                "No Termux: python termux-engine/localcut_supervisor.py --pair",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -131,5 +131,6 @@ fun TermuxEnginePanel(modifier: Modifier = Modifier) {
         }
 
         TermuxMediaAnalyzePanel(engineState = state)
+        TermuxApprovalPanel(engineState = state)
     }
 }

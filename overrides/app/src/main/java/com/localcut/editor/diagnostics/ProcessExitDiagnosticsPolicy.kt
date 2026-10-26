@@ -1,10 +1,12 @@
 package com.localcut.editor.diagnostics
 
 import android.app.ApplicationExitInfo
+import java.util.Locale
 import kotlin.math.abs
 
 object ProcessExitDiagnosticsPolicy {
     private const val CRASH_ASSOCIATION_WINDOW_MS = 2 * 60_000L
+    private const val SWIPE_UP_CLEAN = "swipeupclean"
 
     fun shouldSurface(reason: Int): Boolean = when (reason) {
         ApplicationExitInfo.REASON_CRASH,
@@ -29,7 +31,27 @@ object ProcessExitDiagnosticsPolicy {
         return abs(exitTimestampMs - crashTimestampMs) <= CRASH_ASSOCIATION_WINDOW_MS
     }
 
-    fun labelFor(reason: Int): String = when (reason) {
+    fun labelFor(reason: Int, description: String? = null): String = when {
+        isRecentAppsCleanup(reason, description) -> "LIMPEZA DOS RECENTES"
+        else -> labelForReason(reason)
+    }
+
+    fun interpretationFor(reason: Int, description: String?): String? = when {
+        isRecentAppsCleanup(reason, description) ->
+            "Encerramento solicitado pelo launcher/OEM ao limpar o app dos recentes; não classificado como pressão de memória."
+        else -> null
+    }
+
+    private fun isRecentAppsCleanup(reason: Int, description: String?): Boolean =
+        reason == ApplicationExitInfo.REASON_OTHER && normalizeDescription(description) == SWIPE_UP_CLEAN
+
+    private fun normalizeDescription(description: String?): String = description
+        .orEmpty()
+        .trim()
+        .lowercase(Locale.ROOT)
+        .replace(Regex("[\\s_-]+"), "")
+
+    private fun labelForReason(reason: Int): String = when (reason) {
         ApplicationExitInfo.REASON_EXIT_SELF -> "EXIT_SELF"
         ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED"
         ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY"

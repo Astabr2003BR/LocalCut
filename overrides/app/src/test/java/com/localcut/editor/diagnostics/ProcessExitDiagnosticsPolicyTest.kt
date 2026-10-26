@@ -3,6 +3,7 @@ package com.localcut.editor.diagnostics
 import android.app.ApplicationExitInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -31,5 +32,39 @@ class ProcessExitDiagnosticsPolicyTest {
         assertEquals("LOW_MEMORY", ProcessExitDiagnosticsPolicy.labelFor(ApplicationExitInfo.REASON_LOW_MEMORY))
         assertEquals("SIGNALED", ProcessExitDiagnosticsPolicy.labelFor(ApplicationExitInfo.REASON_SIGNALED))
         assertEquals("OTHER", ProcessExitDiagnosticsPolicy.labelFor(ApplicationExitInfo.REASON_OTHER))
+    }
+
+    @Test
+    fun swipeUpCleanIsClassifiedAsRecentAppsCleanupOnlyForReasonOther() {
+        assertEquals(
+            "LIMPEZA DOS RECENTES",
+            ProcessExitDiagnosticsPolicy.labelFor(ApplicationExitInfo.REASON_OTHER, "SwipeUpClean"),
+        )
+        assertEquals(
+            "LIMPEZA DOS RECENTES",
+            ProcessExitDiagnosticsPolicy.labelFor(ApplicationExitInfo.REASON_OTHER, " swipe_up-clean "),
+        )
+        assertEquals(
+            "OTHER",
+            ProcessExitDiagnosticsPolicy.labelFor(ApplicationExitInfo.REASON_OTHER, "vendor-other"),
+        )
+        assertEquals(
+            "LOW_MEMORY",
+            ProcessExitDiagnosticsPolicy.labelFor(ApplicationExitInfo.REASON_LOW_MEMORY, "SwipeUpClean"),
+        )
+    }
+
+    @Test
+    fun swipeUpCleanExplanationDoesNotMisclassifyMemoryPressure() {
+        assertEquals(
+            "Encerramento solicitado pelo launcher/OEM ao limpar o app dos recentes; não classificado como pressão de memória.",
+            ProcessExitDiagnosticsPolicy.interpretationFor(ApplicationExitInfo.REASON_OTHER, "SwipeUpClean"),
+        )
+        assertNull(
+            ProcessExitDiagnosticsPolicy.interpretationFor(ApplicationExitInfo.REASON_OTHER, "vendor-other"),
+        )
+        assertNull(
+            ProcessExitDiagnosticsPolicy.interpretationFor(ApplicationExitInfo.REASON_LOW_MEMORY, "SwipeUpClean"),
+        )
     }
 }

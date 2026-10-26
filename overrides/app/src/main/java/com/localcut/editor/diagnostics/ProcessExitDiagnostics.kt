@@ -117,8 +117,10 @@ object ProcessExitDiagnostics {
     }
 
     private fun formatExit(exit: ApplicationExitInfo): String = buildString {
+        val description = exit.description?.trim().orEmpty()
+
         append("Motivo: ")
-        append(ProcessExitDiagnosticsPolicy.labelFor(exit.reason))
+        append(ProcessExitDiagnosticsPolicy.labelFor(exit.reason, description))
         append(" (reason=")
         append(exit.reason)
         append(")\n")
@@ -136,10 +138,15 @@ object ProcessExitDiagnostics {
         append(exit.rss / 1024L)
         append("MB\n")
 
-        val description = exit.description?.trim().orEmpty()
         if (description.isNotBlank()) {
             append("Descrição: ")
             append(description.take(420))
+            append("\n")
+        }
+
+        ProcessExitDiagnosticsPolicy.interpretationFor(exit.reason, description)?.let { interpretation ->
+            append("Interpretação: ")
+            append(interpretation)
             append("\n")
         }
 

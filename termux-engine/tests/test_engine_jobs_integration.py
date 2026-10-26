@@ -3,7 +3,10 @@ import socket
 import tempfile
 import threading
 import unittest
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from localcut_engine import create_server, generate_token
 from localcut_jobs import JobStore, MediaSpool

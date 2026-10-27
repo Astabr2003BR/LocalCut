@@ -94,6 +94,12 @@ fun DesignToolsPanel(
 
             when (activeSection) {
                 DesignToolsSection.ELEMENTS -> {
+                    DrawStrokePad(
+                        project = project,
+                        playheadUs = playheadUs,
+                        onAddElement = onAddElement,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),

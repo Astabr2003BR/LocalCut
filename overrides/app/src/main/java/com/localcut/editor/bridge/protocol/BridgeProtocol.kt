@@ -26,6 +26,7 @@ enum class BridgeCapability(
     SET_VOLUME("set_volume", mutatesProject = true),
     SET_KEYFRAMES("set_keyframes", mutatesProject = true),
     ADD_TEXT("add_text", mutatesProject = true),
+    PROJECT_EDIT("project_edit", mutatesProject = true),
     ADD_TRANSITION("add_transition", mutatesProject = true),
     IMPORT_MEDIA("import_media", mutatesProject = true),
     UNDO("undo", mutatesProject = true),

@@ -21,7 +21,9 @@ class BridgeMessageProcessor(
     private val replayGuard: ReplayGuard = ReplayGuard(),
     private val onExecuted: () -> Unit = {},
     private val activeProjectContextProvider: () -> BridgeActiveProjectContext? = { null },
+    termuxAgentPort: BridgeTermuxAgentTaskPort = UnavailableBridgeTermuxAgentTaskPort,
 ) {
+    private val termuxRouter = BridgeTermuxCommandRouter(termuxAgentPort, activeProjectContextProvider)
     init {
         require(deviceId.isNotBlank()) { "deviceId must not be blank" }
     }
@@ -55,7 +57,9 @@ class BridgeMessageProcessor(
         )) {
             ReplayDecision.Reserved -> {
                 val result = runCatching {
-                    if (isActiveProjectProbe(command)) {
+                    if (termuxRouter.handles(command)) {
+                        termuxRouter.route(command)
+                    } else if (isActiveProjectProbe(command)) {
                         activeProjectStatusResult(command.messageId)
                     } else {
                         executor.execute(command)

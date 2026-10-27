@@ -8,6 +8,7 @@ import {
   type BridgeCommandEnvelope,
   revisionRequiredCapabilities,
 } from "./protocol.ts";
+import { registerTermuxTools } from "./termuxMcp.ts";
 
 const MAX_PREVIEW_BASE64_CHARS = 2_000_000;
 const ACTIVE_PROJECT_SENTINEL = "__localcut_active_project__";
@@ -133,6 +134,8 @@ export function createLocalCutMcpServer(
       }
     },
   );
+
+  registerTermuxTools(server, router, controllerId);
 
   for (const capability of bridgeCapabilities) {
     const inputSchema = buildToolInputSchema(capability);

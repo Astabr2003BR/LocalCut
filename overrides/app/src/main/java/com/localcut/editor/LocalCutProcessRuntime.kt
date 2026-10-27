@@ -7,11 +7,13 @@ import androidx.annotation.OptIn
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
 import com.localcut.editor.bridge.agent.AndroidMediaStoreBridgeExportTargetFactory
+import com.localcut.editor.bridge.agent.AsyncBridgeTermuxAgentTaskPort
 import com.localcut.editor.bridge.agent.BridgeActiveProjectContext
 import com.localcut.editor.bridge.agent.BridgeCommandExecutor
 import com.localcut.editor.bridge.agent.BridgeJobRegistry
 import com.localcut.editor.bridge.agent.BridgeMessageProcessor
 import com.localcut.editor.bridge.agent.BridgePlaybackPort
+import com.localcut.editor.bridge.agent.BridgeTermuxAgentTaskPort
 import com.localcut.editor.bridge.agent.LocalCutBridgeControl
 import com.localcut.editor.bridge.agent.Media3BridgeExportPort
 import com.localcut.editor.bridge.security.AndroidKeystoreDeviceIdentityStore
@@ -38,6 +40,7 @@ import com.localcut.editor.session.PreviewLoadException
 import com.localcut.editor.session.ProjectPreviewLoader
 import com.localcut.editor.session.ProjectSession
 import com.localcut.editor.session.SharedPreferencesProjectRevisionClock
+import com.localcut.editor.termux.TermuxAgentEngineRuntime
 import com.localcut.editor.ui.editor.EditorViewModel
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -61,6 +64,7 @@ class LocalCutProcessRuntime private constructor(context: Context) {
     val mediaIngestCoordinator: MediaIngestCoordinator
     val bridgeJobs = BridgeJobRegistry()
     val bridgeCommandExecutor: BridgeCommandExecutor
+    val bridgeTermuxAgentPort: BridgeTermuxAgentTaskPort
     val bridgeMessageProcessor: BridgeMessageProcessor
     val bridgeInboundMessageHandler: BridgeInboundMessageHandler
     val bridgeControl: LocalCutBridgeControl
@@ -153,6 +157,10 @@ class LocalCutProcessRuntime private constructor(context: Context) {
             exportPort = bridgeExportPort,
             previewFramePort = previewController.bridgePreviewFramePort,
         )
+        bridgeTermuxAgentPort = AsyncBridgeTermuxAgentTaskPort(
+            scope = processScope,
+            client = TermuxAgentEngineRuntime.get(appContext).developerAgentClient,
+        )
         val deviceId = AndroidKeystoreDeviceIdentityStore()
             .getOrCreatePublicIdentity()
             .deviceId
@@ -160,6 +168,7 @@ class LocalCutProcessRuntime private constructor(context: Context) {
             deviceId = deviceId,
             executor = bridgeCommandExecutor,
             onExecuted = editorViewModel::refreshSnapshot,
+            termuxAgentPort = bridgeTermuxAgentPort,
             activeProjectContextProvider = {
                 val current = session.state
                 BridgeActiveProjectContext(

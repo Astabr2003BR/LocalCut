@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import shutil
 import sqlite3
@@ -39,6 +39,8 @@ SAFE_OPERATIONS = {
     "RUN_TERMUX_TESTS",
     "RUN_ANDROID_UNIT_TESTS",
     "BUILD_DEBUG_APK",
+    "GIT_COMMIT",
+    "GIT_PUSH",
 }
 SECRET_KEYS = {
     "token", "secret", "password", "authorization", "apikey", "api_key",
@@ -125,17 +127,115 @@ class DeveloperAgentPolicy:
 
 
 class SafeAgentExecutor:
-    def __init__(self, policy: DeveloperAgentPolicy, timeout_seconds: int = 900):
+    _DENIED_PATH_NAMES = {
+        "local.properties", "gradle.properties", ".npmrc", ".pypirc",
+    }
+    _DENIED_PATH_DIRS = {".git", ".gradle", ".idea", "node_modules", "build", "dist", ".localcut-engine", "secrets", "credentials"}
+    _DENIED_PATH_SUFFIXES = {".jks", ".keystore", ".p12", ".pfx", ".pem", ".key", ".der"}
+
+    def __init__(self, policy: DeveloperAgentPolicy, timeout_seconds: int = 900, runner=subprocess.run):
         self.policy = policy
         self.timeout_seconds = int(timeout_seconds)
+        self.runner = runner
         if not (1 <= self.timeout_seconds <= 3600):
             raise ValueError("AGENT_TIMEOUT_INVALID")
 
-    def execute(self, operation: str) -> dict:
+    def execute(self, operation: str, input: dict | None = None) -> dict:
+        if operation == "GIT_COMMIT":
+            return self._git_commit(input)
+        if operation == "GIT_PUSH":
+            return self._git_push(input)
+        if input not in (None, {}):
+            raise ValueError("AGENT_INPUT_NOT_ALLOWED")
         argv = self.policy.command_for(operation)
+        return self._run(operation, argv)
+
+    def _git_commit(self, input: dict | None) -> dict:
+        data = self._require_input(input)
+        branch = self._validate_workspace(data.get("expectedBranch"))
+        message = data.get("message")
+        paths = data.get("paths")
+        if not isinstance(message, str) or not (1 <= len(message) <= 160) or any(ord(ch) < 32 for ch in message):
+            raise ValueError("AGENT_COMMIT_MESSAGE_INVALID")
+        if not isinstance(paths, list) or isinstance(paths, (str, bytes)) or not (1 <= len(paths) <= 50):
+            raise ValueError("AGENT_PATHS_INVALID")
+        clean_paths = [self._validate_path(path) for path in paths]
+        if len(set(clean_paths)) != len(clean_paths):
+            raise ValueError("AGENT_PATHS_INVALID")
+        staged = self._run("GIT_COMMIT", ["git", "add", "--", *clean_paths])
+        if staged["exitCode"] != 0:
+            return staged
+        return self._run("GIT_COMMIT", ["git", "commit", "-m", message, "--", *clean_paths])
+
+    def _git_push(self, input: dict | None) -> dict:
+        data = self._require_input(input)
+        branch = self._validate_workspace(data.get("expectedBranch"))
+        return self._run("GIT_PUSH", ["git", "push", "origin", f"HEAD:refs/heads/{branch}"])
+
+    def _validate_workspace(self, expected_branch) -> str:
+        if not isinstance(expected_branch, str):
+            raise ValueError("AGENT_BRANCH_INVALID")
+        expected_branch = self.policy.validate_branch(expected_branch)
+        current = self._git_text(["git", "branch", "--show-current"], "AGENT_GIT_BRANCH_FAILED")
+        if current != expected_branch:
+            raise ValueError("AGENT_BRANCH_MISMATCH")
+        remote = self._git_text(["git", "remote", "get-url", "origin"], "AGENT_GIT_REMOTE_FAILED")
+        if self._normalize_origin(remote) != ALLOWED_REPOSITORY.lower():
+            raise ValueError("AGENT_REPOSITORY_NOT_ALLOWED")
+        return current
+
+    def _validate_path(self, raw) -> str:
+        if not isinstance(raw, str):
+            raise ValueError("AGENT_PATH_INVALID")
+        raw = raw.strip().replace("\\", "/")
+        if not raw or len(raw) > 512:
+            raise ValueError("AGENT_PATH_INVALID")
+        pure = PurePosixPath(raw)
+        if pure.is_absolute() or any(part in {"", ".", ".."} for part in pure.parts):
+            raise ValueError("AGENT_PATH_INVALID")
+        lower_parts = [part.lower() for part in pure.parts]
+        if any(part in self._DENIED_PATH_DIRS for part in lower_parts[:-1]):
+            raise ValueError("AGENT_PATH_DENIED")
+        name = lower_parts[-1]
+        if name.startswith(".env") or name in self._DENIED_PATH_NAMES or PurePosixPath(name).suffix.lower() in self._DENIED_PATH_SUFFIXES:
+            raise ValueError("AGENT_PATH_DENIED")
+        candidate = self.policy.workspace.joinpath(*pure.parts)
+        if candidate.is_symlink():
+            raise ValueError("AGENT_PATH_DENIED")
+        resolved = candidate.resolve(strict=False)
+        try:
+            resolved.relative_to(self.policy.workspace)
+        except ValueError as exc:
+            raise ValueError("AGENT_PATH_INVALID") from exc
+        return pure.as_posix()
+
+    def _git_text(self, argv: list[str], error_code: str) -> str:
+        result = self._run("GIT_VALIDATE", argv)
+        if result["exitCode"] != 0:
+            raise ValueError(error_code)
+        return result["stdout"].strip()
+
+    @staticmethod
+    def _normalize_origin(remote: str) -> str:
+        value = remote.strip().removesuffix(".git")
+        lower = value.lower()
+        for prefix in ("https://github.com/", "http://github.com/", "ssh://git@github.com/"):
+            if lower.startswith(prefix):
+                return value[len(prefix):].strip("/").lower()
+        if lower.startswith("git@github.com:"):
+            return value[len("git@github.com:"):].strip("/").lower()
+        return ""
+
+    @staticmethod
+    def _require_input(input: dict | None) -> dict:
+        if not isinstance(input, dict):
+            raise ValueError("AGENT_INPUT_INVALID")
+        return input
+
+    def _run(self, operation: str, argv: list[str]) -> dict:
         env = self._safe_env()
         try:
-            completed = subprocess.run(
+            completed = self.runner(
                 argv,
                 cwd=self.policy.workspace,
                 stdin=subprocess.DEVNULL,
@@ -151,12 +251,14 @@ class SafeAgentExecutor:
             raise RuntimeError("AGENT_OPERATION_TIMEOUT") from exc
         except OSError as exc:
             raise RuntimeError("AGENT_OPERATION_EXEC_FAILED") from exc
+        stdout = completed.stdout or b""
+        stderr = completed.stderr or b""
         return {
             "operation": operation,
             "exitCode": completed.returncode,
-            "stdout": completed.stdout[:MAX_CAPTURE_BYTES].decode("utf-8", errors="replace"),
-            "stderr": completed.stderr[:MAX_CAPTURE_BYTES].decode("utf-8", errors="replace"),
-            "truncated": len(completed.stdout) > MAX_CAPTURE_BYTES or len(completed.stderr) > MAX_CAPTURE_BYTES,
+            "stdout": stdout[:MAX_CAPTURE_BYTES].decode("utf-8", errors="replace"),
+            "stderr": stderr[:MAX_CAPTURE_BYTES].decode("utf-8", errors="replace"),
+            "truncated": len(stdout) > MAX_CAPTURE_BYTES or len(stderr) > MAX_CAPTURE_BYTES,
         }
 
     @staticmethod

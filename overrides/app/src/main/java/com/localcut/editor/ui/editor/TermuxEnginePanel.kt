@@ -10,6 +10,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.localcut.editor.termux.TermuxAgentEngineRuntime
+import com.localcut.editor.termux.TermuxEngineAutoConnectPolicy
 import com.localcut.editor.termux.TermuxEngineUiPhase
 import com.localcut.editor.termux.TermuxEngineUiSession
 import com.localcut.editor.termux.TermuxEngineUiState
@@ -46,6 +48,14 @@ fun TermuxEnginePanel(modifier: Modifier = Modifier) {
     }
     var pairingDraft by rememberSaveable { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(runtime) {
+        if (TermuxEngineAutoConnectPolicy.shouldProbe(state)) {
+            val checking = state.pairing()
+            state = checking
+            state = session.check(checking)
+        }
+    }
 
     Column(
         modifier = modifier.fillMaxWidth().padding(top = 6.dp),

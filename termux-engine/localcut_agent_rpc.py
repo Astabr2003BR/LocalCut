@@ -136,8 +136,11 @@ class LocalCutAgentRpcHandler(socketserver.StreamRequestHandler):
     def _run_agent_operation(self, request_id: str, request: dict) -> None:
         agent_operation = request.get("agentOperation")
         classification = self.server.policy.classify(agent_operation)
+        payload = request.get("input", {})
+        if not isinstance(payload, dict):
+            raise ValueError("AGENT_INPUT_INVALID")
         if classification == "SAFE":
-            result = self.server.executor.execute(agent_operation)
+            result = self.server.executor.execute(agent_operation, payload) if payload else self.server.executor.execute(agent_operation)
             status = "SUCCEEDED" if result["exitCode"] == 0 else "FAILED"
             self.wfile.write(_response(True, request_id, status=status, result=result))
             return
@@ -145,9 +148,6 @@ class LocalCutAgentRpcHandler(socketserver.StreamRequestHandler):
         task_id = request.get("taskId")
         if not isinstance(task_id, str) or not TASK_ID_RE.fullmatch(task_id):
             raise ValueError("AGENT_TASK_ID_INVALID")
-        payload = request.get("input", {})
-        if not isinstance(payload, dict):
-            raise ValueError("AGENT_INPUT_INVALID")
         approval = self.server.approvals.request(
             task_id,
             agent_operation,

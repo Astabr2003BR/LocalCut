@@ -13,8 +13,14 @@ class TermuxEngineContractTest {
     @Test
     fun endpointAndTokenPoliciesFailClosed() {
         TermuxEngineEndpointPolicy.validate("127.0.0.1", 43127)
+        TermuxEngineEndpointPolicy.validate("10.10.0.2", 43227)
+        TermuxEngineEndpointPolicy.validate("172.16.0.2", 43227)
+        TermuxEngineEndpointPolicy.validate("172.31.255.254", 43228)
+        TermuxEngineEndpointPolicy.validate("192.168.1.2", 43227)
         assertTrue(runCatching { TermuxEngineEndpointPolicy.validate("0.0.0.0", 43127) }.isFailure)
         assertTrue(runCatching { TermuxEngineEndpointPolicy.validate("localhost", 43127) }.isFailure)
+        assertTrue(runCatching { TermuxEngineEndpointPolicy.validate("8.8.8.8", 43227) }.isFailure)
+        assertTrue(runCatching { TermuxEngineEndpointPolicy.validate("172.32.0.1", 43227) }.isFailure)
         assertTrue(runCatching { TermuxEngineEndpointPolicy.validate("127.0.0.1", 0) }.isFailure)
         assertEquals(token, TermuxEngineTokenPolicy.normalize(token))
         assertTrue(runCatching { TermuxEngineTokenPolicy.normalize("short") }.isFailure)

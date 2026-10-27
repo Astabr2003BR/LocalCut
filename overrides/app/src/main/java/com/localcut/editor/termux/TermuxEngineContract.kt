@@ -47,8 +47,22 @@ interface TermuxEngineTokenStore {
 
 object TermuxEngineEndpointPolicy {
     fun validate(host: String, port: Int) {
-        require(host == TermuxEngineProtocol.DEFAULT_HOST) { "TERMUX_ENGINE_ENDPOINT_LOOPBACK_ONLY" }
+        require(isAllowedHost(host)) { "TERMUX_ENGINE_ENDPOINT_PRIVATE_ONLY" }
         require(port in 1..65535) { "TERMUX_ENGINE_ENDPOINT_PORT_INVALID" }
+    }
+
+    fun isAllowedHost(host: String): Boolean {
+        if (host == TermuxEngineProtocol.DEFAULT_HOST) return true
+        val parts = host.split('.')
+        if (parts.size != 4) return false
+        val octets = parts.map { it.toIntOrNull() ?: return false }
+        if (octets.any { it !in 0..255 }) return false
+        return when {
+            octets[0] == 10 -> true
+            octets[0] == 172 && octets[1] in 16..31 -> true
+            octets[0] == 192 && octets[1] == 168 -> true
+            else -> false
+        }
     }
 }
 

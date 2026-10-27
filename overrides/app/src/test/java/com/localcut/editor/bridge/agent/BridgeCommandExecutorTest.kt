@@ -12,6 +12,7 @@ import com.localcut.editor.domain.model.CompositionNode
 import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.Track
+import com.localcut.editor.domain.model.TextOverlay
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.session.Cancellable
 import com.localcut.editor.session.DebouncedProjectSaver
@@ -160,6 +161,54 @@ class BridgeCommandExecutorTest {
     }
 
     @Test
+    fun projectEditDeletesAudioAndTextAsOneRevisionAndUndoRestoresThem() {
+        val fixture = fixture()
+        val result = fixture.executor.execute(
+            command(
+                BridgeCapability.PROJECT_EDIT,
+                payload = "{\"operations\":[{\"op\":\"deleteByKind\",\"kinds\":[\"AUDIO\",\"TEXT\"]}]}",
+                expectedRevision = 5L,
+            ),
+        )
+
+        assertTrue(result.success)
+        assertEquals(6L, fixture.session.state.revision)
+        assertTrue(fixture.session.state.project.tracks.first { it.id == "audio-1" }.clips.isEmpty())
+        assertTrue(fixture.session.state.project.textOverlays.isEmpty())
+        assertTrue(fixture.session.state.project.findClip("clip-1") != null)
+
+        val undo = fixture.executor.execute(
+            command(
+                BridgeCapability.UNDO,
+                messageId = "undo-project-edit",
+                expectedRevision = 6L,
+            ),
+        )
+        assertTrue(undo.success)
+        assertEquals(7L, fixture.session.state.revision)
+        assertTrue(fixture.session.state.project.findClip("audio-clip") != null)
+        assertEquals("Texto", fixture.session.state.project.textOverlays.single().text)
+    }
+
+    @Test
+    fun invalidProjectEditBatchDoesNotAdvanceRevisionOrMutateProject() {
+        val fixture = fixture()
+        val baseline = fixture.session.state.project
+        val result = fixture.executor.execute(
+            command(
+                BridgeCapability.PROJECT_EDIT,
+                payload = "{\"operations\":[{\"op\":\"deleteClip\",\"clipId\":\"clip-1\"},{\"op\":\"patchClip\",\"clipId\":\"clip-1\",\"startUs\":1000000}]}",
+                expectedRevision = 5L,
+            ),
+        )
+
+        assertFalse(result.success)
+        assertEquals(BridgeErrorCode.INVALID_ARGUMENT, result.code)
+        assertEquals(5L, fixture.session.state.revision)
+        assertEquals(baseline, fixture.session.state.project)
+    }
+
+    @Test
     fun importWithoutPreviouslyAuthorizedReferenceRequiresLocalInteraction() {
         val fixture = fixture()
         val result = fixture.executor.execute(
@@ -192,14 +241,26 @@ class BridgeCommandExecutorTest {
             mimeType = "video/mp4",
             fingerprint = "fp-1",
         )
+        val audioAsset = Asset(
+            id = "audio-asset-1",
+            type = AssetType.AUDIO,
+            uri = "content://private/audio",
+            sourceDurationUs = 10_000_000L,
+            sizeBytes = 100L,
+            displayName = "audio.m4a",
+            mimeType = "audio/mp4",
+            fingerprint = "fp-audio-1",
+        )
         val clip = Clip("clip-1", asset.id, 0L, 4_000_000L, 0L, 4_000_000L)
+        val audioClip = Clip("audio-clip", audioAsset.id, 0L, 4_000_000L, 0L, 4_000_000L)
         val project = Project.create("Bridge", 1080, 1920, 30).copy(
             id = "project-1",
-            assets = listOf(asset),
+            assets = listOf(asset, audioAsset),
             tracks = listOf(
                 Track("visual-1", TrackType.VISUAL, 0, clips = listOf(clip)),
-                Track("audio-1", TrackType.AUDIO, 1),
+                Track("audio-1", TrackType.AUDIO, 1, clips = listOf(audioClip)),
             ),
+            textOverlays = listOf(TextOverlay("text-1", 0L, 1_000_000L, "Texto")),
             compositionGraph = CompositionGraph(
                 nodes = if (locked) {
                     listOf(

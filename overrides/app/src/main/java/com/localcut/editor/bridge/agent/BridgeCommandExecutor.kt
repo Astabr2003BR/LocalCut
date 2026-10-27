@@ -20,6 +20,7 @@ import com.localcut.editor.domain.history.AddTextOverlayCommand
 import com.localcut.editor.domain.history.DeleteClipWithTransitionsCommand
 import com.localcut.editor.domain.history.DuplicateClipCommand
 import com.localcut.editor.domain.history.MoveClipCommand
+import com.localcut.editor.domain.history.ProjectEditBatchCommand
 import com.localcut.editor.domain.history.SetKeyframesCommand
 import com.localcut.editor.domain.history.SetTransformCommand
 import com.localcut.editor.domain.history.SetVolumeCommand
@@ -90,6 +91,7 @@ class BridgeCommandExecutor(
                 BridgeCapability.SET_VOLUME -> executeVolume(command)
                 BridgeCapability.SET_KEYFRAMES -> executeKeyframes(command)
                 BridgeCapability.ADD_TEXT -> executeAddText(command)
+                BridgeCapability.PROJECT_EDIT -> executeProjectEdit(command)
                 BridgeCapability.ADD_TRANSITION -> executeAddTransition(command)
                 BridgeCapability.UNDO -> executeHistory(command, EditorAction.Undo)
                 BridgeCapability.REDO -> executeHistory(command, EditorAction.Redo)
@@ -297,6 +299,11 @@ class BridgeCommandExecutor(
             zIndex = zIndexLong.toInt(),
         )
         return dispatchWrite(command, EditorAction.Execute(AddTextOverlayCommand(overlay)))
+    }
+
+    private fun executeProjectEdit(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val operations = ProjectEditPayloadParser.parse(command.payloadJson)
+        return dispatchWrite(command, EditorAction.Execute(ProjectEditBatchCommand(operations)))
     }
 
     private fun executeAddTransition(command: BridgeCommandEnvelope): BridgeResultEnvelope {

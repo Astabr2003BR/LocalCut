@@ -114,6 +114,33 @@ class MobileHandoffParserTest {
     }
 
     @Test
+    fun parsesGenericProjectEditPayload() {
+        val result = MobileHandoffParser.parse(
+            "https://localcut-bridge-v1.onrender.com/open?action=project_edit&payload=%7B%22operations%22%3A%5B%7B%22op%22%3A%22deleteByKind%22%2C%22kinds%22%3A%5B%22AUDIO%22%5D%7D%5D%7D&returnTo=chatgpt",
+        ).getOrThrow()
+
+        assertEquals(BridgeCapability.PROJECT_EDIT, result.capability)
+        assertEquals("{\"operations\":[{\"op\":\"deleteByKind\",\"kinds\":[\"AUDIO\"]}]}", result.payloadJson)
+        assertEquals(MobileHandoffReturnTarget.CHATGPT, result.returnTarget)
+    }
+
+    @Test
+    fun rejectsProjectEditWithoutPayloadOrWithOversizePayload() {
+        assertTrue(
+            MobileHandoffParser.parse(
+                "https://localcut-bridge-v1.onrender.com/open?action=project_edit&returnTo=chatgpt",
+            ).isFailure,
+        )
+        val payload = "a".repeat(7_001)
+        val encoded = java.net.URLEncoder.encode(payload, java.nio.charset.StandardCharsets.UTF_8.name())
+        assertTrue(
+            MobileHandoffParser.parse(
+                "https://localcut-bridge-v1.onrender.com/open?action=project_edit&payload=$encoded&returnTo=chatgpt",
+            ).isFailure,
+        )
+    }
+
+    @Test
     fun rejectsUnsupportedAction() {
         val result = MobileHandoffParser.parse(
             "localcut://command?action=wipe_project",

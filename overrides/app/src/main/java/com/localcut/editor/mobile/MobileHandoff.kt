@@ -191,6 +191,14 @@ object MobileHandoffParser {
                     "Adicionar texto \"${text.take(80)}\"",
                 )
             }
+            "project_edit" -> {
+                val payload = requiredText(params, "payload", 7_000)
+                MobileHandoffCommand(
+                    BridgeCapability.PROJECT_EDIT,
+                    payload,
+                    "Aplicar edição em lote no projeto (uma única ação de Desfazer)",
+                )
+            }
             "export_project" -> MobileHandoffCommand(
                 BridgeCapability.EXPORT_PROJECT,
                 "{}",

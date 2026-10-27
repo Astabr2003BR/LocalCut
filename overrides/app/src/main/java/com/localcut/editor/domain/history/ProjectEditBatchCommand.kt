@@ -1,9 +1,11 @@
 package com.localcut.editor.domain.history
 
 import com.localcut.editor.domain.model.AssetType
+import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.TextOverlay
+import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.model.TransformValue
 import com.localcut.editor.domain.timeline.TimelineValidator
 
@@ -14,6 +16,20 @@ sealed interface ProjectEditOperation {
     data class DeleteClip(val clipId: String) : ProjectEditOperation
     data class DeleteText(val overlayId: String) : ProjectEditOperation
     data class AddText(val overlay: TextOverlay) : ProjectEditOperation
+    data class AddClip(
+        val clipId: String,
+        val assetId: String,
+        val trackId: String,
+        val startUs: Long,
+        val durationUs: Long,
+        val sourceInUs: Long = 0L,
+        val x: Double = 0.0,
+        val y: Double = 0.0,
+        val scale: Double = 1.0,
+        val rotationDeg: Double = 0.0,
+        val opacity: Double = 1.0,
+        val volume: Double = 1.0,
+    ) : ProjectEditOperation
     data class PatchText(
         val overlayId: String,
         val text: String? = null,
@@ -51,7 +67,11 @@ data class ProjectEditBatchCommand(
 
         var edited = project
         operations.forEachIndexed { index, operation ->
-            edited = applyOperation(edited, operation)
+            edited = try {
+                applyOperation(edited, operation)
+            } catch (error: IllegalArgumentException) {
+                throw IllegalArgumentException("project edit operation ${index + 1} invalid", error)
+            }
             validate(edited, "project edit operation ${index + 1}")
         }
         require(edited != project) { "project edit batch made no changes" }
@@ -66,6 +86,7 @@ data class ProjectEditBatchCommand(
         is ProjectEditOperation.DeleteClip -> deleteClip(project, operation.clipId)
         is ProjectEditOperation.DeleteText -> deleteText(project, operation.overlayId)
         is ProjectEditOperation.AddText -> addText(project, operation.overlay)
+        is ProjectEditOperation.AddClip -> addClip(project, operation)
         is ProjectEditOperation.PatchText -> patchText(project, operation)
         is ProjectEditOperation.PatchClip -> patchClip(project, operation)
     }
@@ -147,6 +168,49 @@ private fun removeItems(project: Project, clipIds: Set<String>, textIds: Set<Str
 private fun addText(project: Project, overlay: TextOverlay): Project {
     require(project.textOverlays.none { it.id == overlay.id }) { "text overlay ${overlay.id} already exists" }
     return project.copy(textOverlays = project.textOverlays + overlay)
+}
+
+private fun addClip(project: Project, operation: ProjectEditOperation.AddClip): Project {
+    require(operation.clipId.isNotBlank()) { "clipId must not be blank" }
+    require(project.findClip(operation.clipId) == null) { "clip ${operation.clipId} already exists" }
+    val asset = project.assets.firstOrNull { it.id == operation.assetId }
+        ?: throw IllegalArgumentException("asset ${operation.assetId} not found")
+    val trackIndex = project.tracks.indexOfFirst { it.id == operation.trackId }
+    require(trackIndex >= 0) { "track ${operation.trackId} not found" }
+    val track = project.tracks[trackIndex]
+    require(!track.locked) { "track ${operation.trackId} is locked" }
+    val expectedTrackType = if (asset.type == AssetType.AUDIO) TrackType.AUDIO else TrackType.VISUAL
+    require(track.type == expectedTrackType) { "asset and track type mismatch" }
+    require(operation.startUs >= 0L) { "startUs must be non-negative" }
+    require(operation.durationUs > 0L) { "durationUs must be positive" }
+    require(operation.sourceInUs >= 0L) { "sourceInUs must be non-negative" }
+    require(operation.scale > 0.0) { "scale must be positive" }
+    require(operation.opacity in 0.0..1.0) { "opacity must be in 0..1" }
+    require(operation.volume >= 0.0) { "volume must be non-negative" }
+    val sourceOutUs = Math.addExact(operation.sourceInUs, operation.durationUs)
+    asset.sourceDurationUs?.let { sourceDurationUs ->
+        require(sourceOutUs <= sourceDurationUs) { "clip source range exceeds asset duration" }
+    }
+    val clip = Clip(
+        id = operation.clipId,
+        assetId = operation.assetId,
+        startUs = operation.startUs,
+        durationUs = operation.durationUs,
+        sourceInUs = operation.sourceInUs,
+        sourceOutUs = sourceOutUs,
+        transform = TransformValue(
+            x = operation.x,
+            y = operation.y,
+            scale = operation.scale,
+            rotationDeg = operation.rotationDeg,
+        ),
+        opacity = operation.opacity,
+        volume = operation.volume,
+    )
+    val tracks = project.tracks.toMutableList().also {
+        it[trackIndex] = track.copy(clips = track.clips + clip)
+    }
+    return project.copy(tracks = tracks)
 }
 
 private fun patchText(project: Project, operation: ProjectEditOperation.PatchText): Project {

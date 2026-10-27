@@ -75,6 +75,26 @@ internal object ProjectEditPayloadParser {
             )
             ProjectEditOperation.AddText(overlay)
         }
+        "addClip" -> {
+            item.requireOnly(
+                "op", "clipId", "assetId", "trackId", "startUs", "durationUs", "sourceInUs",
+                "x", "y", "scale", "rotationDeg", "opacity", "volume",
+            )
+            ProjectEditOperation.AddClip(
+                clipId = item.requiredNonBlankString("clipId"),
+                assetId = item.requiredNonBlankString("assetId"),
+                trackId = item.requiredNonBlankString("trackId"),
+                startUs = item.requiredLong("startUs"),
+                durationUs = item.requiredLong("durationUs"),
+                sourceInUs = item.optionalLong("sourceInUs") ?: 0L,
+                x = item.optionalDouble("x") ?: 0.0,
+                y = item.optionalDouble("y") ?: 0.0,
+                scale = item.optionalDouble("scale") ?: 1.0,
+                rotationDeg = item.optionalDouble("rotationDeg") ?: 0.0,
+                opacity = item.optionalDouble("opacity") ?: 1.0,
+                volume = item.optionalDouble("volume") ?: 1.0,
+            )
+        }
         "patchText" -> {
             item.requireOnly(
                 "op", "overlayId", "text", "startUs", "durationUs", "x", "y", "scale", "rotationDeg",

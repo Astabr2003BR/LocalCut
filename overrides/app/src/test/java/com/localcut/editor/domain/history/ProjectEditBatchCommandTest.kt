@@ -32,6 +32,33 @@ class ProjectEditBatchCommandTest {
     }
 
     @Test
+    fun addClipReusesExistingAssetAndSingleUndoRestoresExactProject() {
+        val original = fixtureProject()
+        val result = ProjectEditBatchCommand(
+            listOf(
+                ProjectEditOperation.AddClip(
+                    clipId = "image-copy",
+                    assetId = "image",
+                    trackId = "visual-1",
+                    startUs = 2_000_000L,
+                    durationUs = 1_000_000L,
+                    scale = 0.75,
+                    opacity = 0.8,
+                ),
+            ),
+        ).apply(original)
+
+        val added = result.project.findClip("image-copy")
+        assertNotNull(added)
+        assertEquals("image", added!!.assetId)
+        assertEquals(2_000_000L, added.startUs)
+        assertEquals(0.75, added.transform.scale, 0.0)
+        assertEquals(0.8, added.opacity, 0.0)
+        assertEquals(4, result.project.tracks.sumOf { it.clips.size })
+        assertEquals(original, result.inverse.apply(result.project).project)
+    }
+
+    @Test
     fun mixedPatchUpdatesOnlySpecifiedFields() {
         val original = fixtureProject()
         val result = ProjectEditBatchCommand(

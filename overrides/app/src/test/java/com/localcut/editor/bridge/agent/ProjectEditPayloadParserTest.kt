@@ -32,6 +32,22 @@ class ProjectEditPayloadParserTest {
     }
 
     @Test
+    fun parsesAddClipFromExistingAsset() {
+        val operations = ProjectEditPayloadParser.parse(
+            """{"operations":[{"op":"addClip","clipId":"c2","assetId":"image-1","trackId":"visual-1","startUs":2000000,"durationUs":1000000,"scale":0.75,"opacity":0.8}]}""",
+        )
+
+        val clip = operations.single() as ProjectEditOperation.AddClip
+        assertEquals("c2", clip.clipId)
+        assertEquals("image-1", clip.assetId)
+        assertEquals("visual-1", clip.trackId)
+        assertEquals(2_000_000L, clip.startUs)
+        assertEquals(1_000_000L, clip.durationUs)
+        assertEquals(0.75, clip.scale, 0.0)
+        assertEquals(0.8, clip.opacity, 0.0)
+    }
+
+    @Test
     fun unknownFieldsFailClosed() {
         val result = runCatching {
             ProjectEditPayloadParser.parse(

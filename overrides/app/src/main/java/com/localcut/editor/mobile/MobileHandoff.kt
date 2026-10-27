@@ -22,6 +22,7 @@ data class MobileHandoffCommand(
     val returnTarget: MobileHandoffReturnTarget = MobileHandoffReturnTarget.EDITOR,
     val mobilePairingCode: String? = null,
     val remoteMediaUrl: String? = null,
+    val deleteAllVisualClips: Boolean = false,
     val resolveSelectedClip: Boolean = false,
     val resolveVisualClipAtPositionUs: Long? = null,
 )
@@ -163,6 +164,12 @@ object MobileHandoffParser {
                 payloadJson = "{\"selectedClip\":true}",
                 description = "Excluir o clipe selecionado",
                 resolveSelectedClip = true,
+            )
+            "delete_all_visual_clips" -> MobileHandoffCommand(
+                capability = null,
+                payloadJson = "{}",
+                description = "Excluir todos os vídeos e imagens da timeline (áudio será preservado e a ação poderá ser desfeita)",
+                deleteAllVisualClips = true,
             )
             "set_volume" -> {
                 val clipId = requiredText(params, "clipId", 256)

@@ -178,6 +178,24 @@ class MobileHandoffActivity : Activity() {
             return
         }
 
+        if (command.deleteAllVisualClips) {
+            val result = DeleteAllVisualClipsHandoffExecutor.execute(runtime.session)
+            runtime.editorViewModel.refreshSnapshot()
+            val message = result.fold(
+                onSuccess = { changed ->
+                    if (changed) {
+                        "Vídeos e imagens removidos da timeline • Desfazer disponível"
+                    } else {
+                        "Nenhum vídeo ou imagem na timeline"
+                    }
+                },
+                onFailure = { it.message ?: "Falha ao remover vídeos e imagens" },
+            )
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            returnAfterHandoff(command.returnTarget)
+            return
+        }
+
         val capability = command.capability ?: run {
             Toast.makeText(this, "HANDOFF_ACTION_INVALID", Toast.LENGTH_LONG).show()
             returnAfterHandoff(command.returnTarget)

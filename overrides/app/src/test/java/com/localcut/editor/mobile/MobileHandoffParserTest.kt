@@ -102,6 +102,18 @@ class MobileHandoffParserTest {
     }
 
     @Test
+    fun parsesDeleteAllVisualClipsAsLocalSemanticAction() {
+        val result = MobileHandoffParser.parse(
+            "https://localcut-bridge-v1.onrender.com/open?action=delete_all_visual_clips&returnTo=chatgpt",
+        ).getOrThrow()
+
+        assertNull(result.capability)
+        assertTrue(result.deleteAllVisualClips)
+        assertEquals(MobileHandoffReturnTarget.CHATGPT, result.returnTarget)
+        assertTrue(result.description.contains("vídeos e imagens"))
+    }
+
+    @Test
     fun rejectsUnsupportedAction() {
         val result = MobileHandoffParser.parse(
             "localcut://command?action=wipe_project",

@@ -28,6 +28,8 @@ import com.localcut.editor.termux.TermuxEngineAutoConnectPolicy
 import com.localcut.editor.termux.TermuxEngineUiPhase
 import com.localcut.editor.termux.TermuxEngineUiSession
 import com.localcut.editor.termux.TermuxEngineUiState
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @Composable
@@ -54,6 +56,13 @@ fun TermuxEnginePanel(modifier: Modifier = Modifier) {
             val checking = state.pairing()
             state = checking
             state = session.check(checking)
+        }
+
+        while (isActive) {
+            delay(TermuxEngineAutoConnectPolicy.HEALTH_CHECK_INTERVAL_MS)
+            if (TermuxEngineAutoConnectPolicy.shouldHealthCheck(state)) {
+                state = session.check(state)
+            }
         }
     }
 

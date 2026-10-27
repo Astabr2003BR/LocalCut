@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import argparse
 import ipaddress
+from pathlib import Path
+import re
 import select
 import socket
 import socketserver
+import subprocess
 import threading
 import time
 
@@ -33,24 +36,119 @@ def _is_rfc1918(host: str) -> bool:
     ))
 
 
-def discover_private_ipv4() -> str:
-    candidates: list[str] = []
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+def _can_bind(host: str) -> bool:
+    if not _is_rfc1918(host):
+        return False
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        sock.connect(("8.8.8.8", 53))
-        candidates.append(sock.getsockname()[0])
+        sock.bind((host, 0))
+        return True
     except OSError:
-        pass
+        return False
     finally:
         sock.close()
 
+
+def _dedupe(values):
+    seen = set()
+    result = []
+    for value in values:
+        value = value.strip()
+        if value and value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
+
+
+def _cached_candidate(state_file: Path | None) -> list[str]:
+    if state_file is None:
+        return []
+    try:
+        value = state_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return []
+    return [value] if value else []
+
+
+def _route_candidates() -> list[str]:
+    candidates: list[str] = []
+    for host in ("1.1.1.1", "8.8.8.8", "192.168.1.1"):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.connect((host, 53))
+            candidates.append(sock.getsockname()[0])
+        except OSError:
+            pass
+        finally:
+            sock.close()
+    return candidates
+
+
+def _hostname_candidates() -> list[str]:
+    candidates: list[str] = []
     try:
         candidates.extend(socket.gethostbyname_ex(socket.gethostname())[2])
     except OSError:
         pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            candidates.append(info[4][0])
+    except OSError:
+        pass
+    return candidates
 
+
+def _command_candidates() -> list[str]:
+    candidates: list[str] = []
+    commands = (
+        ("ip", "-o", "-4", "addr", "show"),
+        ("hostname", "-I"),
+    )
+    for argv in commands:
+        try:
+            completed = subprocess.run(
+                argv,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=2,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        candidates.extend(re.findall(r"(?<![0-9])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9])", completed.stdout))
+    return candidates
+
+
+def _proc_candidates() -> list[str]:
+    path = Path("/proc/net/fib_trie")
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return []
+    return re.findall(r"(?<![0-9])(?:10(?:\.[0-9]{1,3}){3}|192\.168(?:\.[0-9]{1,3}){2}|172\.(?:1[6-9]|2[0-9]|3[01])(?:\.[0-9]{1,3}){2})(?![0-9])", text)
+
+
+def _persist_private_ipv4(state_file: Path | None, host: str) -> None:
+    if state_file is None:
+        return
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    temp = state_file.with_suffix(state_file.suffix + ".tmp")
+    temp.write_text(host + "\n", encoding="utf-8")
+    temp.chmod(0o600)
+    temp.replace(state_file)
+
+
+def discover_private_ipv4(state_file: Path | None = None) -> str:
+    candidates = _dedupe(
+        _cached_candidate(state_file)
+        + _route_candidates()
+        + _hostname_candidates()
+        + _command_candidates()
+        + _proc_candidates()
+    )
     for candidate in candidates:
-        if _is_rfc1918(candidate):
+        if _can_bind(candidate):
             return candidate
     raise RuntimeError("PRIVATE_IPV4_NOT_FOUND")
 
@@ -143,11 +241,14 @@ def create_proxy_servers(bind_host: str, media_proxy_port: int, agent_proxy_port
 def main() -> None:
     parser = argparse.ArgumentParser(description="LocalCut UserLAnd private-network relay")
     parser.add_argument("--bind-host", default=None)
+    parser.add_argument("--state-file", default=None)
     parser.add_argument("--media-port", type=int, default=DEFAULT_MEDIA_PROXY_PORT)
     parser.add_argument("--agent-port", type=int, default=DEFAULT_AGENT_PROXY_PORT)
     args = parser.parse_args()
-    bind_host = args.bind_host or discover_private_ipv4()
+    state_file = Path(args.state_file).expanduser() if args.state_file else None
+    bind_host = args.bind_host or discover_private_ipv4(state_file)
     media, agent = create_proxy_servers(bind_host, args.media_port, args.agent_port)
+    _persist_private_ipv4(state_file, bind_host)
     agent_thread = threading.Thread(target=agent.serve_forever, daemon=True, name="localcut-agent-private-proxy")
     agent_thread.start()
     print(f"LOCALCUT_PRIVATE_PROXY_READY={bind_host}:{args.media_port},agent:{args.agent_port}", flush=True)

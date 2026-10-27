@@ -22,8 +22,24 @@ stop_owned() {
   rm -f "$pid_file"
 }
 
+seed_private_ip_from_previous_log() {
+  local state_file="$STATE_DIR/private-ipv4"
+  [ -s "$state_file" ] && return 0
+  [ -f "$STATE_DIR/private-proxy.log" ] || return 0
+  local previous_host
+  previous_host="$(
+    sed -n 's/^LOCALCUT_PRIVATE_PROXY_READY=\([^:,]*\):.*/\1/p' "$STATE_DIR/private-proxy.log" \
+      | tail -n 1
+  )"
+  if [ -n "$previous_host" ]; then
+    printf '%s\n' "$previous_host" > "$state_file"
+    chmod 600 "$state_file"
+  fi
+}
+
 stop_owned "$STATE_DIR/private-proxy.pid" "localcut_private_proxy.py"
 stop_owned "$STATE_DIR/engine.pid" "localcut_supervisor.py"
+seed_private_ip_from_previous_log
 
 cd "$REPO_ROOT"
 ENGINE_ARGS=()
@@ -34,6 +50,7 @@ echo $! > "$STATE_DIR/engine.pid"
 
 sleep 1
 nohup "$PYTHON_BIN" termux-engine/localcut_private_proxy.py \
+  --state-file "$STATE_DIR/private-ipv4" \
   > "$STATE_DIR/private-proxy.log" 2>&1 < /dev/null &
 echo $! > "$STATE_DIR/private-proxy.pid"
 

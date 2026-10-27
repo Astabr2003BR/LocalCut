@@ -2,109 +2,90 @@ package com.localcut.editor.ui.editor
 
 enum class EditorWorkspace(val label: String) {
     EDIT("Editar"),
-    MOTION("Motion"),
+    MOTION("Animar"),
     DESIGN("Design"),
+    AUDIO("Áudio"),
+    FX("FX"),
+    PROJECT("Projeto"),
 }
 
 object EditorWorkspacePolicy {
-    private val editTools = setOf(
-        EditorToolId.EDIT,
-        EditorToolId.MEDIA,
-        EditorToolId.AUDIO,
-        EditorToolId.TEXT,
-        EditorToolId.CAPTIONS,
-        EditorToolId.OVERLAY,
-        EditorToolId.EFFECTS,
-        EditorToolId.COLOR,
-        EditorToolId.SPEED,
-        EditorToolId.MASK,
-        EditorToolId.CHROMA,
-        EditorToolId.CANVAS,
-    )
-
-    private val motionTools = setOf(
-        EditorToolId.ANIMATION,
-        EditorToolId.LAYERS,
-        EditorToolId.MASK,
-        EditorToolId.EFFECTS,
-        EditorToolId.EDIT,
-        EditorToolId.COLOR,
-        EditorToolId.SPEED,
-        EditorToolId.CHROMA,
-        EditorToolId.TEXT,
-        EditorToolId.OVERLAY,
-        EditorToolId.AUDIO,
-        EditorToolId.CANVAS,
-    )
-
-    private val designTools = setOf(
-        EditorToolId.DESIGN,
-        EditorToolId.CANVAS,
-        EditorToolId.TEXT,
-        EditorToolId.MEDIA,
-        EditorToolId.OVERLAY,
-        EditorToolId.LAYERS,
-        EditorToolId.ANIMATION,
-        EditorToolId.EFFECTS,
-        EditorToolId.COLOR,
-    )
-
-    private val editPriority = listOf(
-        EditorToolId.EDIT,
-        EditorToolId.MEDIA,
-        EditorToolId.AUDIO,
-        EditorToolId.TEXT,
-        EditorToolId.CAPTIONS,
-        EditorToolId.OVERLAY,
-        EditorToolId.EFFECTS,
-        EditorToolId.COLOR,
-        EditorToolId.SPEED,
-        EditorToolId.MASK,
-        EditorToolId.CHROMA,
-        EditorToolId.CANVAS,
-    )
-
-    private val motionPriority = listOf(
-        EditorToolId.ANIMATION,
-        EditorToolId.LAYERS,
-        EditorToolId.MASK,
-        EditorToolId.EFFECTS,
-        EditorToolId.EDIT,
-        EditorToolId.COLOR,
-        EditorToolId.SPEED,
-        EditorToolId.CHROMA,
-        EditorToolId.TEXT,
-        EditorToolId.OVERLAY,
-        EditorToolId.AUDIO,
-        EditorToolId.CANVAS,
-    )
-
-    private val designPriority = listOf(
-        EditorToolId.DESIGN,
-        EditorToolId.CANVAS,
-        EditorToolId.TEXT,
-        EditorToolId.MEDIA,
-        EditorToolId.OVERLAY,
-        EditorToolId.LAYERS,
-        EditorToolId.ANIMATION,
-        EditorToolId.EFFECTS,
-        EditorToolId.COLOR,
+    private val priorities = mapOf(
+        EditorWorkspace.EDIT to listOf(
+            EditorToolId.EDIT,
+            EditorToolId.MEDIA,
+            EditorToolId.AUDIO,
+            EditorToolId.TEXT,
+            EditorToolId.CAPTIONS,
+            EditorToolId.OVERLAY,
+            EditorToolId.EFFECTS,
+            EditorToolId.COLOR,
+            EditorToolId.SPEED,
+            EditorToolId.MASK,
+            EditorToolId.CHROMA,
+            EditorToolId.CANVAS,
+        ),
+        EditorWorkspace.MOTION to listOf(
+            EditorToolId.ANIMATION,
+            EditorToolId.LAYERS,
+            EditorToolId.MASK,
+            EditorToolId.EFFECTS,
+            EditorToolId.EDIT,
+            EditorToolId.COLOR,
+            EditorToolId.SPEED,
+            EditorToolId.CHROMA,
+            EditorToolId.TEXT,
+            EditorToolId.OVERLAY,
+            EditorToolId.AUDIO,
+            EditorToolId.CANVAS,
+        ),
+        EditorWorkspace.DESIGN to listOf(
+            EditorToolId.DESIGN,
+            EditorToolId.CANVAS,
+            EditorToolId.TEXT,
+            EditorToolId.MEDIA,
+            EditorToolId.OVERLAY,
+            EditorToolId.LAYERS,
+            EditorToolId.ANIMATION,
+            EditorToolId.EFFECTS,
+            EditorToolId.COLOR,
+        ),
+        EditorWorkspace.AUDIO to listOf(
+            EditorToolId.AUDIO,
+            EditorToolId.SPEED,
+            EditorToolId.EDIT,
+            EditorToolId.MEDIA,
+            EditorToolId.TEXT,
+            EditorToolId.CAPTIONS,
+            EditorToolId.OVERLAY,
+            EditorToolId.CANVAS,
+        ),
+        EditorWorkspace.FX to listOf(
+            EditorToolId.EFFECTS,
+            EditorToolId.COLOR,
+            EditorToolId.MASK,
+            EditorToolId.CHROMA,
+            EditorToolId.LAYERS,
+            EditorToolId.ANIMATION,
+            EditorToolId.EDIT,
+        ),
+        EditorWorkspace.PROJECT to listOf(
+            EditorToolId.MEDIA,
+            EditorToolId.CANVAS,
+            EditorToolId.TEXT,
+            EditorToolId.AUDIO,
+            EditorToolId.OVERLAY,
+            EditorToolId.CAPTIONS,
+            EditorToolId.DESIGN,
+            EditorToolId.TEMPLATES,
+        ),
     )
 
     fun toolsFor(
         workspace: EditorWorkspace,
         selection: EditorSelectionKind,
     ): List<EditorToolDefinition> {
-        val allowed = when (workspace) {
-            EditorWorkspace.EDIT -> editTools
-            EditorWorkspace.MOTION -> motionTools
-            EditorWorkspace.DESIGN -> designTools
-        }
-        val priority = when (workspace) {
-            EditorWorkspace.EDIT -> editPriority
-            EditorWorkspace.MOTION -> motionPriority
-            EditorWorkspace.DESIGN -> designPriority
-        }
+        val priority = priorities.getValue(workspace)
         val rank = priority.withIndex().associate { (index, id) -> id to index }
 
         return EditorToolCatalog.all
@@ -112,7 +93,7 @@ object EditorWorkspacePolicy {
             .filter { definition ->
                 definition.primary &&
                     definition.enabled &&
-                    definition.id in allowed &&
+                    definition.id in rank &&
                     selection in definition.selections
             }
             .sortedWith(

@@ -8,6 +8,14 @@ import org.junit.Test
 
 class EditorWorkspacePolicyTest {
     @Test
+    fun workspaceLabelsExposeExpandedStudioNavigation() {
+        assertEquals(
+            listOf("Editar", "Animar", "Design", "Áudio", "FX", "Projeto"),
+            EditorWorkspace.entries.map { it.label },
+        )
+    }
+
+    @Test
     fun editWorkspaceKeepsCoreVideoEditingTools() {
         val ids = EditorWorkspacePolicy.toolsFor(
             workspace = EditorWorkspace.EDIT,
@@ -22,13 +30,13 @@ class EditorWorkspacePolicyTest {
     }
 
     @Test
-    fun motionWorkspacePrioritizesAnimationAndLayers() {
+    fun animationWorkspacePrioritizesAnimationAndLayers() {
         val ids = EditorWorkspacePolicy.toolsFor(
             workspace = EditorWorkspace.MOTION,
             selection = EditorSelectionKind.VIDEO,
         ).map { it.id }
 
-        assertTrue(ids.first() == EditorToolId.ANIMATION)
+        assertEquals(EditorToolId.ANIMATION, ids.first())
         assertTrue(EditorToolId.LAYERS in ids)
         assertTrue(EditorToolId.MASK in ids)
         assertFalse(EditorToolId.MEDIA in ids)
@@ -46,6 +54,48 @@ class EditorWorkspacePolicyTest {
         assertTrue(EditorToolId.TEXT in ids)
         assertTrue(EditorToolId.MEDIA in ids)
         assertFalse(EditorToolId.SPEED in ids)
+    }
+
+    @Test
+    fun audioWorkspacePrioritizesAudioAndTimeTools() {
+        val ids = EditorWorkspacePolicy.toolsFor(
+            workspace = EditorWorkspace.AUDIO,
+            selection = EditorSelectionKind.AUDIO,
+        ).map { it.id }
+
+        assertEquals(EditorToolId.AUDIO, ids.first())
+        assertTrue(EditorToolId.SPEED in ids)
+        assertTrue(EditorToolId.EDIT in ids)
+        assertFalse(EditorToolId.EFFECTS in ids)
+    }
+
+    @Test
+    fun fxWorkspacePrioritizesCreativeVisualTools() {
+        val ids = EditorWorkspacePolicy.toolsFor(
+            workspace = EditorWorkspace.FX,
+            selection = EditorSelectionKind.VIDEO,
+        ).map { it.id }
+
+        assertEquals(EditorToolId.EFFECTS, ids.first())
+        assertTrue(EditorToolId.COLOR in ids)
+        assertTrue(EditorToolId.MASK in ids)
+        assertTrue(EditorToolId.CHROMA in ids)
+        assertFalse(EditorToolId.MEDIA in ids)
+    }
+
+    @Test
+    fun projectWorkspaceUsesOnlyLiveProjectTools() {
+        val ids = EditorWorkspacePolicy.toolsFor(
+            workspace = EditorWorkspace.PROJECT,
+            selection = EditorSelectionKind.PROJECT,
+        ).map { it.id }
+
+        assertEquals(EditorToolId.MEDIA, ids.first())
+        assertTrue(EditorToolId.CANVAS in ids)
+        assertTrue(EditorToolId.TEXT in ids)
+        assertTrue(EditorToolId.AUDIO in ids)
+        assertFalse(EditorToolId.TEMPLATES in ids)
+        assertFalse(EditorToolId.CAMERA in ids)
     }
 
     @Test

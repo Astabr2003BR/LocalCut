@@ -71,4 +71,42 @@ class ProjectEditPayloadParserTest {
         val oversized = "x".repeat(16_385)
         assertTrue(runCatching { ProjectEditPayloadParser.parse(oversized) }.isFailure)
     }
+    @Test
+    fun parsesDesignAddPatchDeleteAndPathPoints() {
+        val operations = ProjectEditPayloadParser.parse(
+            """{"operations":[{"op":"addDesign","id":"stroke-1","startUs":0,"durationUs":2000000,"kind":"path","points":[{"x":0.1,"y":0.2},{"x":0.8,"y":0.7}],"closed":false,"strokeArgb":4294901760,"strokeWidthPx":14,"x":20,"y":-30,"scale":1.2},{"op":"patchDesign","elementId":"stroke-1","opacity":0.5,"zIndex":9},{"op":"deleteDesign","elementId":"stroke-1"}]}""",
+        )
+
+        assertEquals(3, operations.size)
+        val add = operations[0] as ProjectEditOperation.AddDesign
+        assertEquals("stroke-1", add.element.id)
+        assertEquals(2, add.element.shape!!.path!!.points.size)
+        assertTrue(!add.element.shape!!.path!!.closed)
+        assertEquals(0xFFFF0000.toInt(), add.element.shape!!.strokeArgb)
+        assertEquals(14.0, add.element.shape!!.strokeWidthPx, 0.0)
+        val patch = operations[1] as ProjectEditOperation.PatchDesign
+        assertEquals(0.5, patch.opacity!!, 0.0)
+        assertEquals(9, patch.zIndex)
+        assertEquals("stroke-1", (operations[2] as ProjectEditOperation.DeleteDesign).elementId)
+    }
+
+    @Test
+    fun designPathPointLimitAndUnknownDesignFieldsFailClosed() {
+        val points = (1..257).joinToString(prefix = "[", postfix = "]") { "{\"x\":0.5,\"y\":0.5}" }
+        assertTrue(
+            runCatching {
+                ProjectEditPayloadParser.parse(
+                    "{\"operations\":[{\"op\":\"addDesign\",\"id\":\"d\",\"startUs\":0,\"durationUs\":1000,\"kind\":\"path\",\"points\":$points}]}",
+                )
+            }.isFailure,
+        )
+        assertTrue(
+            runCatching {
+                ProjectEditPayloadParser.parse(
+                    """{"operations":[{"op":"patchDesign","elementId":"d","unknown":1}]}""",
+                )
+            }.isFailure,
+        )
+    }
+
 }

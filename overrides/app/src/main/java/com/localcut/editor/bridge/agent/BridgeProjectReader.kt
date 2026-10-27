@@ -64,6 +64,24 @@ class BridgeProjectReader(
             }
             append("]"); comma()
             field("textOverlaysTruncated", (project.textOverlays.size > MAX_INVENTORY_ITEMS).toString()); comma()
+            append("\"designElements\":[")
+            project.designElements.take(MAX_INVENTORY_ITEMS).forEachIndexed { index, element ->
+                if (index > 0) comma()
+                append('{')
+                field("id", jsonString(element.id)); comma()
+                field("startUs", element.startUs.toString()); comma()
+                field("durationUs", element.durationUs.toString()); comma()
+                field("kind", element.shape?.kind?.name?.let(::jsonString) ?: "null"); comma()
+                field("x", element.transform.x.toString()); comma()
+                field("y", element.transform.y.toString()); comma()
+                field("scale", element.transform.scale.toString()); comma()
+                field("rotationDeg", element.transform.rotationDeg.toString()); comma()
+                field("opacity", element.opacity.toString()); comma()
+                field("zIndex", element.zIndex.toString())
+                append('}')
+            }
+            append("]"); comma()
+            field("designElementsTruncated", (project.designElements.size > MAX_INVENTORY_ITEMS).toString()); comma()
             append("\"issues\":[")
             state.issues.forEachIndexed { index, issue ->
                 if (index > 0) comma()

@@ -7,10 +7,13 @@ import com.localcut.editor.data.project.ProjectStore
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
+import com.localcut.editor.domain.model.DesignElement
 import com.localcut.editor.domain.model.CompositionGraph
 import com.localcut.editor.domain.model.CompositionNode
 import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.ShapeKind
+import com.localcut.editor.domain.model.ShapeSpec
 import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TextOverlay
 import com.localcut.editor.domain.model.TrackType
@@ -42,6 +45,9 @@ class BridgeCommandExecutorTest {
         assertTrue(result.resultJson.contains("video.mp4"))
         assertTrue(result.resultJson.contains("\"textOverlays\":["))
         assertTrue(result.resultJson.contains("\"id\":\"text-1\""))
+        assertTrue(result.resultJson.contains("\"designElements\":["))
+        assertTrue(result.resultJson.contains("\"id\":\"shape-1\""))
+        assertTrue(result.resultJson.contains("\"kind\":\"RECTANGLE\""))
         assertTrue(result.resultJson.contains("\"text\":\"Texto\""))
         assertFalse(result.resultJson.contains("content://private/video"))
         assertFalse(result.resultJson.contains("fp-1"))
@@ -308,6 +314,15 @@ class BridgeCommandExecutorTest {
                 Track("audio-1", TrackType.AUDIO, 1, clips = listOf(audioClip)),
             ),
             textOverlays = textOverlays,
+            designElements = listOf(
+                DesignElement(
+                    id = "shape-1",
+                    startUs = 0L,
+                    durationUs = 2_000_000L,
+                    shape = ShapeSpec(ShapeKind.RECTANGLE),
+                    zIndex = 2,
+                ),
+            ),
             compositionGraph = CompositionGraph(
                 nodes = if (locked) {
                     listOf(

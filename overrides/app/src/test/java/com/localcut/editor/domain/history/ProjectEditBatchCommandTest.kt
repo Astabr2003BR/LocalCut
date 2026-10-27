@@ -4,6 +4,11 @@ import com.localcut.editor.BuildContract
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
+import com.localcut.editor.domain.model.DesignElement
+import com.localcut.editor.domain.model.PathPoint
+import com.localcut.editor.domain.model.ShapeKind
+import com.localcut.editor.domain.model.ShapeSpec
+import com.localcut.editor.domain.model.VectorPath
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.TextOverlay
 import com.localcut.editor.domain.model.Track
@@ -122,6 +127,77 @@ class ProjectEditBatchCommandTest {
 
         assertTrue(failure.isFailure)
         assertEquals(1_500_000L, original.textOverlays.single().durationUs)
+    }
+
+    @Test
+    fun addPatchAndDeleteDesignAreAtomicAndUndoable() {
+        val original = fixtureProject()
+        val element = DesignElement(
+            id = "stroke-remote",
+            startUs = 250_000L,
+            durationUs = 2_000_000L,
+            shape = ShapeSpec(
+                kind = ShapeKind.PATH,
+                path = VectorPath(
+                    points = listOf(PathPoint(0.1, 0.2), PathPoint(0.8, 0.7)),
+                    closed = false,
+                ),
+                fillArgb = null,
+                strokeArgb = 0xFFFF0000.toInt(),
+                strokeWidthPx = 12.0,
+            ),
+            zIndex = 3,
+        )
+        val added = ProjectEditBatchCommand(
+            listOf(ProjectEditOperation.AddDesign(element)),
+        ).apply(original)
+        assertEquals(element, added.project.designElements.single())
+
+        val patched = ProjectEditBatchCommand(
+            listOf(
+                ProjectEditOperation.PatchDesign(
+                    elementId = "stroke-remote",
+                    x = 120.0,
+                    scale = 1.5,
+                    opacity = 0.6,
+                    strokeWidthPx = 20.0,
+                    zIndex = 8,
+                ),
+            ),
+        ).apply(added.project)
+        val changed = patched.project.designElements.single()
+        assertEquals(120.0, changed.transform.x, 0.0)
+        assertEquals(1.5, changed.transform.scale, 0.0)
+        assertEquals(0.6, changed.opacity, 0.0)
+        assertEquals(20.0, changed.shape!!.strokeWidthPx, 0.0)
+        assertEquals(8, changed.zIndex)
+
+        val deleted = ProjectEditBatchCommand(
+            listOf(ProjectEditOperation.DeleteByKind(setOf(ProjectItemKind.DESIGN))),
+        ).apply(patched.project)
+        assertTrue(deleted.project.designElements.isEmpty())
+        assertEquals(patched.project, deleted.inverse.apply(deleted.project).project)
+    }
+
+    @Test
+    fun invalidDesignPatchFailsClosedWithoutMutatingInput() {
+        val original = fixtureProject().copy(
+            designElements = listOf(
+                DesignElement(
+                    id = "shape-1",
+                    startUs = 0L,
+                    durationUs = 1_000_000L,
+                    shape = ShapeSpec(ShapeKind.RECTANGLE),
+                ),
+            ),
+        )
+        val failure = runCatching {
+            ProjectEditBatchCommand(
+                listOf(ProjectEditOperation.PatchDesign("shape-1", scale = 0.0)),
+            ).apply(original)
+        }
+        assertTrue(failure.isFailure)
+        assertEquals(1.0, original.designElements.single().transform.scale, 0.0)
     }
 
     private fun fixtureProject(): Project {

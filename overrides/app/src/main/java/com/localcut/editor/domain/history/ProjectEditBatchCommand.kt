@@ -2,6 +2,7 @@ package com.localcut.editor.domain.history
 
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
+import com.localcut.editor.domain.model.DesignElement
 import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.TextOverlay
@@ -9,12 +10,14 @@ import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.model.TransformValue
 import com.localcut.editor.domain.timeline.TimelineValidator
 
-enum class ProjectItemKind { VIDEO, IMAGE, AUDIO, TEXT }
+enum class ProjectItemKind { VIDEO, IMAGE, AUDIO, TEXT, DESIGN }
 
 sealed interface ProjectEditOperation {
     data class DeleteByKind(val kinds: Set<ProjectItemKind>) : ProjectEditOperation
     data class DeleteClip(val clipId: String) : ProjectEditOperation
     data class DeleteText(val overlayId: String) : ProjectEditOperation
+    data class DeleteDesign(val elementId: String) : ProjectEditOperation
+    data class AddDesign(val element: DesignElement) : ProjectEditOperation
     data class AddText(val overlay: TextOverlay) : ProjectEditOperation
     data class AddClip(
         val clipId: String,
@@ -43,6 +46,22 @@ sealed interface ProjectEditOperation {
         val fontSizePx: Double? = null,
         val fillArgb: Int? = null,
         val zIndex: Int? = null,
+    ) : ProjectEditOperation
+
+    data class PatchDesign(
+        val elementId: String,
+        val startUs: Long? = null,
+        val durationUs: Long? = null,
+        val x: Double? = null,
+        val y: Double? = null,
+        val scale: Double? = null,
+        val rotationDeg: Double? = null,
+        val opacity: Double? = null,
+        val zIndex: Int? = null,
+        val fillArgb: Int? = null,
+        val strokeArgb: Int? = null,
+        val strokeWidthPx: Double? = null,
+        val cornerRadiusPx: Double? = null,
     ) : ProjectEditOperation
 
     data class PatchClip(
@@ -85,9 +104,12 @@ data class ProjectEditBatchCommand(
         is ProjectEditOperation.DeleteByKind -> deleteByKind(project, operation.kinds)
         is ProjectEditOperation.DeleteClip -> deleteClip(project, operation.clipId)
         is ProjectEditOperation.DeleteText -> deleteText(project, operation.overlayId)
+        is ProjectEditOperation.DeleteDesign -> deleteDesign(project, operation.elementId)
+        is ProjectEditOperation.AddDesign -> addDesign(project, operation.element)
         is ProjectEditOperation.AddText -> addText(project, operation.overlay)
         is ProjectEditOperation.AddClip -> addClip(project, operation)
         is ProjectEditOperation.PatchText -> patchText(project, operation)
+        is ProjectEditOperation.PatchDesign -> patchDesign(project, operation)
         is ProjectEditOperation.PatchClip -> patchClip(project, operation)
     }
 
@@ -125,21 +147,32 @@ private fun deleteByKind(project: Project, kinds: Set<ProjectItemKind>): Project
         .map { it.id }
         .toSet()
     val textIds = if (ProjectItemKind.TEXT in kinds) project.textOverlays.map { it.id }.toSet() else emptySet()
-    require(clipIds.isNotEmpty() || textIds.isNotEmpty()) { "no matching project items" }
-    return removeItems(project, clipIds, textIds)
+    val designIds = if (ProjectItemKind.DESIGN in kinds) project.designElements.map { it.id }.toSet() else emptySet()
+    require(clipIds.isNotEmpty() || textIds.isNotEmpty() || designIds.isNotEmpty()) { "no matching project items" }
+    return removeItems(project, clipIds, textIds, designIds)
 }
 
 private fun deleteClip(project: Project, clipId: String): Project {
     require(project.findClip(clipId) != null) { "clip $clipId not found" }
-    return removeItems(project, setOf(clipId), emptySet())
+    return removeItems(project, setOf(clipId), emptySet(), emptySet())
 }
 
 private fun deleteText(project: Project, overlayId: String): Project {
     require(project.textOverlays.any { it.id == overlayId }) { "text overlay $overlayId not found" }
-    return removeItems(project, emptySet(), setOf(overlayId))
+    return removeItems(project, emptySet(), setOf(overlayId), emptySet())
 }
 
-private fun removeItems(project: Project, clipIds: Set<String>, textIds: Set<String>): Project {
+private fun deleteDesign(project: Project, elementId: String): Project {
+    require(project.designElements.any { it.id == elementId }) { "design element $elementId not found" }
+    return removeItems(project, emptySet(), emptySet(), setOf(elementId))
+}
+
+private fun removeItems(
+    project: Project,
+    clipIds: Set<String>,
+    textIds: Set<String>,
+    designIds: Set<String>,
+): Project {
     val remainingNodes = project.compositionGraph.nodes.filterNot { node ->
         node.kind == CompositionNodeKind.LAYER && node.clipId?.let { it in clipIds } == true
     }
@@ -156,13 +189,21 @@ private fun removeItems(project: Project, clipIds: Set<String>, textIds: Set<Str
             transition.fromClipId in clipIds || transition.toClipId in clipIds
         },
         compositionGraph = project.compositionGraph.copy(nodes = cleanedNodes),
-        designElements = project.designElements.map { element ->
-            element.copy(
-                clipId = element.clipId?.takeUnless { it in clipIds },
-                textOverlayId = element.textOverlayId?.takeUnless { it in textIds },
-            )
-        },
+        designElements = project.designElements
+            .filterNot { it.id in designIds }
+            .map { element ->
+                element.copy(
+                    clipId = element.clipId?.takeUnless { it in clipIds },
+                    textOverlayId = element.textOverlayId?.takeUnless { it in textIds },
+                )
+            },
     )
+}
+
+private fun addDesign(project: Project, element: DesignElement): Project {
+    require(project.designElements.none { it.id == element.id }) { "design element ${element.id} already exists" }
+    validateDesignElement(element)
+    return project.copy(designElements = project.designElements + element)
 }
 
 private fun addText(project: Project, overlay: TextOverlay): Project {
@@ -238,6 +279,60 @@ private fun patchText(project: Project, operation: ProjectEditOperation.PatchTex
     )
     val overlays = project.textOverlays.toMutableList().also { it[index] = next }
     return project.copy(textOverlays = overlays)
+}
+
+private fun patchDesign(project: Project, operation: ProjectEditOperation.PatchDesign): Project {
+    val index = project.designElements.indexOfFirst { it.id == operation.elementId }
+    require(index >= 0) { "design element ${operation.elementId} not found" }
+    val current = project.designElements[index]
+    operation.startUs?.let { require(it >= 0L) { "design startUs must be non-negative" } }
+    operation.durationUs?.let { require(it > 0L) { "design durationUs must be positive" } }
+    operation.x?.let { require(it.isFinite()) { "design x must be finite" } }
+    operation.y?.let { require(it.isFinite()) { "design y must be finite" } }
+    operation.scale?.let { require(it.isFinite() && it > 0.0) { "design scale must be finite and positive" } }
+    operation.rotationDeg?.let { require(it.isFinite()) { "design rotation must be finite" } }
+    operation.opacity?.let { require(it.isFinite() && it in 0.0..1.0) { "design opacity must be in 0..1" } }
+    operation.strokeWidthPx?.let { require(it.isFinite() && it >= 0.0) { "design strokeWidthPx must be non-negative" } }
+    operation.cornerRadiusPx?.let { require(it.isFinite() && it >= 0.0) { "design cornerRadiusPx must be non-negative" } }
+
+    val nextTransform = current.transform.copy(
+        x = operation.x ?: current.transform.x,
+        y = operation.y ?: current.transform.y,
+        scale = operation.scale ?: current.transform.scale,
+        rotationDeg = operation.rotationDeg ?: current.transform.rotationDeg,
+    )
+    val stylePatchRequested = operation.fillArgb != null || operation.strokeArgb != null ||
+        operation.strokeWidthPx != null || operation.cornerRadiusPx != null
+    val nextShape = if (stylePatchRequested) {
+        val shape = requireNotNull(current.shape) { "design style patch requires shape element" }
+        shape.copy(
+            fillArgb = operation.fillArgb ?: shape.fillArgb,
+            strokeArgb = operation.strokeArgb ?: shape.strokeArgb,
+            strokeWidthPx = operation.strokeWidthPx ?: shape.strokeWidthPx,
+            cornerRadiusPx = operation.cornerRadiusPx ?: shape.cornerRadiusPx,
+        )
+    } else {
+        current.shape
+    }
+    val next = current.copy(
+        startUs = operation.startUs ?: current.startUs,
+        durationUs = operation.durationUs ?: current.durationUs,
+        transform = nextTransform,
+        opacity = operation.opacity ?: current.opacity,
+        zIndex = operation.zIndex ?: current.zIndex,
+        shape = nextShape,
+    )
+    validateDesignElement(next)
+    val elements = project.designElements.toMutableList().also { it[index] = next }
+    return project.copy(designElements = elements)
+}
+
+private fun validateDesignElement(element: DesignElement) {
+    require(element.transform.x.isFinite() && element.transform.y.isFinite()) { "design transform position must be finite" }
+    require(element.transform.scale.isFinite() && element.transform.scale > 0.0) { "design transform scale must be positive" }
+    require(element.transform.rotationDeg.isFinite()) { "design transform rotation must be finite" }
+    val issues = element.validationIssues()
+    require(issues.isEmpty()) { issues.first() }
 }
 
 private fun patchClip(project: Project, operation: ProjectEditOperation.PatchClip): Project {

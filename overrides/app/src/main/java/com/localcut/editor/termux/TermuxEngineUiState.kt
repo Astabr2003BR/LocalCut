@@ -22,16 +22,16 @@ data class TermuxEngineUiState(
             busy -> "Conectando…"
             paired -> "Testar conexão"
             phase == TermuxEngineUiPhase.ERROR -> "Tentar novamente"
-            else -> "Conectar Termux"
+            else -> "Conectar Agent Engine"
         }
 
     fun pairing(): TermuxEngineUiState = copy(
         phase = TermuxEngineUiPhase.CONNECTING,
         busy = true,
         statusText = if (paired) {
-            "Testando Termux Agent Engine…"
+            "Testando LocalCut Agent Engine…"
         } else {
-            "Conectando ao Termux Agent Engine…"
+            "Conectando ao LocalCut Agent Engine…"
         },
         errorCode = null,
     )
@@ -40,7 +40,7 @@ data class TermuxEngineUiState(
         phase = TermuxEngineUiPhase.CONNECTED,
         paired = true,
         busy = false,
-        statusText = "Termux Agent Engine conectado",
+        statusText = "LocalCut Agent Engine conectado",
         engineVersion = engineVersion,
         capabilities = capabilities,
         errorCode = null,
@@ -49,7 +49,7 @@ data class TermuxEngineUiState(
     fun failed(code: String): TermuxEngineUiState = copy(
         phase = TermuxEngineUiPhase.ERROR,
         busy = false,
-        statusText = "Falha ao conectar ao Termux Agent Engine",
+        statusText = "Falha ao conectar ao LocalCut Agent Engine",
         errorCode = code,
     )
 
@@ -58,13 +58,13 @@ data class TermuxEngineUiState(
             TermuxEngineUiState(
                 phase = TermuxEngineUiPhase.PAIRED_OFFLINE,
                 paired = true,
-                statusText = "Termux pareado • conexão ainda não verificada",
+                statusText = "Agent Engine pareado • conexão ainda não verificada",
             )
         } else {
             TermuxEngineUiState(
                 phase = TermuxEngineUiPhase.NOT_PAIRED,
                 paired = false,
-                statusText = "Termux Agent Engine não conectado",
+                statusText = "LocalCut Agent Engine não conectado",
             )
         }
     }

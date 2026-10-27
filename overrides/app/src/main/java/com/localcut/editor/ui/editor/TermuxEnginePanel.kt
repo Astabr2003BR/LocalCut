@@ -71,7 +71,7 @@ fun TermuxEnginePanel(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(
-            "Termux Agent Engine",
+            "LocalCut Agent Engine",
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
             color = Color(0xFFD7D7DC),
@@ -93,11 +93,11 @@ fun TermuxEnginePanel(modifier: Modifier = Modifier) {
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !state.busy,
                 singleLine = true,
-                label = { Text("Código do Termux") },
+                label = { Text("Código do Agent Engine") },
                 placeholder = { Text("ABCD-EFGH-JKLM") },
             )
             Text(
-                "No Termux: python termux-engine/localcut_supervisor.py --pair",
+                "No Ubuntu/UserLAnd ou Termux, inicie o LocalCut Agent Engine em modo de pareamento.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

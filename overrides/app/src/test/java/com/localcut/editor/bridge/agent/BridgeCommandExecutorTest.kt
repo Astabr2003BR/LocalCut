@@ -22,6 +22,7 @@ import com.localcut.editor.session.ProjectPreviewLoader
 import com.localcut.editor.session.ProjectSession
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -35,7 +36,29 @@ class BridgeCommandExecutorTest {
         assertEquals(5L, result.projectRevision)
         assertTrue(result.resultJson.contains("\"revision\":5"))
         assertTrue(result.resultJson.contains("\"projectId\":\"project-1\""))
+        assertTrue(result.resultJson.contains("\"assets\":["))
+        assertTrue(result.resultJson.contains("\"id\":\"asset-1\""))
+        assertTrue(result.resultJson.contains("\"type\":\"VIDEO\""))
+        assertTrue(result.resultJson.contains("video.mp4"))
+        assertTrue(result.resultJson.contains("\"textOverlays\":["))
+        assertTrue(result.resultJson.contains("\"id\":\"text-1\""))
+        assertTrue(result.resultJson.contains("\"text\":\"Texto\""))
         assertFalse(result.resultJson.contains("content://private/video"))
+        assertFalse(result.resultJson.contains("fp-1"))
+    }
+
+    @Test
+    fun projectReadTruncatesLargeInventoriesWithoutLeakingPrivateFields() {
+        val fixture = fixture(assetCount = 300, textCount = 300)
+        val result = fixture.executor.execute(command(BridgeCapability.GET_PROJECT_STATE, expectedRevision = null))
+
+        assertTrue(result.success)
+        assertTrue(result.resultJson.contains("\"assetsTruncated\":true"))
+        assertTrue(result.resultJson.contains("\"textOverlaysTruncated\":true"))
+        assertFalse(result.resultJson.contains("asset-299"))
+        assertFalse(result.resultJson.contains("text-299"))
+        assertFalse(result.resultJson.contains("content://private/"))
+        assertFalse(result.resultJson.contains("fingerprint-"))
     }
 
     @Test
@@ -230,7 +253,11 @@ class BridgeCommandExecutorTest {
         val executor: BridgeCommandExecutor,
     )
 
-    private fun fixture(locked: Boolean = false): Fixture {
+    private fun fixture(
+        locked: Boolean = false,
+        assetCount: Int = 2,
+        textCount: Int = 1,
+    ): Fixture {
         val asset = Asset(
             id = "asset-1",
             type = AssetType.VIDEO,
@@ -251,16 +278,36 @@ class BridgeCommandExecutorTest {
             mimeType = "audio/mp4",
             fingerprint = "fp-audio-1",
         )
+        val extraAssets = (2 until assetCount).map { index ->
+            Asset(
+                id = "asset-$index",
+                type = AssetType.IMAGE,
+                uri = "content://private/$index",
+                sourceDurationUs = null,
+                sizeBytes = index.toLong(),
+                displayName = "image-$index.png",
+                mimeType = "image/png",
+                fingerprint = "fingerprint-$index",
+            )
+        }
         val clip = Clip("clip-1", asset.id, 0L, 4_000_000L, 0L, 4_000_000L)
         val audioClip = Clip("audio-clip", audioAsset.id, 0L, 4_000_000L, 0L, 4_000_000L)
+        val textOverlays = (0 until textCount).map { index ->
+            TextOverlay(
+                id = if (index == 0) "text-1" else "text-$index",
+                startUs = index * 1_000L,
+                durationUs = 1_000_000L,
+                text = if (index == 0) "Texto" else "Texto $index",
+            )
+        }
         val project = Project.create("Bridge", 1080, 1920, 30).copy(
             id = "project-1",
-            assets = listOf(asset, audioAsset),
+            assets = listOf(asset, audioAsset) + extraAssets,
             tracks = listOf(
                 Track("visual-1", TrackType.VISUAL, 0, clips = listOf(clip)),
                 Track("audio-1", TrackType.AUDIO, 1, clips = listOf(audioClip)),
             ),
-            textOverlays = listOf(TextOverlay("text-1", 0L, 1_000_000L, "Texto")),
+            textOverlays = textOverlays,
             compositionGraph = CompositionGraph(
                 nodes = if (locked) {
                     listOf(

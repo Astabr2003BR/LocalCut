@@ -30,6 +30,40 @@ class BridgeProjectReader(
             field("playheadUs", playback.positionUs.toString()); comma()
             field("canUndo", state.canUndo.toString()); comma()
             field("canRedo", state.canRedo.toString()); comma()
+            append("\"assets\":[")
+            project.assets.take(MAX_INVENTORY_ITEMS).forEachIndexed { index, asset ->
+                if (index > 0) comma()
+                append('{')
+                field("id", jsonString(asset.id)); comma()
+                field("type", jsonString(asset.type.name)); comma()
+                field("displayName", jsonString(asset.displayName.take(MAX_LABEL_LENGTH))); comma()
+                field("mimeType", asset.mimeType?.take(MAX_LABEL_LENGTH)?.let(::jsonString) ?: "null"); comma()
+                field("sourceDurationUs", asset.sourceDurationUs?.toString() ?: "null"); comma()
+                field("sizeBytes", asset.sizeBytes?.toString() ?: "null")
+                append('}')
+            }
+            append("]"); comma()
+            field("assetsTruncated", (project.assets.size > MAX_INVENTORY_ITEMS).toString()); comma()
+            append("\"textOverlays\":[")
+            project.textOverlays.take(MAX_INVENTORY_ITEMS).forEachIndexed { index, overlay ->
+                if (index > 0) comma()
+                append('{')
+                field("id", jsonString(overlay.id)); comma()
+                field("startUs", overlay.startUs.toString()); comma()
+                field("durationUs", overlay.durationUs.toString()); comma()
+                field("text", jsonString(overlay.text.take(MAX_TEXT_LENGTH))); comma()
+                field("x", overlay.transform.x.toString()); comma()
+                field("y", overlay.transform.y.toString()); comma()
+                field("scale", overlay.transform.scale.toString()); comma()
+                field("rotationDeg", overlay.transform.rotationDeg.toString()); comma()
+                field("opacity", overlay.opacity.toString()); comma()
+                field("fontSizePx", overlay.style.fontSizePx.toString()); comma()
+                field("fillArgb", overlay.style.fillArgb.toString()); comma()
+                field("zIndex", overlay.zIndex.toString())
+                append('}')
+            }
+            append("]"); comma()
+            field("textOverlaysTruncated", (project.textOverlays.size > MAX_INVENTORY_ITEMS).toString()); comma()
             append("\"issues\":[")
             state.issues.forEachIndexed { index, issue ->
                 if (index > 0) comma()
@@ -161,6 +195,12 @@ class BridgeProjectReader(
             field("result", job.resultJson ?: "null")
             append("}}")
         }
+    }
+
+    private companion object {
+        const val MAX_INVENTORY_ITEMS = 256
+        const val MAX_LABEL_LENGTH = 160
+        const val MAX_TEXT_LENGTH = 500
     }
 
     private fun sanitize(message: String): String = message

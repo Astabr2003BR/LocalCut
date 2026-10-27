@@ -11,7 +11,7 @@ class TermuxEngineUiStateTest {
         val notPaired = TermuxEngineUiState.initial(paired = false)
         assertEquals(TermuxEngineUiPhase.NOT_PAIRED, notPaired.phase)
         assertFalse(notPaired.paired)
-        assertEquals("Conectar Termux", notPaired.actionLabel)
+        assertEquals("Conectar Agent Engine", notPaired.actionLabel)
 
         val paired = TermuxEngineUiState.initial(paired = true)
         assertEquals(TermuxEngineUiPhase.PAIRED_OFFLINE, paired.phase)
@@ -33,7 +33,7 @@ class TermuxEngineUiStateTest {
         assertEquals(TermuxEngineUiPhase.CONNECTED, connected.phase)
         assertTrue(connected.paired)
         assertFalse(connected.busy)
-        assertEquals("Termux Agent Engine conectado", connected.statusText)
+        assertEquals("LocalCut Agent Engine conectado", connected.statusText)
         assertEquals("Testar conexão", connected.actionLabel)
     }
 

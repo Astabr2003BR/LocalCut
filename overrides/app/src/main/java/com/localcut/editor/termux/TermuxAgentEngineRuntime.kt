@@ -1,7 +1,6 @@
 package com.localcut.editor.termux
 
 import android.content.Context
-import com.localcut.editor.bridge.agent.BridgeTermuxAgentClient
 
 class TermuxAgentEngineRuntime private constructor(context: Context) {
     private val appContext = context.applicationContext
@@ -10,7 +9,6 @@ class TermuxAgentEngineRuntime private constructor(context: Context) {
     val client: TermuxEngineClient = SocketTermuxEngineClient(tokenProvider = tokenStore::load)
     val jobClient: TermuxEngineJobClient = SocketTermuxEngineJobClient(tokenProvider = tokenStore::load)
     val approvalClient: TermuxAgentApprovalClient = SocketTermuxAgentApprovalClient(tokenProvider = tokenStore::load)
-    val developerClient: BridgeTermuxAgentClient = SocketTermuxDeveloperAgentClient(tokenProvider = tokenStore::load)
     val mediaAnalyzeCoordinator = TermuxMediaAnalyzeCoordinator(
         client = jobClient,
         sourceResolver = AndroidTermuxMediaSourceResolver(appContext.contentResolver),

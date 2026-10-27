@@ -76,7 +76,7 @@ class BridgeCommandExecutorTest {
         )
 
         assertFalse(move.success)
-        assertEquals(BrideErrorCode.CAPABILITY_NOT_ALLOWED, move.code)
+        assertEquals(BridgeErrorCode.CAPABILITY_NOT_ALLOWED, move.code)
         assertFalse(delete.success)
         assertEquals(BridgeErrorCode.CAPABILITY_NOT_ALLOWED, delete.code)
         assertEquals(5L, fixture.session.state.revision)
@@ -175,58 +175,13 @@ class BridgeCommandExecutorTest {
         assertEquals(5L, fixture.session.state.revision)
     }
 
-    @Test
-    fun termuxWorkspaceReadQueuesWithoutMutatingProjectRevision() {
-        val port = RecordingTermuxPort()
-        val fixture = fixture(termuxAgentPort = port)
-
-        val result = fixture.executor.execute(
-            command(
-                BridgeCapability.READ_TERMUX_WORKSPACE_FILE,
-                payload = "{\"path\":\"README.md\"}",
-                expectedRevision = null,
-            ),
-        )
-
-        assertTrue(result.success)
-        assertEquals(5L, result.projectRevision)
-        assertTrue(result.resultJson.contains("\"state\":\"QUEUED\""))
-        assertEquals(
-            listOf(BridgeTermuxAgentRequest.ReadWorkspaceFile("README.md")),
-            port.submitted,
-        )
-        assertEquals(5L, fixture.session.state.revision)
-    }
-
-    @Test
-    fun arbitraryTermuxExecIsRejectedBeforePortSubmission() {
-        val port = RecordingTermuxPort()
-        val fixture = fixture(termuxAgentPort = port)
-
-        val result = fixture.executor.execute(
-            command(
-                BridgeCapability.RUN_TERMUX_AGENT_OPERATION,
-                payload = "{\"operation\":\"EXEC\"}",
-                expectedRevision = null,
-            ),
-        )
-
-        assertFalse(result.success)
-        assertEquals(BridgeErrorCode.INVALID_ARGUMENT, result.code)
-        assertTrue(port.submitted.isEmpty())
-        assertEquals(5L, fixture.session.state.revision)
-    }
-
     private data class Fixture(
         val session: ProjectSession,
         val playback: FakePlayback,
         val executor: BridgeCommandExecutor,
     )
 
-    private fun fixture(
-        locked: Boolean = false,
-        termuxAgentPort: BridgeTermuxAgentPort = UnavailableBridgeTermuxAgentPort,
-    ): Fixture {
+    private fun fixture(locked: Boolean = false): Fixture {
         val asset = Asset(
             id = "asset-1",
             type = AssetType.VIDEO,
@@ -278,29 +233,7 @@ class BridgeCommandExecutorTest {
             revisionClock = InMemoryProjectRevisionClock(mapOf(project.id to 5L)),
         )
         val playback = FakePlayback()
-        return Fixture(
-            session,
-            playback,
-            BridgeCommandExecutor(session, playback, termuxAgentPort = termuxAgentPort),
-        )
-    }
-
-    private class RecordingTermuxPort : BridgeTermuxAgentPort {
-        val submitted = mutableListOf<BridgeTermuxAgentRequest>()
-        private val tasks = mutableMapOf<String, BridgeTermuxAgentTaskSnapshot>()
-
-        override fun submit(request: BridgeTermuxAgentRequest): BridgeTermuxAgentTaskSnapshot {
-            submitted += request
-            val snapshot = BridgeTermuxAgentTaskSnapshot(
-                taskId = "task-12345678",
-                state = BridgeTermuxAgentTaskState.QUEUED,
-                operation = request.javaClass.simpleName,
-            )
-            tasks[snapshot.taskId] = snapshot
-            return snapshot
-        }
-
-        override fun get(taskId: String): BridgeTermuxAgentTaskSnapshot? = tasks[taskId]
+        return Fixture(session, playback, BridgeCommandExecutor(session, playback))
     }
 
     private class FakePlayback : BridgePlaybackPort {
@@ -318,7 +251,7 @@ class BridgeCommandExecutorTest {
         messageId: String = "msg-1",
         payload: String = "{}",
         expectedRevision: Long? = if (capability.requiresRevision) 5L else null,
-     ): BridgeCommandEnvelope = BridgeCommandEnvelope(
+    ): BridgeCommandEnvelope = BridgeCommandEnvelope(
         protocolVersion = 1,
         messageId = messageId,
         kind = "command",

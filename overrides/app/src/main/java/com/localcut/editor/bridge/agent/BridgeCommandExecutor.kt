@@ -48,7 +48,6 @@ class BridgeCommandExecutor(
     private val jobs: BridgeJobRegistry = BridgeJobRegistry(),
     private val exportPort: BridgeExportPort = UnavailableBridgeExportPort,
     private val previewFramePort: BridgePreviewFramePort = UnavailableBridgePreviewFramePort,
-    private val termuxAgentPort: BridgeTermuxAgentPort = UnavailableBridgeTermuxAgentPort,
 ) {
     private val reader = BridgeProjectReader(session, playback, jobs)
 
@@ -80,15 +79,6 @@ class BridgeCommandExecutor(
                     success(command, reader.exportStatusJson(payload.optionalString("jobId")))
                 }
                 BridgeCapability.GET_PREVIEW_FRAME -> executePreviewFrame(command)
-                BridgeCapability.GET_TERMUX_WORKSPACE_STATUS -> submitTermux(
-                    command,
-                    BridgeTermuxAgentRequest.GetWorkspaceStatus,
-                )
-                BridgeCapability.LIST_TERMUX_WORKSPACE_FILES -> executeTermuxListFiles(command)
-                BridgeCapability.READ_TERMUX_WORKSPACE_FILE -> executeTermuxReadFile(command)
-                BridgeCapability.APPLY_TERMUX_TEXT_PATCH -> executeTermuxApplyPatch(command)
-                BridgeCapability.RUN_TERMUX_AGENT_OPERATION -> executeTermuxRunOperation(command)
-                BridgeCapability.GET_TERMUX_AGENT_TASK -> executeGetTermuxTask(command)
                 BridgeCapability.SEEK -> executeSeek(command)
                 BridgeCapability.SELECT_CLIP -> executeSelect(command)
                 BridgeCapability.MOVE_CLIP -> executeMove(command)
@@ -117,55 +107,6 @@ class BridgeCommandExecutor(
         } catch (error: Throwable) {
             error(command, BridgeErrorCode.INTERNAL_ERROR, error.message ?: "internal error", retryable = false)
         }
-    }
-
-    private fun executeTermuxListFiles(command: BridgeCommandEnvelope): BridgeResultEnvelope {
-        val payload = payload(command)
-        val path = payload.optionalString("path") ?: ""
-        val limit = payload.optionalLong("limit") ?: 200L
-        require(limit in 1L..500L) { "limit must be in 1..500" }
-        return submitTermux(
-            command,
-            BridgeTermuxAgentRequest.ListWorkspaceFiles(path = path, limit = limit.toInt()),
-        )
-    }
-
-    private fun executeTermuxReadFile(command: BridgeCommandEnvelope): BrideResultEnvelope {
-        val path = payload(command).requiredString("path")
-        return submitTermux(command, BridgeTermuxAgentRequest.ReadWorkspaceFile(path))
-    }
-
-    private fun executeTermuxApplyPatch(command: BridgeCommandEnvelope): BridgeResultEnvelope {
-        val payload = payload(command)
-        return submitTermux(
-            command,
-            BrideTermuxAgentRequest.ApplyTextPatch(
-                path = payload.requiredString("path"),
-                expectedSha256 = payload.requiredString("expectedSha256"),
-                oldText = payload.requiredString("oldText"),
-                newText = payload.required("newText").asString(),
-            ),
-        )
-    }
-
-    private fun executeTermuxRunOperation(command: BridgeCommandEnvelope): BridgeResultEnvelope {
-        val operation = payload(command).requiredString("operation")
-        return submitTermux(command, BridgeTermuxAgentRequest.RunAgentOperation(operation))
-    }
-
-    private fun executeGetTermuxTask(command: BridgeCommandEnvelope): BridgeResultEnvelope {
-        val taskId = payload(command).requiredString("taskId")
-        val task = termuxAgentPort.get(taskId)
-            ?: return error(command, BridgeErrorCode.INVALID_ARGUMENT, "termux task not found", false)
-        return success(command, termuxTaskJson(task))
-    }
-
-    private fun submitTermux(
-        command: BridgeCommandEnvelope,
-        request: BridgeTermuxAgentRequest,
-     ): BridgeResultEnvelope {
-        val task = termuxAgentPort.submit(request)
-        return success(command, termuxTaskJson(task))
     }
 
     private fun executePreviewFrame(command: BridgeCommandEnvelope): BridgeResultEnvelope {
@@ -207,219 +148,349 @@ class BridgeCommandExecutor(
     }
 
     private fun executeSelect(command: BridgeCommandEnvelope): BridgeResultEnvelope {
-        val clipId = payload(command).optionalString("plipId")
+        val clipId = payload(command).optionalString("clipId")
         if (clipId != null && session.state.project.findClip(clipId) == null) {
             return error(command, BridgeErrorCode.CLIP_NOT_FOUND, "clip not found", false)
         }
         session.dispatch(EditorAction.SelectClip(clipId))
-        return success(command, "{\"selectedClipId\":${clipId?.let(::ZœÛÛ”Ýš[™ÊHÎˆ›[Ÿ_HŠBˆB‚ˆš]˜]H[ˆ^XÝ]S[Ý™JÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜJNˆœšYÙT™\Ý[[™[ÜHÂˆ˜[^[ØYH^[ØY
-ÛÛ[X[™
-Bˆ˜[Û\YH^[ØYœ™\]Z\™YÝš[™Ê˜Û\YŠBˆ™\]Z\™PÛ\
-ÛÛ[X[™Û\Y
-OË›]È™]\›ˆ]Bˆ˜[™]ÔÝ\\ÈH^[ØYœ™\]Z\™YÛ™Ê›™]ÔÝ\\ÈŠBˆ™\]Z\™J™]ÔÝ\\ÈH
-HÈ›™]ÔÝ\\È]\Ý™H›Û‹[™YØ]]™HˆBˆ™]\›ˆ\Ü]ÚÜš]JÛÛ[X[™Y]ÜXÝ[Û‹‘^XÝ]J[Ý™PÛ\ÛÛ[X[™
-Û\Y™]ÔÝ\\ÊJJBˆB‚ˆš]˜]H[ˆ^XÝ]Q[]JÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜJNˆœšYÙT™\Ý[[™[ÜHÂˆ˜[Û\YH^[ØY
-ÛÛ[X[™
-Kœ™\]Z\™YÝš[™Ê˜Û\YŠBˆ™\]Z\™PÛ\
-ÛÛ[X[™Û\Y
-OË›]È™]\›ˆ]Bˆ™]\›ˆ\Ü]ÚÜš]JÛÛ[X[™Y]ÜXÝ[Û‹‘^XÝ]J[]PÛ\Ú]˜[œÚ][ÛœÐÛÛ[X[™
-Û\Y
-JJBˆB‚ˆš]˜]H[ˆ^XÝ]Q\XØ]JÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜJNˆœšYÙT™\Ý[[™[ÜHÂˆ˜[^[ØYH^[ØY
-ÛÛ[X[™
-Bˆ˜[Û\YH^[ØYœ™\]Z\™YÝš[™Ê˜Û\YŠBˆ™\]Z\™PÛ\
-ÛÛ[X[™Û\Y
-OË›]È™]\›ˆ]Bˆ˜[\XØ]RYH^[ØY›Ü[Û˜[Ýš[™Ê™\XØ]PÛ\YŠHÎˆ[ØØ]Q\XØ]RY
-Û\Y
-Bˆ™\]Z\™JÙ\ÜÚ[Û‹œÝ]Kœ›Ú™XÝ™š[™Û\
-\XØ]RY
-HOH[
-HÈ™\XØ]PÛ\Y[™XYH^\ÝÈˆBˆ™]\›ˆ\Ü]ÚÜš]JÛÛ[X[™Y]ÜXÝ[Û‹‘^XÝ]J\XØ]PÛ\ÛÛ[X[™
-Û\Y\XØ]RY
-JJBˆB‚ˆš]˜]H[ˆ^XÝ]TÜ]
-ÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜJNˆœšYÙT™\Ý[[™[ÜHÂˆ˜[^[ØYH^[ØY
-ÛÛ[X[™
-Bˆ˜[Û\YH^[ØYœ™\]Z\™YÝš[™Ê˜Û\YŠBˆ™\]Z\™PÛ\
-ÛÛ[X[™Û\Y
-OË›]È™]\›ˆ]Bˆ˜[Û\HÙ\ÜÚ[Û‹œÝ]Kœ›Ú™XÝ™š[™Û\
-Û\Y
-HHBˆ˜[ÜÚ][Û•\ÈH^[ØYœ™\]Z\™YÛ™ÊœÜÚ][Û•\ÈŠBˆ™\]Z\™JÜÚ][Û•\ÈˆÛ\œÝ\\È	‰ˆÜÚ][Û•\ÈÛ\œÝ\\È
-ÈÛ\™\˜][Û•\Ê^ÈœÜ]ÜÚ][Ûˆ]\Ý™H[œÚYHÛ\ˆBˆ™]\›ˆ\Ü]ÚÜš]JÛÛ[X[™Y]ÜXÝ[Û‹‘^XÝ]JÜ]Û\ÛÛ[X[™
-Û\YÜÚ][Û•\ÊJJBˆB‚ˆš]˜]H[ˆ^XÝ]Uš[JÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜJNˆœšYÙT™\Ý[[™[ÜHÂˆ˜[^[ØYH^[ØY
-ÛÛ[X[™
-Bˆ˜[Û\YH^[ØYœ™\]Z\™YÝš[™Ê˜Û\YŠBˆ™\]Z\™PÛ\
-ÛÛ[X[™Û\Y
-OË›]È™]\›ˆ]Bˆ˜[™]ÔÝ\\ÈH^[ØY›Ü[Û˜[Û™Ê›™]ÔÝ\\ÈŠBˆ˜[™]Ñ[™\ÈH^[ØY›Ü[Û˜[Û™Ê›™]Ñ[™\ÈŠBˆ™\]Z\™J
-™]ÔÝ\\ÈOH[
-HOH
-™]Ñ[™\ÈOH[
-JHÈœ›ÝšYH^XÝHÛ™HÙˆ™]ÔÝ\\ËÛ™]Ñ[™\ÈˆBˆ˜[XÝ[ÛˆHYˆ
-™]ÔÝ\\ÈOH[
-HÂˆ™\]Z\™J™]ÔÝ\\ÈH
-HÈ›™]ÔÝ\\È]\Ý™H›Û‹[™YØ]]™HˆBˆY]ÜXÝ[Û‹‘^XÝ]Jš[PÛ\YYÙPÛÛ[X[™
-Û\Y™]ÔÝ\\ÊJBˆH[ÙHÂˆ™\]Z\™J™]Ñ[™\ÈHHH
-HÈ›™]Ñ[™\È]\Ý™H›Û‹[™YØ]]™HˆBˆY]ÜXÝ[Û‹‘^XÝ]Jš[PÛ\šYÚYÙPÛÛ[X[™
-Û\Y™]Ñ[™\ÊJBˆBˆ™]\›ˆ\Ü]ÚÜš]JÛÛ[X[™XÝ[ÛŠBˆB‚ˆš]˜]H[ˆ^XÝ]U˜[œÙ›Ü›JÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜJNˆœšYÙT™\Ý[[™[ÜHÂˆ˜[^[ØYH^[ØY
-ÛÛ[X[™
-Bˆ˜[Û\YH^[ØYœ™\]Z\™YÝš[™Ê˜Û\YŠBˆ™\]Z\™PÛ\
-ÛÛ[X[™Û\Y
-OË›]È™]\›ˆ]Bˆ˜[Ý\œ™[HÙ\ÜÚ[Û‹œÝ]Kœ›Ú™XÝ™š[™Û\
-Û\Y
-HHK˜[œÙ›Ü›Bˆ˜[˜[œÙ›Ü›HH˜[œÙ›Ü›U˜[YJˆH^[ØY›Ü[Û˜[ÝX›JžŠHÎˆÝ\œ™[žˆHH^[ØY›Ü[Û˜[ÝX›JžHŠHÎˆÝ\œ™[žKˆØØ[HH^[ØY›Ü[Û˜[ÝX›JœØØ[HŠHÎˆÝ\œ™[œØØ[Kˆ›Ý][Û‘YÈH^[ØY›Ü[Û˜[ÝX›Jœ›Ý][Û‘YÈŠHÎˆÝ\œ™[œ›Ý][Û‘YËˆÜXÚ]HH^[ØY›Ü[Û˜[ÝX›J›ÜXÚ]HŠHÎˆÝ\œ™[›ÜXÚ]Kˆ
-Bˆ™\]Z\™J˜[œÙ›Ü›KœØØ[HˆŒ
-^ÈœØØ[H]\Ý™HÜÚ]]™HˆBˆ™\]Z\™J˜[œÙ›Ü›K›ÜXÚ]H[ˆŒ‹ŒKŒ
-HÈ›ÜXÚ]H]\Ý™H[ˆ‹ŒHˆBˆ™]\›ˆ\Ü]ÚÜš]JÛÛ[X[™Y]ÜXÝ[Û‹‘^XÝ]JÙ]˜[œÙ›Ü›PÛÛ[X[™
-Û\Y˜[œÙ›Ü›JJJBˆB‚ˆš]˜]H[ˆ^XÝ]U›Û[YJÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜJNˆœšYÙT™\Ý[[™[ÜHÂˆ˜[^[ØYH^[ØY
-ÛÛ[X[™
-Bˆ˜[Û\YH^[ØYœ™\]Z\™YÝš[™Ê˜Û\YŠBˆ™\]Z\™PÛ\
-ÛÛ[X[™Û\Y
-OË›]È™]\›ˆ]Bˆ˜[›Û[YHH^[ØYœ™\]Z\™YÝX›J›Û[YHŠBˆ™\]Z\™J›Û[YHHŒ
-HÈ›Û[YH]\Ý™H›Û‹[™YØ]]™HˆBˆ™]\›ˆ\Ü]ÚÜš]JÛÛ[X[™Y]ÜXÝ[Û‹‘^XÝ]JÙ]›Û[YPÛÛ[X[™
-Û\Y›Û[YJJJBˆB‚ˆš]˜]H[ˆ^XÝ]RÙ^Yœ˜[Y\ÊÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜJNˆœšYÙT™\Ý[[™[ÜHÂˆ˜[^[ØYH^[ØY
-ÛÛ[X[™
-Bˆ˜[Û\YH^[ØYœ™\]Z\™YÝš[™Ê˜Û\YŠBˆ™\]Z\™PÛ\
-ÛÛ[X[™Û\Y
-OË›]È™]\›ˆ]Bˆ˜[Û\HÙ\ÜÚ[Û‹œÝ]Kœ›Ú™XÝ™š[™Û\
-Û\Y
-HHBˆ˜[Ù^Yœ˜[Y\ÈH^[ØY
-ÛÛ[X[™
-Kœ™\]Z\™Y
-šÙ^Yœ˜[Y\ÈŠK˜\Ð\œ˜^J
-K˜[Y\Ë›X\È˜]ÈO‚ˆ˜[][HH˜]Ë˜\ÓØš™XÝ
+        return success(command, "{\"selectedClipId\":${clipId?.let(::jsonString) ?: "null"}}")
+    }
 
-Bˆ˜[Ù™œÙ]\ÈH][Kœ™\]Z\™YÛ™Ê›Ù™œÙ]\ÈŠBˆ™\]Z\™JÙ™œÙ]\È[ˆ‹˜Û\™\˜][Û•\ÊHÈšÙ^Yœ˜[YHÙ™œÙ]]\Ý™H[œÚYHÛ\ˆBˆ˜[œÙ›Ü›RÙ^Yœ˜[YJˆÙ™œÙ]\ÈHÙ™œÙ]\Ëˆ˜[YHH˜[œÙ›Ü›U˜[YJˆH][Kœ™\]Z\™YÝX›JžŠKˆHH][Kœ™\]Z\™YÝX›JžHŠKˆØØ[HH][Kœ™\]Z\™YÝX›JœØØ[HŠKˆ›Ý][Û‘YÈH][Kœ™\]Z\™YÝX›Jœ›Ý][Û‘YÈŠKˆÜXÚ]HH][Kœ™\]Z\™YÝX›J›ÜXÚ]HŠKˆ
-Kˆ
-BˆBˆ™\]Z\™JÙ^Yœ˜[Y\Ë›X\È]›Ù™œÙ]\ÈK™\Ý[˜Ý
+    private fun executeMove(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val payload = payload(command)
+        val clipId = payload.requiredString("clipId")
+        requireClip(command, clipId)?.let { return it }
+        val newStartUs = payload.requiredLong("newStartUs")
+        require(newStartUs >= 0L) { "newStartUs must be non-negative" }
+        return dispatchWrite(command, EditorAction.Execute(MoveClipCommand(clipId, newStartUs)))
+    }
 
-KœÚ^™HOHÙ^Yœ˜[Y\ËœÚ^™JHÈ™\XØ]HÙ^Yœ˜[YHÙ™œÙ]ˆBˆ™\]Z\™JÙ^Yœ˜[Y\Ë˜[È]˜[YKœØØ[HˆŒJHÈšÙ^Yœ˜[YHØØ[H]\Ý™HÜÚ]]™HˆBˆ™\]Z\™JÙ^Yœ˜[Y\Ë˜[È]˜[YK›ÜXÚ]H[ˆŒ‹ŒKŒJHÈšÙ^Yœ˜[YHÜXÚ]H]\Ý™H[ˆ‹ŒHˆBˆ™]\›ˆ\Ü]ÚÜš]JÛÛ[X[™Y]ÜXÝ[Û‹‘^XÝ]JÙ]Ù^Yœ˜[Y\ÐÛÛ[X[™
-Û\YÙ^Yœ˜[Y\ËœÛÜYžHÈ]›Ù™œÙ]\ÈJJJBˆB‚ˆš]˜]H[ˆ^XÝ]PY^
-ÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜJNˆœšYÙT™\Ý[[™[ÜHÂˆ˜[^[ØYH^[ØY
-ÛÛ[X[™
-Bˆ˜[YH^[ØYœ™\]Z\™YÝš[™ÊšYŠBˆ˜[Ý\\ÈH^[ØYœ™\]Z\™YÛ™ÊœÝ\\ÈŠBˆ˜[\˜][Û•\ÈH^[ØYœ™\]Z\™YÛ™Ê™\˜][Û•\ÈŠBˆ˜[^H^[ØYœ™\]Z\™YÝš[™Ê^ŠBˆ™\]Z\™JÝ\\ÈH
-HÈœÝ\\È]\Ý™H›Û‹[™YØ]]™HˆBˆ™\]Z\™J\˜][Û•\Èˆ
-HÈ™\˜][Û•\È]\Ý™HÜÚ]]™HˆBˆ˜[›ÛÚ^™TH^[ØY›Ü[Û˜[ÝX›J™›ÛÚ^™TŠHÎˆŒˆ™\]Z\™J›ÛÚ^™TˆŒ
-HÈ™›ÛÚ^™T]\Ý™HÜÚ]]™HˆBˆ˜[š[\™Ø“Û™ÈH^[ØY›Ü[Û˜[Û™Ê™š[\™ØˆŠHÎˆ‘‘‘‘‘‘‘“ˆ™\]Z\™Jš[\™Ø“Û™È[ˆ[“RS—ÕSQKÓÛ™Ê
-K‹Œ‘‘‘‘‘‘‘“
-HÈ™š[\™ØˆÝ]Ùˆ˜[™ÙHˆBˆ˜[’[™^Û™ÈH^[ØY›Ü[Û˜[Û™Êž’[™^ŠHÎˆˆ™\]Z\™J’[™^Û™È[ˆ[“RS—ÕSQKÓÛ™Ê
-K‹’[“PVÕSQKÓÛ™Ê
-JHÈž’[™^Ý]Ùˆ˜[™ÙHˆBˆ˜[Ý™\›^SÜXÚ]HH^[ØY›Ü[Û˜[ÝX›J›ÜXÚ]HŠHÎˆKŒˆ™\]Z\™JÝ™\›^SÜXÚ]H[ˆŒ‹ŒKŒ
-HÈ›ÜXÚ]H]\Ý™H[ˆ‹ŒHˆBˆ˜[˜[œÙ›Ü›HH˜[œÙ›Ü›U˜[YJˆH^[ØY›Ü[Û˜[ÝX›JžŠHÎˆŒˆHH^[ØY›Ü[Û˜[ÝX›JžHŠHÎˆŒˆØØ[HH^[ØY›Ü[Û˜[ÝX›JœØØ[HŠHÎˆKŒˆ›Ý][Û‘YÈH^[ØY›Ü[Û˜[ÝX›Jœ›Ý][Û‘YÈŠHÎˆŒˆÜXÚ]HHKŒˆ
-Bˆ™\]Z\™J˜[œÙ›Ü›KœØØ[HˆŒ
-HÈœØØ[H]\Ý™HÜÚ]]™HˆBˆ˜[Ý™\›^HH^Ý™\›^JˆYHYˆÝ\\ÈHÝ\\Ëˆ\˜][Û•\ÈH\˜][Û•\Ëˆ^H^ˆÝ[HH^Ý[Jˆ›ÛÚ^™TH›ÛÚ^™Tˆš[\™ØˆHš[\™Ø“Û™ËÒ[
+    private fun executeDelete(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val clipId = payload(command).requiredString("clipId")
+        requireClip(command, clipId)?.let { return it }
+        return dispatchWrite(command, EditorAction.Execute(DeleteClipWithTransitionsCommand(clipId)))
+    }
 
-Kˆ
-Kˆ˜[œÙ›Ü›HH˜[œÙ›Ü›KˆÜXÚ]HHÝ™\›^SÜXÚ]Kˆ’[™^H’[™^Û™ËÒ[
+    private fun executeDuplicate(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val payload = payload(command)
+        val clipId = payload.requiredString("clipId")
+        requireClip(command, clipId)?.let { return it }
+        val duplicateId = payload.optionalString("duplicateClipId") ?: allocateDuplicateId(clipId)
+        require(session.state.project.findClip(duplicateId) == null) { "duplicateClipId already exists" }
+        return dispatchWrite(command, EditorAction.Execute(DuplicateClipCommand(clipId, duplicateId)))
+    }
 
-Kˆ
-Bˆ™]\›ˆ\Ü]ÚÜš]JÛÛ[X[™Y]ÜXÝ[Û‹‘^XÝ]JY^Ý™\›^PÛÛ[X[™
-Ý™\›^JJJBˆB‚ˆš]˜]H[ˆ^XÝ]PY˜[œÚ][ÛŠÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜJNˆœšYÙT™\Ý[[™[ÜHÂˆ˜[^[ØYH^[ØY
-ÛÛ[X[™
-Bˆ˜[Ú[™˜[YHH^[ØYœ™\]Z\™YÝš[™ÊšÚ[™ŠBˆ˜[Ú[™H[Ø]Ú[™ÈÈ˜[œÚ][Û’Ú[™˜[YSÙŠÚ[™˜[YJHBˆ™Ù]Ü‘[ÙHÈ›ÝÈ[YØ[\™Ý[Y[^Ù\[ÛŠ[œÝ\ÜY˜[œÚ][ÛˆÚ[™ŠHBˆYˆ
-Ú[™OH˜[œÚ][Û’Ú[™‘QWÕ×Ð“PÒÊHÂˆ™]\›ˆ\œ›ÜŠˆÛÛ[X[™ˆœšYÙQ\œ›ÜÛÙKÐTP’SUWÓ“ÕÐSÕÑQˆ˜[œÚ][ÛˆÚ[™\È›Ý™[™\˜X›H[ˆœšYÙHŒH‹ˆ™]žXX›HH˜[ÙKˆ
-BˆBˆ˜[˜[œÚ][ÛˆHÛ\˜[œÚ][ÛŠˆYH^[ØYœ™\]Z\™YÝš[™ÊšYŠKˆœ›ÛPÛ\YH^[ØYœ™\]Z\™YÝš[™Ê™œ›ÛPÛ\YŠKˆÐÛ\YH^[ØYœ™\]Z\™YÝš[™ÊÐÛ\YŠKˆ\˜][Û•\ÈH^[ØYœ™\]Z\™YÛ™Ê™\˜][Û•\ÈŠKˆÚ[™HÚ[™ˆ
-Bˆ™\]Z\™J˜[œÚ][Û‹™\˜][Û•\Èˆ
-HÈ™\˜][Û•\È]\Ý™HÜÚ]]™HˆBˆ™]\›ˆ\Ü]ÚÜš]JÛÛ[X[™Y]ÜXÝ[Û‹‘^XÝ]JYÛ\˜[œÚ][ÛÛÛ[X[™
-˜[œÚ][ÛŠJJBˆB‚ˆš]˜]H[ˆ^XÝ]R\ÝÜžJÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜKXÝ[ÛŽˆY]ÜXÝ[ÛŠNˆœšYÙT™\Ý[[™[ÜHÂˆ˜[™Y›Ü™HHÙ\ÜÚ[Û‹œÝ]Kœ™]š\Ú[Û‚ˆÙ\ÜÚ[Û‹™\Ü]Ú
-XÝ[ÛŠBˆ™]\›ˆYˆ
-Ù\ÜÚ[Û‹œÝ]Kœ™]š\Ú[ÛˆOH™Y›Ü™JHÂˆÝXØÙ\ÜÊÛÛ[X[™ž×˜Ú[™ÙYŽ™˜[Ù_HŠBˆH[ÙHÂˆÝXØÙ\ÜÊÛÛ[X[™ž×˜Ú[™ÙYŽY_HŠBˆBˆB‚ˆš]˜]H[ˆ^XÝ]Q^Ü
-ÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜJNˆœšYÙT™\Ý[[™[ÜHHÚ[ˆ
-˜[™\Ù\˜][ÛˆH›ØœËœ™\Ù\™Q^Ü
-ÛÛ[X[™›Y\ÜØYÙRY
-JHÂˆ\ÈœšYÙR›Ø”™\Ù\˜][Û‹‘^\Ý[™ÈOˆÝXØÙ\ÜÊÛÛ[X[™›Ø’œÛÛŠ™\Ù\˜][Û‹š›ØŠJBˆ\ÈœšYÙR›Ø”™\Ù\˜][Û‹\ÞHOˆ\œ›ÜŠˆÛÛ[X[™ˆœšYÙQ\œ›ÜÛÙK‘VÔ•Ð•TÖKˆ˜[›Ý\ˆ^Ü\ÈXÝ]™H‹ˆ™]žXX›HHYKˆ]Z[ÒœÛÛˆH›Ø’œÛÛŠ™\Ù\˜][Û‹˜XÝ]™R›ØŠKˆ
-Bˆ\ÈœšYÙR›Ø”™\Ù\˜][Û‹”Ý\YOˆÂˆ˜[›Ø’YH™\Ù\˜][Û‹š›Ø‹š›Ø’Yˆ˜[\Ý[™\ˆHØš™XÝˆœšYÙQ^Ü\Ý[™\ˆÂˆÝ™\œšYH[ˆÛ”Ý\Y
+    private fun executeSplit(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val payload = payload(command)
+        val clipId = payload.requiredString("clipId")
+        requireClip(command, clipId)?.let { return it }
+        val clip = session.state.project.findClip(clipId)!!
+        val positionUs = payload.requiredLong("positionUs")
+        require(positionUs > clip.startUs && positionUs < clip.startUs + clip.durationUs) { "split position must be inside clip" }
+        return dispatchWrite(command, EditorAction.Execute(SplitClipCommand(clipId, positionUs)))
+    }
 
-HÂˆ›ØœË›X\šÔ[›š[™Ê›Ø’Y
-BˆBˆÝ™\œšYH[ˆÛ”›ÙÜ™\ÜÊ\˜Ù[ˆ[
-HÂˆ›ØœË\]T›ÙÜ™\ÜÊ›Ø’Y\˜Ù[˜ÛÙ\˜ÙR[ŠL
-JBˆBˆÝ™\œšYH[ˆÛÛÛ\]Y
-™\Ý[œÛÛŽˆÝš[™ÊHÂˆ›ØœËœÝXØÙYY
-›Ø’Y™\Ý[œÛÛŠBˆB‚ˆÝ™\œšYH[ˆÛ‘˜Z[Y
-Y\ÜØYÙNˆÝš[™ÊHÂˆ›ØœË™˜Z[
-›Ø’YœšYÙQ\œ›ÜÛÙK‘VÔ•ÑRSQØ[š]^™JY\ÜØYÙJJBˆB‚ˆÝ™\œšYH[ˆÛØ[˜Ù[Y
+    private fun executeTrim(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val payload = payload(command)
+        val clipId = payload.requiredString("clipId")
+        requireClip(command, clipId)?.let { return it }
+        val newStartUs = payload.optionalLong("newStartUs")
+        val newEndUs = payload.optionalLong("newEndUs")
+        require((newStartUs == null) != (newEndUs == null)) { "provide exactly one of newStartUs/newEndUs" }
+        val action = if (newStartUs != null) {
+            require(newStartUs >= 0L) { "newStartUs must be non-negative" }
+            EditorAction.Execute(TrimClipLeftEdgeCommand(clipId, newStartUs))
+        } else {
+            require(newEndUs!! >= 0L) { "newEndUs must be non-negative" }
+            EditorAction.Execute(TrimClipRightEdgeCommand(clipId, newEndUs))
+        }
+        return dispatchWrite(command, action)
+    }
 
-HÂˆ›ØœË˜Ø[˜Ù[
-›Ø’Y
-BˆBˆBˆ˜[Ý\YH^ÜÜœÝ\
-Ù\ÜÚ[Û‹œÝ]Kœ›Ú™XÝ\Ý[™\ŠBˆYˆ
-Ý\Yš\Ñ˜Z[\™JHÂˆ˜[Y\ÜØYÙHHÝ\Y™^Ù\[Û“Ü“[
+    private fun executeTransform(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val payload = payload(command)
+        val clipId = payload.requiredString("clipId")
+        requireClip(command, clipId)?.let { return it }
+        val current = session.state.project.findClip(clipId)!!.transform
+        val transform = TransformValue(
+            x = payload.optionalDouble("x") ?: current.x,
+            y = payload.optionalDouble("y") ?: current.y,
+            scale = payload.optionalDouble("scale") ?: current.scale,
+            rotationDeg = payload.optionalDouble("rotationDeg") ?: current.rotationDeg,
+            opacity = payload.optionalDouble("opacity") ?: current.opacity,
+        )
+        require(transform.scale > 0.0) { "scale must be positive" }
+        require(transform.opacity in 0.0..1.0) { "opacity must be in 0..1" }
+        return dispatchWrite(command, EditorAction.Execute(SetTransformCommand(clipId, transform)))
+    }
 
-OË›Y\ÜØYÙHÎˆ™^ÜÛÝ[›ÝÝ\‚ˆ›ØœË™˜Z[
-›Ø’YœšYÙQ\œ›ÜÛÙK‘VÔ•ÑRSQØ[š]^™JY\ÜØYÙJJBˆ\œ›ÜŠÛÛ[X[™œšYÙQ\œ›ÜÛÙK‘VÔ•ÑRSQY\ÜØYÙK™]žXX›HHYJBˆH[ÙHÂˆÝXØÙ\ÜÊÛÛ[X[™›Ø’œÛÛŠ™\]Z\™S›Ý[
-›ØœË™Ù]
-›Ø’Y
-JJJBˆBˆBˆB‚ˆš]˜]H[ˆ^XÝ]PØ[˜Ù[^Ü
-ÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜJNˆœšYÙT™\Ý[[™[ÜHÂˆ˜[›Ø’YH^[ØY
-ÛÛ[X[™
-Kœ™\]Z\™YÝš[™Êš›Ø’YŠBˆ˜[›ØˆH›ØœË™Ù]
-›Ø’Y
-HÎˆ™]\›ˆ\œ›ÜŠÛÛ[X[™œšYÙQ\œ›ÜÛÙK’S•SQÐT‘ÕSQS•š›Øˆ›Ý›Ý[™‹˜[ÙJBˆ˜[Ø[˜Ù[YH^ÜÜ˜Ø[˜Ù[
+    private fun executeVolume(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val payload = payload(command)
+        val clipId = payload.requiredString("clipId")
+        requireClip(command, clipId)?.let { return it }
+        val volume = payload.requiredDouble("volume")
+        require(volume >= 0.0) { "volume must be non-negative" }
+        return dispatchWrite(command, EditorAction.Execute(SetVolumeCommand(clipId, volume)))
+    }
 
-BˆYˆ
-Ø[˜Ù[Yš\Ñ˜Z[\™JHÂˆ™]\›ˆ\œ›ÜŠˆÛÛ[X[™ˆœšYÙQ\œ›ÜÛÙK‘VÔ•ÑRSQˆØ[˜Ù[Y™^Ù\[Û“Ü“[
+    private fun executeKeyframes(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val payload = payload(command)
+        val clipId = payload.requiredString("clipId")
+        requireClip(command, clipId)?.let { return it }
+        val clip = session.state.project.findClip(clipId)!!
+        val keyframes = payload.required("keyframes").asArray().values.map { raw ->
+            val item = raw.asObject()
+            val offsetUs = item.requiredLong("offsetUs")
+            require(offsetUs in 0L..clip.durationUs) { "keyframe offset must be inside clip" }
+            TransformKeyframe(
+                offsetUs = offsetUs,
+                value = TransformValue(
+                    x = item.requiredDouble("x"),
+                    y = item.requiredDouble("y"),
+                    scale = item.requiredDouble("scale"),
+                    rotationDeg = item.requiredDouble("rotationDeg"),
+                    opacity = item.requiredDouble("opacity"),
+                ),
+            )
+        }
+        require(keyframes.map { it.offsetUs }.distinct().size == keyframes.size) { "duplicate keyframe offset" }
+        require(keyframes.all { it.value.scale > 0.0 }) { "keyframe scale must be positive" }
+        require(keyframes.all { it.value.opacity in 0.0..1.0 }) { "keyframe opacity must be in 0..1" }
+        return dispatchWrite(command, EditorAction.Execute(SetKeyframesCommand(clipId, keyframes.sortedBy { it.offsetUs })))
+    }
 
-OË›Y\ÜØYÙHÎˆ™^ÜØ[˜Ù[][Ûˆ˜Z[Y‹ˆ™]žXX›HHYKˆ
-BˆBˆ›ØœË˜Ø[˜Ù[
-›Ø’Y
-Bˆ™]\›ˆÝXØÙ\ÜÊÛÛ[X[™›Ø’œÛÛŠ™\]Z\™S›Ý[
-›ØœË™Ù]
-›Ø‹š›Ø’Y
-JJJBˆB‚ˆš]˜]H[ˆ\Ü]ÚÜš]JÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜKXÝ[ÛŽˆY]ÜXÝ[ÛŠNˆœšYÙT™\Ý[[™[ÜHÂˆ˜[™Y›Ü™T™]š\Ú[ÛˆHÙ\ÜÚ[Û‹œÝ]Kœ™]š\Ú[Û‚ˆÙ\ÜÚ[Û‹™\Ü]Ú
-XÝ[ÛŠBˆ˜[Y\ˆHÙ\ÜÚ[Û‹œÝ]BˆYˆ
-Y\‹œ™]š\Ú[ÛˆOH™Y›Ü™T™]š\Ú[ÛŠHÂˆ˜[Y\ÜØYÙHHY\‹›\Ý\œ›ÜˆÎˆ™Y]Ø\È›Ý\YY‚ˆ™]\›ˆ\œ›ÜŠÛÛ[X[™X\ÛXZ[‘\œ›ÜŠY\ÜØYÙJKY\ÜØYÙK˜[ÙJBˆBˆ™]\›ˆÝXØÙ\ÜÊÛÛ[X[™ž×˜\YYŽY_HŠBˆB‚ˆš]˜]H[ˆ™\]Z\™PÛ\
-ÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜKÛ\YˆÝš[™ÊNˆœšYÙT™\Ý[[™[ÜOÈÂˆ˜[›Ú™XÝHÙ\ÜÚ[Û‹œÝ]Kœ›Ú™XÝˆYˆ
-›Ú™XÝ™š[™Û\
-Û\Y
-HOH[
-HÂˆ™]\›ˆ\œ›ÜŠÛÛ[X[™œšYÙQ\œ›ÜÛÙKÓTÓ“ÕÑ“ÕS‘˜Û\›Ý›Ý[™‹˜[ÙJBˆBˆ˜[ØÚÙYH›Ú™XÝ˜ÛÛ\ÜÚ][Û‘Ü˜\››Ù\Ë˜[žHÈ›ÙHO‚ˆ›ÙKšÚ[™OHÛÛ\ÜÚ][Û“›ÙRÚ[™“VQTˆ	‰ˆ›ÙK˜Û\YOHÛ\Y	‰ˆ›ÙK›ØÚÙYˆBˆ™]\›ˆYˆ
-ØÚÙY
-HÂˆ\œ›ÜŠÛÛ[X[™œšYÙQ\œ›ÜÛÙKÐTP’SUWÓ“ÕÐSÕÑQ˜Û\\ÈØÚÙY‹˜[ÙJBˆH[ÙHÂˆ[ˆBˆB‚ˆš]˜]H[ˆ[ØØ]Q\XØ]RY
-Û\YˆÝš[™ÊNˆÝš[™ÈÂˆ˜\ˆÝY™š^HBˆÚ[H
-YJHÂˆ˜[Ø[™Y]HHYˆ
-ÝY™š^OHJH‰Û\YXÛÜHˆ[ÙH‰Û\YXÛÜKIÝY™š^‚ˆYˆ
-Ù\ÜÚ[Û‹œÝ]Kœ›Ú™XÝ™š[™Û\
-Ø[™Y]JHOH[
-H™]\›ˆØ[™Y]BˆÝY™š^
-ÊÂˆBˆB‚ˆš]˜]H[ˆÝXØÙ\ÜÊÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜK™\Ý[œÛÛŽˆÝš[™ÊNˆœšYÙT™\Ý[[™[ÜHHœšYÙT™\Ý[[™[ÜJˆY\ÜØYÙRYHÛÛ[X[™›Y\ÜØYÙRYˆÝXØÙ\ÜÈHYKˆÛÙHH[ˆ›Ú™XÝ™]š\Ú[ÛˆHÙ\ÜÚ[Û‹œÝ]Kœ™]š\Ú[Û‹ˆ™\Ý[œÛÛˆH™\Ý[œÛÛ‹ˆ™]žXX›HH˜[ÙKˆ
-B‚ˆš]˜]H[ˆ\œ›ÜŠˆÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜKˆÛÙNˆœšYÙQ\œ›ÜÛÙKˆY\ÜØYÙNˆÝš[™Ëˆ™]žXX›Nˆ›ÛÛX[‹ˆ]Z[ÒœÛÛŽˆÝš[™ÈHžßH‹ˆ
-NˆœšYÙT™\Ý[[™[ÜHHœšYÙT™\Ý[[™[ÜJˆY\ÜØYÙRYHÛÛ[X[™›Y\ÜØYÙRYˆÝXØÙ\ÜÈH˜[ÙKˆÛÙHHÛÙKˆ›Ú™XÝ™]š\Ú[ÛˆHÙ\ÜÚ[Û‹œÝ]Kœ™]š\Ú[Û‹ˆ™\Ý[œÛÛˆHž×›Y\ÜØYÙWŽ‰ÚœÛÛ”Ýš[™ÊØ[š]^™JY\ÜØYÙJJ_K™]Z[×Ž‰]Z[ÒœÛÛŸH‹ˆ™]žXX›HH™]žXX›Kˆ
-B‚ˆš]˜]H[ˆX\ÛXZ[‘\œ›ÜŠY\ÜØYÙNˆÝš[™ÊNˆœšYÙQ\œ›ÜÛÙHÂˆ˜[ÝÙ\ˆHY\ÜØYÙK›ÝÙ\˜Ø\ÙJ
-Bˆ™]\›ˆÚ[ˆÂˆ›Ý™\›\ˆ[ˆÝÙ\ˆOˆœšYÙQ\œ›ÜÛÙK“Õ‘T“TS‘×ÐÓTÂˆ˜Û\ˆ[ˆÝÙ\ˆ	‰ˆ››Ý›Ý[™ˆ[ˆÝÙ\ˆOˆœšYÙQ\œ›ÜÛÙKÓTÓ“ÕÑ“ÕS‘ˆ˜XÚÈˆ[ˆÝÙ\ˆ	‰ˆ››Ý›Ý[™ˆ[ˆÝÙ\ˆOˆœšYÙQ\œ›ÜÛÙK•PÒ×Ó“ÕÑ“ÕS‘ˆ˜\ÜÙ]ˆ[ˆÝÙ\ˆ	‰ˆ[˜]˜Z[X›Hˆ[ˆÝÙ\ˆOˆœšYÙQ\œ›ÜÛÙKTÔÑUÕSURSP“Bˆ[ÙHOˆœšYÙQ\œ›ÜÛÙK’S•SQÐT‘ÕSQS•ˆBˆB‚ˆš]˜]H[ˆ^[ØY
-ÛÛ[X[™ˆœšYÙPÛÛ[X[™[™[ÜJNˆ“Øš™XÝHžHÂˆZ[šRœÛÛ‹œ\œÙJÛÛ[X[™œ^[ØYœÛÛŠK˜\ÓØš™XÝ
+    private fun executeAddText(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val payload = payload(command)
+        val id = payload.requiredString("id")
+        val startUs = payload.requiredLong("startUs")
+        val durationUs = payload.requiredLong("durationUs")
+        val text = payload.requiredString("text")
+        require(startUs >= 0L) { "startUs must be non-negative" }
+        require(durationUs > 0L) { "durationUs must be positive" }
+        val fontSizePx = payload.optionalDouble("fontSizePx") ?: 64.0
+        require(fontSizePx > 0.0) { "fontSizePx must be positive" }
+        val fillArgbLong = payload.optionalLong("fillArgb") ?: 0xFFFFFFFFL
+        require(fillArgbLong in Int.MIN_VALUE.toLong()..0xFFFFFFFFL) { "fillArgb out of range" }
+        val zIndexLong = payload.optionalLong("zIndex") ?: 0L
+        require(zIndexLong in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) { "zIndex out of range" }
+        val overlayOpacity = payload.optionalDouble("opacity") ?: 1.0
+        require(overlayOpacity in 0.0..1.0) { "opacity must be in 0..1" }
+        val transform = TransformValue(
+            x = payload.optionalDouble("x") ?: 0.0,
+            y = payload.optionalDouble("y") ?: 0.0,
+            scale = payload.optionalDouble("scale") ?: 1.0,
+            rotationDeg = payload.optionalDouble("rotationDeg") ?: 0.0,
+            opacity = 1.0,
+        )
+        require(transform.scale > 0.0) { "scale must be positive" }
+        val overlay = TextOverlay(
+            id = id,
+            startUs = startUs,
+            durationUs = durationUs,
+            text = text,
+            style = TextStyle(
+                fontSizePx = fontSizePx,
+                fillArgb = fillArgbLong.toInt(),
+            ),
+            transform = transform,
+            opacity = overlayOpacity,
+            zIndex = zIndexLong.toInt(),
+        )
+        return dispatchWrite(command, EditorAction.Execute(AddTextOverlayCommand(overlay)))
+    }
 
-BˆHØ]Ú
-\œ›ÜŽˆ›ÝØX›JHÂˆ›ÝÈ[YØ[\™Ý[Y[^Ù\[ÛŠœ^[ØY]\Ý™HH”ÓÓˆØš™XÝ‹\œ›ÜŠBˆB‚ˆš]˜]H[ˆ“Øš™XÝœ™\]Z\™YÝš[™ÊÙ^NˆÝš[™ÊNˆÝš[™ÈH™\]Z\™Y
-Ù^JK˜\ÔÝš[™Ê
-K˜[ÛÈÂˆ™\]Z\™J]š\Ó›Ý›[šÊ
-JHÈ‰Ù^H]\Ý›Ý™H›[šÈˆBˆB‚ˆš]˜]H[ˆ“Øš™XÝ›Ü[Û˜[Ýš[™ÊÙ^NˆÝš[™ÊNˆÝš[™ÏÈHÚ[ˆ
-˜[˜[YHHÜ[Û˜[
-Ù^JJHÂˆ[“[Oˆ[ˆ[ÙHOˆ˜[YK˜\ÔÝš[™Ê
-BˆB‚ˆš]˜]H[ˆ“Øš™XÝœ™\]Z\™YÛ™ÊÙ^NˆÝš[™ÊNˆÛ™ÈH™\]Z\™Y
-Ù^JK˜\ÓÛ™Ê
-Bˆš]˜]H[ˆ“Øš™XÝ›Ü[Û˜[Û™ÊÙ^NˆÝš[™ÊNˆÛ™ÏÈHÚ[ˆ
-˜[˜[YHHÜ[Û˜[
-Ù^JJHÂˆ[“[Oˆ[ˆ[ÙHOˆ˜[YK˜\ÓÛ™Ê
-BˆBˆš]˜]H[ˆ“Øš™XÝœ™\]Z\™YÝX›JÙ^NˆÝš[™ÊNˆÝX›HH™\]Z\™Y
-Ù^JK˜\ÑÝX›J
-Bˆš]˜]H[ˆ“Øš™XÝ›Ü[Û˜[ÝX›JÙ^NˆÝš[™ÊNˆÝX›OÈHÚ[ˆ
-˜[˜[YHHÜ[Û˜[
-Ù^JJHÂˆ[“[Oˆ[ˆ[ÙHOˆ˜[YK˜\ÑÝX›J
-BˆB‚ˆš]˜]H[ˆ›Ø’œÛÛŠ›ØŽˆœšYÙR›Ø”Û˜\ÚÝ
-NˆÝš[™ÈHˆˆžÈš›Ø’YŽ‰ÚœÛÛ”Ýš[™Ê›Ø‹š›Ø’Y
-_KœÝ]HŽ‰ÚœÛÛ”Ýš[™Ê›Ø‹œÝ]K›˜[YJ_Kœ›ÙÜ™\ÜÔ\˜Ù[Ž‰Ú›Ø‹œ›ÙÜ™\ÜÔ\˜Ù[Îˆ›[Ÿ_Hˆˆ‚‚ˆš]˜]H[ˆ\›]^\ÚÒœÛÛŠ\ÚÎˆœšYÙU\›]^YÙ[\ÚÔÛ˜\ÚÝ
-NˆÝš[™ÈHZ[Ýš[™ÈÂˆ\[™
-	ÞÉÊBˆ\[™
-—\ÚÒYŽˆŠNÈ\[™
-œÛÛ”Ýš[™Ê\ÚË\ÚÒY
-JBˆ\[™
-‹œÝ]WŽˆŠNÈ\[™
-œÛÛ”Ýš[™Ê\ÚËœÝ]K›˜[YJJBˆ\[™
-‹›Ü\˜][Û—ŽˆŠNÈ\[™
-œÛÛ”Ýš[™Ê\ÚË›Ü\˜][ÛŠJBˆ\[™
-‹œ™\Ý[ŽˆŠNÈ\[™
-\ÚËœ™\Ý[œÛÛˆÎˆ›[ŠBˆ\[™
-‹™\œ›ÜÛÙWŽˆŠNÈ\[™
-\ÚË™\œ›ÜÛÙOË›]
-ŽšœÛÛ”Ýš[™ÊHÎˆ›[ŠBˆ\[™
-	ßIÊBˆB‚ˆš]˜]H[ˆØ[š]^™JY\ÜØYÙNˆÝš[™ÊNˆÝš[™ÈHY\ÜØYÙBˆœ™\XÙJ™YÙ^
-ŠÎ™š[_ÛÛ[
-N‹Ë×ÊÈŠK–Ü™YXÝY]\šWHŠBˆZÙJL
-BŸB
+    private fun executeAddTransition(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val payload = payload(command)
+        val kindName = payload.requiredString("kind")
+        val kind = runCatching { TransitionKind.valueOf(kindName) }
+            .getOrElse { throw IllegalArgumentException("unsupported transition kind") }
+        if (kind != TransitionKind.FADE_TO_BLACK) {
+            return error(
+                command,
+                BridgeErrorCode.CAPABILITY_NOT_ALLOWED,
+                "transition kind is not renderable in Bridge V1",
+                retryable = false,
+            )
+        }
+        val transition = ClipTransition(
+            id = payload.requiredString("id"),
+            fromClipId = payload.requiredString("fromClipId"),
+            toClipId = payload.requiredString("toClipId"),
+            durationUs = payload.requiredLong("durationUs"),
+            kind = kind,
+        )
+        require(transition.durationUs > 0L) { "durationUs must be positive" }
+        return dispatchWrite(command, EditorAction.Execute(AddClipTransitionCommand(transition)))
+    }
+
+    private fun executeHistory(command: BridgeCommandEnvelope, action: EditorAction): BridgeResultEnvelope {
+        val before = session.state.revision
+        session.dispatch(action)
+        return if (session.state.revision == before) {
+            success(command, "{\"changed\":false}")
+        } else {
+            success(command, "{\"changed\":true}")
+        }
+    }
+
+    private fun executeExport(command: BridgeCommandEnvelope): BridgeResultEnvelope = when (val reservation = jobs.reserveExport(command.messageId)) {
+        is BridgeJobReservation.Existing -> success(command, jobJson(reservation.job))
+        is BridgeJobReservation.Busy -> error(
+            command,
+            BridgeErrorCode.EXPORT_BUSY,
+            "another export is active",
+            retryable = true,
+            detailsJson = jobJson(reservation.activeJob),
+        )
+        is BridgeJobReservation.Started -> {
+            val jobId = reservation.job.jobId
+            val listener = object : BridgeExportListener {
+                override fun onStarted() {
+                    jobs.markRunning(jobId)
+                }
+
+                override fun onProgress(percent: Int) {
+                    jobs.updateProgress(jobId, percent.coerceIn(0, 100))
+                }
+
+                override fun onCompleted(resultJson: String) {
+                    jobs.succeed(jobId, resultJson)
+                }
+
+                override fun onFailed(message: String) {
+                    jobs.fail(jobId, BridgeErrorCode.EXPORT_FAILED, sanitize(message))
+                }
+
+                override fun onCancelled() {
+                    jobs.cancel(jobId)
+                }
+            }
+            val started = exportPort.start(session.state.project, listener)
+            if (started.isFailure) {
+                val message = started.exceptionOrNull()?.message ?: "export could not start"
+                jobs.fail(jobId, BridgeErrorCode.EXPORT_FAILED, sanitize(message))
+                error(command, BridgeErrorCode.EXPORT_FAILED, message, retryable = true)
+            } else {
+                success(command, jobJson(requireNotNull(jobs.get(jobId))))
+            }
+        }
+    }
+
+    private fun executeCancelExport(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val jobId = payload(command).requiredString("jobId")
+        val job = jobs.get(jobId) ?: return error(command, BridgeErrorCode.INVALID_ARGUMENT, "job not found", false)
+        val cancelled = exportPort.cancel()
+        if (cancelled.isFailure) {
+            return error(
+                command,
+                BridgeErrorCode.EXPORT_FAILED,
+                cancelled.exceptionOrNull()?.message ?: "export cancellation failed",
+                retryable = true,
+            )
+        }
+        jobs.cancel(jobId)
+        return success(command, jobJson(requireNotNull(jobs.get(job.jobId))))
+    }
+
+    private fun dispatchWrite(command: BridgeCommandEnvelope, action: EditorAction): BridgeResultEnvelope {
+        val beforeRevision = session.state.revision
+        session.dispatch(action)
+        val after = session.state
+        if (after.revision == beforeRevision) {
+            val message = after.lastError ?: "edit was not applied"
+            return error(command, mapDomainError(message), message, false)
+        }
+        return success(command, "{\"applied\":true}")
+    }
+
+    private fun requireClip(command: BridgeCommandEnvelope, clipId: String): BridgeResultEnvelope? {
+        val project = session.state.project
+        if (project.findClip(clipId) == null) {
+            return error(command, BridgeErrorCode.CLIP_NOT_FOUND, "clip not found", false)
+        }
+        val locked = project.compositionGraph.nodes.any { node ->
+            node.kind == CompositionNodeKind.LAYER && node.clipId == clipId && node.locked
+        }
+        return if (locked) {
+            error(command, BridgeErrorCode.CAPABILITY_NOT_ALLOWED, "clip is locked", false)
+        } else {
+            null
+        }
+    }
+
+    private fun allocateDuplicateId(clipId: String): String {
+        var suffix = 1
+        while (true) {
+            val candidate = if (suffix == 1) "$clipId-copy" else "$clipId-copy-$suffix"
+            if (session.state.project.findClip(candidate) == null) return candidate
+            suffix++
+        }
+    }
+
+    private fun success(command: BridgeCommandEnvelope, resultJson: String): BridgeResultEnvelope = BridgeResultEnvelope(
+        messageId = command.messageId,
+        success = true,
+        code = null,
+        projectRevision = session.state.revision,
+        resultJson = resultJson,
+        retryable = false,
+    )
+
+    private fun error(
+        command: BridgeCommandEnvelope,
+        code: BridgeErrorCode,
+        message: String,
+        retryable: Boolean,
+        detailsJson: String = "{}",
+    ): BridgeResultEnvelope = BridgeResultEnvelope(
+        messageId = command.messageId,
+        success = false,
+        code = code,
+        projectRevision = session.state.revision,
+        resultJson = "{\"message\":${jsonString(sanitize(message))},\"details\":$detailsJson}",
+        retryable = retryable,
+    )
+
+    private fun mapDomainError(message: String): BridgeErrorCode {
+        val lower = message.lowercase()
+        return when {
+            "overlap" in lower -> BridgeErrorCode.OVERLAPPING_CLIPS
+            "clip" in lower && "not found" in lower -> BridgeErrorCode.CLIP_NOT_FOUND
+            "track" in lower && "not found" in lower -> BridgeErrorCode.TRACK_NOT_FOUND
+            "asset" in lower && "unavailable" in lower -> BridgeErrorCode.ASSET_UNAVAILABLE
+            else -> BridgeErrorCode.INVALID_ARGUMENT
+        }
+    }
+
+    private fun payload(command: BridgeCommandEnvelope): JObject = try {
+        MiniJson.parse(command.payloadJson).asObject()
+    } catch (error: Throwable) {
+        throw IllegalArgumentException("payload must be a JSON object", error)
+    }
+
+    private fun JObject.requiredString(key: String): String = required(key).asString().also {
+        require(it.isNotBlank()) { "$key must not be blank" }
+    }
+
+    private fun JObject.optionalString(key: String): String? = when (val value = optional(key)) {
+        null, JNull -> null
+        else -> value.asString()
+    }
+
+    private fun JObject.requiredLong(key: String): Long = required(key).asLong()
+    private fun JObject.optionalLong(key: String): Long? = when (val value = optional(key)) {
+        null, JNull -> null
+        else -> value.asLong()
+    }
+    private fun JObject.requiredDouble(key: String): Double = required(key).asDouble()
+    private fun JObject.optionalDouble(key: String): Double? = when (val value = optional(key)) {
+        null, JNull -> null
+        else -> value.asDouble()
+    }
+
+    private fun jobJson(job: BridgeJobSnapshot): String = """{"jobId":${jsonString(job.jobId)},"state":${jsonString(job.state.name)},"progressPercent":${job.progressPercent ?: "null"}}"""
+
+    private fun sanitize(message: String): String = message
+        .replace(Regex("(?:file|content)://\\S+"), "[redacted-uri]")
+        .take(500)
+}

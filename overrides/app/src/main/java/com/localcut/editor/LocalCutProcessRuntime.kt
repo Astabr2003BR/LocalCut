@@ -7,8 +7,6 @@ import androidx.annotation.OptIn
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
 import com.localcut.editor.bridge.agent.AndroidMediaStoreBridgeExportTargetFactory
-import com.localcut.editor.bridge.agent.AsyncBridgeTermuxAgentPort
-import com.localcut.editor.bridge.agent.BridgeBackgroundTaskLauncher
 import com.localcut.editor.bridge.agent.BridgeActiveProjectContext
 import com.localcut.editor.bridge.agent.BridgeCommandExecutor
 import com.localcut.editor.bridge.agent.BridgeJobRegistry
@@ -40,13 +38,11 @@ import com.localcut.editor.session.PreviewLoadException
 import com.localcut.editor.session.ProjectPreviewLoader
 import com.localcut.editor.session.ProjectSession
 import com.localcut.editor.session.SharedPreferencesProjectRevisionClock
-import com.localcut.editor.termux.TermuxAgentEngineRuntime
 import com.localcut.editor.ui.editor.EditorViewModel
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 
 @UnstableApi
 @OptIn(ExperimentalApi::class)
@@ -150,19 +146,12 @@ class LocalCutProcessRuntime private constructor(context: Context) {
             scope = processScope,
             targetFactory = AndroidMediaStoreBridgeExportTargetFactory(appContext.contentResolver),
         )
-        val termuxAgentPort = AsyncBridgeTermuxAgentPort(
-            client = TermuxAgentEngineRuntime.get(appContext).developerClient,
-            launcher = BridgeBackgroundTaskLauncher { block ->
-                processScope.launch(Dispatchers.IO) { block() }
-            },
-        )
         bridgeCommandExecutor = BridgeCommandExecutor(
             session = session,
             playback = playbackPort,
             jobs = bridgeJobs,
             exportPort = bridgeExportPort,
             previewFramePort = previewController.bridgePreviewFramePort,
-            termuxAgentPort = termuxAgentPort,
         )
         val deviceId = AndroidKeystoreDeviceIdentityStore()
             .getOrCreatePublicIdentity()

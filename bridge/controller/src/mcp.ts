@@ -23,10 +23,6 @@ const READ_ONLY_CAPABILITIES = new Set<BridgeCapability>([
   "get_export_status",
   "get_errors",
   "get_preview_frame",
-  "get_termux_workspace_status",
-  "list_termux_workspace_files",
-  "read_termux_workspace_file",
-  "get_termux_agent_task",
 ]);
 
 const routingFields = {
@@ -290,15 +286,6 @@ function titleFor(capability: BridgeCapability): string {
 function descriptionFor(capability: BridgeCapability): string {
   if (capability === "get_preview_frame") {
     return "Capture the latest bounded LocalCut preview frame from the paired APK so an agent can visually inspect the current edit. The response includes image content plus frame metadata.";
-  }
-  if (capability === "read_termux_workspace_file") {
-    return "Queue a bounded UTF-8 source-file read through the paired LocalCut Termux Agent Engine. Retrieve the result with get_termux_agent_task.";
-  }
-  if (capability === "apply_termux_text_patch") {
-    return "Queue a SHA-guarded single-match text patch in the LocalCut workspace. Protected branches, secrets, keystores, traversal and external symlinks are rejected by the Termux Agent Engine.";
-  }
-  if (capability === "run_termux_agent_operation") {
-    return "Queue an allowlisted LocalCut development operation such as git status, tests or debug build. Critical operations stop at WAITING_APPROVAL.";
   }
   if (revisionRequiredCapabilities.has(capability)) {
     return `Execute LocalCut '${capability}'. Read current project state first and pass its expectedRevision. Commands are TTL-bound and routed only to the paired device.`;

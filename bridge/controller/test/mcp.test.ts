@@ -19,14 +19,9 @@ test("MCP exposes only allowlisted LocalCut edit tools plus explicit management 
   );
 });
 
-test("MCP OAuth scopes classify reads separately from editor and Termux writes", () => {
+test("MCP OAuth scopes classify reads separately from editor actions", () => {
   assert.deepEqual(securityScopesForCapability("get_project_state"), ["localcut:read"]);
   assert.deepEqual(securityScopesForCapability("get_preview_frame"), ["localcut:read"]);
-  assert.deepEqual(securityScopesForCapability("get_termux_workspace_status"), ["localcut:read"]);
-  assert.deepEqual(securityScopesForCapability("read_termux_workspace_file"), ["localcut:read"]);
-  assert.deepEqual(securityScopesForCapability("get_termux_agent_task"), ["localcut:read"]);
-  assert.deepEqual(securityScopesForCapability("apply_termux_text_patch"), ["localcut:write"]);
-  assert.deepEqual(securityScopesForCapability("run_termux_agent_operation"), ["localcut:write"]);
   assert.deepEqual(securityScopesForCapability("seek"), ["localcut:write"]);
   assert.deepEqual(securityScopesForCapability("move_clip"), ["localcut:write"]);
   assert.deepEqual(securityScopesForCapability("export_project"), ["localcut:write"]);
@@ -42,13 +37,6 @@ test("project writes and export require expectedRevision", () => {
     move.safeParse({ deviceId: "lc", projectId: "p", expectedRevision: 7, payload: {} }).success,
     true,
   );
-});
-
-test("Termux workspace tools do not invent editor revision preconditions", () => {
-  const read = buildToolInputSchema("read_termux_workspace_file");
-  const patch = buildToolInputSchema("apply_termux_text_patch");
-  assert.equal(read.safeParse({ deviceId: "lc", projectId: "p", payload: {} }).success, true);
-  assert.equal(patch.safeParse({ deviceId: "lc", projectId: "p", payload: {} }).success, true);
 });
 
 test("read tools do not invent a revision precondition", () => {

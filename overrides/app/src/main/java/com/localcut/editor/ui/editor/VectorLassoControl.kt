@@ -20,7 +20,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.consume
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -31,6 +30,7 @@ import com.localcut.editor.domain.design.CanvasPointPx
 import com.localcut.editor.domain.design.DesignElementGeometryPolicy
 import com.localcut.editor.domain.design.VectorLassoSelectionPolicy
 import com.localcut.editor.domain.history.DeleteDesignElementsCommand
+import com.localcut.editor.domain.model.DesignElement
 import com.localcut.editor.domain.model.ShapeKind
 import com.localcut.editor.session.EditorAction
 
@@ -74,7 +74,6 @@ fun VectorLassoControl(
                             message = null
                         },
                         onDrag = { change, _ ->
-                            change.consume()
                             if (gesture.size < 2048) {
                                 gesture = gesture + CanvasPointPx(
                                     change.position.x.toDouble(),
@@ -124,9 +123,7 @@ fun VectorLassoControl(
                     .asSequence()
                     .filter { element ->
                         val shape = element.shape
-                        shape?.kind == ShapeKind.PATH && shape.path != null &&
-                            playheadUs >= element.startUs &&
-                            playheadUs < element.startUs + element.durationUs
+                        shape?.kind == ShapeKind.PATH && shape.path != null && isActiveAt(element, playheadUs)
                     }
                     .forEach { element ->
                         val points = runCatching {
@@ -217,4 +214,14 @@ fun VectorLassoControl(
             )
         }
     }
+}
+
+private fun isActiveAt(element: DesignElement, playheadUs: Long): Boolean {
+    if (playheadUs < element.startUs) return false
+    val endUs = try {
+        Math.addExact(element.startUs, element.durationUs)
+    } catch (_: ArithmeticException) {
+        Long.MAX_VALUE
+    }
+    return playheadUs < endUs
 }

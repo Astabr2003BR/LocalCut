@@ -43,6 +43,9 @@ object StabilizationApplyPolicy {
         }
     }
 
+    fun hasAnyGeneratedStabilization(animations: List<PropertyAnimation>): Boolean =
+        animations.any(::isGeneratedChannel)
+
     fun removeGeneratedStabilization(animations: List<PropertyAnimation>): List<PropertyAnimation> {
         if (!hasGeneratedStabilization(animations)) return animations
         return animations.filterNot(::isGeneratedChannel)

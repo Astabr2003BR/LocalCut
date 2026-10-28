@@ -65,6 +65,13 @@ fun EditorBottomToolRail(
                 },
             )
 
+            if (activeTool == EditorToolId.SPEED && selection == EditorSelectionKind.VIDEO) {
+                ReverseMediaActionControl(
+                    buttonLabel = "Reverse",
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                )
+            }
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

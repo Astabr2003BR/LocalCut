@@ -16,13 +16,17 @@ class Media3CompositingSupportPolicyTest {
     }
 
     @Test
-    fun nonNeutralCompositingFailsExplicitlyUntilGpuBackendSupportsIt() {
-        val failure = Media3CompositionSupportPolicy.validate(
-            plan(CompositingSettings(blendMode = BlendMode.SCREEN)),
-            RenderMode.EXPORT,
-        ).exceptionOrNull() as RenderPlanException
+    fun everyNonNormalBlendModeFailsExplicitlyUntilSharedGpuBackendSupportsIt() {
+        BlendMode.values()
+            .filterNot { it == BlendMode.NORMAL }
+            .forEach { blendMode ->
+                val failure = Media3CompositionSupportPolicy.validate(
+                    plan(CompositingSettings(blendMode = blendMode)),
+                    RenderMode.EXPORT,
+                ).exceptionOrNull() as RenderPlanException
 
-        assertEquals(RenderPlanErrorCode.UNSUPPORTED_COMPOSITING, failure.code)
+                assertEquals("mode=$blendMode", RenderPlanErrorCode.UNSUPPORTED_COMPOSITING, failure.code)
+            }
     }
 
     private fun plan(compositing: CompositingSettings): RenderPlan = RenderPlan(

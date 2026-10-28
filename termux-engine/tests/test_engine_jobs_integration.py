@@ -8,7 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from localcut_engine import create_server, generate_token
+from localcut_creative_server import create_toolchain_server
+from localcut_engine import generate_token
 from localcut_jobs import JobStore, MediaSpool
 
 
@@ -57,13 +58,14 @@ class EngineJobsIntegrationTest(unittest.TestCase):
         probe.bind(("127.0.0.1", 0))
         self.port = probe.getsockname()[1]
         probe.close()
-        self.server = create_server(
+        self.server = create_toolchain_server(
             "127.0.0.1",
             self.port,
             self.token,
             job_store=self.store,
             media_spool=self.spool,
             analyzer=FakeAnalyzer(),
+            toolchain_capabilities=("OPENCV",),
             tracking_analyzer=FakeTrackingAnalyzer(),
         )
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -105,6 +107,7 @@ class EngineJobsIntegrationTest(unittest.TestCase):
             "ANALYZE_MEDIA",
             "FFPROBE",
             "ANALYZE_TRACKING",
+            "OPENCV",
             "OPENCV_GLOBAL_MOTION",
         ):
             self.assertIn(expected, result["capabilities"])

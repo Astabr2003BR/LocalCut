@@ -67,6 +67,7 @@ class StabilizationApplyPolicyTest {
         val all = listOf(unrelated) + generated
 
         assertTrue(StabilizationApplyPolicy.hasGeneratedStabilization(all))
+        assertTrue(StabilizationApplyPolicy.hasAnyGeneratedStabilization(all))
         assertEquals(listOf(unrelated), StabilizationApplyPolicy.removeGeneratedStabilization(all))
     }
 
@@ -80,17 +81,19 @@ class StabilizationApplyPolicyTest {
         )
 
         assertFalse(StabilizationApplyPolicy.hasGeneratedStabilization(manual))
+        assertFalse(StabilizationApplyPolicy.hasAnyGeneratedStabilization(manual))
         assertEquals(manual, StabilizationApplyPolicy.removeGeneratedStabilization(manual))
     }
 
     @Test
-    fun partialGeneratedSignatureFailsClosedAndIsNotRemoved() {
+    fun partialGeneratedSignatureIsDetectedButNotRemovedAsCompleteStabilization() {
         val partial = listOf(
             animation("transform.x", 0.0, "stabilize-x-0-0"),
             animation("transform.y", 0.0, "manual-y"),
         )
 
         assertFalse(StabilizationApplyPolicy.hasGeneratedStabilization(partial))
+        assertTrue(StabilizationApplyPolicy.hasAnyGeneratedStabilization(partial))
         assertEquals(partial, StabilizationApplyPolicy.removeGeneratedStabilization(partial))
     }
 }

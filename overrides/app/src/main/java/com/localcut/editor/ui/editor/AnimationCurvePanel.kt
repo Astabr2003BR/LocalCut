@@ -21,16 +21,26 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.CubicBezierCurve
 import com.localcut.editor.domain.model.EasingKind
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.PropertyAnimation
+
+data class StabilizationUiState(
+    val clipId: String? = null,
+    val running: Boolean = false,
+    val message: String? = null,
+    val isError: Boolean = false,
+)
 
 @Composable
 fun AnimationCurvePanel(
     project: Project,
     selectedClipId: String?,
     onSetPropertyAnimations: (List<PropertyAnimation>) -> Unit,
+    stabilizationState: StabilizationUiState = StabilizationUiState(),
+    onStabilizeRequested: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val clip = selectedClipId?.let(project::findClip)
@@ -47,17 +57,9 @@ fun AnimationCurvePanel(
             )
             return@Surface
         }
-        val animations = clip.propertyAnimations
-        if (animations.isEmpty()) {
-            Text(
-                "Este clipe ainda não possui animações de propriedade. Aplique uma animação/preset primeiro.",
-                modifier = Modifier.padding(12.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            return@Surface
-        }
 
+        val asset = project.assets.firstOrNull { it.id == clip.assetId }
+        val animations = clip.propertyAnimations
         var x1 by remember(clip.id) { mutableFloatStateOf(0.42f) }
         var y1 by remember(clip.id) { mutableFloatStateOf(0f) }
         var x2 by remember(clip.id) { mutableFloatStateOf(0.58f) }
@@ -70,6 +72,42 @@ fun AnimationCurvePanel(
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
+            if (asset?.type == AssetType.VIDEO) {
+                val runningThisClip = stabilizationState.running && stabilizationState.clipId == clip.id
+                Text("Estabilização", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Analisa o movimento no UserLAnd/Termux com OpenCV e gera keyframes de correção.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FilledTonalButton(
+                    onClick = { onStabilizeRequested(clip.id) },
+                    enabled = !stabilizationState.running,
+                ) {
+                    Text(if (runningThisClip) "Analisando…" else "Estabilizar vídeo")
+                }
+                if (stabilizationState.clipId == clip.id && stabilizationState.message != null) {
+                    Text(
+                        stabilizationState.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (stabilizationState.isError) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
+
+            if (animations.isEmpty()) {
+                Text(
+                    "Este clipe ainda não possui animações de propriedade. Aplique uma animação/preset ou estabilização primeiro.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                return@Column
+            }
+
             Text("Curvas / easing", style = MaterialTheme.typography.titleSmall)
             Text(
                 "${animations.size} propriedade(s) animada(s)",

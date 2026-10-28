@@ -1,6 +1,7 @@
 package com.localcut.editor.analysis
 
 import com.localcut.editor.domain.model.PropertyValue
+import com.localcut.editor.domain.model.TransformValue
 import com.localcut.editor.termux.TermuxGlobalMotionAnalysis
 import com.localcut.editor.termux.TermuxGlobalMotionSample
 import org.junit.Assert.assertEquals
@@ -71,6 +72,29 @@ class TermuxGlobalMotionAdapterTest {
         val x = animations.first { it.propertyId == "transform.x" }
         assertEquals(listOf(0L, 150_000L), x.keyframes.map { it.offsetUs })
         assertEquals(-3.0, (x.keyframes.last().value as PropertyValue.Scalar).value, 1e-9)
+    }
+
+    @Test
+    fun baseTransformAndCanvasAreForwardedToPlanner() {
+        val result = TermuxGlobalMotionAnalysis(
+            framesDecoded = 4,
+            frameRate = 30.0,
+            samples = listOf(
+                TermuxGlobalMotionSample(1, 100_000L, 54.0, 0.0, 0.0, 1.0, 1.0),
+            ),
+        )
+        val animations = TermuxGlobalMotionAdapter.toStabilizationAnimations(
+            result = result,
+            baseTransform = TransformValue(x = 100.0, scale = 1.2),
+            canvasWidth = 1080,
+            canvasHeight = 1920,
+        )
+        fun scalar(property: String) = (
+            animations.first { it.propertyId == property }.keyframes.last().value as PropertyValue.Scalar
+        ).value
+
+        assertEquals(46.0, scalar("transform.x"), 1e-9)
+        assertEquals(1.32, scalar("transform.scale"), 1e-9)
     }
 
     @Test

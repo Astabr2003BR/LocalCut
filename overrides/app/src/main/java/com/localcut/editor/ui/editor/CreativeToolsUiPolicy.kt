@@ -11,6 +11,7 @@ import com.localcut.editor.domain.model.EasingKind
 import com.localcut.editor.domain.model.EffectInstance
 import com.localcut.editor.domain.model.EffectParameter
 import com.localcut.editor.domain.model.EqBand
+import com.localcut.editor.domain.model.FreezeSegment
 import com.localcut.editor.domain.model.LimiterSettings
 import com.localcut.editor.domain.model.MaskKind
 import com.localcut.editor.domain.model.MaskPoint
@@ -18,6 +19,7 @@ import com.localcut.editor.domain.model.MaskSpec
 import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.model.SpeedPoint
 import com.localcut.editor.domain.model.TimeMap
+import com.localcut.editor.domain.time.TimeMapEvaluator
 import kotlin.math.roundToLong
 
 enum class CreativeToolsSection {
@@ -73,6 +75,38 @@ object CreativeToolsUiPolicy {
             freezeSegments = emptyList(),
         )
     }
+
+    fun freezeCurrentFrame(
+        source: TimeMap,
+        presentationOffsetUs: Long,
+        sourceRangeUs: Long,
+        freezeDurationUs: Long,
+    ): TimeMap {
+        require(sourceRangeUs > 0L) { "source range must be positive" }
+        require(presentationOffsetUs >= 0L) { "freeze presentation offset must be non-negative" }
+        require(freezeDurationUs > 0L) { "freeze duration must be positive" }
+        require(source.validationIssues().isEmpty()) { "invalid source time map" }
+        require(!source.reverse) { "mobile freeze does not support reverse" }
+        require(source.speedPoints.isEmpty()) { "mobile freeze does not support speed ramps" }
+        require(source.freezeSegments.isEmpty()) { "remove the existing freeze before adding another" }
+
+        val basePresentationDurationUs = TimeMapEvaluator.presentationDurationUs(sourceRangeUs, source)
+        require(presentationOffsetUs < basePresentationDurationUs) { "freeze position must be inside the clip" }
+        val sourceOffsetUs = TimeMapEvaluator.sourceOffsetAt(source, presentationOffsetUs, sourceRangeUs)
+        val result = source.copy(
+            freezeSegments = listOf(
+                FreezeSegment(
+                    startOffsetUs = presentationOffsetUs,
+                    durationUs = freezeDurationUs,
+                    sourceOffsetUs = sourceOffsetUs,
+                ),
+            ),
+        )
+        require(result.validationIssues().isEmpty()) { "freeze produced invalid time map" }
+        return result
+    }
+
+    fun clearFreeze(source: TimeMap): TimeMap = source.copy(freezeSegments = emptyList())
 
     fun accelerationRamp(sourceRangeUs: Long): TimeMap {
         require(sourceRangeUs > 0L) { "source range must be positive" }

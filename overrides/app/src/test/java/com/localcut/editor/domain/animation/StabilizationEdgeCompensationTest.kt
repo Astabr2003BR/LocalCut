@@ -26,9 +26,10 @@ class StabilizationEdgeCompensationTest {
     }
 
     @Test
-    fun tenPercentTranslationRequiresTenPercentOverscanOnThatAxis() {
+    fun tenPercentPreScaleTranslationRequiresReciprocalCoverage() {
+        val expected = 1.0 / 0.9
         assertEquals(
-            1.1,
+            expected,
             StabilizationEdgeCompensation.requiredCoverageScale(
                 canvasWidth = 1080,
                 canvasHeight = 1920,
@@ -39,7 +40,7 @@ class StabilizationEdgeCompensationTest {
             1e-9,
         )
         assertEquals(
-            1.1,
+            expected,
             StabilizationEdgeCompensation.requiredCoverageScale(
                 canvasWidth = 1080,
                 canvasHeight = 1920,
@@ -52,41 +53,44 @@ class StabilizationEdgeCompensationTest {
     }
 
     @Test
-    fun returnedScaleContainsAllCanvasCornersAfterInverseCorrection() {
+    fun returnedScaleContainsAllNdcCornersForActualPostTransformOrder() {
         val width = 1080
         val height = 1920
-        val tx = -48.0
-        val ty = 31.0
+        val txPx = -48.0
+        val tyPx = 31.0
         val rotation = 7.0
         val scale = StabilizationEdgeCompensation.requiredCoverageScale(
             canvasWidth = width,
             canvasHeight = height,
-            translationX = tx,
-            translationY = ty,
+            translationX = txPx,
+            translationY = tyPx,
             rotationDeg = rotation,
         )
 
+        val tx = txPx / (width / 2.0)
+        val ty = tyPx / (height / 2.0)
         val radians = rotation * PI / 180.0
         val c = cos(radians)
         val s = sin(radians)
-        val halfW = width / 2.0
-        val halfH = height / 2.0
-        listOf(-halfW, halfW).forEach { x ->
-            listOf(-halfH, halfH).forEach { y ->
-                val shiftedX = x - tx
-                val shiftedY = y - ty
-                val localX = c * shiftedX + s * shiftedY
-                val localY = -s * shiftedX + c * shiftedY
-                assertTrue(abs(localX) <= halfW * scale + 1e-7)
-                assertTrue(abs(localY) <= halfH * scale + 1e-7)
+        listOf(-1.0, 1.0).forEach { x ->
+            listOf(-1.0, 1.0).forEach { y ->
+                // Renderer order: M = S * R * T. Invert target NDC corner back to source NDC.
+                val unscaledX = x / scale
+                val unscaledY = y / scale
+                val unrotatedX = c * unscaledX + s * unscaledY
+                val unrotatedY = -s * unscaledX + c * unscaledY
+                val sourceX = unrotatedX - tx
+                val sourceY = unrotatedY - ty
+                assertTrue(abs(sourceX) <= 1.0 + 1e-7)
+                assertTrue(abs(sourceY) <= 1.0 + 1e-7)
             }
         }
     }
 
     @Test
-    fun quarterTurnOnPortraitCanvasUsesAspectRatioCoverage() {
+    fun quarterTurnNeedsNoExtraCoverageInMedia3NdcSquare() {
         assertEquals(
-            1920.0 / 1080.0,
+            1.0,
             StabilizationEdgeCompensation.requiredCoverageScale(
                 canvasWidth = 1080,
                 canvasHeight = 1920,
@@ -96,6 +100,19 @@ class StabilizationEdgeCompensationTest {
             ),
             1e-9,
         )
+    }
+
+    @Test
+    fun translationAtOrBeyondNdcBoundaryCannotBeRecoveredByScaling() {
+        assertThrows(IllegalArgumentException::class.java) {
+            StabilizationEdgeCompensation.requiredCoverageScale(
+                canvasWidth = 1080,
+                canvasHeight = 1920,
+                translationX = 540.0,
+                translationY = 0.0,
+                rotationDeg = 0.0,
+            )
+        }
     }
 
     @Test

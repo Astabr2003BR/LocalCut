@@ -58,7 +58,6 @@ sealed interface Media3BlueprintItem {
         val opacity: Double,
         val volume: Double,
         val keyframes: List<TransformKeyframe>,
-        val propertyAnimations: List<PropertyAnimation> = emptyList(),
         val imageFrameRate: Int?,
         val fadeInUs: Long = 0L,
         val fadeOutUs: Long = 0L,
@@ -66,6 +65,7 @@ sealed interface Media3BlueprintItem {
         val effects: List<EffectInstance> = emptyList(),
         val timeMap: TimeMap = TimeMap(),
         val audioProcessing: AudioProcessingSettings = AudioProcessingSettings(),
+        val propertyAnimations: List<PropertyAnimation> = emptyList(),
     ) : Media3BlueprintItem
 }
 
@@ -108,7 +108,6 @@ object Media3CompositionBlueprintCompiler {
                         opacity = segment.opacity,
                         volume = segment.volume,
                         keyframes = segment.keyframes,
-                        propertyAnimations = segment.propertyAnimations,
                         imageFrameRate = segment.imageFrameRate,
                         fadeInUs = segment.fadeInUs,
                         fadeOutUs = segment.fadeOutUs,
@@ -116,6 +115,7 @@ object Media3CompositionBlueprintCompiler {
                         effects = segment.effects,
                         timeMap = segment.timeMap,
                         audioProcessing = segment.audioProcessing,
+                        propertyAnimations = segment.propertyAnimations,
                     )
                 }
             },

@@ -32,6 +32,11 @@ internal object TermuxEngineJobRequestEncoder {
         } else {
             null
         }
+        val reverse = if (input.mode == TermuxAnalyzeMediaMode.REVERSE) {
+            input.reverseOptions ?: TermuxReverseOptions()
+        } else {
+            null
+        }
         return buildString {
             append('{'); appendCommon(requestId, token, "CREATE_JOB")
             append(",\"jobType\":\"ANALYZE_MEDIA\",\"idempotencyKey\":"); append(jsonString(key))
@@ -45,6 +50,9 @@ internal object TermuxEngineJobRequestEncoder {
                 append(",\"maxFrames\":"); append(it.maxFrames)
                 append(",\"sampleEvery\":"); append(it.sampleEvery)
                 append(",\"maxCorners\":"); append(it.maxCorners)
+            }
+            reverse?.let {
+                append(",\"chunkDurationUs\":"); append(it.chunkDurationUs)
             }
             append("}}\n")
         }

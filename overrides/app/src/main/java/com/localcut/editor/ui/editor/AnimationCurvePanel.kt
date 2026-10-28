@@ -33,6 +33,8 @@ import com.localcut.editor.domain.model.EasingKind
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.termux.TermuxAgentEngineRuntime
+import com.localcut.editor.termux.TermuxTrackingQuality
+import com.localcut.editor.termux.TermuxTrackingQualityPolicy
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -73,6 +75,7 @@ fun AnimationCurvePanel(
         val latestOnSetPropertyAnimations by rememberUpdatedState(onSetPropertyAnimations)
         var stabilization by remember(clip.id) { mutableStateOf(StabilizationUiState()) }
         var stabilizationStrength by remember(clip.id) { mutableFloatStateOf(1f) }
+        var trackingQuality by remember(clip.id) { mutableStateOf(TermuxTrackingQuality.NORMAL) }
         var x1 by remember(clip.id) { mutableFloatStateOf(0.42f) }
         var y1 by remember(clip.id) { mutableFloatStateOf(0f) }
         var x2 by remember(clip.id) { mutableFloatStateOf(0.58f) }
@@ -92,6 +95,38 @@ fun AnimationCurvePanel(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text("Qualidade da análise", style = MaterialTheme.typography.labelSmall)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    listOf(
+                        TermuxTrackingQuality.FAST to "Rápido",
+                        TermuxTrackingQuality.NORMAL to "Normal",
+                        TermuxTrackingQuality.PRECISE to "Preciso",
+                    ).forEach { (quality, label) ->
+                        if (trackingQuality == quality) {
+                            FilledTonalButton(
+                                onClick = { trackingQuality = quality },
+                                enabled = !stabilization.running,
+                            ) { Text(label) }
+                        } else {
+                            OutlinedButton(
+                                onClick = { trackingQuality = quality },
+                                enabled = !stabilization.running,
+                            ) { Text(label) }
+                        }
+                    }
+                }
+                Text(
+                    when (trackingQuality) {
+                        TermuxTrackingQuality.FAST -> "Rápido: menor uso de CPU e menos amostras."
+                        TermuxTrackingQuality.NORMAL -> "Normal: equilíbrio entre velocidade e precisão."
+                        TermuxTrackingQuality.PRECISE -> "Preciso: mais frames e pontos; exige mais processamento."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Text(
                     "Força ${(stabilizationStrength * 100f).roundToInt()}%",
                     style = MaterialTheme.typography.labelSmall,
@@ -108,12 +143,13 @@ fun AnimationCurvePanel(
                             val snapshotClip = clip
                             val snapshotAsset = asset
                             val snapshotStrength = stabilizationStrength.toDouble()
+                            val snapshotTrackingOptions = TermuxTrackingQualityPolicy.options(trackingQuality)
                             stabilization = StabilizationUiState(running = true, message = "Analisando movimento…")
                             scope.launch {
                                 runCatching {
                                     val motion = TermuxAgentEngineRuntime.get(appContext)
                                         .mediaTrackingCoordinator
-                                        .analyze(snapshotAsset)
+                                        .analyze(snapshotAsset, snapshotTrackingOptions)
                                         .getOrThrow()
                                     val correction = TermuxGlobalMotionAdapter.toStabilizationAnimations(
                                         result = motion,

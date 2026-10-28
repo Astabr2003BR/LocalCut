@@ -75,6 +75,9 @@ fun DrawStrokePad(
     var onionSkinEnabled by remember(project.id) { mutableStateOf(true) }
     var exposureFrames by remember(project.id) { mutableIntStateOf(1) }
     var eraserEnabled by remember(project.id) { mutableStateOf(false) }
+    var stabilizationStrength by remember(project.id) {
+        mutableIntStateOf(DrawStrokePadPolicy.DEFAULT_STABILIZATION_STRENGTH)
+    }
     val previewColor = drawColorPresets.firstOrNull { it.argb == strokeArgb }?.color ?: Color(strokeArgb)
     val gestureColor = if (eraserEnabled) Color(0xFFFF6B6B) else previewColor.copy(alpha = brushOpacity.toFloat())
 
@@ -222,6 +225,20 @@ fun DrawStrokePad(
                     modifier = Modifier.weight(1f),
                 )
             }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Estabilização $stabilizationStrength%",
+                    modifier = Modifier.width(112.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Slider(
+                    value = stabilizationStrength.toFloat(),
+                    onValueChange = { stabilizationStrength = it.roundToInt().coerceIn(0, 100) },
+                    valueRange = 0f..100f,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
 
         Canvas(
@@ -241,6 +258,7 @@ fun DrawStrokePad(
                     frameByFrameEnabled,
                     exposureFrames,
                     eraserEnabled,
+                    stabilizationStrength,
                     project.fps,
                 ) {
                     detectDragGestures(
@@ -294,11 +312,15 @@ fun DrawStrokePad(
                                     } else {
                                         null
                                     }
+                                    val preparedPoints = DrawStrokePadPolicy.prepareStrokePoints(
+                                        points = points,
+                                        stabilizationStrength = stabilizationStrength,
+                                    )
                                     val element = DrawStrokePolicy.createPathElement(
                                         id = DrawStrokePadPolicy.nextStrokeId(project.designElements.mapTo(hashSetOf()) { it.id }),
                                         startUs = exposureWindow?.startUs ?: playheadUs.coerceAtLeast(0L),
                                         durationUs = exposureWindow?.durationUs ?: DrawStrokePadPolicy.DEFAULT_DURATION_US,
-                                        points = points,
+                                        points = preparedPoints,
                                         canvasWidthPx = size.width.toDouble(),
                                         canvasHeightPx = size.height.toDouble(),
                                         strokeArgb = strokeArgb,

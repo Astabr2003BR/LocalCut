@@ -11,6 +11,7 @@ import com.localcut.editor.data.project.asString
 import com.localcut.editor.data.project.jsonString
 import com.localcut.editor.data.project.optional
 import com.localcut.editor.data.project.required
+import kotlin.math.roundToLong
 
 internal object TermuxEngineJobRequestEncoder {
     private val REQUEST_ID = Regex("^[A-Za-z0-9_-]{8,128}$")
@@ -25,14 +26,25 @@ internal object TermuxEngineJobRequestEncoder {
         require(input.sizeBytes > 0L) { "TERMUX_ENGINE_MEDIA_LENGTH_INVALID" }
         require(input.displayName == null || input.displayName.length <= 512) { "TERMUX_ENGINE_DISPLAY_NAME_INVALID" }
         require(input.sourceDurationUs == null || input.sourceDurationUs >= 0L) { "TERMUX_ENGINE_MEDIA_DURATION_INVALID" }
+        val tracking = if (input.mode == TermuxAnalyzeMediaMode.TRACKING) {
+            input.trackingOptions ?: TermuxTrackingOptions()
+        } else {
+            null
+        }
         return buildString {
             append('{'); appendCommon(requestId, token, "CREATE_JOB")
             append(",\"jobType\":\"ANALYZE_MEDIA\",\"idempotencyKey\":"); append(jsonString(key))
-            append(",\"input\":{\"mode\":\"MEDIA\",\"assetId\":"); append(jsonString(input.assetId))
+            append(",\"input\":{\"mode\":"); append(jsonString(input.mode.name))
+            append(",\"assetId\":"); append(jsonString(input.assetId))
             input.displayName?.let { append(",\"displayName\":"); append(jsonString(it)) }
             append(",\"mimeType\":"); append(jsonString(input.mimeType))
             append(",\"sizeBytes\":"); append(input.sizeBytes)
             input.sourceDurationUs?.let { append(",\"sourceDurationUs\":"); append(it) }
+            tracking?.let {
+                append(",\"maxFrames\":"); append(it.maxFrames)
+                append(",\"sampleEvery\":"); append(it.sampleEvery)
+                append(",\"maxCorners\":"); append(it.maxCorners)
+            }
             append("}}\n")
         }
     }
@@ -73,6 +85,8 @@ internal object TermuxEngineJobRequestEncoder {
 }
 
 internal object TermuxEngineJobResponseParser {
+    private const val GLOBAL_MOTION_MODE = "opencv-global-motion-v1"
+
     fun parseJob(root: JObject): TermuxEngineJob {
         requireProtocol(root)
         return parseJobObject(root.required("job").asObject())
@@ -100,7 +114,16 @@ internal object TermuxEngineJobResponseParser {
         val progress = job.required("progress").asInt().also { require(it in 0..100) }
         val errorCode = (job.optional("error") as? JObject)?.optional("code")?.let { runCatching { it.asString() }.getOrNull() }
         val output = job.optional("output") as? JObject
-        val analysis = (output?.optional("analysis") as? JObject)?.let(::parseAnalysis)
+        val analysisMode = output?.optional("analysisMode")?.let { value ->
+            if (value is JNull) null else runCatching { value.asString() }.getOrNull()
+        }
+        val analysisObject = output?.optional("analysis") as? JObject
+        val globalMotion = if (analysisMode == GLOBAL_MOTION_MODE && analysisObject != null) {
+            parseGlobalMotion(analysisObject)
+        } else {
+            null
+        }
+        val analysis = if (analysisObject != null && globalMotion == null) parseAnalysis(analysisObject) else null
         return TermuxEngineJob(
             id = job.required("id").asString(),
             type = job.required("type").asString(),
@@ -108,7 +131,36 @@ internal object TermuxEngineJobResponseParser {
             progress = progress,
             errorCode = errorCode,
             analysis = analysis,
+            analysisMode = analysisMode,
+            globalMotion = globalMotion,
         )
+    }
+
+    private fun parseGlobalMotion(root: JObject): TermuxGlobalMotionAnalysis {
+        val framesDecoded = root.required("framesDecoded").asInt()
+        val frameRate = root.optional("frameRate")?.let { value ->
+            if (value is JNull) null else value.asDouble()
+        }
+        val samples = root.required("samples").asArray().values.map { value ->
+            val sample = value.asObject()
+            val frameIndex = sample.required("frameIndex").asInt()
+            val timeUs = sample.optional("timeUs")?.let { candidate ->
+                if (candidate is JNull) null else candidate.asLong()
+            } ?: run {
+                val fps = requireNotNull(frameRate) { "TERMUX_TRACKING_TIME_OR_FPS_REQUIRED" }
+                (frameIndex.toDouble() * 1_000_000.0 / fps).roundToLong()
+            }
+            TermuxGlobalMotionSample(
+                frameIndex = frameIndex,
+                timeUs = timeUs,
+                dx = sample.required("dx").asDouble(),
+                dy = sample.required("dy").asDouble(),
+                rotationDeg = sample.required("rotationDeg").asDouble(),
+                scale = sample.required("scale").asDouble(),
+                confidence = sample.required("confidence").asDouble(),
+            )
+        }
+        return TermuxGlobalMotionAnalysis(framesDecoded, frameRate, samples)
     }
 
     private fun parseAnalysis(root: JObject): TermuxMediaAnalysis {

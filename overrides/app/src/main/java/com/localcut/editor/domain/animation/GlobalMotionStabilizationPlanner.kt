@@ -5,6 +5,7 @@ import com.localcut.editor.domain.model.EasingKind
 import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.model.PropertyKeyframe
 import com.localcut.editor.domain.model.PropertyValue
+import com.localcut.editor.domain.model.TransformValue
 
 
 data class GlobalMotionSample(
@@ -26,9 +27,29 @@ object GlobalMotionStabilizationPlanner {
         samples: List<GlobalMotionSample>,
         strength: Double = 1.0,
         minConfidence: Double = 0.5,
+        baseTransform: TransformValue = TransformValue(),
+        canvasWidth: Int? = null,
+        canvasHeight: Int? = null,
+        maxEdgeCompensationScale: Double = 2.0,
     ): List<PropertyAnimation> {
         require(strength.isFinite() && strength in 0.0..1.0) { "stabilization strength must be in 0..1" }
         require(minConfidence.isFinite() && minConfidence in 0.0..1.0) { "stabilization confidence must be in 0..1" }
+        require(
+            baseTransform.x.isFinite() &&
+                baseTransform.y.isFinite() &&
+                baseTransform.rotationDeg.isFinite() &&
+                baseTransform.scale.isFinite() &&
+                baseTransform.scale > 0.0
+        ) { "stabilization base transform invalid" }
+        require((canvasWidth == null) == (canvasHeight == null)) {
+            "stabilization canvas dimensions must be provided together"
+        }
+        if (canvasWidth != null && canvasHeight != null) {
+            require(canvasWidth > 0 && canvasHeight > 0) { "stabilization canvas must be positive" }
+            require(maxEdgeCompensationScale.isFinite() && maxEdgeCompensationScale >= 1.0) {
+                "stabilization max edge compensation scale invalid"
+            }
+        }
         if (samples.isEmpty()) return emptyList()
         validateSamples(samples)
 
@@ -36,10 +57,10 @@ object GlobalMotionStabilizationPlanner {
         var cumulativeY = 0.0
         var cumulativeRotation = 0.0
         var cumulativeScale = 1.0
-        val xValues = mutableListOf(0L to 0.0)
-        val yValues = mutableListOf(0L to 0.0)
-        val rotationValues = mutableListOf(0L to 0.0)
-        val scaleValues = mutableListOf(0L to 1.0)
+        val xValues = mutableListOf(0L to canonicalZero(baseTransform.x))
+        val yValues = mutableListOf(0L to canonicalZero(baseTransform.y))
+        val rotationValues = mutableListOf(0L to canonicalZero(baseTransform.rotationDeg))
+        val scaleValues = mutableListOf(0L to baseTransform.scale)
 
         samples.forEach { sample ->
             if (sample.confidence >= minConfidence) {
@@ -56,13 +77,37 @@ object GlobalMotionStabilizationPlanner {
                 ) { "stabilization accumulation overflow" }
             }
 
-            xValues += sample.offsetUs to canonicalZero(-cumulativeX * strength)
-            yValues += sample.offsetUs to canonicalZero(-cumulativeY * strength)
-            rotationValues += sample.offsetUs to canonicalZero(-cumulativeRotation * strength)
+            val correctionX = canonicalZero(-cumulativeX * strength)
+            val correctionY = canonicalZero(-cumulativeY * strength)
+            val correctionRotation = canonicalZero(-cumulativeRotation * strength)
             val inverseScale = 1.0 / cumulativeScale
             val correctionScale = 1.0 + (inverseScale - 1.0) * strength
             require(correctionScale.isFinite() && correctionScale > 0.0) { "stabilization scale invalid" }
-            scaleValues += sample.offsetUs to correctionScale
+
+            val edgeScale = if (canvasWidth != null && canvasHeight != null) {
+                StabilizationEdgeCompensation.requiredCoverageScale(
+                    canvasWidth = canvasWidth,
+                    canvasHeight = canvasHeight,
+                    translationX = correctionX,
+                    translationY = correctionY,
+                    rotationDeg = correctionRotation,
+                )
+            } else {
+                1.0
+            }
+            val relativeScale = maxOf(correctionScale, edgeScale)
+            if (canvasWidth != null) {
+                require(relativeScale <= maxEdgeCompensationScale) {
+                    "STABILIZATION_EDGE_COMPENSATION_TOO_LARGE"
+                }
+            }
+            val finalScale = baseTransform.scale * relativeScale
+            require(finalScale.isFinite() && finalScale > 0.0) { "stabilization scale invalid" }
+
+            xValues += sample.offsetUs to canonicalZero(baseTransform.x + correctionX)
+            yValues += sample.offsetUs to canonicalZero(baseTransform.y + correctionY)
+            rotationValues += sample.offsetUs to canonicalZero(baseTransform.rotationDeg + correctionRotation)
+            scaleValues += sample.offsetUs to finalScale
         }
 
         return listOf(

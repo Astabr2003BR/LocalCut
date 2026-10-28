@@ -7,6 +7,8 @@ import com.localcut.editor.data.project.asObject
 import com.localcut.editor.data.project.asString
 import com.localcut.editor.data.project.required
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.MessageDigest
@@ -81,6 +83,73 @@ class SocketTermuxEngineJobClient(
                 }
             }
         }
+
+    override suspend fun downloadGeneratedMedia(
+        jobId: String,
+        destination: File,
+    ): Result<TermuxGeneratedMediaDownload> = withContext(Dispatchers.IO) {
+        runCatching {
+            require(!destination.exists()) { "TERMUX_GENERATED_MEDIA_DESTINATION_EXISTS" }
+            val absoluteDestination = destination.absoluteFile
+            val parent = requireNotNull(absoluteDestination.parentFile) { "TERMUX_GENERATED_MEDIA_DESTINATION_INVALID" }
+            if (!parent.exists()) require(parent.mkdirs()) { "TERMUX_GENERATED_MEDIA_DESTINATION_CREATE_FAILED" }
+            require(parent.isDirectory) { "TERMUX_GENERATED_MEDIA_DESTINATION_INVALID" }
+
+            val requestId = UUID.randomUUID().toString()
+            val request = TermuxEngineJobRequestEncoder.getGeneratedMedia(requestId, token(), jobId)
+            val temp = File(parent, ".${absoluteDestination.name}.${UUID.randomUUID()}.part")
+            require(temp.createNewFile()) { "TERMUX_GENERATED_MEDIA_TEMP_CREATE_FAILED" }
+            try {
+                Socket().use { socket ->
+                    socket.soTimeout = readTimeoutMs
+                    socket.connect(InetSocketAddress(host, port), connectTimeoutMs)
+                    socket.getOutputStream().apply {
+                        write(request.toByteArray(Charsets.UTF_8))
+                        flush()
+                    }
+
+                    val root = readResponse(socket, requestId)
+                    val header = TermuxEngineJobResponseParser.parseGeneratedMediaHeader(root)
+                    require(header.job.status == TermuxEngineJobStatus.SUCCEEDED) {
+                        "TERMUX_GENERATED_MEDIA_JOB_NOT_SUCCEEDED"
+                    }
+
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    var remaining = header.contentLength
+                    FileOutputStream(temp, false).use { output ->
+                        val input = socket.getInputStream()
+                        val buffer = ByteArray(64 * 1024)
+                        while (remaining > 0L) {
+                            val requested = minOf(buffer.size.toLong(), remaining).toInt()
+                            val count = input.read(buffer, 0, requested)
+                            if (count == -1) error("TERMUX_GENERATED_MEDIA_TRUNCATED")
+                            if (count == 0) continue
+                            output.write(buffer, 0, count)
+                            digest.update(buffer, 0, count)
+                            remaining -= count.toLong()
+                        }
+                        output.flush()
+                        output.fd.sync()
+                    }
+
+                    require(temp.length() == header.contentLength) { "TERMUX_GENERATED_MEDIA_LENGTH_MISMATCH" }
+                    val localSha = digest.digest().joinToString("") { "%02x".format(it) }
+                    require(localSha.equals(header.sha256, ignoreCase = true)) {
+                        "TERMUX_GENERATED_MEDIA_DIGEST_MISMATCH"
+                    }
+                    require(temp.renameTo(absoluteDestination)) { "TERMUX_GENERATED_MEDIA_PUBLISH_FAILED" }
+
+                    TermuxGeneratedMediaDownload(
+                        job = header.job,
+                        media = header.media,
+                        file = absoluteDestination,
+                    )
+                }
+            } finally {
+                if (temp.exists()) temp.delete()
+            }
+        }
+    }
 
     private suspend fun exchange(factory: (String) -> String): Result<JObject> = withContext(Dispatchers.IO) {
         runCatching {

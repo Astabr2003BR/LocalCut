@@ -38,6 +38,20 @@ class JobStoreContractTest(unittest.TestCase):
             self.assertEqual("FAILED", job["status"])
             self.assertEqual("ENGINE_RESTARTED_DURING_JOB", job["error"]["code"])
 
+    def test_tracking_job_is_allowlisted_but_arbitrary_job_type_is_not(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = JobStore(Path(td) / "jobs.sqlite3")
+            tracking = store.create_job(
+                "localcut",
+                "ANALYZE_TRACKING",
+                "tracking-asset-1-v1",
+                {"mode": "MEDIA", "assetId": "asset-1", "maxFrames": 300, "sampleEvery": 2},
+            )
+            self.assertEqual("QUEUED", tracking["status"])
+            self.assertEqual("ANALYZE_TRACKING", tracking["type"])
+            with self.assertRaisesRegex(ValueError, "JOB_TYPE_NOT_ALLOWED"):
+                store.create_job("localcut", "EXEC_SHELL", "bad-job", {"command": "sh"})
+
     def test_cancel_only_changes_non_terminal_job(self):
         with tempfile.TemporaryDirectory() as td:
             store = JobStore(Path(td) / "jobs.sqlite3")

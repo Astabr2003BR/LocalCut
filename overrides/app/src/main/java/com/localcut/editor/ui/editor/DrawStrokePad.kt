@@ -123,7 +123,7 @@ fun DrawStrokePad(
             when {
                 eraserEnabled -> "Borracha vetorial: arraste sobre um traço ativo para removê-lo. Desfazer restaura o traço."
                 strokeAssistMode == StrokeAssistMode.LINE -> "Linha reta: arraste do ponto inicial ao final; o preview mostra a linha antes de soltar."
-                symmetryMode != StrokeSymmetryMode.NONE -> "Simetria ativa: o traço espelhado é salvo como PATH separado e editável."
+                symmetryMode != StrokeSymmetryMode.NONE -> "Simetria ativa: cada espelho é salvo como PATH separado e editável."
                 frameByFrameEnabled -> "Modo frame a frame: cada gesto ocupa a exposição escolhida. Onion skin mostra frames vizinhos."
                 else -> "Arraste o dedo no quadro. Cada gesto vira um PATH editável e pode ser desfeito."
             },
@@ -159,7 +159,7 @@ fun DrawStrokePad(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                listOf(1, 2, 3, 4).forEach { frames ->
+                listOf(1, 2, 3, 4, 6, 8, 12, 24).forEach { frames ->
                     if (exposureFrames == frames) {
                         FilledTonalButton(onClick = { exposureFrames = frames }) { Text("${frames}f") }
                     } else {
@@ -296,6 +296,11 @@ fun DrawStrokePad(
                     FilledTonalButton(onClick = { symmetryMode = StrokeSymmetryMode.HORIZONTAL_AXIS }) { Text("Horizontal") }
                 } else {
                     OutlinedButton(onClick = { symmetryMode = StrokeSymmetryMode.HORIZONTAL_AXIS }) { Text("Horizontal") }
+                }
+                if (symmetryMode == StrokeSymmetryMode.BOTH_AXES) {
+                    FilledTonalButton(onClick = { symmetryMode = StrokeSymmetryMode.BOTH_AXES }) { Text("Ambos") }
+                } else {
+                    OutlinedButton(onClick = { symmetryMode = StrokeSymmetryMode.BOTH_AXES }) { Text("Ambos") }
                 }
             }
             Row(

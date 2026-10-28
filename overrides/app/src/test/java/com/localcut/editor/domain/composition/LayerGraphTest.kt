@@ -105,4 +105,29 @@ class LayerGraphTest {
 
         assertTrue(near.x > far.x)
     }
+
+    @Test
+    fun cameraRotationUsesInverseViewRotationForProjectedPosition() {
+        val graph = CompositionGraph(
+            nodes = listOf(
+                CompositionNode(
+                    id = "camera",
+                    kind = CompositionNodeKind.CAMERA,
+                    transform = LayerTransform3D(rotationZDeg = 90.0),
+                    camera = CameraSettings(orthographic = true),
+                ),
+                CompositionNode(
+                    id = "layer",
+                    kind = CompositionNodeKind.LAYER,
+                    clipId = "clip-1",
+                    transform = LayerTransform3D(x = 100.0),
+                ),
+            ),
+        )
+
+        val projected = CameraProjection.project(graph, "layer", "camera")
+
+        assertEquals(0.0, projected.x, 1e-9)
+        assertEquals(-100.0, projected.y, 1e-9)
+    }
 }

@@ -95,7 +95,7 @@ class GlobalMotionStabilizationPlannerTest {
         )
         val scale = animations.first { it.propertyId == "transform.scale" }
         assertEquals(1.2, (scale.keyframes.first().value as PropertyValue.Scalar).value, 1e-9)
-        assertEquals(1.32, (scale.keyframes.last().value as PropertyValue.Scalar).value, 1e-9)
+        assertEquals(1.2 / 0.9, (scale.keyframes.last().value as PropertyValue.Scalar).value, 1e-9)
 
         val excessive = runCatching {
             GlobalMotionStabilizationPlanner.plan(

@@ -17,9 +17,10 @@ object Media3SequenceOpacityResolver {
                 return when (item) {
                     is Media3BlueprintItem.Gap -> inactiveAlpha
                     is Media3BlueprintItem.Media -> {
-                        val value = KeyframeRenderResolver.valueAt(
+                        val value = PropertyTransformRenderResolver.valueAt(
                             transform = item.transform,
                             keyframes = item.keyframes,
+                            propertyAnimations = item.propertyAnimations,
                             presentationTimeUs = presentationTimeUs,
                             presentationStartUs = presentationStartUs,
                         )
@@ -39,7 +40,10 @@ object Media3SequenceOpacityResolver {
                     item is Media3BlueprintItem.Media && (
                         item.opacity != 1.0 ||
                             item.transform.opacity != 1.0 ||
-                            item.keyframes.any { it.value.opacity != 1.0 }
+                            item.keyframes.any { it.value.opacity != 1.0 } ||
+                            item.propertyAnimations.any { animation ->
+                                animation.propertyId == "transform.opacity" && animation.keyframes.isNotEmpty()
+                            }
                         )
                 }
         }

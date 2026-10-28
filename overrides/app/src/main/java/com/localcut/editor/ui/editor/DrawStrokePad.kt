@@ -36,8 +36,11 @@ import androidx.compose.ui.unit.dp
 import com.localcut.editor.domain.design.CanvasPointPx
 import com.localcut.editor.domain.design.DrawStrokeCapturePolicy
 import com.localcut.editor.domain.design.DrawStrokePolicy
+import com.localcut.editor.domain.design.OnionSkinCandidate
+import com.localcut.editor.domain.design.OnionSkinPolicy
 import com.localcut.editor.domain.model.DesignElement
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.ShapeKind
 import kotlin.math.roundToInt
 
 private data class DrawColorPreset(val label: String, val argb: Int, val color: Color)
@@ -61,7 +64,25 @@ fun DrawStrokePad(
     var padSize by remember(project.id) { mutableStateOf(IntSize.Zero) }
     var strokeWidthPx by remember(project.id) { mutableDoubleStateOf(DrawStrokePadPolicy.DEFAULT_STROKE_WIDTH_PX) }
     var strokeArgb by remember(project.id) { mutableIntStateOf(0xFFFFFFFF.toInt()) }
+    var frameByFrameEnabled by remember(project.id) { mutableStateOf(false) }
+    var onionSkinEnabled by remember(project.id) { mutableStateOf(true) }
     val previewColor = drawColorPresets.firstOrNull { it.argb == strokeArgb }?.color ?: Color(strokeArgb)
+
+    val pathElements = project.designElements.filter { element ->
+        element.shape?.kind == ShapeKind.PATH && element.shape.path != null
+    }
+    val pathElementsById = pathElements.associateBy { it.id }
+    val onionGhosts = if (frameByFrameEnabled && onionSkinEnabled) {
+        OnionSkinPolicy.select(
+            candidates = pathElements.map { OnionSkinCandidate(it.id, it.startUs) },
+            playheadUs = playheadUs.coerceAtLeast(0L),
+            fps = project.fps,
+            previousFrames = 1,
+            nextFrames = 1,
+        )
+    } else {
+        emptyList()
+    }
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -69,10 +90,32 @@ fun DrawStrokePad(
     ) {
         Text("Desenho livre", style = MaterialTheme.typography.labelMedium)
         Text(
-            "Arraste o dedo no quadro. Cada gesto vira um PATH editável e pode ser desfeito.",
+            if (frameByFrameEnabled) {
+                "Modo frame a frame: cada gesto ocupa um frame. Onion skin mostra o frame anterior e o próximo."
+            } else {
+                "Arraste o dedo no quadro. Cada gesto vira um PATH editável e pode ser desfeito."
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (frameByFrameEnabled) {
+                FilledTonalButton(onClick = { frameByFrameEnabled = false }) { Text("Frame a frame ON") }
+            } else {
+                OutlinedButton(onClick = { frameByFrameEnabled = true }) { Text("Frame a frame") }
+            }
+            if (frameByFrameEnabled) {
+                if (onionSkinEnabled) {
+                    FilledTonalButton(onClick = { onionSkinEnabled = false }) { Text("Onion skin ON") }
+                } else {
+                    OutlinedButton(onClick = { onionSkinEnabled = true }) { Text("Onion skin") }
+                }
+            }
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -107,7 +150,7 @@ fun DrawStrokePad(
                 .height(220.dp)
                 .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(10.dp))
                 .onSizeChanged { padSize = it }
-                .pointerInput(project.id, playheadUs, strokeArgb, strokeWidthPx, padSize) {
+                .pointerInput(project.id, playheadUs, strokeArgb, strokeWidthPx, padSize, frameByFrameEnabled, project.fps) {
                     detectDragGestures(
                         onDragStart = { offset ->
                             capturedPoints = listOf(CanvasPointPx(offset.x.toDouble(), offset.y.toDouble()))
@@ -121,10 +164,15 @@ fun DrawStrokePad(
                                 size.height > 0 &&
                                 DrawStrokeCapturePolicy.canCommit(points)
                             ) {
+                                val frameWindow = if (frameByFrameEnabled) {
+                                    OnionSkinPolicy.frameWindow(playheadUs.coerceAtLeast(0L), project.fps)
+                                } else {
+                                    null
+                                }
                                 val element = DrawStrokePolicy.createPathElement(
                                     id = DrawStrokePadPolicy.nextStrokeId(project.designElements.mapTo(hashSetOf()) { it.id }),
-                                    startUs = playheadUs.coerceAtLeast(0L),
-                                    durationUs = DrawStrokePadPolicy.DEFAULT_DURATION_US,
+                                    startUs = frameWindow?.startUs ?: playheadUs.coerceAtLeast(0L),
+                                    durationUs = frameWindow?.durationUs ?: DrawStrokePadPolicy.DEFAULT_DURATION_US,
                                     points = points,
                                     canvasWidthPx = size.width.toDouble(),
                                     canvasHeightPx = size.height.toDouble(),
@@ -145,6 +193,22 @@ fun DrawStrokePad(
                     )
                 },
         ) {
+            onionGhosts.asReversed().forEach { ghost ->
+                val element = pathElementsById[ghost.elementId] ?: return@forEach
+                val shape = element.shape ?: return@forEach
+                val path = shape.path ?: return@forEach
+                val ghostColor = Color(shape.strokeArgb ?: 0xFFFFFFFF.toInt()).copy(alpha = ghost.alpha.toFloat())
+                path.points.zipWithNext().forEach { (start, end) ->
+                    drawLine(
+                        color = ghostColor,
+                        start = Offset((start.x * size.width).toFloat(), (start.y * size.height).toFloat()),
+                        end = Offset((end.x * size.width).toFloat(), (end.y * size.height).toFloat()),
+                        strokeWidth = shape.strokeWidthPx.toFloat().coerceAtLeast(1f),
+                        cap = StrokeCap.Round,
+                    )
+                }
+            }
+
             capturedPoints.zipWithNext().forEach { (start, end) ->
                 drawLine(
                     color = previewColor,

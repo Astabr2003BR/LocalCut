@@ -25,7 +25,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.localcut.editor.LocalCutProcessRuntime
 import com.localcut.editor.analysis.StabilizationApplyPolicy
 import com.localcut.editor.analysis.TermuxGlobalMotionAdapter
 import com.localcut.editor.domain.model.AssetType
@@ -33,6 +32,7 @@ import com.localcut.editor.domain.model.CubicBezierCurve
 import com.localcut.editor.domain.model.EasingKind
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.PropertyAnimation
+import com.localcut.editor.termux.TermuxAgentEngineRuntime
 import kotlinx.coroutines.launch
 
 data class StabilizationUiState(
@@ -98,7 +98,7 @@ fun AnimationCurvePanel(
                             stabilization = StabilizationUiState(running = true, message = "Analisando movimento…")
                             scope.launch {
                                 runCatching {
-                                    val motion = LocalCutProcessRuntime.get(appContext)
+                                    val motion = TermuxAgentEngineRuntime.get(appContext)
                                         .mediaTrackingCoordinator
                                         .analyze(snapshotAsset)
                                         .getOrThrow()

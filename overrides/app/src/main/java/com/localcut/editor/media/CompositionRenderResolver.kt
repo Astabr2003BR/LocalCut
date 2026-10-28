@@ -55,6 +55,7 @@ internal object CompositionRenderResolver {
 
         val cameraNodeId = staticCameraNodeId(graph)
         val world = WorldTransformResolver.resolve(graph, layer.id)
+        requirePlanar(world, "layer ${layer.id}")
         val container = if (cameraNodeId == null) {
             ContainerTransform(
                 x = world.x,
@@ -64,8 +65,9 @@ internal object CompositionRenderResolver {
                 opacity = world.opacity,
             )
         } else {
-            val projected = CameraProjection.project(graph, layer.id, cameraNodeId)
             val cameraWorld = WorldTransformResolver.resolve(graph, cameraNodeId)
+            requirePlanar(cameraWorld, "camera $cameraNodeId")
+            val projected = CameraProjection.project(graph, layer.id, cameraNodeId)
             ContainerTransform(
                 x = projected.x,
                 y = projected.y,
@@ -108,6 +110,12 @@ internal object CompositionRenderResolver {
         }
         val cameras = graph.nodes.filter { it.kind == CompositionNodeKind.CAMERA }
         return cameras.singleOrNull()?.id
+    }
+
+    private fun requirePlanar(transform: LayerTransform3D, subject: String) {
+        require(transform.rotationXDeg == 0.0 && transform.rotationYDeg == 0.0) {
+            "$subject rotationX/rotationY requires a 3D plane renderer and cannot be flattened safely"
+        }
     }
 
     private fun compose(container: ContainerTransform, local: TransformValue): TransformValue {

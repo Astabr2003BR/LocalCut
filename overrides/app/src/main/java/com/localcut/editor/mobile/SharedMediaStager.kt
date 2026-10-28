@@ -68,6 +68,20 @@ class SharedMediaStager(
         }
     }
 
+    /**
+     * Exposes media that is already stored inside LocalCut-owned remote-media storage.
+     * No bytes are copied. Files outside that exact directory or empty files are rejected.
+     */
+    fun exposeOwnedFile(backingFile: File): Result<StagedSharedMedia> = runCatching {
+        val targetFile = OwnedMediaFilePolicy.requireOwned(context.filesDir, backingFile)
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.remote-media",
+            targetFile,
+        )
+        StagedSharedMedia(uri = uri, backingFile = targetFile)
+    }
+
     private fun extensionFor(mimeType: String): String {
         val explicit = when (mimeType) {
             "image/jpeg", "image/jpg" -> "jpg"

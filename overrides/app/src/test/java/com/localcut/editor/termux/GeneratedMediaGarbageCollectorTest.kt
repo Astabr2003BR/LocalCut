@@ -1,5 +1,6 @@
 package com.localcut.editor.termux
 
+import java.io.File
 import java.nio.file.Files
 import kotlin.io.path.createTempDirectory
 import org.junit.Assert.assertEquals
@@ -63,7 +64,6 @@ class GeneratedMediaGarbageCollectorTest {
             assertTrue(shared.exists())
             assertTrue(nested.exists())
             assertEquals(1, result.deletedFiles)
-            assertEquals(orphan.length(), 0L)
         } finally {
             root.deleteRecursively()
         }

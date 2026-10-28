@@ -207,7 +207,7 @@ class ProjectCompositionCompiler(
                     if (item.fadeOutUs > 0L) {
                         envelope.addFadeAt(
                             piece.presentationDurationUs - item.fadeOutUs,
-                            item.fadeOutUs,
+                            piece.fadeOutUs,
                             DefaultGainProvider.FADE_OUT_LINEAR,
                         )
                     }
@@ -223,6 +223,7 @@ class ProjectCompositionCompiler(
                     TransformEffectFactory.create(
                         transform = item.transform,
                         keyframes = item.keyframes,
+                        propertyAnimations = item.propertyAnimations,
                         opacity = item.opacity,
                         outputWidth = blueprint.width,
                         outputHeight = blueprint.height,

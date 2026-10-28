@@ -35,10 +35,13 @@ class TermuxMediaAnalyzeCoordinatorTest {
     fun trackingUsesSameSafeStreamPathAndTypedTrackingOptions() = runBlocking {
         val fake = FakeJobClient(trackingResult = true)
         var resolvedUri: String? = null
-        val coordinator = TermuxMediaTrackingCoordinator(fake) { asset ->
-            resolvedUri = asset.uri
-            TermuxEngineMediaSource(asset.sizeBytes!!) { ByteArrayInputStream("abcde".toByteArray()) }
-        }
+        val coordinator = TermuxMediaTrackingCoordinator(
+            client = fake,
+            sourceResolver = TermuxMediaSourceResolver { asset ->
+                resolvedUri = asset.uri
+                TermuxEngineMediaSource(asset.sizeBytes!!) { ByteArrayInputStream("abcde".toByteArray()) }
+            },
+        )
         val asset = asset(sizeBytes = 5L)
 
         val result = coordinator.analyze(
@@ -138,10 +141,13 @@ class TermuxMediaAnalyzeCoordinatorTest {
     @Test
     fun trackingRejectsNonVideoBeforeOpeningSource() = runBlocking {
         var resolved = false
-        val coordinator = TermuxMediaTrackingCoordinator(FakeJobClient()) {
-            resolved = true
-            error("must not resolve")
-        }
+        val coordinator = TermuxMediaTrackingCoordinator(
+            client = FakeJobClient(),
+            sourceResolver = TermuxMediaSourceResolver {
+                resolved = true
+                error("must not resolve")
+            },
+        )
         val result = coordinator.analyze(asset(sizeBytes = 5L).copy(type = AssetType.AUDIO, mimeType = "audio/mp4"))
         assertTrue(result.isFailure)
         assertEquals("TERMUX_TRACKING_REQUIRES_VIDEO", result.exceptionOrNull()?.message)

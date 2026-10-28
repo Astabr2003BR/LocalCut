@@ -79,22 +79,27 @@ class MotionPathUiPolicyTest {
     }
 
     @Test
-    fun stabilizationChannelsFailClosedInsteadOfProducingHybridMotion() {
-        val stabilization = listOf(
+    fun completeOrPartialStabilizationFailsClosedInsteadOfProducingHybridMotion() {
+        val fullStabilization = listOf(
             scalar("transform.x", "stabilize-x-0-0", 0.0),
             scalar("transform.y", "stabilize-y-0-0", 0.0),
             scalar("transform.rotationDeg", "stabilize-rotation-0-0", 0.0),
             scalar("transform.scale", "stabilize-scale-0-0", 1.0),
+        )
+        val partialStabilization = listOf(
+            scalar("transform.rotationDeg", "stabilize-rotation-0-0", 0.0),
         )
         val path = listOf(
             scalar("transform.x", "motion-path-x-a", 1.0),
             scalar("transform.y", "motion-path-y-a", 2.0),
         )
 
-        val error = assertThrows(IllegalArgumentException::class.java) {
-            MotionPathUiPolicy.merge(stabilization, path)
+        listOf(fullStabilization, partialStabilization).forEach { existing ->
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                MotionPathUiPolicy.merge(existing, path)
+            }
+            assertEquals("MOTION_PATH_CONFLICTS_WITH_STABILIZATION", error.message)
         }
-        assertEquals("MOTION_PATH_CONFLICTS_WITH_STABILIZATION", error.message)
     }
 
     @Test

@@ -57,6 +57,64 @@ class CreativeToolsUiPolicyTest {
     }
 
     @Test
+    fun currentFrameFreezeUsesDisplayedSourceFrameAndAddsPresentationDuration() {
+        val sourceRangeUs = 4_000_000L
+        val source = TimeMap(baseSpeed = 2.0)
+        val frozen = CreativeToolsUiPolicy.freezeCurrentFrame(
+            source = source,
+            presentationOffsetUs = 500_000L,
+            sourceRangeUs = sourceRangeUs,
+            freezeDurationUs = 1_000_000L,
+        )
+
+        val freeze = frozen.freezeSegments.single()
+        assertEquals(500_000L, freeze.startOffsetUs)
+        assertEquals(1_000_000L, freeze.durationUs)
+        assertEquals(1_000_000L, freeze.sourceOffsetUs)
+        assertEquals(
+            TimeMapEvaluator.presentationDurationUs(sourceRangeUs, source) + 1_000_000L,
+            TimeMapEvaluator.presentationDurationUs(sourceRangeUs, frozen),
+        )
+        assertTrue(frozen.validationIssues().isEmpty())
+    }
+
+    @Test
+    fun currentFrameFreezeIsSingleFreezeForwardOnlyAndCanBeCleared() {
+        val sourceRangeUs = 4_000_000L
+        val frozen = CreativeToolsUiPolicy.freezeCurrentFrame(
+            source = TimeMap(),
+            presentationOffsetUs = 1_000_000L,
+            sourceRangeUs = sourceRangeUs,
+            freezeDurationUs = 500_000L,
+        )
+        assertTrue(CreativeToolsUiPolicy.clearFreeze(frozen).freezeSegments.isEmpty())
+        assertThrows(IllegalArgumentException::class.java) {
+            CreativeToolsUiPolicy.freezeCurrentFrame(
+                source = frozen,
+                presentationOffsetUs = 1_500_000L,
+                sourceRangeUs = sourceRangeUs,
+                freezeDurationUs = 500_000L,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            CreativeToolsUiPolicy.freezeCurrentFrame(
+                source = TimeMap(reverse = true),
+                presentationOffsetUs = 500_000L,
+                sourceRangeUs = sourceRangeUs,
+                freezeDurationUs = 500_000L,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            CreativeToolsUiPolicy.freezeCurrentFrame(
+                source = TimeMap(speedPoints = listOf(SpeedPoint(0L, 1.0), SpeedPoint(1_000_000L, 2.0))),
+                presentationOffsetUs = 500_000L,
+                sourceRangeUs = sourceRangeUs,
+                freezeDurationUs = 500_000L,
+            )
+        }
+    }
+
+    @Test
     fun accelerationRampIsForwardValidAndFitsItsOwnPresentationDuration() {
         val sourceRangeUs = 3_000_000L
         val result = CreativeToolsUiPolicy.accelerationRamp(sourceRangeUs)

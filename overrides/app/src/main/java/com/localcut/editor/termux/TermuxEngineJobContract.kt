@@ -22,13 +22,41 @@ enum class TermuxEngineJobStatus {
     CANCELLED,
 }
 
+enum class TermuxAnalyzeMediaMode {
+    MEDIA,
+    TRACKING,
+}
+
+data class TermuxTrackingOptions(
+    val maxFrames: Int = 180,
+    val sampleEvery: Int = 2,
+    val maxCorners: Int = 120,
+) {
+    init {
+        require(maxFrames in 2..600) { "TERMUX_TRACKING_MAX_FRAMES_INVALID" }
+        require(sampleEvery in 1..30) { "TERMUX_TRACKING_SAMPLE_EVERY_INVALID" }
+        require(maxCorners in 20..500) { "TERMUX_TRACKING_MAX_CORNERS_INVALID" }
+    }
+}
+
 data class TermuxAnalyzeMediaInput(
     val assetId: String,
     val displayName: String?,
     val mimeType: String,
     val sizeBytes: Long,
     val sourceDurationUs: Long?,
-)
+    val mode: TermuxAnalyzeMediaMode = TermuxAnalyzeMediaMode.MEDIA,
+    val trackingOptions: TermuxTrackingOptions? = null,
+) {
+    init {
+        require(mode != TermuxAnalyzeMediaMode.TRACKING || mimeType.startsWith("video/")) {
+            "TERMUX_TRACKING_REQUIRES_VIDEO"
+        }
+        require(mode != TermuxAnalyzeMediaMode.MEDIA || trackingOptions == null) {
+            "TERMUX_TRACKING_OPTIONS_MODE_INVALID"
+        }
+    }
+}
 
 data class TermuxMediaStream(
     val codecType: String?,
@@ -48,6 +76,41 @@ data class TermuxMediaAnalysis(
     val streams: List<TermuxMediaStream>,
 )
 
+data class TermuxGlobalMotionSample(
+    val frameIndex: Int,
+    val timeUs: Long,
+    val dx: Double,
+    val dy: Double,
+    val rotationDeg: Double,
+    val scale: Double,
+    val confidence: Double,
+) {
+    init {
+        require(frameIndex >= 1) { "TERMUX_TRACKING_FRAME_INDEX_INVALID" }
+        require(timeUs > 0L) { "TERMUX_TRACKING_TIME_INVALID" }
+        require(dx.isFinite() && dy.isFinite() && rotationDeg.isFinite() && scale.isFinite() && confidence.isFinite()) {
+            "TERMUX_TRACKING_SAMPLE_NON_FINITE"
+        }
+        require(scale > 0.0) { "TERMUX_TRACKING_SCALE_INVALID" }
+        require(confidence in 0.0..1.0) { "TERMUX_TRACKING_CONFIDENCE_INVALID" }
+    }
+}
+
+data class TermuxGlobalMotionAnalysis(
+    val framesDecoded: Int,
+    val frameRate: Double?,
+    val samples: List<TermuxGlobalMotionSample>,
+) {
+    init {
+        require(framesDecoded >= 1) { "TERMUX_TRACKING_FRAMES_INVALID" }
+        require(frameRate == null || (frameRate.isFinite() && frameRate > 0.0)) { "TERMUX_TRACKING_FPS_INVALID" }
+        require(samples.isNotEmpty()) { "TERMUX_TRACKING_SAMPLES_EMPTY" }
+        require(samples.zipWithNext().all { (left, right) -> right.timeUs > left.timeUs }) {
+            "TERMUX_TRACKING_SAMPLES_UNORDERED"
+        }
+    }
+}
+
 data class TermuxEngineJob(
     val id: String,
     val type: String,
@@ -55,6 +118,8 @@ data class TermuxEngineJob(
     val progress: Int,
     val errorCode: String? = null,
     val analysis: TermuxMediaAnalysis? = null,
+    val analysisMode: String? = null,
+    val globalMotion: TermuxGlobalMotionAnalysis? = null,
 )
 
 data class TermuxEngineStageResult(

@@ -4,6 +4,7 @@ enum class StrokeSymmetryMode {
     NONE,
     VERTICAL_AXIS,
     HORIZONTAL_AXIS,
+    BOTH_AXES,
 }
 
 object StrokeSymmetryPolicy {
@@ -19,21 +20,33 @@ object StrokeSymmetryPolicy {
         require(points.size >= 2) { "symmetry requires at least two points" }
 
         val original = points.toList()
-        val mirrored = when (mode) {
-            StrokeSymmetryMode.NONE -> return listOf(original)
-            StrokeSymmetryMode.VERTICAL_AXIS -> original.map { point ->
-                CanvasPointPx(
-                    x = canvasWidthPx - point.x,
-                    y = point.y,
-                )
-            }
-            StrokeSymmetryMode.HORIZONTAL_AXIS -> original.map { point ->
-                CanvasPointPx(
-                    x = point.x,
-                    y = canvasHeightPx - point.y,
-                )
-            }
+        if (mode == StrokeSymmetryMode.NONE) return listOf(original)
+
+        val vertical = original.map { point ->
+            CanvasPointPx(
+                x = canvasWidthPx - point.x,
+                y = point.y,
+            )
         }
-        return listOf(original, mirrored)
+        val horizontal = original.map { point ->
+            CanvasPointPx(
+                x = point.x,
+                y = canvasHeightPx - point.y,
+            )
+        }
+        val both = original.map { point ->
+            CanvasPointPx(
+                x = canvasWidthPx - point.x,
+                y = canvasHeightPx - point.y,
+            )
+        }
+
+        val expanded = when (mode) {
+            StrokeSymmetryMode.NONE -> listOf(original)
+            StrokeSymmetryMode.VERTICAL_AXIS -> listOf(original, vertical)
+            StrokeSymmetryMode.HORIZONTAL_AXIS -> listOf(original, horizontal)
+            StrokeSymmetryMode.BOTH_AXES -> listOf(original, vertical, horizontal, both)
+        }
+        return expanded.distinct()
     }
 }

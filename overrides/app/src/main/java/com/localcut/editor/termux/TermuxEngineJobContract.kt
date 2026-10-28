@@ -1,5 +1,6 @@
 package com.localcut.editor.termux
 
+import java.io.File
 import java.io.InputStream
 
 object TermuxEngineJobCapabilities {
@@ -128,6 +129,31 @@ data class TermuxEngineStageResult(
     val sha256: String,
 )
 
+data class TermuxGeneratedMediaMetadata(
+    val sizeBytes: Long,
+    val sha256: String,
+    val mimeType: String,
+) {
+    init {
+        require(sizeBytes > 0L) { "TERMUX_GENERATED_MEDIA_LENGTH_INVALID" }
+        require(sha256.matches(Regex("^[0-9a-f]{64}$"))) { "TERMUX_GENERATED_MEDIA_DIGEST_INVALID" }
+        require(mimeType == "video/mp4") { "TERMUX_GENERATED_MEDIA_TYPE_INVALID" }
+    }
+}
+
+data class TermuxGeneratedMediaDownload(
+    val job: TermuxEngineJob,
+    val media: TermuxGeneratedMediaMetadata,
+    val file: File,
+)
+
+internal data class TermuxGeneratedMediaHeader(
+    val job: TermuxEngineJob,
+    val media: TermuxGeneratedMediaMetadata,
+    val contentLength: Long,
+    val sha256: String,
+)
+
 class TermuxEngineMediaSource(
     val contentLength: Long,
     private val opener: () -> InputStream,
@@ -144,4 +170,5 @@ interface TermuxEngineJobClient : TermuxEngineClient {
     suspend fun getJob(jobId: String): Result<TermuxEngineJob>
     suspend fun cancelJob(jobId: String): Result<TermuxEngineJob>
     suspend fun stageMedia(jobId: String, source: TermuxEngineMediaSource): Result<TermuxEngineStageResult>
+    suspend fun downloadGeneratedMedia(jobId: String, destination: File): Result<TermuxGeneratedMediaDownload>
 }

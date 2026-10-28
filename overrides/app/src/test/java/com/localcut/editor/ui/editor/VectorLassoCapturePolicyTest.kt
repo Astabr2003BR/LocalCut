@@ -7,7 +7,6 @@ import com.localcut.editor.domain.model.PathPoint
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.ShapeKind
 import com.localcut.editor.domain.model.ShapeSpec
-import com.localcut.editor.domain.model.TransformValue
 import com.localcut.editor.domain.model.VectorPath
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -81,19 +80,21 @@ class VectorLassoCapturePolicyTest {
         id: String,
         x: Double,
         startUs: Long = 0L,
-    ): DesignElement = DesignElement(
-        id = id,
-        startUs = startUs,
-        durationUs = 1_000_000L,
-        shape = ShapeSpec(
-            kind = ShapeKind.PATH,
-            path = VectorPath(
-                points = listOf(
-                    PathPoint(0.25, 0.5),
-                    PathPoint(0.75, 0.5),
+    ): DesignElement {
+        val base = DesignElement(
+            id = id,
+            startUs = startUs,
+            durationUs = 1_000_000L,
+            shape = ShapeSpec(
+                kind = ShapeKind.PATH,
+                path = VectorPath(
+                    points = listOf(
+                        PathPoint(0.25, 0.5),
+                        PathPoint(0.75, 0.5),
+                    ),
                 ),
             ),
-        ),
-        transform = TransformValue(x = x),
-    )
+        )
+        return base.copy(transform = base.transform.copy(x = x))
+    }
 }

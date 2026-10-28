@@ -2,12 +2,15 @@ package com.localcut.editor.ui.editor
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -30,6 +33,8 @@ import com.localcut.editor.domain.animation.MotionPathPlanner
 import com.localcut.editor.domain.design.CanvasPointPx
 import com.localcut.editor.domain.history.SetClipPropertyAnimationsCommand
 import com.localcut.editor.domain.model.AssetType
+import com.localcut.editor.domain.model.Easing
+import com.localcut.editor.domain.model.EasingKind
 import com.localcut.editor.session.EditorAction
 
 @Composable
@@ -48,7 +53,14 @@ fun MotionPathActionControl(
     var surfaceSize by remember(clip.id) { mutableStateOf(IntSize.Zero) }
     var gesture by remember(clip.id) { mutableStateOf(emptyList<CanvasPointPx>()) }
     var message by remember(clip.id) { mutableStateOf<String?>(null) }
+    var easingKind by remember(clip.id) { mutableStateOf(EasingKind.LINEAR) }
     val hasGeneratedPath = MotionPathUiPolicy.hasGeneratedMotionPath(clip.propertyAnimations)
+    val easingPresets = listOf(
+        EasingKind.LINEAR to "Linear",
+        EasingKind.EASE_IN to "Ease In",
+        EasingKind.EASE_OUT to "Ease Out",
+        EasingKind.EASE_IN_OUT to "Suave",
+    )
 
     Column(
         modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
@@ -60,6 +72,19 @@ fun MotionPathActionControl(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            easingPresets.forEach { (kind, label) ->
+                if (easingKind == kind) {
+                    FilledTonalButton(onClick = { easingKind = kind }) { Text(label) }
+                } else {
+                    OutlinedButton(onClick = { easingKind = kind }) { Text(label) }
+                }
+            }
+        }
 
         Canvas(
             modifier = Modifier
@@ -138,6 +163,7 @@ fun MotionPathActionControl(
                             durationUs = currentClip.durationUs,
                             baseX = currentClip.transform.x,
                             baseY = currentClip.transform.y,
+                            easing = Easing(easingKind),
                         )
                         val path = MotionPathPlanner.plan(points)
                         val merged = MotionPathUiPolicy.merge(currentClip.propertyAnimations, path)

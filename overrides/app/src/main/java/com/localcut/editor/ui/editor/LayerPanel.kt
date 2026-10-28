@@ -1,5 +1,6 @@
 package com.localcut.editor.ui.editor
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.localcut.editor.domain.model.CompositionGraph
+import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.TrackType
 
@@ -30,6 +32,11 @@ fun LayerPanel(
 ) {
     val visualTracks = project.tracks.filter { it.type == TrackType.VISUAL }.sortedByDescending { it.order }
     val visualClips = visualTracks.flatMap { track -> track.clips.map { clip -> track to clip } }
+    val graph = project.compositionGraph
+    val parentTargets = LayerPanelUiPolicy.parentTargets(graph)
+    val selectedParentId = selectedClipId?.let { LayerPanelUiPolicy.layerParentId(graph, it) }
+    val staticCamera = graph.nodes.singleOrNull { it.kind == CompositionNodeKind.CAMERA }
+    val canAddStaticCamera = staticCamera == null && graph.cameraCuts.isEmpty()
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -50,6 +57,93 @@ fun LayerPanel(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        onSetCompositionGraph(LayerPanelUiPolicy.addNull(graph).graph)
+                    },
+                ) {
+                    Text("+ Null")
+                }
+                OutlinedButton(
+                    onClick = {
+                        onSetCompositionGraph(LayerPanelUiPolicy.addStaticCamera(graph).graph)
+                    },
+                    enabled = canAddStaticCamera,
+                ) {
+                    Text(if (staticCamera == null) "+ Câmera" else "Câmera ativa")
+                }
+            }
+
+            Text(
+                text = if (staticCamera != null) {
+                    "Câmera estática: ${staticCamera.id} • parenting 2D/2.5D ativo"
+                } else {
+                    "Parenting: use Null para mover/rotacionar/escalar camadas em conjunto."
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            selectedClipId?.let { clipId ->
+                Surface(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text("Parent da camada selecionada", style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            selectedParentId ?: "Sem parent",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            if (selectedParentId == null) {
+                                FilledTonalButton(onClick = {}) { Text("Sem parent") }
+                            } else {
+                                OutlinedButton(
+                                    onClick = {
+                                        onSetCompositionGraph(
+                                            LayerPanelUiPolicy.setClipParent(graph, clipId, null),
+                                        )
+                                    },
+                                ) { Text("Desvincular") }
+                            }
+
+                            parentTargets.forEach { target ->
+                                if (selectedParentId == target.id) {
+                                    FilledTonalButton(onClick = {}) { Text(target.id) }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = {
+                                            onSetCompositionGraph(
+                                                LayerPanelUiPolicy.setClipParent(graph, clipId, target.id),
+                                            )
+                                        },
+                                    ) { Text("Vincular ${target.id}") }
+                                }
+                            }
+                        }
+                        if (parentTargets.isEmpty()) {
+                            Text(
+                                "Crie um Null para usar parenting nesta camada.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+
             if (visualClips.isEmpty()) {
                 Text(
                     "Nenhuma camada visual no projeto.",
@@ -60,8 +154,9 @@ fun LayerPanel(
 
             visualClips.forEach { (track, clip) ->
                 val asset = project.assets.firstOrNull { it.id == clip.assetId }
-                val visible = LayerPanelUiPolicy.isClipVisible(project.compositionGraph, clip.id)
-                val locked = LayerPanelUiPolicy.isClipLocked(project.compositionGraph, clip.id)
+                val visible = LayerPanelUiPolicy.isClipVisible(graph, clip.id)
+                val locked = LayerPanelUiPolicy.isClipLocked(graph, clip.id)
+                val parentId = LayerPanelUiPolicy.layerParentId(graph, clip.id)
                 Surface(
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
                     shape = MaterialTheme.shapes.small,
@@ -72,12 +167,15 @@ fun LayerPanel(
                     ) {
                         Text(asset?.displayName ?: clip.id, style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            "Track ${track.order} • ${if (visible) "visível" else "oculta"} • ${if (locked) "bloqueada" else "desbloqueada"}",
+                            buildString {
+                                append("Track ${track.order} • ${if (visible) "visível" else "oculta"} • ${if (locked) "bloqueada" else "desbloqueada"}")
+                                parentId?.let { append(" • parent $it") }
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             if (selectedClipId == clip.id) {
@@ -89,7 +187,7 @@ fun LayerPanel(
                                 onClick = {
                                     onSetCompositionGraph(
                                         LayerPanelUiPolicy.setClipVisible(
-                                            project.compositionGraph,
+                                            graph,
                                             clip.id,
                                             visible = !visible,
                                         ),
@@ -103,7 +201,7 @@ fun LayerPanel(
                                     onClick = {
                                         onSetCompositionGraph(
                                             LayerPanelUiPolicy.setClipLocked(
-                                                project.compositionGraph,
+                                                graph,
                                                 clip.id,
                                                 locked = false,
                                             ),
@@ -115,7 +213,7 @@ fun LayerPanel(
                                     onClick = {
                                         onSetCompositionGraph(
                                             LayerPanelUiPolicy.setClipLocked(
-                                                project.compositionGraph,
+                                                graph,
                                                 clip.id,
                                                 locked = true,
                                             ),

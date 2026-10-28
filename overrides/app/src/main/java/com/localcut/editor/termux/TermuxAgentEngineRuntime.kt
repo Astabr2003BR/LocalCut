@@ -4,12 +4,16 @@ import android.content.Context
 import com.localcut.editor.bridge.agent.BridgeTermuxDeveloperClient
 import com.localcut.editor.data.assets.AndroidAssetImporter
 import com.localcut.editor.domain.model.Asset
+import com.localcut.editor.domain.model.Project
 import com.localcut.editor.mobile.GeneratedMediaAssetInspector
 import com.localcut.editor.mobile.PreparedGeneratedVideo
 import com.localcut.editor.mobile.SharedMediaStager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class TermuxAgentEngineRuntime private constructor(context: Context) {
     private val appContext = context.applicationContext
+    private val generatedMediaDirectory = TermuxGeneratedMediaStoragePolicy.durableDirectory(appContext.filesDir)
 
     val tokenStore: TermuxEngineTokenStore = AndroidKeystoreTermuxEngineTokenStore(appContext)
     val jobClient: TermuxEngineJobClient = AdaptiveTermuxEngineJobClient(tokenProvider = tokenStore::load)
@@ -19,6 +23,10 @@ class TermuxAgentEngineRuntime private constructor(context: Context) {
         AdaptiveTermuxDeveloperAgentClient(tokenProvider = tokenStore::load)
     private val mediaSourceResolver = AndroidTermuxMediaSourceResolver(appContext.contentResolver)
     private val sharedMediaStager = SharedMediaStager(appContext)
+    private val generatedMediaGarbageCollector = GeneratedMediaGarbageCollector(
+        remoteMediaDirectory = generatedMediaDirectory,
+        providerAuthority = "${appContext.packageName}.remote-media",
+    )
     val mediaAnalyzeCoordinator = TermuxMediaAnalyzeCoordinator(
         client = jobClient,
         sourceResolver = mediaSourceResolver,
@@ -30,7 +38,7 @@ class TermuxAgentEngineRuntime private constructor(context: Context) {
     val mediaReverseCoordinator = TermuxMediaReverseCoordinator(
         client = jobClient,
         sourceResolver = mediaSourceResolver,
-        outputDirectory = TermuxGeneratedMediaStoragePolicy.durableDirectory(appContext.filesDir),
+        outputDirectory = generatedMediaDirectory,
     )
     val generatedMediaAssetInspector = GeneratedMediaAssetInspector(
         importer = AndroidAssetImporter(appContext.contentResolver),
@@ -58,6 +66,18 @@ class TermuxAgentEngineRuntime private constructor(context: Context) {
             download.file.delete()
             throw error
         }
+    }
+
+    internal suspend fun collectGeneratedMediaOrphans(
+        project: Project,
+        canUndo: Boolean,
+        canRedo: Boolean,
+    ): Result<GeneratedMediaCleanupResult> = withContext(Dispatchers.IO) {
+        generatedMediaGarbageCollector.collect(
+            assetUris = project.assets.map(Asset::uri),
+            canUndo = canUndo,
+            canRedo = canRedo,
+        )
     }
 
     companion object {

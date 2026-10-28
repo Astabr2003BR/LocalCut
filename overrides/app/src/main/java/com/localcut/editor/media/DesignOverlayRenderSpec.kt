@@ -1,5 +1,6 @@
 package com.localcut.editor.media
 
+import com.localcut.editor.domain.design.DesignElementGeometryPolicy
 import com.localcut.editor.domain.model.DesignElement
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.ShapeSpec
@@ -26,8 +27,6 @@ data class DesignOverlayRenderSpec(
 }
 
 object DesignOverlayRenderSpecCompiler {
-    private const val BASE_SIZE_FRACTION_OF_SHORT_EDGE = 0.25
-
     fun compile(
         project: Project,
         outputWidth: Int = project.width,
@@ -40,7 +39,10 @@ object DesignOverlayRenderSpecCompiler {
             outputWidth.toDouble() / project.width.toDouble(),
             outputHeight.toDouble() / project.height.toDouble(),
         )
-        val baseProjectSize = min(project.width, project.height) * BASE_SIZE_FRACTION_OF_SHORT_EDGE
+        val baseProjectSize = DesignElementGeometryPolicy.baseSizePx(
+            project.width.toDouble(),
+            project.height.toDouble(),
+        )
 
         return project.designElements
             .asSequence()

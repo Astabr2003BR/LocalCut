@@ -10,7 +10,7 @@ class EditorWorkspacePolicyTest {
     @Test
     fun workspaceLabelsExposeExpandedStudioNavigation() {
         assertEquals(
-            listOf("Editar", "Animar", "Design", "Áudio", "FX", "Projeto"),
+            listOf("Editar", "Animar", "Design", "Desenho", "Áudio", "FX", "Projeto"),
             EditorWorkspace.entries.map { it.label },
         )
     }

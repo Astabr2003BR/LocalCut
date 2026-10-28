@@ -41,7 +41,6 @@ import com.localcut.editor.session.ProjectPreviewLoader
 import com.localcut.editor.session.ProjectSession
 import com.localcut.editor.session.SharedPreferencesProjectRevisionClock
 import com.localcut.editor.termux.TermuxAgentEngineRuntime
-import com.localcut.editor.termux.TermuxMediaTrackingCoordinator
 import com.localcut.editor.ui.editor.EditorViewModel
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -63,7 +62,6 @@ class LocalCutProcessRuntime private constructor(context: Context) {
     val session: ProjectSession
     val editorViewModel: EditorViewModel
     val mediaIngestCoordinator: MediaIngestCoordinator
-    val mediaTrackingCoordinator: TermuxMediaTrackingCoordinator
     val bridgeJobs = BridgeJobRegistry()
     val bridgeCommandExecutor: BridgeCommandExecutor
     val bridgeTermuxAgentPort: BridgeTermuxAgentTaskPort
@@ -139,9 +137,6 @@ class LocalCutProcessRuntime private constructor(context: Context) {
         )
         previewController.load(initialProject)
 
-        val termuxRuntime = TermuxAgentEngineRuntime.get(appContext)
-        mediaTrackingCoordinator = termuxRuntime.mediaTrackingCoordinator
-
         val playbackPort = object : BridgePlaybackPort {
             override val positionUs: Long
                 get() = previewController.state.value.positionUs
@@ -164,7 +159,7 @@ class LocalCutProcessRuntime private constructor(context: Context) {
         )
         bridgeTermuxAgentPort = AsyncBridgeTermuxAgentTaskPort(
             scope = processScope,
-            client = termuxRuntime.developerAgentClient,
+            client = TermuxAgentEngineRuntime.get(appContext).developerAgentClient,
         )
         val deviceId = AndroidKeystoreDeviceIdentityStore()
             .getOrCreatePublicIdentity()

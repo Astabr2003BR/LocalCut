@@ -46,6 +46,45 @@ class MotionPathUiPolicyTest {
     }
 
     @Test
+    fun selectedRangePlacesMotionKeyframesInsideOnlyThatClipWindow() {
+        val points = MotionPathUiPolicy.toMotionPoints(
+            gesture = listOf(
+                CanvasPointPx(20.0, 30.0),
+                CanvasPointPx(120.0, 80.0),
+                CanvasPointPx(220.0, 130.0),
+            ),
+            surfaceWidthPx = 200.0,
+            surfaceHeightPx = 100.0,
+            projectWidthPx = 1000.0,
+            projectHeightPx = 500.0,
+            durationUs = 4_000_000L,
+            startOffsetUs = 1_000_000L,
+            endOffsetUs = 3_000_000L,
+            baseX = 0.0,
+            baseY = 0.0,
+        )
+
+        assertEquals(listOf(1_000_000L, 2_000_000L, 3_000_000L), points.map { it.offsetUs })
+    }
+
+    @Test
+    fun fractionalRangeResolvesDeterministicallyWithinClipDuration() {
+        val middle = MotionPathUiPolicy.resolveRange(
+            clipDurationUs = 4_000_000L,
+            startFraction = 0.25,
+            endFraction = 0.75,
+        )
+        val full = MotionPathUiPolicy.resolveRange(
+            clipDurationUs = 4_000_000L,
+            startFraction = 0.0,
+            endFraction = 1.0,
+        )
+
+        assertEquals(MotionPathRange(1_000_000L, 3_000_000L), middle)
+        assertEquals(MotionPathRange(0L, 4_000_000L), full)
+    }
+
+    @Test
     fun mergeReplacesOnlyXYAndPreservesUnrelatedAnimations() {
         val opacity = scalar("transform.opacity", "opacity-old", 0.5)
         val oldX = scalar("transform.x", "x-old", 99.0)
@@ -107,7 +146,7 @@ class MotionPathUiPolicyTest {
     }
 
     @Test
-    fun invalidDurationOrGestureFailsClosed() {
+    fun invalidDurationGestureOrRangeFailsClosed() {
         assertThrows(IllegalArgumentException::class.java) {
             MotionPathUiPolicy.toMotionPoints(
                 gesture = listOf(CanvasPointPx(0.0, 0.0)),
@@ -131,6 +170,23 @@ class MotionPathUiPolicyTest {
                 baseX = 0.0,
                 baseY = 0.0,
             )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            MotionPathUiPolicy.toMotionPoints(
+                gesture = listOf(CanvasPointPx(0.0, 0.0), CanvasPointPx(10.0, 10.0)),
+                surfaceWidthPx = 100.0,
+                surfaceHeightPx = 100.0,
+                projectWidthPx = 1080.0,
+                projectHeightPx = 1920.0,
+                durationUs = 1_000_000L,
+                startOffsetUs = 750_000L,
+                endOffsetUs = 500_000L,
+                baseX = 0.0,
+                baseY = 0.0,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            MotionPathUiPolicy.resolveRange(1_000_000L, 0.75, 0.25)
         }
     }
 

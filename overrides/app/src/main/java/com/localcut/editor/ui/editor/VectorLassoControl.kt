@@ -30,7 +30,6 @@ import com.localcut.editor.domain.design.CanvasPointPx
 import com.localcut.editor.domain.design.DesignElementGeometryPolicy
 import com.localcut.editor.domain.design.DesignGroupSelectionPolicy
 import com.localcut.editor.domain.design.DesignSelectionTransformPolicy
-import com.localcut.editor.domain.design.VectorLassoSelectionPolicy
 import com.localcut.editor.domain.history.DeleteDesignElementsCommand
 import com.localcut.editor.domain.history.GroupDesignElementsCommand
 import com.localcut.editor.domain.history.MoveDesignElementsCommand
@@ -54,7 +53,7 @@ fun VectorLassoControl(
     val playheadUs = preview.positionUs.coerceAtLeast(0L)
 
     var surfaceSize by remember(project.id) { mutableStateOf(IntSize.Zero) }
-    var gesture by remember(project.id, project.width, project.height) { mutableStateOf(emptyList<CanvasPointPx>()) }
+    var gesture by remember(project.id) { mutableStateOf(emptyList<CanvasPointPx>()) }
     var selectedIds by remember(project.id) { mutableStateOf(emptyList<String>()) }
     var message by remember(project.id) { mutableStateOf<String?>(null) }
     val liveSelectedIds = remember(project.designElements, project.designGroups, selectedIds) {
@@ -197,7 +196,7 @@ fun VectorLassoControl(
                 .fillMaxWidth()
                 .height(150.dp)
                 .onSizeChanged { surfaceSize = it }
-                .pointerInput(project.id, project.width, project.height, surfaceSize, playheadUs) {
+                .pointerInput(project.id, surfaceSize) {
                     detectDragGestures(
                         onDragStart = { offset ->
                             gesture = listOf(CanvasPointPx(offset.x.toDouble(), offset.y.toDouble()))
@@ -222,25 +221,14 @@ fun VectorLassoControl(
                                 message = "Faça um laço fechado com pelo menos três pontos."
                             } else {
                                 runCatching {
-                                    val polygon = VectorLassoUiPolicy.toProjectPolygon(
-                                        points = gesture,
+                                    val currentProject = runtime.editorViewModel.sessionState.value.project
+                                    val currentPlayheadUs = runtime.editorViewModel.previewState.value.positionUs.coerceAtLeast(0L)
+                                    VectorLassoCapturePolicy.capture(
+                                        project = currentProject,
+                                        playheadUs = currentPlayheadUs,
+                                        gesturePoints = gesture,
                                         surfaceWidthPx = surfaceSize.width.toDouble(),
                                         surfaceHeightPx = surfaceSize.height.toDouble(),
-                                        projectWidthPx = project.width.toDouble(),
-                                        projectHeightPx = project.height.toDouble(),
-                                    )
-                                    val rawIds = VectorLassoSelectionPolicy.selectPathIds(
-                                        elements = project.designElements,
-                                        lassoPointsPx = polygon,
-                                        canvasWidthPx = project.width.toDouble(),
-                                        canvasHeightPx = project.height.toDouble(),
-                                        playheadUs = playheadUs,
-                                    )
-                                    val captured = VectorLassoPersistentSelectionPolicy.capture(rawIds)
-                                    DesignGroupSelectionPolicy.expand(
-                                        selectedIds = captured,
-                                        groups = project.designGroups,
-                                        existingElementIds = project.designElements.map { it.id },
                                     )
                                 }.onSuccess { ids ->
                                     selectedIds = ids

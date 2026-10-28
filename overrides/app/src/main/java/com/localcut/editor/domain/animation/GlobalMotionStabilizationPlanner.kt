@@ -85,13 +85,20 @@ object GlobalMotionStabilizationPlanner {
             require(correctionScale.isFinite() && correctionScale > 0.0) { "stabilization scale invalid" }
 
             val edgeScale = if (canvasWidth != null && canvasHeight != null) {
-                StabilizationEdgeCompensation.requiredCoverageScale(
-                    canvasWidth = canvasWidth,
-                    canvasHeight = canvasHeight,
-                    translationX = correctionX,
-                    translationY = correctionY,
-                    rotationDeg = correctionRotation,
-                )
+                try {
+                    StabilizationEdgeCompensation.requiredCoverageScale(
+                        canvasWidth = canvasWidth,
+                        canvasHeight = canvasHeight,
+                        translationX = correctionX,
+                        translationY = correctionY,
+                        rotationDeg = correctionRotation,
+                    )
+                } catch (error: IllegalArgumentException) {
+                    if (error.message == "STABILIZATION_EDGE_TRANSLATION_OUT_OF_RANGE") {
+                        throw IllegalArgumentException("STABILIZATION_EDGE_COMPENSATION_TOO_LARGE", error)
+                    }
+                    throw error
+                }
             } else {
                 1.0
             }

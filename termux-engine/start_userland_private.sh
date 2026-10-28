@@ -42,6 +42,8 @@ stop_owned "$STATE_DIR/engine.pid" "localcut_supervisor.py"
 seed_private_ip_from_previous_log
 
 cd "$REPO_ROOT"
+"$PYTHON_BIN" termux-engine/localcut_toolchain.py > "$STATE_DIR/toolchain.json"
+chmod 600 "$STATE_DIR/toolchain.json"
 ENGINE_ARGS=()
 if [ "$PAIR" -eq 1 ]; then ENGINE_ARGS+=(--pair); fi
 nohup "$PYTHON_BIN" termux-engine/localcut_supervisor.py "${ENGINE_ARGS[@]}" \
@@ -68,3 +70,6 @@ if [ "$PAIR" -eq 1 ]; then
   grep -E 'LOCALCUT_PAIRING_CODE|LOCALCUT_ENGINE_READY' "$STATE_DIR/engine.log" || true
 fi
 grep -E 'LOCALCUT_PRIVATE_PROXY_READY' "$STATE_DIR/private-proxy.log" || true
+printf 'LOCALCUT_TOOLCHAIN='
+cat "$STATE_DIR/toolchain.json"
+printf '\n'

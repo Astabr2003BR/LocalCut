@@ -68,13 +68,22 @@ class StaggeredAnimationPlannerTest {
         assertTrue(
             runCatching {
                 StaggeredAnimationPlanner.plan(
-                    targets = listOf(AnimationStaggerTarget("x", listOf(
-                        PropertyAnimation(
-                            propertyId = "opacity",
-                            keyframes = listOf(PropertyKeyframe("k", Long.MAX_VALUE, PropertyValue.Scalar(1.0))),
+                    targets = listOf(
+                        AnimationStaggerTarget("safe", listOf(animation("safe"))),
+                        AnimationStaggerTarget(
+                            "overflow",
+                            listOf(
+                                PropertyAnimation(
+                                    propertyId = "opacity",
+                                    keyframes = listOf(
+                                        PropertyKeyframe("k", Long.MAX_VALUE, PropertyValue.Scalar(1.0)),
+                                    ),
+                                ),
+                            ),
                         ),
-                    ))),
+                    ),
                     stepUs = 1L,
+                    order = AnimationStaggerOrder.FORWARD,
                 )
             }.isFailure,
         )

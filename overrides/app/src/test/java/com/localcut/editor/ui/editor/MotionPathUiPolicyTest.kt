@@ -2,6 +2,7 @@ package com.localcut.editor.ui.editor
 
 import com.localcut.editor.domain.design.CanvasPointPx
 import com.localcut.editor.domain.model.Easing
+import com.localcut.editor.domain.model.EasingKind
 import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.model.PropertyKeyframe
 import com.localcut.editor.domain.model.PropertyValue
@@ -14,6 +15,7 @@ import org.junit.Test
 class MotionPathUiPolicyTest {
     @Test
     fun gestureBecomesRelativeProjectMotionStartingAtCurrentTransform() {
+        val easing = Easing(EasingKind.EASE_IN_OUT)
         val points = MotionPathUiPolicy.toMotionPoints(
             gesture = listOf(
                 CanvasPointPx(20.0, 30.0),
@@ -27,6 +29,7 @@ class MotionPathUiPolicyTest {
             durationUs = 2_000_000L,
             baseX = 40.0,
             baseY = -20.0,
+            easing = easing,
         )
 
         assertEquals(3, points.size)
@@ -39,6 +42,7 @@ class MotionPathUiPolicyTest {
         assertEquals(230.0, points[1].y, 0.0)
         assertEquals(1040.0, points[2].x, 0.0)
         assertEquals(480.0, points[2].y, 0.0)
+        assertTrue(points.all { it.easingToNext == easing })
     }
 
     @Test

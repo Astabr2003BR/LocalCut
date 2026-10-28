@@ -114,8 +114,11 @@ object CameraProjection {
         require(camera.validationIssues().isEmpty()) { "invalid camera settings" }
         val world = WorldTransformResolver.resolve(graph, nodeId)
         val cameraWorld = WorldTransformResolver.resolve(graph, cameraNodeId)
-        val relativeX = (world.x - cameraWorld.x) / cameraWorld.scale
-        val relativeY = (world.y - cameraWorld.y) / cameraWorld.scale
+        val translatedX = (world.x - cameraWorld.x) / cameraWorld.scale
+        val translatedY = (world.y - cameraWorld.y) / cameraWorld.scale
+        val inverseRotationRadians = -cameraWorld.rotationZDeg * PI / 180.0
+        val relativeX = translatedX * cos(inverseRotationRadians) - translatedY * sin(inverseRotationRadians)
+        val relativeY = translatedX * sin(inverseRotationRadians) + translatedY * cos(inverseRotationRadians)
         val relativeZ = world.z - cameraWorld.z
         val perspective = if (camera.orthographic) {
             1.0

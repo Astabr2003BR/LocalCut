@@ -20,6 +20,32 @@ class FakeAnalyzer:
         return {"formatName": "fake", "durationUs": 2_000_000, "sizeBytes": len(data), "streams": []}
 
 
+class FakeTrackingAnalyzer:
+    available = True
+
+    def analyze(self, path, options=None):
+        data = Path(path).read_bytes()
+        return {
+            "trackingMode": "fake-global-motion-v1",
+            "framesDecoded": 12,
+            "sampleEvery": options.sample_every,
+            "maxCorners": options.max_corners,
+            "frameRate": 30.0,
+            "sizeBytes": len(data),
+            "samples": [
+                {
+                    "frameIndex": options.sample_every,
+                    "timeUs": 100_000,
+                    "dx": 2.0,
+                    "dy": 1.0,
+                    "rotationDeg": 0.0,
+                    "scale": 1.0,
+                    "confidence": 1.0,
+                },
+            ],
+        }
+
+
 class EngineJobsIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -38,6 +64,7 @@ class EngineJobsIntegrationTest(unittest.TestCase):
             job_store=self.store,
             media_spool=self.spool,
             analyzer=FakeAnalyzer(),
+            tracking_analyzer=FakeTrackingAnalyzer(),
         )
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -67,10 +94,19 @@ class EngineJobsIntegrationTest(unittest.TestCase):
         payload.update(fields)
         return self.exchange(payload)
 
-    def test_capabilities_include_jobs_and_ffprobe_when_available(self):
+    def test_capabilities_include_jobs_ffprobe_and_tracking_when_available(self):
         result = self.request("GET_CAPABILITIES")
         self.assertTrue(result["ok"])
-        for expected in ("CREATE_JOB", "GET_JOB", "CANCEL_JOB", "STAGE_MEDIA", "ANALYZE_MEDIA", "FFPROBE"):
+        for expected in (
+            "CREATE_JOB",
+            "GET_JOB",
+            "CANCEL_JOB",
+            "STAGE_MEDIA",
+            "ANALYZE_MEDIA",
+            "FFPROBE",
+            "ANALYZE_TRACKING",
+            "OPENCV_GLOBAL_MOTION",
+        ):
             self.assertIn(expected, result["capabilities"])
 
     def test_descriptor_analyze_job_is_idempotent_and_succeeds(self):
@@ -117,6 +153,59 @@ class EngineJobsIntegrationTest(unittest.TestCase):
         self.assertEqual("SUCCEEDED", staged["job"]["status"])
         self.assertEqual(5, staged["job"]["output"]["analysis"]["sizeBytes"])
         self.assertEqual(64, len(staged["transfer"]["sha256"]))
+
+    def test_tracking_job_stages_media_and_runs_only_typed_opencv_analyzer(self):
+        created = self.request(
+            "CREATE_JOB",
+            jobType="ANALYZE_TRACKING",
+            idempotencyKey="asset-3-tracking-v1",
+            input={
+                "assetId": "asset-3",
+                "mimeType": "video/mp4",
+                "sizeBytes": 5,
+                "maxFrames": 120,
+                "sampleEvery": 3,
+                "maxCorners": 80,
+            },
+        )
+        self.assertTrue(created["ok"])
+        self.assertEqual("QUEUED", created["job"]["status"])
+        self.assertEqual(3, created["job"]["input"]["sampleEvery"])
+        job_id = created["job"]["id"]
+
+        payload = {
+            "protocolVersion": 1,
+            "projectId": "localcut",
+            "requestId": "track-12345678",
+            "token": self.token,
+            "operation": "STAGE_MEDIA",
+            "jobId": job_id,
+            "contentLength": 5,
+        }
+        staged = self.exchange(payload, b"abcde")
+
+        self.assertTrue(staged["ok"])
+        self.assertEqual("SUCCEEDED", staged["job"]["status"])
+        self.assertEqual("opencv-global-motion-v1", staged["job"]["output"]["analysisMode"])
+        self.assertEqual(3, staged["job"]["output"]["analysis"]["sampleEvery"])
+        self.assertEqual(80, staged["job"]["output"]["analysis"]["maxCorners"])
+        self.assertEqual(5, staged["job"]["output"]["analysis"]["sizeBytes"])
+        self.assertEqual(64, len(staged["transfer"]["sha256"]))
+
+    def test_tracking_options_fail_closed_before_job_creation(self):
+        invalid = self.request(
+            "CREATE_JOB",
+            jobType="ANALYZE_TRACKING",
+            idempotencyKey="asset-4-tracking-invalid",
+            input={
+                "assetId": "asset-4",
+                "mimeType": "video/mp4",
+                "sizeBytes": 5,
+                "sampleEvery": 0,
+            },
+        )
+        self.assertFalse(invalid["ok"])
+        self.assertEqual("TRACKING_SAMPLE_EVERY_INVALID", invalid["code"])
 
     def test_idempotency_conflict_and_path_traversal_fail_closed(self):
         self.request(

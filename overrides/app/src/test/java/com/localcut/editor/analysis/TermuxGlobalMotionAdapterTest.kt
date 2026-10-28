@@ -94,7 +94,7 @@ class TermuxGlobalMotionAdapterTest {
         ).value
 
         assertEquals(46.0, scalar("transform.x"), 1e-9)
-        assertEquals(1.32, scalar("transform.scale"), 1e-9)
+        assertEquals(1.2 / 0.9, scalar("transform.scale"), 1e-9)
     }
 
     @Test

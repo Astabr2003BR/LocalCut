@@ -143,6 +143,7 @@ object ProjectRenderPlanCompiler {
                 opacity = clip.opacity,
                 volume = clip.volume,
                 keyframes = clip.keyframes,
+                propertyAnimations = clip.propertyAnimations,
                 imageFrameRate = if (asset.type == AssetType.IMAGE) fps else null,
                 fadeInUs = clip.fadeInUs,
                 fadeOutUs = clip.fadeOutUs,

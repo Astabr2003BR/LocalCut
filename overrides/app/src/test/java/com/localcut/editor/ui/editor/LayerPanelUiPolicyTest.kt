@@ -5,6 +5,7 @@ import com.localcut.editor.domain.model.CompositionNode
 import com.localcut.editor.domain.model.CompositionNodeKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -98,5 +99,104 @@ class LayerPanelUiPolicyTest {
         val hidden = LayerPanelUiPolicy.setClipVisible(source, "clip-1", visible = false)
 
         assertTrue(hidden.nodes.any { it.id == "layer-clip-1-2" && it.clipId == "clip-1" })
+    }
+
+    @Test
+    fun addNullCreatesUniqueParentTargetWithoutChangingExistingNodes() {
+        val source = CompositionGraph(
+            nodes = listOf(CompositionNode("null-1", CompositionNodeKind.NULL)),
+        )
+
+        val created = LayerPanelUiPolicy.addNull(source)
+
+        assertEquals("null-2", created.nodeId)
+        assertEquals(2, created.graph.nodes.size)
+        assertTrue(created.graph.nodes.any { it.id == "null-2" && it.kind == CompositionNodeKind.NULL })
+    }
+
+    @Test
+    fun addStaticCameraCreatesSingleDefaultCameraAndRejectsSecondCamera() {
+        val created = LayerPanelUiPolicy.addStaticCamera(CompositionGraph())
+
+        assertEquals("camera-1", created.nodeId)
+        assertEquals(CompositionNodeKind.CAMERA, created.graph.nodes.single().kind)
+        assertTrue(created.graph.nodes.single().camera != null)
+
+        val second = runCatching { LayerPanelUiPolicy.addStaticCamera(created.graph) }
+        assertTrue(second.isFailure)
+        assertTrue(second.exceptionOrNull()?.message.orEmpty().contains("camera"))
+    }
+
+    @Test
+    fun setClipParentCreatesLayerAndLinksItToNullTarget() {
+        val source = CompositionGraph(
+            nodes = listOf(CompositionNode("null-1", CompositionNodeKind.NULL)),
+        )
+
+        val parented = LayerPanelUiPolicy.setClipParent(source, "clip-1", "null-1")
+        val layer = parented.nodes.single { it.kind == CompositionNodeKind.LAYER }
+
+        assertEquals("clip-1", layer.clipId)
+        assertEquals("null-1", layer.parentId)
+        assertEquals("null-1", LayerPanelUiPolicy.layerParentId(parented, "clip-1"))
+    }
+
+    @Test
+    fun clearClipParentPreservesLayerNodeAndOtherLayerState() {
+        val source = CompositionGraph(
+            nodes = listOf(
+                CompositionNode("null-1", CompositionNodeKind.NULL),
+                CompositionNode(
+                    id = "custom-layer",
+                    kind = CompositionNodeKind.LAYER,
+                    parentId = "null-1",
+                    clipId = "clip-1",
+                    visible = false,
+                    locked = true,
+                ),
+            ),
+        )
+
+        val cleared = LayerPanelUiPolicy.setClipParent(source, "clip-1", null)
+        val layer = cleared.nodes.single { it.id == "custom-layer" }
+
+        assertNull(layer.parentId)
+        assertFalse(layer.visible)
+        assertTrue(layer.locked)
+    }
+
+    @Test
+    fun parentTargetsExposeOnlyNullAndGroupNodes() {
+        val graph = CompositionGraph(
+            nodes = listOf(
+                CompositionNode("null", CompositionNodeKind.NULL),
+                CompositionNode("group", CompositionNodeKind.GROUP),
+                CompositionNode("camera", CompositionNodeKind.CAMERA),
+                CompositionNode("layer", CompositionNodeKind.LAYER, clipId = "clip-1"),
+            ),
+        )
+
+        assertEquals(listOf("null", "group"), LayerPanelUiPolicy.parentTargets(graph).map { it.id })
+    }
+
+    @Test
+    fun setClipParentRejectsCameraUnknownTargetAndParentCycle() {
+        val source = CompositionGraph(
+            nodes = listOf(
+                CompositionNode("camera", CompositionNodeKind.CAMERA),
+                CompositionNode("layer", CompositionNodeKind.LAYER, clipId = "clip-1", parentId = null),
+                CompositionNode("null", CompositionNodeKind.NULL, parentId = "layer"),
+            ),
+        )
+
+        val camera = runCatching { LayerPanelUiPolicy.setClipParent(source, "clip-1", "camera") }
+        assertTrue(camera.isFailure)
+
+        val unknown = runCatching { LayerPanelUiPolicy.setClipParent(source, "clip-1", "missing") }
+        assertTrue(unknown.isFailure)
+
+        val cycle = runCatching { LayerPanelUiPolicy.setClipParent(source, "clip-1", "null") }
+        assertTrue(cycle.isFailure)
+        assertTrue(cycle.exceptionOrNull()?.message.orEmpty().contains("cycle"))
     }
 }

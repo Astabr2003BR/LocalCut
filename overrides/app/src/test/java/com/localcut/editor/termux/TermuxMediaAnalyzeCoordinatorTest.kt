@@ -57,6 +57,25 @@ class TermuxMediaAnalyzeCoordinatorTest {
     }
 
     @Test
+    fun trackingWaitsForBackgroundJobBeforeReadingMotion() = runBlocking {
+        val fake = FakeJobClient(trackingBackground = true)
+        val coordinator = TermuxMediaTrackingCoordinator(
+            client = fake,
+            sourceResolver = { asset ->
+                TermuxEngineMediaSource(asset.sizeBytes!!) { ByteArrayInputStream("abcde".toByteArray()) }
+            },
+            awaitPolicy = TermuxJobAwaitPolicy(maxPolls = 4, initialDelayMs = 1, maxDelayMs = 1),
+            pollDelay = {},
+        )
+
+        val result = coordinator.analyze(asset(sizeBytes = 5L)).getOrThrow()
+
+        assertEquals(2, fake.trackingGetJobCalls)
+        assertEquals(7, result.framesDecoded)
+        assertEquals(100_000L, result.samples.single().timeUs)
+    }
+
+    @Test
     fun reverseUsesSafeStreamAndDownloadsGeneratedMp4IntoPrivateDirectory() = runBlocking {
         val fake = FakeJobClient()
         var resolvedUri: String? = null
@@ -108,7 +127,7 @@ class TermuxMediaAnalyzeCoordinatorTest {
 
             val result = coordinator.reverse(asset(sizeBytes = 5L)).getOrThrow()
 
-            assertEquals(2, fake.getJobCalls)
+            assertEquals(2, fake.reverseGetJobCalls)
             assertTrue(fake.downloaded)
             assertEquals(TermuxEngineJobStatus.SUCCEEDED, result.job.status)
         } finally {
@@ -180,14 +199,16 @@ class TermuxMediaAnalyzeCoordinatorTest {
 
     private class FakeJobClient(
         private val trackingResult: Boolean = false,
+        private val trackingBackground: Boolean = false,
         private val reverseBackground: Boolean = false,
     ) : TermuxEngineJobClient {
         var staged = false
         var downloaded = false
-        var getJobCalls = 0
+        var trackingGetJobCalls = 0
+        var reverseGetJobCalls = 0
         var idempotencyKey: String? = null
         var lastInput: TermuxAnalyzeMediaInput? = null
-        private var lastJobId: String = "123e4567-e89b-12d3-a456-426614174000"
+        private val lastJobId: String = "123e4567-e89b-12d3-a456-426614174000"
 
         override suspend fun pair(pairingCode: String) = error("unused")
         override suspend fun ping() = error("unused")
@@ -210,16 +231,31 @@ class TermuxMediaAnalyzeCoordinatorTest {
         }
 
         override suspend fun getJob(jobId: String): Result<TermuxEngineJob> {
-            if (!reverseBackground || jobId != lastJobId) error("unused")
-            getJobCalls += 1
-            return Result.success(
-                TermuxEngineJob(
-                    id = jobId,
-                    type = "ANALYZE_MEDIA",
-                    status = if (getJobCalls < 2) TermuxEngineJobStatus.RUNNING else TermuxEngineJobStatus.SUCCEEDED,
-                    progress = if (getJobCalls < 2) 50 else 100,
-                ),
-            )
+            require(jobId == lastJobId)
+            return when {
+                trackingBackground && lastInput?.mode == TermuxAnalyzeMediaMode.TRACKING -> {
+                    trackingGetJobCalls += 1
+                    Result.success(
+                        if (trackingGetJobCalls < 2) {
+                            TermuxEngineJob(jobId, "ANALYZE_MEDIA", TermuxEngineJobStatus.RUNNING, 50)
+                        } else {
+                            trackingJob(jobId)
+                        },
+                    )
+                }
+                reverseBackground && lastInput?.mode == TermuxAnalyzeMediaMode.REVERSE -> {
+                    reverseGetJobCalls += 1
+                    Result.success(
+                        TermuxEngineJob(
+                            id = jobId,
+                            type = "ANALYZE_MEDIA",
+                            status = if (reverseGetJobCalls < 2) TermuxEngineJobStatus.RUNNING else TermuxEngineJobStatus.SUCCEEDED,
+                            progress = if (reverseGetJobCalls < 2) 50 else 100,
+                        ),
+                    )
+                }
+                else -> error("unused")
+            }
         }
 
         override suspend fun cancelJob(jobId: String) = error("unused")
@@ -228,33 +264,15 @@ class TermuxMediaAnalyzeCoordinatorTest {
             source: TermuxEngineMediaSource,
         ): Result<TermuxEngineStageResult> {
             staged = true
-            val job = if (trackingResult) {
-                TermuxEngineJob(
-                    id = jobId,
-                    type = "ANALYZE_MEDIA",
-                    status = TermuxEngineJobStatus.SUCCEEDED,
-                    progress = 100,
-                    analysisMode = "opencv-global-motion-v1",
-                    globalMotion = TermuxGlobalMotionAnalysis(
-                        framesDecoded = 7,
-                        frameRate = 30.0,
-                        samples = listOf(
-                            TermuxGlobalMotionSample(
-                                frameIndex = 3,
-                                timeUs = 100_000L,
-                                dx = 2.0,
-                                dy = 1.0,
-                                rotationDeg = 1.0,
-                                scale = 1.01,
-                                confidence = 0.9,
-                            ),
-                        ),
-                    ),
-                )
-            } else if (reverseBackground && lastInput?.mode == TermuxAnalyzeMediaMode.REVERSE) {
-                TermuxEngineJob(jobId, "ANALYZE_MEDIA", TermuxEngineJobStatus.RUNNING, 20)
-            } else {
-                TermuxEngineJob(jobId, "ANALYZE_MEDIA", TermuxEngineJobStatus.SUCCEEDED, 100)
+            val job = when {
+                trackingBackground && lastInput?.mode == TermuxAnalyzeMediaMode.TRACKING -> {
+                    TermuxEngineJob(jobId, "ANALYZE_MEDIA", TermuxEngineJobStatus.RUNNING, 20)
+                }
+                trackingResult -> trackingJob(jobId)
+                reverseBackground && lastInput?.mode == TermuxAnalyzeMediaMode.REVERSE -> {
+                    TermuxEngineJob(jobId, "ANALYZE_MEDIA", TermuxEngineJobStatus.RUNNING, 20)
+                }
+                else -> TermuxEngineJob(jobId, "ANALYZE_MEDIA", TermuxEngineJobStatus.SUCCEEDED, 100)
             }
             return Result.success(
                 TermuxEngineStageResult(
@@ -264,6 +282,29 @@ class TermuxMediaAnalyzeCoordinatorTest {
                 ),
             )
         }
+
+        private fun trackingJob(jobId: String) = TermuxEngineJob(
+            id = jobId,
+            type = "ANALYZE_MEDIA",
+            status = TermuxEngineJobStatus.SUCCEEDED,
+            progress = 100,
+            analysisMode = "opencv-global-motion-v1",
+            globalMotion = TermuxGlobalMotionAnalysis(
+                framesDecoded = 7,
+                frameRate = 30.0,
+                samples = listOf(
+                    TermuxGlobalMotionSample(
+                        frameIndex = 3,
+                        timeUs = 100_000L,
+                        dx = 2.0,
+                        dy = 1.0,
+                        rotationDeg = 1.0,
+                        scale = 1.01,
+                        confidence = 0.9,
+                    ),
+                ),
+            ),
+        )
 
         override suspend fun downloadGeneratedMedia(
             jobId: String,

@@ -28,9 +28,11 @@ import androidx.compose.ui.unit.dp
 import com.localcut.editor.LocalCutProcessRuntime
 import com.localcut.editor.domain.design.CanvasPointPx
 import com.localcut.editor.domain.design.DesignElementGeometryPolicy
+import com.localcut.editor.domain.design.DesignSelectionTransformPolicy
 import com.localcut.editor.domain.design.VectorLassoSelectionPolicy
 import com.localcut.editor.domain.history.DeleteDesignElementsCommand
 import com.localcut.editor.domain.history.MoveDesignElementsCommand
+import com.localcut.editor.domain.history.TransformDesignElementsCommand
 import com.localcut.editor.domain.model.DesignElement
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.ShapeKind
@@ -49,36 +51,63 @@ fun VectorLassoControl(
 
     var surfaceSize by remember(project.id) { mutableStateOf(IntSize.Zero) }
     var gesture by remember(project.id, project.width, project.height) { mutableStateOf(emptyList<CanvasPointPx>()) }
-    var lassoPolygon by remember(project.id, project.width, project.height) { mutableStateOf(emptyList<CanvasPointPx>()) }
+    var selectedIds by remember(project.id) { mutableStateOf(emptyList<String>()) }
     var message by remember(project.id) { mutableStateOf<String?>(null) }
-    val selectedIds = remember(
-        project.designElements,
-        lassoPolygon,
-        project.width,
-        project.height,
-        playheadUs,
-    ) {
-        selectCurrentPathIds(project, lassoPolygon, playheadUs)
+    val liveSelectedIds = remember(project.designElements, selectedIds) {
+        VectorLassoPersistentSelectionPolicy.existing(selectedIds, project.designElements)
+    }
+
+    fun currentSelection(): Pair<Project, List<String>> {
+        val currentProject = runtime.editorViewModel.sessionState.value.project
+        val ids = VectorLassoPersistentSelectionPolicy.existing(selectedIds, currentProject.designElements)
+        require(ids.isNotEmpty()) { "LASSO_SELECTION_EMPTY" }
+        return currentProject to ids
     }
 
     fun moveSelection(dx: Double, dy: Double) {
-        if (lassoPolygon.isEmpty()) return
         val result = runCatching {
-            val currentSession = runtime.editorViewModel.sessionState.value
-            val currentProject = currentSession.project
-            val currentPlayheadUs = runtime.editorViewModel.previewState.value.positionUs.coerceAtLeast(0L)
-            val ids = selectCurrentPathIds(currentProject, lassoPolygon, currentPlayheadUs)
-            require(ids.isNotEmpty()) { "LASSO_SELECTION_EMPTY" }
+            val (_, ids) = currentSelection()
             runtime.editorViewModel.dispatch(
                 EditorAction.Execute(MoveDesignElementsCommand(ids, dx, dy)),
             )
         }
         message = if (result.isSuccess) {
-            "Seleção movida. Desfazer continua disponível."
+            "Seleção movida. Os mesmos traços continuam selecionados."
         } else {
             when (result.exceptionOrNull()?.message) {
                 "LASSO_SELECTION_EMPTY" -> "Nenhum traço selecionado no estado atual."
                 else -> "Falha ao mover seleção • ${result.exceptionOrNull()?.message ?: "LASSO_MOVE_FAILED"}"
+            }
+        }
+    }
+
+    fun transformSelection(scaleFactor: Double, rotationDeltaDeg: Double) {
+        val result = runCatching {
+            val (currentProject, ids) = currentSelection()
+            val pivot = DesignSelectionTransformPolicy.pathBoundsCenterPx(
+                elements = currentProject.designElements,
+                selectedIds = ids,
+                canvasWidthPx = currentProject.width.toDouble(),
+                canvasHeightPx = currentProject.height.toDouble(),
+            )
+            runtime.editorViewModel.dispatch(
+                EditorAction.Execute(
+                    TransformDesignElementsCommand(
+                        elementIds = ids,
+                        pivotX = pivot.x,
+                        pivotY = pivot.y,
+                        scaleFactor = scaleFactor,
+                        rotationDeltaDeg = rotationDeltaDeg,
+                    ),
+                ),
+            )
+        }
+        message = if (result.isSuccess) {
+            "Seleção transformada. Desfazer continua disponível."
+        } else {
+            when (result.exceptionOrNull()?.message) {
+                "LASSO_SELECTION_EMPTY" -> "Nenhum traço selecionado no estado atual."
+                else -> "Falha ao transformar seleção • ${result.exceptionOrNull()?.message ?: "LASSO_TRANSFORM_FAILED"}"
             }
         }
     }
@@ -89,7 +118,7 @@ fun VectorLassoControl(
     ) {
         Text("Laço vetorial", style = MaterialTheme.typography.labelMedium)
         Text(
-            "Circule os traços no quadro abaixo. A seleção acompanha o estado atual do projeto e do playhead.",
+            "Circule os traços no quadro abaixo. Depois do laço, a seleção fica fixa por IDs até você limpar, excluir ou fazer um novo laço.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -99,11 +128,11 @@ fun VectorLassoControl(
                 .fillMaxWidth()
                 .height(150.dp)
                 .onSizeChanged { surfaceSize = it }
-                .pointerInput(project.id, project.width, project.height, surfaceSize) {
+                .pointerInput(project.id, project.width, project.height, surfaceSize, playheadUs) {
                     detectDragGestures(
                         onDragStart = { offset ->
                             gesture = listOf(CanvasPointPx(offset.x.toDouble(), offset.y.toDouble()))
-                            lassoPolygon = emptyList()
+                            selectedIds = emptyList()
                             message = null
                         },
                         onDrag = { change, _ ->
@@ -116,26 +145,38 @@ fun VectorLassoControl(
                         },
                         onDragCancel = {
                             gesture = emptyList()
-                            lassoPolygon = emptyList()
+                            selectedIds = emptyList()
                         },
                         onDragEnd = {
                             if (gesture.size < 3 || surfaceSize.width <= 0 || surfaceSize.height <= 0) {
-                                lassoPolygon = emptyList()
+                                selectedIds = emptyList()
                                 message = "Faça um laço fechado com pelo menos três pontos."
                             } else {
                                 runCatching {
-                                    VectorLassoUiPolicy.toProjectPolygon(
+                                    val polygon = VectorLassoUiPolicy.toProjectPolygon(
                                         points = gesture,
                                         surfaceWidthPx = surfaceSize.width.toDouble(),
                                         surfaceHeightPx = surfaceSize.height.toDouble(),
                                         projectWidthPx = project.width.toDouble(),
                                         projectHeightPx = project.height.toDouble(),
                                     )
-                                }.onSuccess { polygon ->
-                                    lassoPolygon = polygon
-                                    message = "Laço aplicado. A seleção será recalculada se o projeto ou playhead mudar."
+                                    val ids = VectorLassoSelectionPolicy.selectPathIds(
+                                        elements = project.designElements,
+                                        lassoPointsPx = polygon,
+                                        canvasWidthPx = project.width.toDouble(),
+                                        canvasHeightPx = project.height.toDouble(),
+                                        playheadUs = playheadUs,
+                                    )
+                                    VectorLassoPersistentSelectionPolicy.capture(ids)
+                                }.onSuccess { ids ->
+                                    selectedIds = ids
+                                    message = if (ids.isEmpty()) {
+                                        "Nenhum traço dentro do laço."
+                                    } else {
+                                        "${ids.size} traço(s) selecionado(s). A seleção agora é persistente."
+                                    }
                                 }.onFailure { error ->
-                                    lassoPolygon = emptyList()
+                                    selectedIds = emptyList()
                                     message = "Laço inválido • ${error.message ?: "LASSO_INVALID"}"
                                 }
                             }
@@ -159,7 +200,8 @@ fun VectorLassoControl(
                                 canvasHeightPx = project.height.toDouble(),
                             )
                         }.getOrDefault(emptyList())
-                        val color = if (element.id in selectedIds) Color(0xFF20D5D2) else Color(0xFFE7E7EA)
+                        val selected = element.id in liveSelectedIds
+                        val color = if (selected) Color(0xFF20D5D2) else Color(0xFFE7E7EA)
                         points.zipWithNext().forEach { (left, right) ->
                             drawLine(
                                 color = color,
@@ -171,7 +213,7 @@ fun VectorLassoControl(
                                     (right.x / project.width * size.width).toFloat(),
                                     (right.y / project.height * size.height).toFloat(),
                                 ),
-                                strokeWidth = if (element.id in selectedIds) 4f else 2f,
+                                strokeWidth = if (selected) 4f else 2f,
                             )
                         }
                     }
@@ -199,20 +241,26 @@ fun VectorLassoControl(
             }
         }
 
-        if (lassoPolygon.isNotEmpty()) {
+        if (selectedIds.isNotEmpty()) {
             Text(
-                "${selectedIds.size} traço(s) selecionado(s) no estado atual.",
+                "${liveSelectedIds.size} traço(s) na seleção persistente.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
-        if (selectedIds.isNotEmpty()) {
+        if (liveSelectedIds.isNotEmpty()) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedButton(onClick = { moveSelection(-40.0, 0.0) }) { Text("←") }
                 OutlinedButton(onClick = { moveSelection(40.0, 0.0) }) { Text("→") }
                 OutlinedButton(onClick = { moveSelection(0.0, -40.0) }) { Text("↑") }
                 OutlinedButton(onClick = { moveSelection(0.0, 40.0) }) { Text("↓") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(onClick = { transformSelection(0.9, 0.0) }) { Text("Menor") }
+                OutlinedButton(onClick = { transformSelection(1.1, 0.0) }) { Text("Maior") }
+                OutlinedButton(onClick = { transformSelection(1.0, -15.0) }) { Text("↺ 15°") }
+                OutlinedButton(onClick = { transformSelection(1.0, 15.0) }) { Text("↻ 15°") }
             }
         }
 
@@ -220,26 +268,21 @@ fun VectorLassoControl(
             OutlinedButton(
                 onClick = {
                     gesture = emptyList()
-                    lassoPolygon = emptyList()
+                    selectedIds = emptyList()
                     message = null
                 },
             ) { Text("Limpar") }
             OutlinedButton(
                 onClick = {
-                    if (lassoPolygon.isEmpty()) return@OutlinedButton
                     val result = runCatching {
-                        val currentSession = runtime.editorViewModel.sessionState.value
-                        val currentProject = currentSession.project
-                        val currentPlayheadUs = runtime.editorViewModel.previewState.value.positionUs.coerceAtLeast(0L)
-                        val ids = selectCurrentPathIds(currentProject, lassoPolygon, currentPlayheadUs)
-                        require(ids.isNotEmpty()) { "LASSO_SELECTION_EMPTY" }
+                        val (_, ids) = currentSelection()
                         runtime.editorViewModel.dispatch(
                             EditorAction.Execute(DeleteDesignElementsCommand(ids)),
                         )
                     }
                     if (result.isSuccess) {
                         gesture = emptyList()
-                        lassoPolygon = emptyList()
+                        selectedIds = emptyList()
                         message = "Traços removidos. Desfazer continua disponível."
                     } else {
                         message = when (result.exceptionOrNull()?.message) {
@@ -248,8 +291,8 @@ fun VectorLassoControl(
                         }
                     }
                 },
-                enabled = selectedIds.isNotEmpty(),
-            ) { Text("Excluir ${selectedIds.size}") }
+                enabled = liveSelectedIds.isNotEmpty(),
+            ) { Text("Excluir ${liveSelectedIds.size}") }
         }
 
         message?.let { text ->
@@ -264,23 +307,6 @@ fun VectorLassoControl(
             )
         }
     }
-}
-
-private fun selectCurrentPathIds(
-    project: Project,
-    polygon: List<CanvasPointPx>,
-    playheadUs: Long,
-): List<String> {
-    if (polygon.size < 3 || project.width <= 0 || project.height <= 0) return emptyList()
-    return runCatching {
-        VectorLassoSelectionPolicy.selectPathIds(
-            elements = project.designElements,
-            lassoPointsPx = polygon,
-            canvasWidthPx = project.width.toDouble(),
-            canvasHeightPx = project.height.toDouble(),
-            playheadUs = playheadUs,
-        )
-    }.getOrDefault(emptyList())
 }
 
 private fun isActiveAt(element: DesignElement, playheadUs: Long): Boolean {

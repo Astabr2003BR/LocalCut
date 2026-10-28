@@ -26,6 +26,7 @@ enum class TermuxEngineJobStatus {
 enum class TermuxAnalyzeMediaMode {
     MEDIA,
     TRACKING,
+    REVERSE,
 }
 
 data class TermuxTrackingOptions(
@@ -40,6 +41,14 @@ data class TermuxTrackingOptions(
     }
 }
 
+data class TermuxReverseOptions(
+    val chunkDurationUs: Long = 2_000_000L,
+) {
+    init {
+        require(chunkDurationUs in 250_000L..5_000_000L) { "TERMUX_REVERSE_CHUNK_DURATION_INVALID" }
+    }
+}
+
 data class TermuxAnalyzeMediaInput(
     val assetId: String,
     val displayName: String?,
@@ -48,13 +57,26 @@ data class TermuxAnalyzeMediaInput(
     val sourceDurationUs: Long?,
     val mode: TermuxAnalyzeMediaMode = TermuxAnalyzeMediaMode.MEDIA,
     val trackingOptions: TermuxTrackingOptions? = null,
+    val reverseOptions: TermuxReverseOptions? = null,
 ) {
     init {
-        require(mode != TermuxAnalyzeMediaMode.TRACKING || mimeType.startsWith("video/")) {
-            "TERMUX_TRACKING_REQUIRES_VIDEO"
-        }
-        require(mode != TermuxAnalyzeMediaMode.MEDIA || trackingOptions == null) {
-            "TERMUX_TRACKING_OPTIONS_MODE_INVALID"
+        when (mode) {
+            TermuxAnalyzeMediaMode.MEDIA -> {
+                require(trackingOptions == null && reverseOptions == null) {
+                    "TERMUX_MEDIA_OPTIONS_MODE_INVALID"
+                }
+            }
+            TermuxAnalyzeMediaMode.TRACKING -> {
+                require(mimeType.startsWith("video/")) { "TERMUX_TRACKING_REQUIRES_VIDEO" }
+                require(reverseOptions == null) { "TERMUX_TRACKING_OPTIONS_MODE_INVALID" }
+            }
+            TermuxAnalyzeMediaMode.REVERSE -> {
+                require(mimeType.startsWith("video/")) { "TERMUX_REVERSE_REQUIRES_VIDEO" }
+                require(trackingOptions == null) { "TERMUX_REVERSE_OPTIONS_MODE_INVALID" }
+                require(sourceDurationUs != null && sourceDurationUs in 1L..600_000_000L) {
+                    "TERMUX_REVERSE_DURATION_INVALID"
+                }
+            }
         }
     }
 }

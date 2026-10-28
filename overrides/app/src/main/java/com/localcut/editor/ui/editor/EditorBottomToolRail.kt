@@ -78,6 +78,17 @@ fun EditorBottomToolRail(
                 }
             }
 
+            if (activeTool == EditorToolId.DRAW) {
+                VectorLassoControl(modifier = Modifier.fillMaxWidth())
+            }
+
+            if (
+                activeTool == EditorToolId.ANIMATION &&
+                selection in setOf(EditorSelectionKind.VIDEO, EditorSelectionKind.IMAGE)
+            ) {
+                MotionPathActionControl(modifier = Modifier.fillMaxWidth())
+            }
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

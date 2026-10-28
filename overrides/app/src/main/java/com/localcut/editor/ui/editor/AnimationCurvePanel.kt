@@ -34,6 +34,7 @@ import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.termux.TermuxAgentEngineRuntime
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 data class StabilizationUiState(
     val running: Boolean = false,
@@ -71,6 +72,7 @@ fun AnimationCurvePanel(
         val latestSelectedClipId by rememberUpdatedState(selectedClipId)
         val latestOnSetPropertyAnimations by rememberUpdatedState(onSetPropertyAnimations)
         var stabilization by remember(clip.id) { mutableStateOf(StabilizationUiState()) }
+        var stabilizationStrength by remember(clip.id) { mutableFloatStateOf(1f) }
         var x1 by remember(clip.id) { mutableFloatStateOf(0.42f) }
         var y1 by remember(clip.id) { mutableFloatStateOf(0f) }
         var x2 by remember(clip.id) { mutableFloatStateOf(0.58f) }
@@ -90,11 +92,22 @@ fun AnimationCurvePanel(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text(
+                    "Força ${(stabilizationStrength * 100f).roundToInt()}%",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Slider(
+                    value = stabilizationStrength,
+                    onValueChange = { stabilizationStrength = it },
+                    valueRange = 0.1f..1f,
+                    enabled = !stabilization.running,
+                )
                 FilledTonalButton(
                     onClick = {
                         if (!stabilization.running) {
                             val snapshotClip = clip
                             val snapshotAsset = asset
+                            val snapshotStrength = stabilizationStrength.toDouble()
                             stabilization = StabilizationUiState(running = true, message = "Analisando movimento…")
                             scope.launch {
                                 runCatching {
@@ -104,6 +117,7 @@ fun AnimationCurvePanel(
                                         .getOrThrow()
                                     val correction = TermuxGlobalMotionAdapter.toStabilizationAnimations(
                                         result = motion,
+                                        strength = snapshotStrength,
                                         sourceInUs = snapshotClip.sourceInUs,
                                         sourceOutUs = snapshotClip.sourceOutUs,
                                     )
@@ -229,13 +243,18 @@ fun AnimationCurvePanel(
     }
 }
 
-private fun stabilizationErrorMessage(error: Throwable): String = when (error.message) {
-    "OPENCV_UNAVAILABLE" -> "OpenCV não está disponível no UserLAnd/Termux."
-    "STABILIZATION_NO_USABLE_MOTION" -> "Não houve movimento confiável suficiente para estabilizar este trecho."
-    "STABILIZATION_SELECTION_CHANGED" -> "A seleção mudou durante a análise; o resultado não foi aplicado."
-    "STABILIZATION_CLIP_CHANGED" -> "O clipe mudou durante a análise; o resultado antigo foi descartado."
-    "TERMUX_TRACKING_REQUIRES_VIDEO" -> "A estabilização requer um clipe de vídeo."
-    else -> error.message ?: "Falha ao analisar o movimento no UserLAnd/Termux."
+private fun stabilizationErrorMessage(error: Throwable): String {
+    val message = error.message
+    return when {
+        message == "OPENCV_UNAVAILABLE" -> "OpenCV não está disponível no UserLAnd/Termux."
+        message == "TERMUX_ENGINE_NOT_PAIRED" -> "Pareie o LocalCut com o UserLAnd/Termux antes de estabilizar."
+        message == "STABILIZATION_NO_USABLE_MOTION" -> "Não houve movimento confiável suficiente para estabilizar este trecho."
+        message == "STABILIZATION_SELECTION_CHANGED" -> "A seleção mudou durante a análise; o resultado não foi aplicado."
+        message == "STABILIZATION_CLIP_CHANGED" -> "O clipe mudou durante a análise; o resultado antigo foi descartado."
+        message == "TERMUX_TRACKING_REQUIRES_VIDEO" -> "A estabilização requer um clipe de vídeo."
+        message?.contains("Connection refused", ignoreCase = true) == true -> "O motor UserLAnd/Termux não está acessível."
+        else -> message ?: "Falha ao analisar o movimento no UserLAnd/Termux."
+    }
 }
 
 @Composable

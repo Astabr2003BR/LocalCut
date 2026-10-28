@@ -68,6 +68,7 @@ sealed interface RenderSegment {
         val opacity: Double,
         val volume: Double,
         val keyframes: List<TransformKeyframe>,
+        val propertyAnimations: List<PropertyAnimation> = emptyList(),
         val imageFrameRate: Int?,
         val fadeInUs: Long = 0L,
         val fadeOutUs: Long = 0L,

@@ -9,9 +9,13 @@ import android.os.Bundle
 import android.widget.Toast
 import com.localcut.editor.bridge.agent.BridgeColdStartRecovery
 import com.localcut.editor.diagnostics.ProcessExitDiagnostics
+import com.localcut.editor.termux.TermuxAgentEngineRuntime
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class LocalCutApplication : Application(), Application.ActivityLifecycleCallbacks {
     private var coldStartRecoveryAttempted = false
+    private var generatedMediaCleanupAttempted = false
 
     override fun onCreate() {
         super.onCreate()
@@ -29,6 +33,18 @@ class LocalCutApplication : Application(), Application.ActivityLifecycleCallback
             coldStartRecoveryAttempted = true
             val reconnected = BridgeColdStartRecovery(this).reconnectIfNeeded()
             ProcessExitDiagnostics.mark(this, "bridge:cold-start-reconnect=$reconnected")
+        }
+        if (!generatedMediaCleanupAttempted) {
+            generatedMediaCleanupAttempted = true
+            val runtime = LocalCutProcessRuntime.get(this)
+            val startupState = runtime.session.state
+            runtime.processScope.launch(Dispatchers.IO) {
+                TermuxAgentEngineRuntime.get(this@LocalCutApplication).collectGeneratedMediaOrphans(
+                    project = startupState.project,
+                    canUndo = startupState.canUndo,
+                    canRedo = startupState.canRedo,
+                )
+            }
         }
     }
 

@@ -40,6 +40,8 @@ import com.localcut.editor.domain.design.FrameExposurePolicy
 import com.localcut.editor.domain.design.LineAngleSnapMode
 import com.localcut.editor.domain.design.LineAngleSnapPolicy
 import com.localcut.editor.domain.design.OnionSkinCandidate
+import com.localcut.editor.domain.design.OnionSkinColorMode
+import com.localcut.editor.domain.design.OnionSkinColorPolicy
 import com.localcut.editor.domain.design.OnionSkinPolicy
 import com.localcut.editor.domain.design.StrokeAssistMode
 import com.localcut.editor.domain.design.StrokeAssistPolicy
@@ -83,6 +85,7 @@ fun DrawStrokePad(
     var onionNextFrames by remember(project.id) { mutableIntStateOf(1) }
     var onionFrameStep by remember(project.id) { mutableIntStateOf(1) }
     var onionOpacity by remember(project.id) { mutableDoubleStateOf(1.0) }
+    var onionColorMode by remember(project.id) { mutableStateOf(OnionSkinColorMode.ORIGINAL) }
     var exposureFrames by remember(project.id) { mutableIntStateOf(1) }
     var eraserEnabled by remember(project.id) { mutableStateOf(false) }
     var stabilizationStrength by remember(project.id) {
@@ -205,6 +208,21 @@ fun DrawStrokePad(
                     } else {
                         OutlinedButton(onClick = { onionFrameStep = step }) { Text("Passo $step") }
                     }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (onionColorMode == OnionSkinColorMode.ORIGINAL) {
+                    FilledTonalButton(onClick = { onionColorMode = OnionSkinColorMode.ORIGINAL }) { Text("Cores originais") }
+                } else {
+                    OutlinedButton(onClick = { onionColorMode = OnionSkinColorMode.ORIGINAL }) { Text("Cores originais") }
+                }
+                if (onionColorMode == OnionSkinColorMode.TRADITIONAL) {
+                    FilledTonalButton(onClick = { onionColorMode = OnionSkinColorMode.TRADITIONAL }) { Text("Vermelho/verde") }
+                } else {
+                    OutlinedButton(onClick = { onionColorMode = OnionSkinColorMode.TRADITIONAL }) { Text("Vermelho/verde") }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -497,7 +515,13 @@ fun DrawStrokePad(
                 val element = pathElementsById[ghost.elementId] ?: return@forEach
                 val shape = element.shape ?: return@forEach
                 val path = shape.path ?: return@forEach
-                val ghostColor = Color(shape.strokeArgb ?: 0xFFFFFFFF.toInt()).copy(
+                val originalArgb = shape.strokeArgb ?: 0xFFFFFFFF.toInt()
+                val ghostArgb = OnionSkinColorPolicy.argbFor(
+                    relativeFrame = ghost.relativeFrame,
+                    originalArgb = originalArgb,
+                    mode = onionColorMode,
+                )
+                val ghostColor = Color(ghostArgb).copy(
                     alpha = (ghost.alpha * onionOpacity * element.opacity).toFloat().coerceIn(0f, 1f),
                 )
                 path.points.zipWithNext().forEach { (start, end) ->

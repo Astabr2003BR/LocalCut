@@ -35,16 +35,102 @@ Continue evolving LocalCut as the main Android editor, with UserLAnd/Termux as a
 - Tracking result is converted into existing `PropertyAnimation` transforms.
 - Trim-aware stabilization rebases motion to clip-local time and conservatively rejects deltas crossing the trim-start boundary.
 - Non-destructive merge preserves unrelated animations.
-- Stale stabilization is rejected when the asset/fingerprint/trim changes during analysis.
 - Stabilization strength: 10–100%.
 - Tracking quality presets:
   - FAST: 120 frames / every 4 / 80 corners.
   - NORMAL: 180 / every 2 / 120.
   - PRECISE: 300 / every 1 / 200.
-- Signed zero regression (`-0.0` versus `0.0`) in stabilization was fixed by canonicalizing zero in production code, not by weakening the test.
+- Signed zero regression (`-0.0` versus `0.0`) was fixed by canonicalizing zero in production code, not by weakening the test.
 
-Important stabilization fix commit:
-- `a8ca720b70a50da45a1ad2391f0fbd0819d15d28`
+### Base transform + automatic edge compensation
+- Stabilization no longer assumes an artistic transform of `(x=0,y=0,scale=1,rotation=0)`.
+- Correction keyframes are now relative to the selected clip's existing transform, so stabilizing a clip does not recenter or reset a transform intentionally applied by the user.
+- The UI snapshots the clip transform and project canvas before tracking; if transform, asset/fingerprint, trim, selection or canvas changes while analysis runs, the stale result is discarded.
+- `TransformEffectFactory` confirms domain x/y are project pixels before conversion to Media3 normalized device coordinates (NDC).
+- Android Matrix documentation confirms the current renderer call order `postTranslate → postRotate → postScale` produces `M = S * R * T`.
+- Media3 `MatrixTransformation` operates on NDC `[-1,1]` on x/y; edge coverage is therefore calculated in exactly that space.
+- `StabilizationEdgeCompensation` computes the minimum relative scale that keeps all output NDC corners inside the transformed source after the actual `S*R*T` order.
+- Translation at/beyond the NDC source boundary is unrecoverable by scaling and fails closed.
+- Relative edge compensation above `2x` fails closed as `STABILIZATION_EDGE_COMPENSATION_TOO_LARGE` rather than silently applying an extreme crop/zoom.
+- UI error text explains that excessive movement cannot be stabilized safely without excessive zoom.
+
+Key commits:
+- signed-zero fix: `a8ca720b70a50da45a1ad2391f0fbd0819d15d28`
+- edge geometry tests: `5d0deea4950085e9a0a7c1ee41f3b65fd252252c`
+- NDC edge geometry implementation: `abc7b1fa50aeb40a47b633e8a478681bb10a82ca`
+- planner base-transform/edge integration: `abdbea074cded43c651049ea5ee22251823852f3`
+- adapter forwarding: `74df0b7fadcc5ba8918f1beb755fd6b6e9663a12`
+- UI snapshot/stale protection: `e9c25bf83fabcd885a76715e5ddb071b2cb3dbc9`
+
+Local evidence:
+- pure Kotlin harness passed: `PASS Media3 NDC S*R*T edge coverage`.
+
+## MODERN PROPERTY ANIMATION RENDERING — CRITICAL GAP FIXED
+A render-path audit found that `clip.propertyAnimations` were persisted/edited but the Media3 pipeline still carried only legacy `clip.keyframes`. This meant modern motion presets and stabilization could exist in the project without being applied to preview/export.
+
+Current fixed path:
+`Clip.propertyAnimations → ProjectRenderPlanCompiler → RenderSegment.Media → Media3BlueprintItem.Media → PropertyTransformRenderResolver → TransformEffectFactory / Media3SequenceOpacityResolver`.
+
+Behavior:
+- legacy `TransformKeyframe` remains supported;
+- modern property animations override only properties they explicitly define;
+- all other transform properties fall back to the legacy/base result;
+- supported modern render properties are `transform.x`, `transform.y`, `transform.scale`, `transform.rotationDeg`, `transform.opacity`;
+- duplicate modern animations for the same supported transform property fail closed;
+- animation evaluation uses clip-local presentation time;
+- modern opacity also triggers the custom compositor alpha path when needed;
+- constructor compatibility was preserved by appending new defaulted fields/parameters rather than inserting them into old positional call order.
+
+Tests cover:
+- modern-vs-legacy precedence;
+- clip-local clock;
+- modern opacity and compositor requirement;
+- `Clip → RenderPlan → Media3Blueprint` propagation.
+
+Key commits:
+- resolver tests: `87cf2f42e6eb1df8b22af4885f4bd4c875ef5ca6`
+- resolver: `a7cb17875ef32ca054acb8b6d5ec393fed4670d1`
+- render-plan propagation: `9cc0870a17ee451a6d27cc4e450f4c3630baf24d`
+- blueprint propagation: `b2affe881232336b825606d39eda3e6683b0f1bb`
+- transform renderer: `288bbce1abbe4599d324f018607db47e411081eb`
+- modern opacity: `f9976e905f27dfbfece16f19dc14d13892c32393`
+- Media3 compiler wiring + audio-fade regression correction: `223da0575fe41f179808f5e70c5d4922d17634c4`
+- end-to-end propagation tests: `f396abbb81073f42a386c77bb32477b3068e2d62`
+
+## GENERATED REVERSE MEDIA RETENTION / GC
+Generated Reverse files now have a bounded, history-safe retention policy.
+
+Safety rules:
+- GC is fully blocked while the session reports `canUndo` or `canRedo`;
+- only exact `reverse-<uuid>-<uuid>.mp4` files are candidates;
+- `shared-*`, imports and arbitrary filenames are never candidates;
+- all current Project Asset URIs protect their generated backing files;
+- exact FileProvider authority + `/remote-media/<file>` path is required before a URI protects a generated candidate;
+- generated files younger than 24 hours are protected;
+- impossible/future timestamps fail closed;
+- only top-level `filesDir/remote-media` is scanned; there is no recursive traversal;
+- root/child symlinks, directories, empty files and canonical-parent escapes are never deleted;
+- deletion failure is counted/reported without widening the deletion set.
+
+Lifecycle:
+- cleanup runs once per app process after the project/session is loaded;
+- no timer and no scan on each editor action;
+- it runs on IO through the existing process scope;
+- an async startup race remains safe because current-project Assets are protected and newly generated files are inside the 24h grace period.
+
+The concrete base `HistoryManager` implementation lives in the packaged base source rather than a visible override, so history internals were deliberately not overwritten. Public `ProjectSessionState.canUndo/canRedo` is used as the fail-closed history gate.
+
+Key commits:
+- design: `383ca76108ebc52e70c8929152bd5fcb3bd4cb56`
+- retention tests: `8192d43fb1015416402b48702389c545a1fd5507`
+- retention policy: `41ec93e31f75d1059ff1b0e07216d01978cd378d`
+- collector tests: `fcf9e98252988d9d6e2ee2c9b9eebde10752339f`
+- collector: `d7b2ea0280a2b9ea0b6a38e7860a123ce660b703`
+- runtime integration: `21c8a47f197220be890af0ccf6a0ca45e8b6fb64`
+- one-per-process startup trigger: `60264c07bf012660cacd5db01faf7f52a5e8ffdf`
+
+Local evidence:
+- pure Kotlin harness passed: `PASS generated media retention/collector`.
 
 ## LONG-RUNNING WORKER ARCHITECTURE
 Reverse and OpenCV tracking must NOT block the `STAGE_MEDIA` socket while heavy work runs.
@@ -69,118 +155,70 @@ Key commits:
 - Anti-loop wait test: `1aa51aee732008f58564fbec50a40e15555f8743`
 
 ## REVERSE — CURRENT ROUND TRIP
-Reverse is no longer only a planner/foundation. The round trip now includes:
+Reverse is no longer only a planner/foundation. The round trip includes:
 
 ### Worker/server
-- Chunked FFmpeg reverse/areverse execution.
-- Short chunks to avoid whole-video reverse memory behavior.
-- Initial limits:
-  - chunk 0.25–5 s,
-  - default 2 s,
-  - max source duration 10 min.
-- Private generated-media spool per job.
-- Fixed generated output path owned by the engine; no client-supplied worker path.
-- Sidecar metadata, size limit, SHA-256, traversal/symlink protections.
-- Authenticated generated-media download through `GET_JOB + includeGeneratedMedia=true`.
-- Server returns JSON header (`contentLength`, `sha256`, `binaryBody`) followed by exact MP4 bytes.
-- Internal worker paths are never returned to Android.
+- chunked FFmpeg reverse/areverse execution;
+- short chunks to avoid whole-video reverse memory behavior;
+- chunk 0.25–5 s, default 2 s, initial max source duration 10 min;
+- private generated-media spool per job;
+- fixed generated output path owned by the engine; no client-supplied worker path;
+- sidecar metadata, size limit, SHA-256, traversal/symlink protections;
+- authenticated generated-media download through `GET_JOB + includeGeneratedMedia=true`;
+- server returns JSON header (`contentLength`, `sha256`, `binaryBody`) followed by exact MP4 bytes;
+- internal worker paths are never returned to Android.
 
 ### Android transport/storage
-- Generated MP4 streams directly to a `.part` file; video is not loaded wholly into RAM.
-- Exact length and SHA-256 are checked before publish.
-- `fsync` happens before rename.
-- Failure removes partial output.
-- Final generated files use LocalCut-owned durable storage: `filesDir/remote-media`, not cache.
-- Existing `FileProvider` authority `${applicationId}.remote-media` is reused.
-- `OwnedMediaFilePolicy` rejects empty files and anything outside the exact LocalCut-owned directory.
-- Existing `AndroidAssetImporter` inspects the generated `content://` URI and validates video type, MIME, size and duration before timeline mutation.
-- Preparation failure removes the generated output file.
+- generated MP4 streams directly to a `.part` file; video is not loaded wholly into RAM;
+- exact length and SHA-256 are checked before publish;
+- `fsync` happens before rename;
+- failure removes partial output;
+- final generated files use `filesDir/remote-media`;
+- existing FileProvider authority `${applicationId}.remote-media` is reused;
+- generated `content://` is inspected by the existing Android Asset importer before timeline mutation.
 
 ### Clip replacement/history
-- Trim mapping for whole-source physical reverse is implemented:
-  - original source `[in, out]` over source duration `D`
-  - reversed source range becomes `[D-out, D-in]`.
-- Position, duration, transform, effects, property animations and compatible time-map settings are preserved.
-- Existing Freeze or logical `timeMap.reverse` causes fail-closed behavior for this first implementation.
-- `ApplyReversedAssetCommand` adds the generated Asset and swaps the selected clip source through the normal `EditorCommand` history path.
-- Undo restores the exact original project state; redo can reapply the generated asset.
-- Original/generated bytes are intentionally not aggressively deleted while history may still reference them.
+- physical reverse trim mapping: original `[in,out]` over duration `D` becomes `[D-out,D-in]`;
+- position, duration, transform, effects, property animations and compatible time-map settings are preserved;
+- existing Freeze/logical reverse causes fail-closed behavior;
+- `ApplyReversedAssetCommand` adds the generated Asset and swaps the clip source through normal undoable history;
+- undo restores the exact original project state; redo can reapply the generated asset.
 
 ### Stale-result guard and reusable apply coordinator
-Reverse captures a source signature before processing:
-- clip id,
-- asset id,
-- asset fingerprint,
-- source duration,
-- sourceIn/sourceOut.
+- source signature includes clip id, asset id/fingerprint/source duration/sourceIn/sourceOut;
+- stale result is discarded and generated bytes deleted if source/trim becomes incompatible;
+- the sensitive apply flow is centralized in `ReverseMediaApplyCoordinator`.
 
-When the worker returns, the result is discarded and its file deleted if the source media/trim changed, the clip disappeared, or Freeze/logical Reverse became active. Moving the clip or changing compatible visual properties does not unnecessarily invalidate the result.
+### UI exposure
+- `ReverseMediaActionControl` is the single reusable Compose entrypoint;
+- Agent Engine media panel reuses it;
+- when **Velocidade** is active for a selected VIDEO, the same real Reverse control appears in the speed context;
+- one capability preflight occurs per user click; no engine polling loop.
 
-The sensitive generated-media apply flow is centralized in `ReverseMediaApplyCoordinator`:
-- capture source snapshot;
-- prepare Reverse through the existing runtime;
-- stale-check immediately before apply;
-- execute the normal undoable editor command;
-- verify that the clip actually switched to the generated asset;
-- delete generated bytes if stale or rejected.
-
-Key commits:
-- coordinator test: `8dd76069abbcceecfc9c6c14dbe40662adba031a`
+Key later commits:
 - coordinator: `a0c0c0fe189d07f948976c23973617200aa31a33`
-
-### Current UI exposure
-- `ReverseMediaActionControl` is the single reusable Compose entrypoint; socket/filesystem/FFmpeg logic remains outside Compose.
-- Agent Engine media panel reuses that control instead of maintaining duplicate Reverse logic.
-- When **Velocidade** is active for a selected VIDEO, the bottom tool context now shows the same real Reverse control beside the speed tools.
-- The control makes one capability preflight per user click; it does not poll the engine.
-- It only applies after the full verified worker/download/Asset/guard/undoable-command path succeeds.
-
-Key UI commits:
 - reusable Reverse control: `f1a49b2e69c15a6288895eec507e616621e9509a`
 - Agent panel reuse: `b00d18ce711a8a409c3b7f087ec4ef8bf506f341`
 - Speed-context Reverse: `0d417258e6840c5bbfd2581c5f2f5cfedc3c7392`
 
-Earlier Reverse commits include:
-- executor: `e4bb818...`
-- server job: `f124219...`
-- generated download server: `31d5d6b...`
-- Android streamed verified download: `6e13f1c...`
-- reverse coordinator/runtime: `1221817...`
-- durable generated storage: `2e00ff1bb59485ea125762c3699499bec6baf492`
-- LocalCut-owned media boundary: `c831a851d9971cbea399f7d9d33d3df674446eda`
-- FileProvider exposure without copy: `4ea8ee01fec783d32f3fc6fd3787a188eaf285da`
-- generated Asset inspector: `c79cd30303c27b3c009ce03bee38b43f5c6335b0`
-- prepared Reverse Asset: `62964dbce44d9702a56877f212249cc422570b08`
-- trim replacement planner: `22d3c294e774956cfb95d387a3da861bd6105b9e`
-- undoable replacement command: `2a80df9832e5f26d907a5acde1d1c4500415858a`
-- stale guard: `e7624f45e343e58d452a268824d1c1de1d235f3a`
-- original Agent Engine Reverse UI: `2a40861bf1228b0c12879ca7cb9a844d5c6cafd7`
-
 ## FREEZE
-- Freeze backend already exists through `Media3FreezeFramePlanner`.
-- `CreativeToolsUiPolicy.freezeCurrentFrame(...)` converts the current presentation frame to source offset using `TimeMapEvaluator`.
+- Freeze backend exists through `Media3FreezeFramePlanner`.
+- `CreativeToolsUiPolicy.freezeCurrentFrame(...)` maps current presentation frame to source offset through `TimeMapEvaluator`.
 - `SetClipTimeMapCommand` recalculates logical duration and timeline validation protects overlaps.
-- Initial policy supports one freeze at a time and deliberately rejects logical Reverse and speed-ramp combinations.
-- A real `FreezeFrameActionControl` now reads the actual editor playhead and selected VIDEO from `LocalCutProcessRuntime`.
-- Speed context exposes:
-  - Freeze 0.5 s;
-  - Freeze 1 s;
-  - Freeze 2 s;
-  - Remove Freeze when a hold already exists.
-- Freeze applies through `SetClipTimeMapCommand`, preserving undo/redo and the existing Media3 render backend.
-- No `EditorScreen.kt` rewrite was needed; the control is attached through the existing bottom tool rail only while Speed is active.
+- initial policy supports one freeze at a time and rejects incompatible logical Reverse/speed-ramp combinations.
+- `FreezeFrameActionControl` reads the actual editor playhead/selected VIDEO.
+- Speed context exposes Freeze 0.5 s / 1 s / 2 s and Remove Freeze.
+- applies through `SetClipTimeMapCommand`, preserving undo/redo.
 
 Key commits:
-- policy test: `ba69e285f3b8e03774eee23f9826433bd8292205`
-- policy implementation: `d6d009c9a4f3c8e663a31b60f695dc7f1503aa7b`
-- playhead-aware Freeze control: `6ab51c9eca226ad26078fb9b3b2e36ab0ac3fd1c`
+- policy: `d6d009c9a4f3c8e663a31b60f695dc7f1503aa7b`
+- playhead-aware control: `6ab51c9eca226ad26078fb9b3b2e36ab0ac3fd1c`
 - Speed-context Freeze: `cd940e919a86839addb71025b04445f1ce62649c`
 
 ## REVERSE FFMPEG AUDIT
-- Current algorithm reverses short chunks individually, reverses chunk order globally and concatenates uniformly re-encoded MP4 chunks.
-- FFmpeg official documentation explicitly warns that `reverse` / `areverse` buffer their clip and recommends trimming first; the chunk architecture follows that guidance.
-- FFmpeg FAQ confirms concat demuxer is appropriate when already-compatible encoded segments can be concatenated without another full re-encode.
-- No speculative timestamp rewrite was added in this audit because no failing A/V-sync or timestamp test currently demonstrates the need. Add such a change only with reproducible evidence.
+- current algorithm reverses short chunks individually, reverses chunk order globally and concatenates uniformly re-encoded MP4 chunks;
+- FFmpeg docs warn `reverse`/`areverse` buffer their clip and recommend trimming first; chunking follows that guidance;
+- no speculative timestamp rewrite was added without a reproducible A/V-sync failure.
 
 ## BLEND MODES
 - BlendMode enum exists.
@@ -188,27 +226,27 @@ Key commits:
 - Do not expose Multiply/Screen/Overlay as fake buttons.
 - Correct implementation requires a dedicated compositor/OpenGL blend backend.
 
-## CI EVIDENCE / CURRENT RULE
-Historical validated checkpoints include multiple successful Termux and Bridge runs.
-A previous Android failure was diagnosed precisely: 879 tests ran and one stabilization test failed due to signed zero. Production was fixed in `a8ca720...`.
+## CI EVIDENCE / CONSUMED SHAS
+Do not query these SHAs again:
 
-Recent code SHAs have each received at most one status query; several were still pending/in-progress at that single checkpoint. Do NOT query those same SHAs again merely to see whether they finished.
-
-Latest code checkpoint consumed under the one-query rule:
 - `cd940e919a86839addb71025b04445f1ce62649c`
-  - Bridge Controller CI #1053: queued at the single checkpoint.
-  - Termux Agent Engine CI #194: queued.
-  - Android Debug APK #1345: queued.
-  - Android Multitrack Export Smoke #1199: pending.
-- Do NOT query `cd940e...` again.
-- A future NEW code SHA may receive one fresh CI checkpoint.
+  - Bridge #1053 queued; Termux #194 queued; Android #1345 queued; Multitrack #1199 pending at its single checkpoint.
+- `60264c07bf012660cacd5db01faf7f52a5e8ffdf`
+  - Termux Agent Engine CI #203 SUCCESS.
+  - Bridge Controller CI #1062 SUCCESS.
+  - Android Debug #1354 and Multitrack #1208 were still in progress at the single checkpoint.
+- `f396abbb81073f42a386c77bb32477b3068e2d62`
+  - Android Debug #1369 queued.
+  - Termux #218 and Bridge #1077 in progress.
+  - Multitrack #1223 queued.
+
+A NEW final code/checkpoint SHA after the stabilization-edge work may receive exactly one fresh CI query.
 
 ## OPEN ITEMS — PRIORITY
-1. Follow the fixed CI anti-loop rule; inspect a workflow only if a permitted checkpoint on a new SHA reports a completed failure.
-2. Add generated-media orphan garbage collection only after defining history-safe retention; never delete media still reachable by undo/redo.
-3. Add stabilization edge/crop compensation only after transform coordinate units are confirmed.
-4. Blend modes require a dedicated compositor backend.
-5. Continue creative-suite features in small independent blocks; do not reimplement Reverse/Freeze backends that are now wired.
+1. Follow the fixed one-query-per-SHA CI rule; inspect a workflow only when a permitted new-SHA checkpoint reports a completed failure.
+2. Validate the now-rendered modern property animations and stabilization on a real Android device when an APK candidate is intentionally built/tested; do not claim physical behavior before that.
+3. Blend modes require a dedicated compositor/OpenGL backend before any UI buttons are exposed.
+4. Continue creative-suite features in small independent blocks; do not reimplement Reverse/Freeze/GC/property-animation render paths now completed.
 
 ## LAST VALID CHECKPOINT
 This file plus the current branch HEAD are the source of truth. Keep PR #13 open + draft. Never merge into `main` without explicit user authorization.

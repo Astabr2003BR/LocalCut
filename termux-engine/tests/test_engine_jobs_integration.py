@@ -154,12 +154,13 @@ class EngineJobsIntegrationTest(unittest.TestCase):
         self.assertEqual(5, staged["job"]["output"]["analysis"]["sizeBytes"])
         self.assertEqual(64, len(staged["transfer"]["sha256"]))
 
-    def test_tracking_job_stages_media_and_runs_only_typed_opencv_analyzer(self):
+    def test_tracking_mode_stages_media_and_runs_only_typed_opencv_analyzer(self):
         created = self.request(
             "CREATE_JOB",
-            jobType="ANALYZE_TRACKING",
+            jobType="ANALYZE_MEDIA",
             idempotencyKey="asset-3-tracking-v1",
             input={
+                "mode": "TRACKING",
                 "assetId": "asset-3",
                 "mimeType": "video/mp4",
                 "sizeBytes": 5,
@@ -195,9 +196,10 @@ class EngineJobsIntegrationTest(unittest.TestCase):
     def test_tracking_options_fail_closed_before_job_creation(self):
         invalid = self.request(
             "CREATE_JOB",
-            jobType="ANALYZE_TRACKING",
+            jobType="ANALYZE_MEDIA",
             idempotencyKey="asset-4-tracking-invalid",
             input={
+                "mode": "TRACKING",
                 "assetId": "asset-4",
                 "mimeType": "video/mp4",
                 "sizeBytes": 5,

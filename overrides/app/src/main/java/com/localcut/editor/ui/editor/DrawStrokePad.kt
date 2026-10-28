@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,6 +37,8 @@ import com.localcut.editor.domain.design.DrawStrokeCapturePolicy
 import com.localcut.editor.domain.design.DrawStrokePolicy
 import com.localcut.editor.domain.design.OnionSkinCandidate
 import com.localcut.editor.domain.design.OnionSkinPolicy
+import com.localcut.editor.domain.design.VectorEraserCandidate
+import com.localcut.editor.domain.design.VectorEraserPolicy
 import com.localcut.editor.domain.model.DesignElement
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.ShapeKind
@@ -58,15 +59,19 @@ fun DrawStrokePad(
     project: Project,
     playheadUs: Long,
     onAddElement: (DesignElement) -> Unit,
+    onDeleteElement: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var capturedPoints by remember(project.id) { mutableStateOf(emptyList<CanvasPointPx>()) }
     var padSize by remember(project.id) { mutableStateOf(IntSize.Zero) }
     var strokeWidthPx by remember(project.id) { mutableDoubleStateOf(DrawStrokePadPolicy.DEFAULT_STROKE_WIDTH_PX) }
+    var eraserRadiusPx by remember(project.id) { mutableDoubleStateOf(24.0) }
     var strokeArgb by remember(project.id) { mutableIntStateOf(0xFFFFFFFF.toInt()) }
     var frameByFrameEnabled by remember(project.id) { mutableStateOf(false) }
     var onionSkinEnabled by remember(project.id) { mutableStateOf(true) }
+    var eraserEnabled by remember(project.id) { mutableStateOf(false) }
     val previewColor = drawColorPresets.firstOrNull { it.argb == strokeArgb }?.color ?: Color(strokeArgb)
+    val gestureColor = if (eraserEnabled) Color(0xFFFF6B6B) else previewColor
 
     val pathElements = project.designElements.filter { element ->
         element.shape?.kind == ShapeKind.PATH && element.shape.path != null
@@ -90,10 +95,10 @@ fun DrawStrokePad(
     ) {
         Text("Desenho livre", style = MaterialTheme.typography.labelMedium)
         Text(
-            if (frameByFrameEnabled) {
-                "Modo frame a frame: cada gesto ocupa um frame. Onion skin mostra o frame anterior e o próximo."
-            } else {
-                "Arraste o dedo no quadro. Cada gesto vira um PATH editável e pode ser desfeito."
+            when {
+                eraserEnabled -> "Borracha vetorial: arraste sobre um traço ativo para removê-lo. Desfazer restaura o traço."
+                frameByFrameEnabled -> "Modo frame a frame: cada gesto ocupa um frame. Onion skin mostra o frame anterior e o próximo."
+                else -> "Arraste o dedo no quadro. Cada gesto vira um PATH editável e pode ser desfeito."
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -115,33 +120,49 @@ fun DrawStrokePad(
                     OutlinedButton(onClick = { onionSkinEnabled = true }) { Text("Onion skin") }
                 }
             }
+            if (eraserEnabled) {
+                FilledTonalButton(onClick = { eraserEnabled = false }) { Text("Borracha ON") }
+            } else {
+                OutlinedButton(onClick = { eraserEnabled = true }) { Text("Borracha") }
+            }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            drawColorPresets.forEach { preset ->
-                if (preset.argb == strokeArgb) {
-                    FilledTonalButton(onClick = { strokeArgb = preset.argb }) { Text(preset.label) }
-                } else {
-                    OutlinedButton(onClick = { strokeArgb = preset.argb }) { Text(preset.label) }
+        if (!eraserEnabled) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                drawColorPresets.forEach { preset ->
+                    if (preset.argb == strokeArgb) {
+                        FilledTonalButton(onClick = { strokeArgb = preset.argb }) { Text(preset.label) }
+                    } else {
+                        OutlinedButton(onClick = { strokeArgb = preset.argb }) { Text(preset.label) }
+                    }
                 }
             }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                "Pincel ${strokeWidthPx.roundToInt()} px",
-                modifier = Modifier.width(104.dp),
+                if (eraserEnabled) "Borracha ${eraserRadiusPx.roundToInt()} px" else "Pincel ${strokeWidthPx.roundToInt()} px",
+                modifier = Modifier.width(112.dp),
                 style = MaterialTheme.typography.bodySmall,
             )
-            Slider(
-                value = strokeWidthPx.toFloat(),
-                onValueChange = { strokeWidthPx = it.toDouble() },
-                valueRange = 2f..48f,
-                modifier = Modifier.weight(1f),
-            )
+            if (eraserEnabled) {
+                Slider(
+                    value = eraserRadiusPx.toFloat(),
+                    onValueChange = { eraserRadiusPx = it.toDouble() },
+                    valueRange = 4f..48f,
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                Slider(
+                    value = strokeWidthPx.toFloat(),
+                    onValueChange = { strokeWidthPx = it.toDouble() },
+                    valueRange = 2f..48f,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
 
         Canvas(
@@ -150,7 +171,17 @@ fun DrawStrokePad(
                 .height(220.dp)
                 .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(10.dp))
                 .onSizeChanged { padSize = it }
-                .pointerInput(project.id, playheadUs, strokeArgb, strokeWidthPx, padSize, frameByFrameEnabled, project.fps) {
+                .pointerInput(
+                    project.id,
+                    playheadUs,
+                    strokeArgb,
+                    strokeWidthPx,
+                    eraserRadiusPx,
+                    padSize,
+                    frameByFrameEnabled,
+                    eraserEnabled,
+                    project.fps,
+                ) {
                     detectDragGestures(
                         onDragStart = { offset ->
                             capturedPoints = listOf(CanvasPointPx(offset.x.toDouble(), offset.y.toDouble()))
@@ -164,23 +195,53 @@ fun DrawStrokePad(
                                 size.height > 0 &&
                                 DrawStrokeCapturePolicy.canCommit(points)
                             ) {
-                                val frameWindow = if (frameByFrameEnabled) {
-                                    OnionSkinPolicy.frameWindow(playheadUs.coerceAtLeast(0L), project.fps)
+                                if (eraserEnabled) {
+                                    val normalizedGesture = runCatching {
+                                        DrawStrokePolicy.normalize(
+                                            points = points,
+                                            canvasWidthPx = size.width.toDouble(),
+                                            canvasHeightPx = size.height.toDouble(),
+                                        )
+                                    }.getOrNull()
+                                    if (normalizedGesture != null) {
+                                        val minSidePx = minOf(size.width, size.height).toDouble().coerceAtLeast(1.0)
+                                        val radiusNormalized = (eraserRadiusPx / minSidePx)
+                                            .coerceIn(0.0001, VectorEraserPolicy.MAX_RADIUS_NORMALIZED)
+                                        val candidates = pathElements
+                                            .filter { isActiveAt(it, playheadUs.coerceAtLeast(0L)) }
+                                            .mapNotNull { element ->
+                                                val path = element.shape?.path ?: return@mapNotNull null
+                                                VectorEraserCandidate(
+                                                    elementId = element.id,
+                                                    zIndex = element.zIndex,
+                                                    points = path.points,
+                                                )
+                                            }
+                                        VectorEraserPolicy.findTopmostHit(
+                                            candidates = candidates,
+                                            eraserPoints = normalizedGesture,
+                                            radiusNormalized = radiusNormalized,
+                                        )?.let(onDeleteElement)
+                                    }
                                 } else {
-                                    null
+                                    val frameWindow = if (frameByFrameEnabled) {
+                                        OnionSkinPolicy.frameWindow(playheadUs.coerceAtLeast(0L), project.fps)
+                                    } else {
+                                        null
+                                    }
+                                    val element = DrawStrokePolicy.createPathElement(
+                                        id = DrawStrokePadPolicy.nextStrokeId(project.designElements.mapTo(hashSetOf()) { it.id }),
+                                        startUs = frameWindow?.startUs ?: playheadUs.coerceAtLeast(0L),
+                                        durationUs = frameWindow?.durationUs ?: DrawStrokePadPolicy.DEFAULT_DURATION_US,
+                                        points = points,
+                                        canvasWidthPx = size.width.toDouble(),
+                                        canvasHeightPx = size.height.toDouble(),
+                                        strokeArgb = strokeArgb,
+                                        strokeWidthPx = strokeWidthPx,
+                                        zIndex = DrawStrokePadPolicy.nextZIndex(project.designElements.map { it.zIndex }),
+                                    )
+                                    onAddElement(element)
                                 }
-                                val element = DrawStrokePolicy.createPathElement(
-                                    id = DrawStrokePadPolicy.nextStrokeId(project.designElements.mapTo(hashSetOf()) { it.id }),
-                                    startUs = frameWindow?.startUs ?: playheadUs.coerceAtLeast(0L),
-                                    durationUs = frameWindow?.durationUs ?: DrawStrokePadPolicy.DEFAULT_DURATION_US,
-                                    points = points,
-                                    canvasWidthPx = size.width.toDouble(),
-                                    canvasHeightPx = size.height.toDouble(),
-                                    strokeArgb = strokeArgb,
-                                    strokeWidthPx = strokeWidthPx,
-                                    zIndex = DrawStrokePadPolicy.nextZIndex(project.designElements.map { it.zIndex }),
-                                )
-                                onAddElement(element)
                             }
                             capturedPoints = emptyList()
                         },
@@ -211,13 +272,19 @@ fun DrawStrokePad(
 
             capturedPoints.zipWithNext().forEach { (start, end) ->
                 drawLine(
-                    color = previewColor,
+                    color = gestureColor,
                     start = Offset(start.x.toFloat(), start.y.toFloat()),
                     end = Offset(end.x.toFloat(), end.y.toFloat()),
-                    strokeWidth = strokeWidthPx.toFloat(),
+                    strokeWidth = if (eraserEnabled) eraserRadiusPx.toFloat().coerceAtLeast(1f) else strokeWidthPx.toFloat(),
                     cap = StrokeCap.Round,
                 )
             }
         }
     }
+}
+
+private fun isActiveAt(element: DesignElement, playheadUs: Long): Boolean {
+    if (playheadUs < element.startUs) return false
+    val endUs = if (element.durationUs > Long.MAX_VALUE - element.startUs) Long.MAX_VALUE else element.startUs + element.durationUs
+    return playheadUs < endUs
 }

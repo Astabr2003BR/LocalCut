@@ -209,13 +209,21 @@ fun FocusedSpeedPanel(
             }
         }
 
-        if (clip.timeMap.reverse || clip.timeMap.freezeSegments.isNotEmpty()) {
+        if (clip.timeMap.reverse) {
             Text(
-                "Este clipe contém um mapa de tempo que o painel móvel ainda não pode editar diretamente.",
+                "Este clipe usa Reverse; remova o Reverse antes de editar velocidade ou Freeze por este painel.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else if (clip.timeMap.freezeSegments.isNotEmpty()) {
+            Text(
+                "Freeze ativo. Use o controle abaixo para removê-lo antes de aplicar outra curva de velocidade.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+
+        FreezeFrameActionControl(modifier = Modifier.fillMaxWidth())
     }
 }
 

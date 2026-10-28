@@ -20,7 +20,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.consume
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -74,7 +73,6 @@ fun MotionPathActionControl(
                             message = null
                         },
                         onDrag = { change, _ ->
-                            change.consume()
                             if (gesture.size < 2048) {
                                 gesture = gesture + CanvasPointPx(
                                     change.position.x.toDouble(),
@@ -88,13 +86,13 @@ fun MotionPathActionControl(
         ) {
             drawRect(Color(0xFF151519))
             drawLine(
-                color = Color(0x334DFFFFFF),
+                color = Color(0x33FFFFFF),
                 start = Offset(size.width / 2f, 0f),
                 end = Offset(size.width / 2f, size.height),
                 strokeWidth = 1f,
             )
             drawLine(
-                color = Color(0x334DFFFFFF),
+                color = Color(0x33FFFFFF),
                 start = Offset(0f, size.height / 2f),
                 end = Offset(size.width, size.height / 2f),
                 strokeWidth = 1f,
@@ -124,12 +122,12 @@ fun MotionPathActionControl(
             ) { Text("Limpar") }
             OutlinedButton(
                 onClick = {
-                    val currentSession = runtime.editorViewModel.sessionState.value
-                    require(currentSession.selectedClipId == clip.id) { "MOTION_PATH_SELECTION_CHANGED" }
-                    val currentClip = currentSession.project.findClip(clip.id)
-                        ?: error("MOTION_PATH_CLIP_CHANGED")
-                    require(currentClip.assetId == clip.assetId) { "MOTION_PATH_CLIP_CHANGED" }
                     val result = runCatching {
+                        val currentSession = runtime.editorViewModel.sessionState.value
+                        require(currentSession.selectedClipId == clip.id) { "MOTION_PATH_SELECTION_CHANGED" }
+                        val currentClip = currentSession.project.findClip(clip.id)
+                            ?: error("MOTION_PATH_CLIP_CHANGED")
+                        require(currentClip.assetId == clip.assetId) { "MOTION_PATH_CLIP_CHANGED" }
                         require(surfaceSize.width > 0 && surfaceSize.height > 0) { "MOTION_PATH_SURFACE_UNAVAILABLE" }
                         val points = MotionPathUiPolicy.toMotionPoints(
                             gesture = gesture,
@@ -165,16 +163,25 @@ fun MotionPathActionControl(
             if (hasGeneratedPath) {
                 OutlinedButton(
                     onClick = {
-                        val currentSession = runtime.editorViewModel.sessionState.value
-                        val currentClip = currentSession.project.findClip(clip.id) ?: return@OutlinedButton
-                        val cleaned = MotionPathUiPolicy.removeGeneratedMotionPath(currentClip.propertyAnimations)
                         val result = runCatching {
+                            val currentSession = runtime.editorViewModel.sessionState.value
+                            require(currentSession.selectedClipId == clip.id) { "MOTION_PATH_SELECTION_CHANGED" }
+                            val currentClip = currentSession.project.findClip(clip.id)
+                                ?: error("MOTION_PATH_CLIP_CHANGED")
+                            require(currentClip.assetId == clip.assetId) { "MOTION_PATH_CLIP_CHANGED" }
+                            val cleaned = MotionPathUiPolicy.removeGeneratedMotionPath(currentClip.propertyAnimations)
                             runtime.editorViewModel.dispatch(
                                 EditorAction.Execute(SetClipPropertyAnimationsCommand(currentClip.id, cleaned)),
                             )
                         }
-                        message = if (result.isSuccess) "Motion path removido." else {
-                            "Falha ao remover motion path • ${result.exceptionOrNull()?.message ?: "MOTION_PATH_REMOVE_FAILED"}"
+                        message = if (result.isSuccess) {
+                            "Motion path removido."
+                        } else {
+                            when (result.exceptionOrNull()?.message) {
+                                "MOTION_PATH_SELECTION_CHANGED", "MOTION_PATH_CLIP_CHANGED" ->
+                                    "A seleção mudou; o motion path não foi removido."
+                                else -> "Falha ao remover motion path • ${result.exceptionOrNull()?.message ?: "MOTION_PATH_REMOVE_FAILED"}"
+                            }
                         }
                     },
                 ) { Text("Remover") }

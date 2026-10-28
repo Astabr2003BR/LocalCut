@@ -5,6 +5,7 @@ import socket
 from types import SimpleNamespace
 import tempfile
 import threading
+import time
 import unittest
 import sys
 
@@ -35,6 +36,18 @@ class FakeReverseExecutor:
             duration_us=duration_us,
             chunk_count=2,
         )
+
+
+class BlockingReverseExecutor(FakeReverseExecutor):
+    def __init__(self):
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def reverse(self, **kwargs):
+        self.started.set()
+        if not self.release.wait(timeout=3):
+            raise RuntimeError("TEST_REVERSE_RELEASE_TIMEOUT")
+        return super().reverse(**kwargs)
 
 
 class ReverseJobIntegrationTest(unittest.TestCase):
@@ -140,6 +153,17 @@ class ReverseJobIntegrationTest(unittest.TestCase):
             body = stream.read(content_length)
             return header, body
 
+    def wait_for_terminal_job(self, job_id, timeout=3.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            response = self.request("GET_JOB", jobId=job_id)
+            self.assertTrue(response["ok"])
+            job = response["job"]
+            if job["status"] in {"SUCCEEDED", "FAILED", "CANCELLED"}:
+                return job
+            time.sleep(0.02)
+        self.fail("reverse job did not reach a terminal state")
+
     def test_reverse_job_stages_input_and_publishes_only_generated_media_metadata(self):
         capabilities = self.request("GET_CAPABILITIES")
         self.assertTrue(capabilities["ok"])
@@ -154,8 +178,10 @@ class ReverseJobIntegrationTest(unittest.TestCase):
         staged = self.stage_reverse_job(job_id)
 
         self.assertTrue(staged["ok"])
-        self.assertEqual("SUCCEEDED", staged["job"]["status"])
-        output = staged["job"]["output"]
+        self.assertEqual("RUNNING", staged["job"]["status"])
+        completed = self.wait_for_terminal_job(job_id)
+        self.assertEqual("SUCCEEDED", completed["status"])
+        output = completed["output"]
         self.assertEqual("reverse-v1", output["transformMode"])
         self.assertEqual(2, output["chunkCount"])
         self.assertEqual("video/mp4", output["media"]["mimeType"])
@@ -173,6 +199,31 @@ class ReverseJobIntegrationTest(unittest.TestCase):
         self.assertEqual(header["contentLength"], len(body))
         self.assertEqual(header["sha256"], hashlib.sha256(body).hexdigest())
         self.assertNotIn("path", json.dumps(header).lower())
+
+    def test_stage_returns_running_while_reverse_worker_is_still_busy(self):
+        blocking = BlockingReverseExecutor()
+        self.server.reverse_executor = blocking
+        created = self.create_reverse_job(idempotency_key="asset-reverse-background")
+        self.assertTrue(created["ok"])
+        job_id = created["job"]["id"]
+        result = {}
+
+        staging = threading.Thread(
+            target=lambda: result.setdefault("response", self.stage_reverse_job(job_id)),
+            daemon=True,
+        )
+        staging.start()
+        try:
+            self.assertTrue(blocking.started.wait(timeout=1))
+            staging.join(timeout=0.5)
+            self.assertFalse(staging.is_alive(), "STAGE_MEDIA waited for the reverse executor")
+            self.assertEqual("RUNNING", result["response"]["job"]["status"])
+        finally:
+            blocking.release.set()
+            staging.join(timeout=2)
+
+        completed = self.wait_for_terminal_job(job_id)
+        self.assertEqual("SUCCEEDED", completed["status"])
 
     def test_generated_media_download_fails_closed_before_reverse_succeeds(self):
         created = self.create_reverse_job(idempotency_key="asset-reverse-not-ready")

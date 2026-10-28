@@ -5,6 +5,11 @@ import unittest
 import sys
 import types
 
+
+_original_engine = sys.modules.get("localcut_engine")
+_original_jobs = sys.modules.get("localcut_jobs")
+_original_supervisor = sys.modules.get("localcut_supervisor")
+
 engine = types.ModuleType("localcut_engine")
 engine.DEFAULT_CREDENTIALS_FILE = Path("credentials.json")
 engine.DEFAULT_ENGINE_DIR = Path(".")
@@ -18,15 +23,31 @@ engine.create_server = lambda *a, **k: None
 engine.format_pairing_code = lambda x: x
 engine.generate_pairing_code = lambda: "23456789ABCD"
 engine._validate_token = lambda x: x
-sys.modules["localcut_engine"] = engine
 
 jobs = types.ModuleType("localcut_jobs")
 jobs.FfprobeMediaAnalyzer = object
 jobs.JobStore = object
 jobs.MediaSpool = object
-sys.modules["localcut_jobs"] = jobs
 
-from localcut_supervisor import InstanceLock
+try:
+    sys.modules["localcut_engine"] = engine
+    sys.modules["localcut_jobs"] = jobs
+    from localcut_supervisor import InstanceLock
+finally:
+    if _original_engine is None:
+        sys.modules.pop("localcut_engine", None)
+    else:
+        sys.modules["localcut_engine"] = _original_engine
+
+    if _original_jobs is None:
+        sys.modules.pop("localcut_jobs", None)
+    else:
+        sys.modules["localcut_jobs"] = _original_jobs
+
+    if _original_supervisor is None:
+        sys.modules.pop("localcut_supervisor", None)
+    else:
+        sys.modules["localcut_supervisor"] = _original_supervisor
 
 
 class InstanceLockTest(unittest.TestCase):

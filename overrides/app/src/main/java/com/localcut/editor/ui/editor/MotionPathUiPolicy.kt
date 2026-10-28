@@ -63,7 +63,7 @@ object MotionPathUiPolicy {
         existing: List<PropertyAnimation>,
         path: List<PropertyAnimation>,
     ): List<PropertyAnimation> {
-        require(!StabilizationApplyPolicy.hasGeneratedStabilization(existing)) {
+        require(!StabilizationApplyPolicy.hasAnyGeneratedStabilization(existing)) {
             "MOTION_PATH_CONFLICTS_WITH_STABILIZATION"
         }
         require(path.map { it.propertyId }.toSet() == motionProperties && path.size == motionProperties.size) {

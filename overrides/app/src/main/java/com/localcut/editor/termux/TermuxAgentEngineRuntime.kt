@@ -2,6 +2,9 @@ package com.localcut.editor.termux
 
 import android.content.Context
 import com.localcut.editor.bridge.agent.BridgeTermuxDeveloperClient
+import com.localcut.editor.data.assets.AndroidAssetImporter
+import com.localcut.editor.mobile.GeneratedMediaAssetInspector
+import com.localcut.editor.mobile.SharedMediaStager
 
 class TermuxAgentEngineRuntime private constructor(context: Context) {
     private val appContext = context.applicationContext
@@ -13,6 +16,7 @@ class TermuxAgentEngineRuntime private constructor(context: Context) {
     val developerAgentClient: BridgeTermuxDeveloperClient =
         AdaptiveTermuxDeveloperAgentClient(tokenProvider = tokenStore::load)
     private val mediaSourceResolver = AndroidTermuxMediaSourceResolver(appContext.contentResolver)
+    private val sharedMediaStager = SharedMediaStager(appContext)
     val mediaAnalyzeCoordinator = TermuxMediaAnalyzeCoordinator(
         client = jobClient,
         sourceResolver = mediaSourceResolver,
@@ -25,6 +29,10 @@ class TermuxAgentEngineRuntime private constructor(context: Context) {
         client = jobClient,
         sourceResolver = mediaSourceResolver,
         outputDirectory = TermuxGeneratedMediaStoragePolicy.durableDirectory(appContext.filesDir),
+    )
+    val generatedMediaAssetInspector = GeneratedMediaAssetInspector(
+        importer = AndroidAssetImporter(appContext.contentResolver),
+        sharedMediaStager = sharedMediaStager,
     )
     private val pairingService = TermuxEnginePairingService(client, tokenStore)
 

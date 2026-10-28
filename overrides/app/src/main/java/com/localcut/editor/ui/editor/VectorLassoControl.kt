@@ -28,15 +28,19 @@ import androidx.compose.ui.unit.dp
 import com.localcut.editor.LocalCutProcessRuntime
 import com.localcut.editor.domain.design.CanvasPointPx
 import com.localcut.editor.domain.design.DesignElementGeometryPolicy
+import com.localcut.editor.domain.design.DesignGroupSelectionPolicy
 import com.localcut.editor.domain.design.DesignSelectionTransformPolicy
 import com.localcut.editor.domain.design.VectorLassoSelectionPolicy
 import com.localcut.editor.domain.history.DeleteDesignElementsCommand
+import com.localcut.editor.domain.history.GroupDesignElementsCommand
 import com.localcut.editor.domain.history.MoveDesignElementsCommand
 import com.localcut.editor.domain.history.TransformDesignElementsCommand
+import com.localcut.editor.domain.history.UngroupDesignElementsCommand
 import com.localcut.editor.domain.model.DesignElement
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.ShapeKind
 import com.localcut.editor.session.EditorAction
+import java.util.UUID
 
 @Composable
 fun VectorLassoControl(
@@ -53,13 +57,32 @@ fun VectorLassoControl(
     var gesture by remember(project.id, project.width, project.height) { mutableStateOf(emptyList<CanvasPointPx>()) }
     var selectedIds by remember(project.id) { mutableStateOf(emptyList<String>()) }
     var message by remember(project.id) { mutableStateOf<String?>(null) }
-    val liveSelectedIds = remember(project.designElements, selectedIds) {
-        VectorLassoPersistentSelectionPolicy.existing(selectedIds, project.designElements)
+    val liveSelectedIds = remember(project.designElements, project.designGroups, selectedIds) {
+        val existing = VectorLassoPersistentSelectionPolicy.existing(selectedIds, project.designElements)
+        DesignGroupSelectionPolicy.expand(
+            selectedIds = existing,
+            groups = project.designGroups,
+            existingElementIds = project.designElements.map { it.id },
+        )
+    }
+    val exactSelectedGroup = remember(project.designGroups, liveSelectedIds) {
+        DesignGroupSelectionPolicy.exactGroup(liveSelectedIds, project.designGroups)
+    }
+    val canGroupSelection = remember(project.designGroups, liveSelectedIds) {
+        DesignGroupSelectionPolicy.canCreateGroup(liveSelectedIds, project.designGroups)
+    }
+    val selectionContainsGroupedMember = remember(project.designGroups, liveSelectedIds) {
+        DesignGroupSelectionPolicy.containsGroupedMember(liveSelectedIds, project.designGroups)
     }
 
     fun currentSelection(): Pair<Project, List<String>> {
         val currentProject = runtime.editorViewModel.sessionState.value.project
-        val ids = VectorLassoPersistentSelectionPolicy.existing(selectedIds, currentProject.designElements)
+        val existing = VectorLassoPersistentSelectionPolicy.existing(selectedIds, currentProject.designElements)
+        val ids = DesignGroupSelectionPolicy.expand(
+            selectedIds = existing,
+            groups = currentProject.designGroups,
+            existingElementIds = currentProject.designElements.map { it.id },
+        )
         require(ids.isNotEmpty()) { "LASSO_SELECTION_EMPTY" }
         return currentProject to ids
     }
@@ -112,13 +135,59 @@ fun VectorLassoControl(
         }
     }
 
+    fun groupSelection() {
+        val result = runCatching {
+            val (currentProject, ids) = currentSelection()
+            require(DesignGroupSelectionPolicy.canCreateGroup(ids, currentProject.designGroups)) {
+                "LASSO_GROUP_UNAVAILABLE"
+            }
+            runtime.editorViewModel.dispatch(
+                EditorAction.Execute(
+                    GroupDesignElementsCommand(
+                        groupId = "group-${UUID.randomUUID()}",
+                        elementIds = ids,
+                    ),
+                ),
+            )
+        }
+        message = if (result.isSuccess) {
+            "Seleção agrupada. Mover, redimensionar e girar agora usam o grupo inteiro."
+        } else {
+            when (result.exceptionOrNull()?.message) {
+                "LASSO_SELECTION_EMPTY" -> "Nenhum traço selecionado no estado atual."
+                "LASSO_GROUP_UNAVAILABLE" -> "Seleção não pode ser agrupada: use dois ou mais traços soltos."
+                else -> "Falha ao agrupar seleção • ${result.exceptionOrNull()?.message ?: "LASSO_GROUP_FAILED"}"
+            }
+        }
+    }
+
+    fun ungroupSelection() {
+        val result = runCatching {
+            val (currentProject, ids) = currentSelection()
+            val group = DesignGroupSelectionPolicy.exactGroup(ids, currentProject.designGroups)
+                ?: error("LASSO_UNGROUP_UNAVAILABLE")
+            runtime.editorViewModel.dispatch(
+                EditorAction.Execute(UngroupDesignElementsCommand(group.id)),
+            )
+        }
+        message = if (result.isSuccess) {
+            "Grupo desfeito. Os traços continuam selecionados individualmente."
+        } else {
+            when (result.exceptionOrNull()?.message) {
+                "LASSO_SELECTION_EMPTY" -> "Nenhum traço selecionado no estado atual."
+                "LASSO_UNGROUP_UNAVAILABLE" -> "A seleção atual não corresponde a um único grupo."
+                else -> "Falha ao desagrupar seleção • ${result.exceptionOrNull()?.message ?: "LASSO_UNGROUP_FAILED"}"
+            }
+        }
+    }
+
     Column(
         modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text("Laço vetorial", style = MaterialTheme.typography.labelMedium)
         Text(
-            "Circule os traços no quadro abaixo. Depois do laço, a seleção fica fixa por IDs até você limpar, excluir ou fazer um novo laço.",
+            "Circule os traços no quadro abaixo. Depois do laço, a seleção fica fixa por IDs; se tocar em um membro de grupo, o grupo inteiro entra na seleção.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -160,20 +229,25 @@ fun VectorLassoControl(
                                         projectWidthPx = project.width.toDouble(),
                                         projectHeightPx = project.height.toDouble(),
                                     )
-                                    val ids = VectorLassoSelectionPolicy.selectPathIds(
+                                    val rawIds = VectorLassoSelectionPolicy.selectPathIds(
                                         elements = project.designElements,
                                         lassoPointsPx = polygon,
                                         canvasWidthPx = project.width.toDouble(),
                                         canvasHeightPx = project.height.toDouble(),
                                         playheadUs = playheadUs,
                                     )
-                                    VectorLassoPersistentSelectionPolicy.capture(ids)
+                                    val captured = VectorLassoPersistentSelectionPolicy.capture(rawIds)
+                                    DesignGroupSelectionPolicy.expand(
+                                        selectedIds = captured,
+                                        groups = project.designGroups,
+                                        existingElementIds = project.designElements.map { it.id },
+                                    )
                                 }.onSuccess { ids ->
                                     selectedIds = ids
                                     message = if (ids.isEmpty()) {
                                         "Nenhum traço dentro do laço."
                                     } else {
-                                        "${ids.size} traço(s) selecionado(s). A seleção agora é persistente."
+                                        "${ids.size} traço(s) selecionado(s). Grupos são selecionados por inteiro."
                                     }
                                 }.onFailure { error ->
                                     selectedIds = emptyList()
@@ -243,7 +317,7 @@ fun VectorLassoControl(
 
         if (selectedIds.isNotEmpty()) {
             Text(
-                "${liveSelectedIds.size} traço(s) na seleção persistente.",
+                "${liveSelectedIds.size} traço(s) na seleção persistente${if (exactSelectedGroup != null) " • grupo" else ""}.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -261,6 +335,23 @@ fun VectorLassoControl(
                 OutlinedButton(onClick = { transformSelection(1.1, 0.0) }) { Text("Maior") }
                 OutlinedButton(onClick = { transformSelection(1.0, -15.0) }) { Text("↺ 15°") }
                 OutlinedButton(onClick = { transformSelection(1.0, 15.0) }) { Text("↻ 15°") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(
+                    onClick = { groupSelection() },
+                    enabled = canGroupSelection,
+                ) { Text("Agrupar") }
+                OutlinedButton(
+                    onClick = { ungroupSelection() },
+                    enabled = exactSelectedGroup != null,
+                ) { Text("Desagrupar") }
+            }
+            if (selectionContainsGroupedMember) {
+                Text(
+                    "Elementos agrupados são transformados juntos. Desagrupe antes de excluir.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 
@@ -291,7 +382,7 @@ fun VectorLassoControl(
                         }
                     }
                 },
-                enabled = liveSelectedIds.isNotEmpty(),
+                enabled = liveSelectedIds.isNotEmpty() && !selectionContainsGroupedMember,
             ) { Text("Excluir ${liveSelectedIds.size}") }
         }
 

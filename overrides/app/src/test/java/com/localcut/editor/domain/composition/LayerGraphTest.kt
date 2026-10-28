@@ -63,6 +63,20 @@ class LayerGraphTest {
     }
 
     @Test
+    fun duplicateLayerReferencesForSameClipAreRejected() {
+        val graph = CompositionGraph(
+            nodes = listOf(
+                CompositionNode("layer-a", CompositionNodeKind.LAYER, clipId = "clip-1"),
+                CompositionNode("layer-b", CompositionNodeKind.LAYER, clipId = "clip-1"),
+            ),
+        )
+
+        val issues = LayerGraph.validate(graph, setOf("clip-1"))
+
+        assertTrue(issues.any { "unique" in it && "clip-1" in it })
+    }
+
+    @Test
     fun cameraCutsMustBeOrderedAndReferenceCameraNodes() {
         val graph = CompositionGraph(
             nodes = listOf(CompositionNode("camera", CompositionNodeKind.CAMERA)),

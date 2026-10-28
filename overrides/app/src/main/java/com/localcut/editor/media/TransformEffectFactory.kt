@@ -6,6 +6,7 @@ import androidx.media3.common.Effect
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.Presentation
+import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.model.TransformKeyframe
 import com.localcut.editor.domain.model.TransformValue
 
@@ -15,6 +16,7 @@ object TransformEffectFactory {
     fun create(
         transform: TransformValue,
         keyframes: List<TransformKeyframe>,
+        propertyAnimations: List<PropertyAnimation> = emptyList(),
         opacity: Double,
         outputWidth: Int,
         outputHeight: Int,
@@ -23,9 +25,10 @@ object TransformEffectFactory {
         presentationStartUs: Long = 0L,
     ): List<Effect> {
         val matrixEffect = MatrixTransformation { presentationTimeUs ->
-            val value = KeyframeRenderResolver.valueAt(
+            val value = PropertyTransformRenderResolver.valueAt(
                 transform = transform,
                 keyframes = keyframes,
+                propertyAnimations = propertyAnimations,
                 presentationTimeUs = presentationTimeUs,
                 presentationStartUs = presentationStartUs,
             )

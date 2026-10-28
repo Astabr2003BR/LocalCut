@@ -9,9 +9,11 @@ data class BrushPreset(
 
 object BrushPresetPolicy {
     private val presets = listOf(
+        BrushPreset(id = "fineliner", label = "Fineliner", strokeWidthPx = 2.0, opacity = 1.0),
         BrushPreset(id = "pencil", label = "Lápis", strokeWidthPx = 4.0, opacity = 0.78),
         BrushPreset(id = "ink", label = "Tinta", strokeWidthPx = 8.0, opacity = 1.0),
         BrushPreset(id = "marker", label = "Marcador", strokeWidthPx = 18.0, opacity = 0.62),
+        BrushPreset(id = "highlighter", label = "Marca-texto", strokeWidthPx = 28.0, opacity = 0.32),
         BrushPreset(id = "bold", label = "Grosso", strokeWidthPx = 32.0, opacity = 1.0),
     )
 

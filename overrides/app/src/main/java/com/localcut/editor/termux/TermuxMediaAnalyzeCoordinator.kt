@@ -53,11 +53,24 @@ class TermuxMediaAnalyzeCoordinator(
 class TermuxMediaTrackingCoordinator(
     private val client: TermuxEngineJobClient,
     private val sourceResolver: TermuxMediaSourceResolver,
+    private val awaitPolicy: TermuxJobAwaitPolicy = TermuxJobAwaitPolicy(),
+    private val pollDelay: suspend (Long) -> Unit = { delay(it) },
 ) {
     suspend fun analyze(
         asset: Asset,
         options: TermuxTrackingOptions = TermuxTrackingOptions(),
-    ): Result<TermuxGlobalMotionAnalysis> = runCatching {
+    ): Result<TermuxGlobalMotionAnalysis> = try {
+        Result.success(analyzeOrThrow(asset, options))
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        Result.failure(error)
+    }
+
+    private suspend fun analyzeOrThrow(
+        asset: Asset,
+        options: TermuxTrackingOptions,
+    ): TermuxGlobalMotionAnalysis {
         require(asset.type == AssetType.VIDEO && asset.mimeType?.startsWith("video/") == true) {
             "TERMUX_TRACKING_REQUIRES_VIDEO"
         }
@@ -76,7 +89,7 @@ class TermuxMediaTrackingCoordinator(
             input,
             idempotencyKey("analyze-tracking-v1", asset, sizeBytes, options),
         ).getOrThrow()
-        val finished = when (created.status) {
+        val afterStage = when (created.status) {
             TermuxEngineJobStatus.QUEUED -> {
                 val source = sourceResolver.resolve(asset)
                 require(source.contentLength == sizeBytes) { "TERMUX_MEDIA_SIZE_MISMATCH" }
@@ -84,13 +97,14 @@ class TermuxMediaTrackingCoordinator(
             }
             else -> created
         }
+        val finished = awaitTerminalJob(client, afterStage, awaitPolicy, pollDelay)
         require(finished.status == TermuxEngineJobStatus.SUCCEEDED) {
             finished.errorCode ?: "TERMUX_TRACKING_JOB_NOT_SUCCEEDED"
         }
         require(finished.analysisMode == "opencv-global-motion-v1") {
             "TERMUX_TRACKING_ANALYSIS_MODE_INVALID"
         }
-        finished.globalMotion ?: error("TERMUX_TRACKING_RESULT_MISSING")
+        return finished.globalMotion ?: error("TERMUX_TRACKING_RESULT_MISSING")
     }
 }
 
@@ -144,7 +158,7 @@ class TermuxMediaReverseCoordinator(
             }
             else -> created
         }
-        val finished = awaitTerminalJob(afterStage)
+        val finished = awaitTerminalJob(client, afterStage, awaitPolicy, pollDelay)
         require(finished.status == TermuxEngineJobStatus.SUCCEEDED) {
             finished.errorCode ?: "TERMUX_REVERSE_JOB_NOT_SUCCEEDED"
         }
@@ -158,19 +172,24 @@ class TermuxMediaReverseCoordinator(
         require(download.file.canonicalFile.parentFile == root) { "TERMUX_REVERSE_OUTPUT_PATH_INVALID" }
         return download
     }
+}
 
-    private suspend fun awaitTerminalJob(initial: TermuxEngineJob): TermuxEngineJob {
-        var current = initial
+private suspend fun awaitTerminalJob(
+    client: TermuxEngineJobClient,
+    initial: TermuxEngineJob,
+    policy: TermuxJobAwaitPolicy,
+    pollDelay: suspend (Long) -> Unit,
+): TermuxEngineJob {
+    var current = initial
+    if (current.status.isTerminal()) return current
+    var delayMs = policy.initialDelayMs
+    repeat(policy.maxPolls) {
+        pollDelay(delayMs)
+        current = client.getJob(current.id).getOrThrow()
         if (current.status.isTerminal()) return current
-        var delayMs = awaitPolicy.initialDelayMs
-        repeat(awaitPolicy.maxPolls) {
-            pollDelay(delayMs)
-            current = client.getJob(current.id).getOrThrow()
-            if (current.status.isTerminal()) return current
-            delayMs = minOf(awaitPolicy.maxDelayMs, delayMs * 2L)
-        }
-        error("TERMUX_JOB_WAIT_TIMEOUT")
+        delayMs = minOf(policy.maxDelayMs, delayMs * 2L)
     }
+    error("TERMUX_JOB_WAIT_TIMEOUT")
 }
 
 private fun TermuxEngineJobStatus.isTerminal(): Boolean = when (this) {

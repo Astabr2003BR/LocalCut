@@ -224,6 +224,11 @@ fun FocusedSpeedPanel(
         }
 
         FreezeFrameActionControl(modifier = Modifier.fillMaxWidth())
+        ReverseMediaActionControl(
+            modifier = Modifier.fillMaxWidth(),
+            buttonLabel = "Reverse",
+            showUnavailableReason = true,
+        )
     }
 }
 

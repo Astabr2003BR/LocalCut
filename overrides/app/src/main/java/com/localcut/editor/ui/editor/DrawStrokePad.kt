@@ -37,6 +37,8 @@ import com.localcut.editor.domain.design.CanvasPointPx
 import com.localcut.editor.domain.design.DrawStrokeCapturePolicy
 import com.localcut.editor.domain.design.DrawStrokePolicy
 import com.localcut.editor.domain.design.FrameExposurePolicy
+import com.localcut.editor.domain.design.LineAngleSnapMode
+import com.localcut.editor.domain.design.LineAngleSnapPolicy
 import com.localcut.editor.domain.design.OnionSkinCandidate
 import com.localcut.editor.domain.design.OnionSkinPolicy
 import com.localcut.editor.domain.design.StrokeAssistMode
@@ -83,6 +85,7 @@ fun DrawStrokePad(
         mutableIntStateOf(DrawStrokePadPolicy.DEFAULT_STABILIZATION_STRENGTH)
     }
     var strokeAssistMode by remember(project.id) { mutableStateOf(StrokeAssistMode.FREEHAND) }
+    var angleSnapMode by remember(project.id) { mutableStateOf(LineAngleSnapMode.OFF) }
     var symmetryMode by remember(project.id) { mutableStateOf(StrokeSymmetryMode.NONE) }
     val previewColor = drawColorPresets.firstOrNull { it.argb == strokeArgb }?.color ?: Color(strokeArgb)
     val gestureColor = if (eraserEnabled) Color(0xFFFF6B6B) else previewColor.copy(alpha = brushOpacity.toFloat())
@@ -172,6 +175,28 @@ fun DrawStrokePad(
                     FilledTonalButton(onClick = { strokeAssistMode = StrokeAssistMode.LINE }) { Text("Linha reta") }
                 } else {
                     OutlinedButton(onClick = { strokeAssistMode = StrokeAssistMode.LINE }) { Text("Linha reta") }
+                }
+            }
+            if (strokeAssistMode == StrokeAssistMode.LINE) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (angleSnapMode == LineAngleSnapMode.OFF) {
+                        FilledTonalButton(onClick = { angleSnapMode = LineAngleSnapMode.OFF }) { Text("Ângulo livre") }
+                    } else {
+                        OutlinedButton(onClick = { angleSnapMode = LineAngleSnapMode.OFF }) { Text("Ângulo livre") }
+                    }
+                    if (angleSnapMode == LineAngleSnapMode.DEG_15) {
+                        FilledTonalButton(onClick = { angleSnapMode = LineAngleSnapMode.DEG_15 }) { Text("15°") }
+                    } else {
+                        OutlinedButton(onClick = { angleSnapMode = LineAngleSnapMode.DEG_15 }) { Text("15°") }
+                    }
+                    if (angleSnapMode == LineAngleSnapMode.DEG_45) {
+                        FilledTonalButton(onClick = { angleSnapMode = LineAngleSnapMode.DEG_45 }) { Text("45°") }
+                    } else {
+                        OutlinedButton(onClick = { angleSnapMode = LineAngleSnapMode.DEG_45 }) { Text("45°") }
+                    }
                 }
             }
             Row(
@@ -303,6 +328,7 @@ fun DrawStrokePad(
                     eraserEnabled,
                     stabilizationStrength,
                     strokeAssistMode,
+                    angleSnapMode,
                     symmetryMode,
                     project.fps,
                 ) {
@@ -361,7 +387,12 @@ fun DrawStrokePad(
                                         points = points,
                                         stabilizationStrength = stabilizationStrength,
                                     )
-                                    val preparedPoints = StrokeAssistPolicy.apply(stabilizedPoints, strokeAssistMode)
+                                    val assistedPoints = StrokeAssistPolicy.apply(stabilizedPoints, strokeAssistMode)
+                                    val preparedPoints = if (strokeAssistMode == StrokeAssistMode.LINE) {
+                                        LineAngleSnapPolicy.apply(assistedPoints, angleSnapMode)
+                                    } else {
+                                        assistedPoints
+                                    }
                                     val expandedStrokes = StrokeSymmetryPolicy.expand(
                                         points = preparedPoints,
                                         canvasWidthPx = size.width.toDouble(),
@@ -419,29 +450,32 @@ fun DrawStrokePad(
                 }
             }
 
-            val previewBasePoints = if (
+            val linePreviewPoints = if (
                 !eraserEnabled &&
                 strokeAssistMode == StrokeAssistMode.LINE &&
                 capturedPoints.size >= 2
             ) {
-                listOf(capturedPoints.first(), capturedPoints.last())
+                LineAngleSnapPolicy.apply(
+                    listOf(capturedPoints.first(), capturedPoints.last()),
+                    angleSnapMode,
+                )
             } else {
                 capturedPoints
             }
             val previewStrokes = if (
                 !eraserEnabled &&
-                previewBasePoints.size >= 2 &&
+                linePreviewPoints.size >= 2 &&
                 size.width > 0f &&
                 size.height > 0f
             ) {
                 StrokeSymmetryPolicy.expand(
-                    points = previewBasePoints,
+                    points = linePreviewPoints,
                     canvasWidthPx = size.width.toDouble(),
                     canvasHeightPx = size.height.toDouble(),
                     mode = symmetryMode,
                 )
             } else {
-                listOf(previewBasePoints)
+                listOf(linePreviewPoints)
             }
             previewStrokes.forEach { previewPoints ->
                 previewPoints.zipWithNext().forEach { (start, end) ->

@@ -5,9 +5,23 @@ import com.localcut.editor.domain.model.AssetType
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 
 fun interface TermuxMediaSourceResolver {
     fun resolve(asset: Asset): TermuxEngineMediaSource
+}
+
+data class TermuxJobAwaitPolicy(
+    val maxPolls: Int = 900,
+    val initialDelayMs: Long = 250L,
+    val maxDelayMs: Long = 1_000L,
+) {
+    init {
+        require(maxPolls in 1..2_000) { "TERMUX_JOB_AWAIT_POLLS_INVALID" }
+        require(initialDelayMs in 1L..10_000L) { "TERMUX_JOB_AWAIT_INITIAL_DELAY_INVALID" }
+        require(maxDelayMs in initialDelayMs..10_000L) { "TERMUX_JOB_AWAIT_MAX_DELAY_INVALID" }
+    }
 }
 
 class TermuxMediaAnalyzeCoordinator(
@@ -84,11 +98,24 @@ class TermuxMediaReverseCoordinator(
     private val client: TermuxEngineJobClient,
     private val sourceResolver: TermuxMediaSourceResolver,
     private val outputDirectory: File,
+    private val awaitPolicy: TermuxJobAwaitPolicy = TermuxJobAwaitPolicy(),
+    private val pollDelay: suspend (Long) -> Unit = { delay(it) },
 ) {
     suspend fun reverse(
         asset: Asset,
         options: TermuxReverseOptions = TermuxReverseOptions(),
-    ): Result<TermuxGeneratedMediaDownload> = runCatching {
+    ): Result<TermuxGeneratedMediaDownload> = try {
+        Result.success(reverseOrThrow(asset, options))
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        Result.failure(error)
+    }
+
+    private suspend fun reverseOrThrow(
+        asset: Asset,
+        options: TermuxReverseOptions,
+    ): TermuxGeneratedMediaDownload {
         require(asset.type == AssetType.VIDEO && asset.mimeType?.startsWith("video/") == true) {
             "TERMUX_REVERSE_REQUIRES_VIDEO"
         }
@@ -109,7 +136,7 @@ class TermuxMediaReverseCoordinator(
             input,
             idempotencyKey("reverse-media-v1", asset, sizeBytes, null, options),
         ).getOrThrow()
-        val finished = when (created.status) {
+        val afterStage = when (created.status) {
             TermuxEngineJobStatus.QUEUED -> {
                 val source = sourceResolver.resolve(asset)
                 require(source.contentLength == sizeBytes) { "TERMUX_MEDIA_SIZE_MISMATCH" }
@@ -117,6 +144,7 @@ class TermuxMediaReverseCoordinator(
             }
             else -> created
         }
+        val finished = awaitTerminalJob(afterStage)
         require(finished.status == TermuxEngineJobStatus.SUCCEEDED) {
             finished.errorCode ?: "TERMUX_REVERSE_JOB_NOT_SUCCEEDED"
         }
@@ -128,8 +156,28 @@ class TermuxMediaReverseCoordinator(
         val download = client.downloadGeneratedMedia(finished.id, destination).getOrThrow()
         require(download.job.id == finished.id) { "TERMUX_REVERSE_DOWNLOAD_JOB_MISMATCH" }
         require(download.file.canonicalFile.parentFile == root) { "TERMUX_REVERSE_OUTPUT_PATH_INVALID" }
-        download
+        return download
     }
+
+    private suspend fun awaitTerminalJob(initial: TermuxEngineJob): TermuxEngineJob {
+        var current = initial
+        if (current.status.isTerminal()) return current
+        var delayMs = awaitPolicy.initialDelayMs
+        repeat(awaitPolicy.maxPolls) {
+            pollDelay(delayMs)
+            current = client.getJob(current.id).getOrThrow()
+            if (current.status.isTerminal()) return current
+            delayMs = minOf(awaitPolicy.maxDelayMs, delayMs * 2L)
+        }
+        error("TERMUX_JOB_WAIT_TIMEOUT")
+    }
+}
+
+private fun TermuxEngineJobStatus.isTerminal(): Boolean = when (this) {
+    TermuxEngineJobStatus.SUCCEEDED,
+    TermuxEngineJobStatus.FAILED,
+    TermuxEngineJobStatus.CANCELLED -> true
+    else -> false
 }
 
 private fun idempotencyKey(

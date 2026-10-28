@@ -33,10 +33,16 @@ fun LayerPanel(
     val visualTracks = project.tracks.filter { it.type == TrackType.VISUAL }.sortedByDescending { it.order }
     val visualClips = visualTracks.flatMap { track -> track.clips.map { clip -> track to clip } }
     val graph = project.compositionGraph
-    val parentTargets = LayerPanelUiPolicy.parentTargets(graph)
+    val parentTargets = LayerPanelUiPolicy.parentTargets(graph, selectedClipId)
     val selectedParentId = selectedClipId?.let { LayerPanelUiPolicy.layerParentId(graph, it) }
-    val staticCamera = graph.nodes.singleOrNull { it.kind == CompositionNodeKind.CAMERA }
-    val canAddStaticCamera = staticCamera == null && graph.cameraCuts.isEmpty()
+    val cameraNodes = graph.nodes.filter { it.kind == CompositionNodeKind.CAMERA }
+    val staticCamera = cameraNodes.singleOrNull()
+    val canAddStaticCamera = cameraNodes.isEmpty() && graph.cameraCuts.isEmpty()
+    val controllerNodes = graph.nodes.filter {
+        it.kind == CompositionNodeKind.NULL ||
+            it.kind == CompositionNodeKind.GROUP ||
+            it.kind == CompositionNodeKind.CAMERA
+    }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -74,15 +80,21 @@ fun LayerPanel(
                     },
                     enabled = canAddStaticCamera,
                 ) {
-                    Text(if (staticCamera == null) "+ Câmera" else "Câmera ativa")
+                    Text(
+                        when {
+                            cameraNodes.isEmpty() -> "+ Câmera"
+                            cameraNodes.size == 1 -> "Câmera ativa"
+                            else -> "${cameraNodes.size} câmeras"
+                        },
+                    )
                 }
             }
 
             Text(
-                text = if (staticCamera != null) {
-                    "Câmera estática: ${staticCamera.id} • parenting 2D/2.5D ativo"
-                } else {
-                    "Parenting: use Null para mover/rotacionar/escalar camadas em conjunto."
+                text = when {
+                    staticCamera != null -> "Câmera estática: ${staticCamera.id} • preview/export compartilham a mesma composição."
+                    cameraNodes.size > 1 -> "Projeto com múltiplas câmeras: criação estática desativada; camera cuts não são editáveis neste painel."
+                    else -> "Parenting: crie um Null para controlar camadas em conjunto."
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -108,7 +120,7 @@ fun LayerPanel(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             if (selectedParentId == null) {
-                                FilledTonalButton(onClick = {}) { Text("Sem parent") }
+                                FilledTonalButton(onClick = {}, enabled = false) { Text("Sem parent") }
                             } else {
                                 OutlinedButton(
                                     onClick = {
@@ -121,7 +133,7 @@ fun LayerPanel(
 
                             parentTargets.forEach { target ->
                                 if (selectedParentId == target.id) {
-                                    FilledTonalButton(onClick = {}) { Text(target.id) }
+                                    FilledTonalButton(onClick = {}, enabled = false) { Text(target.id) }
                                 } else {
                                     OutlinedButton(
                                         onClick = {
@@ -140,6 +152,39 @@ fun LayerPanel(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                    }
+                }
+            }
+
+            if (controllerNodes.isNotEmpty()) {
+                Text("Controladores", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                controllerNodes.forEach { node ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                        shape = MaterialTheme.shapes.small,
+                    ) {
+                        CompositionControllerControls(
+                            project = project,
+                            node = node,
+                            onSetTransform = { transform ->
+                                onSetCompositionGraph(
+                                    LayerPanelUiPolicy.setControllerTransform(graph, node.id, transform),
+                                )
+                            },
+                            onSetCameraSettings = { settings ->
+                                onSetCompositionGraph(
+                                    LayerPanelUiPolicy.setCameraSettings(graph, node.id, settings),
+                                )
+                            },
+                            onRemove = {
+                                onSetCompositionGraph(
+                                    LayerPanelUiPolicy.removeControllerNode(graph, node.id),
+                                )
+                            },
+                            canRemove = node.kind != CompositionNodeKind.CAMERA ||
+                                graph.cameraCuts.none { it.cameraNodeId == node.id },
+                            modifier = Modifier.fillMaxWidth().padding(8.dp),
+                        )
                     }
                 }
             }
@@ -179,7 +224,7 @@ fun LayerPanel(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             if (selectedClipId == clip.id) {
-                                FilledTonalButton(onClick = { onSelectClip(clip.id) }) { Text("Selecionada") }
+                                FilledTonalButton(onClick = {}, enabled = false) { Text("Selecionada") }
                             } else {
                                 OutlinedButton(onClick = { onSelectClip(clip.id) }) { Text("Selecionar") }
                             }

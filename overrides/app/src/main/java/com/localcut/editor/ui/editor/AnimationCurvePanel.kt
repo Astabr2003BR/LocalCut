@@ -202,6 +202,19 @@ fun AnimationCurvePanel(
                 ) {
                     Text(if (stabilization.running) "Analisando…" else "Estabilizar vídeo")
                 }
+                if (StabilizationApplyPolicy.hasGeneratedStabilization(animations)) {
+                    OutlinedButton(
+                        onClick = {
+                            onSetPropertyAnimations(
+                                StabilizationApplyPolicy.removeGeneratedStabilization(animations),
+                            )
+                            stabilization = StabilizationUiState(
+                                message = "Correção de estabilização removida. Outras animações foram preservadas.",
+                            )
+                        },
+                        enabled = !stabilization.running,
+                    ) { Text("Remover estabilização") }
+                }
                 stabilization.message?.let { message ->
                     Text(
                         message,

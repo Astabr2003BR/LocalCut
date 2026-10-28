@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import threading
 from types import MethodType
 
 from localcut_engine import (
@@ -87,6 +88,74 @@ def _validate_reverse_input(input_data: dict) -> dict:
         "sourceDurationUs": duration_us,
         "chunkDurationUs": chunk_duration_us,
     }
+
+
+def _execute_reverse_job(server, job_id: str, transfer: dict) -> None:
+    store = server.job_store
+    outputs = server.generated_media_spool
+    executor = server.reverse_executor
+    lock = server.reverse_worker_lock
+    if store is None or server.media_spool is None or outputs is None or executor is None:
+        return
+
+    with lock:
+        try:
+            current = store.get_job(job_id)
+            if current["status"] == "CANCELLED":
+                outputs.remove(job_id)
+                return
+            if current["status"] != "RUNNING":
+                return
+            store.update_job(
+                job_id,
+                status="RUNNING",
+                progress=35,
+                log={"operation": "REVERSE_MEDIA", "status": "RUNNING"},
+            )
+            current = store.get_job(job_id)
+            output_path = outputs.prepare_output(job_id)
+            result = executor.reverse(
+                input_path=server.media_spool.path_for(job_id),
+                output_path=output_path,
+                duration_us=current["input"]["sourceDurationUs"],
+                chunk_duration_us=current["input"]["chunkDurationUs"],
+                include_audio=True,
+            )
+            current = store.get_job(job_id)
+            if current["status"] == "CANCELLED":
+                outputs.remove(job_id)
+                return
+            media = outputs.finalize(job_id)
+            store.update_job(
+                job_id,
+                status="SUCCEEDED",
+                progress=100,
+                output={
+                    "transformMode": "reverse-v1",
+                    "transfer": {"sizeBytes": transfer["sizeBytes"], "sha256": transfer["sha256"]},
+                    "media": media,
+                    "chunkCount": result.chunk_count,
+                },
+                log={"operation": "REVERSE_MEDIA", "status": "SUCCEEDED", "exitCode": 0},
+            )
+        except Exception as error:
+            outputs.remove(job_id)
+            try:
+                current = store.get_job(job_id)
+            except Exception:
+                return
+            if current["status"] == "CANCELLED":
+                return
+            store.update_job(
+                job_id,
+                status="FAILED",
+                progress=100,
+                error={
+                    "code": _error_code(error, "REVERSE_MEDIA_FAILED"),
+                    "message": "Reverse media transform failed",
+                },
+                log={"operation": "REVERSE_MEDIA", "status": "FAILED"},
+            )
 
 
 class LocalCutCreativeHandler(LocalCutTermuxEngineHandler):
@@ -219,15 +288,21 @@ class LocalCutCreativeHandler(LocalCutTermuxEngineHandler):
             raise ValueError("MEDIA_LENGTH_MISMATCH")
 
         transfer = spool.stage_bytes(job["id"], content_length, self._body_chunks(content_length))
-        store.update_job(
+        running = store.update_job(
             job["id"],
             status="RUNNING",
             progress=20,
             log={"operation": "STAGE_MEDIA", "status": "SUCCEEDED", "bytes": transfer["sizeBytes"]},
         )
-        completed = self._execute_staged_reverse(job["id"], transfer)
+        worker = threading.Thread(
+            target=_execute_reverse_job,
+            args=(self.server, job["id"], transfer),
+            name=f"localcut-reverse-{job['id'][:8]}",
+            daemon=True,
+        )
+        worker.start()
         public_transfer = {"sizeBytes": transfer["sizeBytes"], "sha256": transfer["sha256"]}
-        self.wfile.write(_response(True, request_id, job=completed, transfer=public_transfer))
+        self.wfile.write(_response(True, request_id, job=running, transfer=public_transfer))
 
     def _execute_staged_tracking(self, job_id: str, transfer: dict) -> dict:
         store = self._require_jobs()
@@ -269,53 +344,6 @@ class LocalCutCreativeHandler(LocalCutTermuxEngineHandler):
                 log={"operation": "ANALYZE_TRACKING", "status": "FAILED"},
             )
 
-    def _execute_staged_reverse(self, job_id: str, transfer: dict) -> dict:
-        store = self._require_jobs()
-        outputs = self._generated_media_spool()
-        try:
-            executor = self._reverse_executor()
-            current = store.get_job(job_id)
-            output_path = outputs.prepare_output(job_id)
-            result = executor.reverse(
-                input_path=self.server.media_spool.path_for(job_id),
-                output_path=output_path,
-                duration_us=current["input"]["sourceDurationUs"],
-                chunk_duration_us=current["input"]["chunkDurationUs"],
-                include_audio=True,
-            )
-            current = store.get_job(job_id)
-            if current["status"] == "CANCELLED":
-                outputs.remove(job_id)
-                return current
-            media = outputs.finalize(job_id)
-            return store.update_job(
-                job_id,
-                status="SUCCEEDED",
-                progress=100,
-                output={
-                    "transformMode": "reverse-v1",
-                    "transfer": {"sizeBytes": transfer["sizeBytes"], "sha256": transfer["sha256"]},
-                    "media": media,
-                    "chunkCount": result.chunk_count,
-                },
-                log={"operation": "REVERSE_MEDIA", "status": "SUCCEEDED", "exitCode": 0},
-            )
-        except (ValueError, KeyError, FileNotFoundError, RuntimeError) as error:
-            outputs.remove(job_id)
-            current = store.get_job(job_id)
-            if current["status"] == "CANCELLED":
-                return current
-            return store.update_job(
-                job_id,
-                status="FAILED",
-                progress=100,
-                error={
-                    "code": _error_code(error, "REVERSE_MEDIA_FAILED"),
-                    "message": "Reverse media transform failed",
-                },
-                log={"operation": "REVERSE_MEDIA", "status": "FAILED"},
-            )
-
 
 def attach_toolchain_capabilities(server, capabilities):
     validated = validate_toolchain_capabilities(capabilities)
@@ -352,6 +380,7 @@ def attach_tracking_support(server, tracking_analyzer):
 def attach_reverse_support(server, reverse_executor, generated_media_spool):
     server.reverse_executor = reverse_executor
     server.generated_media_spool = generated_media_spool
+    server.reverse_worker_lock = threading.Lock()
     server.RequestHandlerClass = LocalCutCreativeHandler
     base_capabilities = server.capabilities
 

@@ -2,7 +2,9 @@ package com.localcut.editor.termux
 
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
+import java.io.File
 import java.security.MessageDigest
+import java.util.UUID
 
 fun interface TermuxMediaSourceResolver {
     fun resolve(asset: Asset): TermuxEngineMediaSource
@@ -78,11 +80,64 @@ class TermuxMediaTrackingCoordinator(
     }
 }
 
+class TermuxMediaReverseCoordinator(
+    private val client: TermuxEngineJobClient,
+    private val sourceResolver: TermuxMediaSourceResolver,
+    private val outputDirectory: File,
+) {
+    suspend fun reverse(
+        asset: Asset,
+        options: TermuxReverseOptions = TermuxReverseOptions(),
+    ): Result<TermuxGeneratedMediaDownload> = runCatching {
+        require(asset.type == AssetType.VIDEO && asset.mimeType?.startsWith("video/") == true) {
+            "TERMUX_REVERSE_REQUIRES_VIDEO"
+        }
+        val sizeBytes = asset.sizeBytes?.takeIf { it > 0L }
+            ?: error("TERMUX_MEDIA_SIZE_UNAVAILABLE")
+        val durationUs = asset.sourceDurationUs?.takeIf { it > 0L }
+            ?: error("TERMUX_REVERSE_DURATION_UNAVAILABLE")
+        val input = TermuxAnalyzeMediaInput(
+            assetId = asset.id,
+            displayName = asset.displayName,
+            mimeType = requireNotNull(asset.mimeType),
+            sizeBytes = sizeBytes,
+            sourceDurationUs = durationUs,
+            mode = TermuxAnalyzeMediaMode.REVERSE,
+            reverseOptions = options,
+        )
+        val created = client.createAnalyzeMediaJob(
+            input,
+            idempotencyKey("reverse-media-v1", asset, sizeBytes, null, options),
+        ).getOrThrow()
+        val finished = when (created.status) {
+            TermuxEngineJobStatus.QUEUED -> {
+                val source = sourceResolver.resolve(asset)
+                require(source.contentLength == sizeBytes) { "TERMUX_MEDIA_SIZE_MISMATCH" }
+                client.stageMedia(created.id, source).getOrThrow().job
+            }
+            else -> created
+        }
+        require(finished.status == TermuxEngineJobStatus.SUCCEEDED) {
+            finished.errorCode ?: "TERMUX_REVERSE_JOB_NOT_SUCCEEDED"
+        }
+
+        val root = outputDirectory.canonicalFile
+        if (!root.exists()) require(root.mkdirs()) { "TERMUX_REVERSE_OUTPUT_DIRECTORY_CREATE_FAILED" }
+        require(root.isDirectory) { "TERMUX_REVERSE_OUTPUT_DIRECTORY_INVALID" }
+        val destination = File(root, "reverse-${finished.id}-${UUID.randomUUID()}.mp4")
+        val download = client.downloadGeneratedMedia(finished.id, destination).getOrThrow()
+        require(download.job.id == finished.id) { "TERMUX_REVERSE_DOWNLOAD_JOB_MISMATCH" }
+        require(download.file.canonicalFile.parentFile == root) { "TERMUX_REVERSE_OUTPUT_PATH_INVALID" }
+        download
+    }
+}
+
 private fun idempotencyKey(
     prefix: String,
     asset: Asset,
     sizeBytes: Long,
     tracking: TermuxTrackingOptions?,
+    reverse: TermuxReverseOptions? = null,
 ): String {
     val material = buildString {
         append(asset.id); append('\n')
@@ -93,6 +148,9 @@ private fun idempotencyKey(
             append('\n'); append(it.maxFrames)
             append('\n'); append(it.sampleEvery)
             append('\n'); append(it.maxCorners)
+        }
+        reverse?.let {
+            append('\n'); append(it.chunkDurationUs)
         }
     }.toByteArray(Charsets.UTF_8)
     val digest = MessageDigest.getInstance("SHA-256").digest(material)

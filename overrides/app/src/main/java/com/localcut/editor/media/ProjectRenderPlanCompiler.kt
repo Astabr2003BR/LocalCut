@@ -44,7 +44,15 @@ object ProjectRenderPlanCompiler {
         val (width, height) = outputSize(project.width, project.height, mode, outputSettings)
         val assets = project.assets.associateBy { it.id }
         val visualLayers = visualTracks.flatMap { track ->
-            buildVisualLayers(track, durationUs, outputFps, assets, resolver, mode)
+            buildVisualLayers(
+                track = track,
+                totalDurationUs = durationUs,
+                fps = outputFps,
+                assets = assets,
+                resolver = resolver,
+                mode = mode,
+                compositionGraph = project.compositionGraph,
+            )
         }
         RenderPlan(
             width = width,
@@ -67,9 +75,20 @@ object ProjectRenderPlanCompiler {
         assets: Map<String, Asset>,
         resolver: RenderAssetResolver,
         mode: RenderMode,
+        compositionGraph: CompositionGraph,
     ): List<RenderSequencePlan> {
         if (track.collisionPolicy == TrackCollisionPolicy.EXCLUSIVE || track.clips.size <= 1) {
-            return listOf(buildSequence(track, totalDurationUs, fps, assets, resolver, mode = mode))
+            return listOf(
+                buildSequence(
+                    track = track,
+                    totalDurationUs = totalDurationUs,
+                    fps = fps,
+                    assets = assets,
+                    resolver = resolver,
+                    mode = mode,
+                    compositionGraph = compositionGraph,
+                ),
+            )
         }
 
         val lanes = mutableListOf<MutableList<Clip>>()
@@ -96,6 +115,7 @@ object ProjectRenderPlanCompiler {
                 resolver,
                 laneIndex = laneIndex,
                 mode = mode,
+                compositionGraph = compositionGraph,
             )
         }
     }
@@ -108,6 +128,7 @@ object ProjectRenderPlanCompiler {
         resolver: RenderAssetResolver,
         laneIndex: Int = 0,
         mode: RenderMode,
+        compositionGraph: CompositionGraph? = null,
     ): RenderSequencePlan {
         val segments = mutableListOf<RenderSegment>()
         var cursorUs = 0L
@@ -130,6 +151,15 @@ object ProjectRenderPlanCompiler {
                 )
             }
             val uri = resolvedUri.getOrThrow()
+            val composition = compositionGraph?.let { graph ->
+                CompositionRenderResolver.resolve(graph, clip).getOrElse { cause ->
+                    throw RenderPlanException(
+                        RenderPlanErrorCode.INVALID_PROJECT,
+                        "composition render resolution failed for clip ${clip.id}: ${cause.message}",
+                        cause = cause,
+                    )
+                }
+            }
             segments += RenderSegment.Media(
                 clipId = clip.id,
                 assetId = asset.id,
@@ -139,10 +169,10 @@ object ProjectRenderPlanCompiler {
                 durationUs = clip.durationUs,
                 sourceInUs = clip.sourceInUs,
                 sourceOutUs = clip.sourceOutUs,
-                transform = clip.transform,
-                opacity = clip.opacity,
+                transform = composition?.transform ?: clip.transform,
+                opacity = composition?.opacity ?: clip.opacity,
                 volume = clip.volume,
-                keyframes = clip.keyframes,
+                keyframes = composition?.keyframes ?: clip.keyframes,
                 propertyAnimations = clip.propertyAnimations,
                 imageFrameRate = if (asset.type == AssetType.IMAGE) fps else null,
                 fadeInUs = clip.fadeInUs,

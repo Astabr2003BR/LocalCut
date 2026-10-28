@@ -9,6 +9,12 @@ object StabilizationApplyPolicy {
         "transform.rotationDeg",
         "transform.scale",
     )
+    private val generatedKeyPrefixes = mapOf(
+        "transform.x" to "stabilize-x-",
+        "transform.y" to "stabilize-y-",
+        "transform.rotationDeg" to "stabilize-rotation-",
+        "transform.scale" to "stabilize-scale-",
+    )
 
     fun merge(
         existing: List<PropertyAnimation>,
@@ -27,5 +33,25 @@ object StabilizationApplyPolicy {
             "merged property animations must be unique"
         }
         return merged
+    }
+
+    fun hasGeneratedStabilization(animations: List<PropertyAnimation>): Boolean {
+        val byProperty = animations.groupBy { it.propertyId }
+        return stabilizedProperties.all { propertyId ->
+            val matches = byProperty[propertyId].orEmpty()
+            matches.size == 1 && isGeneratedChannel(matches.single())
+        }
+    }
+
+    fun removeGeneratedStabilization(animations: List<PropertyAnimation>): List<PropertyAnimation> {
+        if (!hasGeneratedStabilization(animations)) return animations
+        return animations.filterNot(::isGeneratedChannel)
+    }
+
+    private fun isGeneratedChannel(animation: PropertyAnimation): Boolean {
+        val prefix = generatedKeyPrefixes[animation.propertyId] ?: return false
+        return animation.keyframes.isNotEmpty() && animation.keyframes.all { keyframe ->
+            keyframe.id.startsWith(prefix)
+        }
     }
 }

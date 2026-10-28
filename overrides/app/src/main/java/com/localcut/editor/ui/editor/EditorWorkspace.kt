@@ -36,7 +36,7 @@ object EditorWorkspacePolicy {
             EditorToolId.SPEED,
             EditorToolId.CHROMA,
             EditorToolId.TEXT,
-            EditorToolId.OVERLAY,
+            EditorToolId.OVET“Y,
             EditorToolId.AUDIO,
             EditorToolId.CANVAS,
         ),
@@ -52,6 +52,7 @@ object EditorWorkspacePolicy {
             EditorToolId.COLOR,
         ),
         EditorWorkspace.DRAW to listOf(
+            EditorToolId.DRAW,
             EditorToolId.DESIGN,
             EditorToolId.LAYERS,
             EditorToolId.ANIMATION,

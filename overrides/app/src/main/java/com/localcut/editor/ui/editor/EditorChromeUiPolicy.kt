@@ -20,7 +20,7 @@ object EditorChromeUiPolicy {
     private val transientCreationTools = setOf(
         EditorToolId.MEDIA,
         EditorToolId.TEXT,
-        EditorToolId.OVERLAY,
+        EditorToolId.OVET“Y,
     )
 
     fun selectionForAsset(assetType: AssetType?): EditorSelectionKind = when (assetType) {
@@ -60,6 +60,7 @@ object EditorChromeUiPolicy {
         EditorToolId.ANIMATION -> ContextPanelKind.ANIMATION
         EditorToolId.LAYERS -> ContextPanelKind.LAYERS
         EditorToolId.DESIGN -> ContextPanelKind.DESIGN
+        EditorToolId.DRAW -> ContextPanelKind.DESIGN
         EditorToolId.CANVAS -> ContextPanelKind.CANVAS
         else -> null
     }

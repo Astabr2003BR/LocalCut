@@ -186,6 +186,7 @@ private fun toolGlyph(id: EditorToolId): String = when (id) {
     EditorToolId.ANIMATION -> "◇"
     EditorToolId.LAYERS -> "▱"
     EditorToolId.DESIGN -> "+"
+    EditorToolId.DRAW -> "✎"
     EditorToolId.CANVAS -> "▢"
     EditorToolId.CAPTIONS -> "CC"
     EditorToolId.TRACKING -> "⌖"

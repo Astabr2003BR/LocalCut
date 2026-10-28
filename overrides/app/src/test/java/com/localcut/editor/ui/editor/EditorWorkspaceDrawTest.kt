@@ -6,7 +6,7 @@ import org.junit.Test
 
 class EditorWorkspaceDrawTest {
     @Test
-    fun drawWorkspaceIsExposedAndPrioritizesLiveDesignTools() {
+    fun drawWorkspaceIsExposedAndPrioritizesDedicatedDrawTool() {
         assertTrue(EditorWorkspace.entries.any { it == EditorWorkspace.DRAW && it.label == "Desenho" })
 
         val projectTools = EditorWorkspacePolicy.toolsFor(
@@ -14,7 +14,8 @@ class EditorWorkspaceDrawTest {
             selection = EditorSelectionKind.PROJECT,
         ).map { it.id }
 
-        assertEquals(EditorToolId.DESIGN, projectTools.first())
+        assertEquals(EditorToolId.DRAW, projectTools.first())
+        assertTrue(EditorToolId.DESIGN in projectTools)
         assertTrue(EditorToolId.CANVAS in projectTools)
         assertTrue(EditorToolId.TEXT in projectTools)
         assertTrue(projectTools.all { id -> EditorToolCatalog.all.first { it.id == id }.enabled })

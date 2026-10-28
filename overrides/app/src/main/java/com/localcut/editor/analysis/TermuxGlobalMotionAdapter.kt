@@ -3,6 +3,7 @@ package com.localcut.editor.analysis
 import com.localcut.editor.domain.animation.GlobalMotionSample
 import com.localcut.editor.domain.animation.GlobalMotionStabilizationPlanner
 import com.localcut.editor.domain.model.PropertyAnimation
+import com.localcut.editor.domain.model.TransformValue
 import com.localcut.editor.termux.TermuxGlobalMotionAnalysis
 import com.localcut.editor.termux.TermuxGlobalMotionSample
 
@@ -13,6 +14,10 @@ object TermuxGlobalMotionAdapter {
         minConfidence: Double = 0.5,
         sourceInUs: Long = 0L,
         sourceOutUs: Long = Long.MAX_VALUE,
+        baseTransform: TransformValue = TransformValue(),
+        canvasWidth: Int? = null,
+        canvasHeight: Int? = null,
+        maxEdgeCompensationScale: Double = 2.0,
     ): List<PropertyAnimation> {
         require(sourceInUs >= 0L) { "stabilization sourceInUs must be non-negative" }
         require(sourceOutUs > sourceInUs) { "stabilization source window must be positive" }
@@ -24,6 +29,10 @@ object TermuxGlobalMotionAdapter {
             samples = samples,
             strength = strength,
             minConfidence = minConfidence,
+            baseTransform = baseTransform,
+            canvasWidth = canvasWidth,
+            canvasHeight = canvasHeight,
+            maxEdgeCompensationScale = maxEdgeCompensationScale,
         )
     }
 

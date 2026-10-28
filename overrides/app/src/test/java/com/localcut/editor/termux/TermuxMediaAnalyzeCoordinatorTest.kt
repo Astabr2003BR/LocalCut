@@ -3,6 +3,9 @@ package com.localcut.editor.termux
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
 import java.io.ByteArrayInputStream
+import java.io.File
+import java.nio.file.Files
+import java.security.MessageDigest
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -54,6 +57,41 @@ class TermuxMediaAnalyzeCoordinatorTest {
     }
 
     @Test
+    fun reverseUsesSafeStreamAndDownloadsGeneratedMp4IntoPrivateDirectory() = runBlocking {
+        val fake = FakeJobClient()
+        var resolvedUri: String? = null
+        val outputRoot = Files.createTempDirectory("localcut-reverse-coordinator").toFile()
+        try {
+            val coordinator = TermuxMediaReverseCoordinator(
+                client = fake,
+                sourceResolver = { asset ->
+                    resolvedUri = asset.uri
+                    TermuxEngineMediaSource(asset.sizeBytes!!) { ByteArrayInputStream("abcde".toByteArray()) }
+                },
+                outputDirectory = outputRoot,
+            )
+            val asset = asset(sizeBytes = 5L)
+
+            val result = coordinator.reverse(
+                asset = asset,
+                options = TermuxReverseOptions(chunkDurationUs = 1_000_000L),
+            ).getOrThrow()
+
+            assertEquals(asset.uri, resolvedUri)
+            assertTrue(fake.staged)
+            assertTrue(fake.downloaded)
+            assertTrue(fake.idempotencyKey!!.matches(Regex("^reverse-media-v1:[0-9a-f]{64}$")))
+            assertEquals(TermuxAnalyzeMediaMode.REVERSE, fake.lastInput?.mode)
+            assertEquals(1_000_000L, fake.lastInput?.reverseOptions?.chunkDurationUs)
+            assertEquals(outputRoot.canonicalFile, result.file.parentFile.canonicalFile)
+            assertEquals("reversed", result.file.readText())
+            assertEquals("video/mp4", result.media.mimeType)
+        } finally {
+            outputRoot.deleteRecursively()
+        }
+    }
+
+    @Test
     fun trackingRejectsNonVideoBeforeOpeningSource() = runBlocking {
         var resolved = false
         val coordinator = TermuxMediaTrackingCoordinator(FakeJobClient()) {
@@ -64,6 +102,31 @@ class TermuxMediaAnalyzeCoordinatorTest {
         assertTrue(result.isFailure)
         assertEquals("TERMUX_TRACKING_REQUIRES_VIDEO", result.exceptionOrNull()?.message)
         assertFalse(resolved)
+    }
+
+    @Test
+    fun reverseRejectsNonVideoBeforeOpeningSourceOrCreatingOutput() = runBlocking {
+        var resolved = false
+        val outputRoot = Files.createTempDirectory("localcut-reverse-reject").toFile()
+        try {
+            val coordinator = TermuxMediaReverseCoordinator(
+                client = FakeJobClient(),
+                sourceResolver = {
+                    resolved = true
+                    error("must not resolve")
+                },
+                outputDirectory = outputRoot,
+            )
+            val result = coordinator.reverse(
+                asset(sizeBytes = 5L).copy(type = AssetType.AUDIO, mimeType = "audio/mp4"),
+            )
+            assertTrue(result.isFailure)
+            assertEquals("TERMUX_REVERSE_REQUIRES_VIDEO", result.exceptionOrNull()?.message)
+            assertFalse(resolved)
+            assertTrue(outputRoot.listFiles().orEmpty().isEmpty())
+        } finally {
+            outputRoot.deleteRecursively()
+        }
     }
 
     @Test
@@ -92,6 +155,7 @@ class TermuxMediaAnalyzeCoordinatorTest {
 
     private class FakeJobClient(private val trackingResult: Boolean = false) : TermuxEngineJobClient {
         var staged = false
+        var downloaded = false
         var idempotencyKey: String? = null
         var lastInput: TermuxAnalyzeMediaInput? = null
         override suspend fun pair(pairingCode: String) = error("unused")
@@ -151,6 +215,25 @@ class TermuxMediaAnalyzeCoordinatorTest {
                     job = job,
                     sizeBytes = source.contentLength,
                     sha256 = "0".repeat(64),
+                ),
+            )
+        }
+
+        override suspend fun downloadGeneratedMedia(
+            jobId: String,
+            destination: File,
+        ): Result<TermuxGeneratedMediaDownload> {
+            downloaded = true
+            val bytes = "reversed".toByteArray()
+            destination.parentFile?.mkdirs()
+            destination.writeBytes(bytes)
+            val sha = MessageDigest.getInstance("SHA-256").digest(bytes)
+                .joinToString("") { "%02x".format(it) }
+            return Result.success(
+                TermuxGeneratedMediaDownload(
+                    job = TermuxEngineJob(jobId, "ANALYZE_MEDIA", TermuxEngineJobStatus.SUCCEEDED, 100),
+                    media = TermuxGeneratedMediaMetadata(bytes.size.toLong(), sha, "video/mp4"),
+                    file = destination,
                 ),
             )
         }

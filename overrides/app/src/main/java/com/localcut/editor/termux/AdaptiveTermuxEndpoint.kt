@@ -2,6 +2,7 @@ package com.localcut.editor.termux
 
 import com.localcut.editor.bridge.agent.BridgeTermuxAgentRequest
 import com.localcut.editor.bridge.agent.BridgeTermuxDeveloperClient
+import java.io.File
 import java.net.ConnectException
 import java.net.NetworkInterface
 import java.net.NoRouteToHostException
@@ -85,6 +86,8 @@ internal class AdaptiveTermuxEngineJobClient(
     override suspend fun cancelJob(jobId: String) = tryEndpoints(endpointProvider()) { client(it).cancelJob(jobId) }
     override suspend fun stageMedia(jobId: String, source: TermuxEngineMediaSource) =
         tryEndpoints(endpointProvider()) { client(it).stageMedia(jobId, source) }
+    override suspend fun downloadGeneratedMedia(jobId: String, destination: File) =
+        tryEndpoints(endpointProvider()) { client(it).downloadGeneratedMedia(jobId, destination) }
 }
 
 internal class AdaptiveTermuxApprovalClient(

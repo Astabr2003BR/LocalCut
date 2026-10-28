@@ -91,12 +91,11 @@ class ReverseJobIntegrationTest(unittest.TestCase):
     def test_reverse_job_stages_input_and_publishes_only_generated_media_metadata(self):
         capabilities = self.request("GET_CAPABILITIES")
         self.assertTrue(capabilities["ok"])
-        self.assertIn("TRANSFORM_MEDIA", capabilities["capabilities"])
         self.assertIn("REVERSE_MEDIA", capabilities["capabilities"])
 
         created = self.request(
             "CREATE_JOB",
-            jobType="TRANSFORM_MEDIA",
+            jobType="ANALYZE_MEDIA",
             idempotencyKey="asset-reverse-v1",
             input={
                 "mode": "REVERSE",
@@ -137,7 +136,7 @@ class ReverseJobIntegrationTest(unittest.TestCase):
     def test_reverse_validation_fails_before_job_creation(self):
         invalid = self.request(
             "CREATE_JOB",
-            jobType="TRANSFORM_MEDIA",
+            jobType="ANALYZE_MEDIA",
             idempotencyKey="asset-reverse-invalid",
             input={
                 "mode": "REVERSE",

@@ -72,6 +72,9 @@ fun MotionPathActionControl(
         EasingKind.EASE_IN to "Ease In",
         EasingKind.EASE_OUT to "Ease Out",
         EasingKind.EASE_IN_OUT to "Suave",
+        EasingKind.BOUNCE to "Bounce",
+        EasingKind.ELASTIC to "Elastic",
+        EasingKind.CYCLIC to "Cíclico",
     )
 
     Column(

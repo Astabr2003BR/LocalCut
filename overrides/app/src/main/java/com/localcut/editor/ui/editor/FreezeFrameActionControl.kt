@@ -31,18 +31,17 @@ fun FreezeFrameActionControl(
     val editorRuntime = remember(context) { LocalCutProcessRuntime.get(context) }
     val session by editorRuntime.editorViewModel.sessionState.collectAsState()
     val preview by editorRuntime.editorViewModel.previewState.collectAsState()
-    val clip = session.selectedClipId?.let(session.project::findClip)
-    val asset = clip?.let { selected -> session.project.assets.firstOrNull { it.id == selected.assetId } }
-    val isVideo = asset?.type == AssetType.VIDEO
-    val hasFreeze = clip?.timeMap?.freezeSegments?.isNotEmpty() == true
-    val presentationOffsetUs = clip?.let { preview.positionUs - it.startUs }
-    val playheadInsideClip = clip != null && presentationOffsetUs != null &&
-        presentationOffsetUs >= 0L && presentationOffsetUs < clip.durationUs
-    val canCreateFreeze = isVideo && clip != null && !hasFreeze && !clip.timeMap.reverse &&
-        clip.timeMap.speedPoints.isEmpty() && playheadInsideClip
-    var message by remember(clip?.id) { mutableStateOf<String?>(null) }
+    val clipId = session.selectedClipId ?: return
+    val clip = session.project.findClip(clipId) ?: return
+    val asset = session.project.assets.firstOrNull { it.id == clip.assetId } ?: return
+    if (asset.type != AssetType.VIDEO) return
 
-    if (!isVideo || clip == null) return
+    val hasFreeze = clip.timeMap.freezeSegments.isNotEmpty()
+    val presentationOffsetUs = preview.positionUs - clip.startUs
+    val playheadInsideClip = presentationOffsetUs >= 0L && presentationOffsetUs < clip.durationUs
+    val canCreateFreeze = !hasFreeze && !clip.timeMap.reverse &&
+        clip.timeMap.speedPoints.isEmpty() && playheadInsideClip
+    var message by remember(clip.id) { mutableStateOf<String?>(null) }
 
     Column(modifier = modifier.fillMaxWidth()) {
         Text("Congelar frame", style = MaterialTheme.typography.labelSmall)

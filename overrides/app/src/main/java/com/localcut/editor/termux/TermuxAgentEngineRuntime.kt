@@ -2,7 +2,6 @@ package com.localcut.editor.termux
 
 import android.content.Context
 import com.localcut.editor.bridge.agent.BridgeTermuxDeveloperClient
-import java.io.File
 
 class TermuxAgentEngineRuntime private constructor(context: Context) {
     private val appContext = context.applicationContext
@@ -25,7 +24,7 @@ class TermuxAgentEngineRuntime private constructor(context: Context) {
     val mediaReverseCoordinator = TermuxMediaReverseCoordinator(
         client = jobClient,
         sourceResolver = mediaSourceResolver,
-        outputDirectory = File(appContext.cacheDir, "termux-generated"),
+        outputDirectory = TermuxGeneratedMediaStoragePolicy.durableDirectory(appContext.filesDir),
     )
     private val pairingService = TermuxEnginePairingService(client, tokenStore)
 

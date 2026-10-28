@@ -79,6 +79,10 @@ fun DrawStrokePad(
     var strokeArgb by remember(project.id) { mutableIntStateOf(0xFFFFFFFF.toInt()) }
     var frameByFrameEnabled by remember(project.id) { mutableStateOf(false) }
     var onionSkinEnabled by remember(project.id) { mutableStateOf(true) }
+    var onionPreviousFrames by remember(project.id) { mutableIntStateOf(1) }
+    var onionNextFrames by remember(project.id) { mutableIntStateOf(1) }
+    var onionFrameStep by remember(project.id) { mutableIntStateOf(1) }
+    var onionOpacity by remember(project.id) { mutableDoubleStateOf(1.0) }
     var exposureFrames by remember(project.id) { mutableIntStateOf(1) }
     var eraserEnabled by remember(project.id) { mutableStateOf(false) }
     var stabilizationStrength by remember(project.id) {
@@ -99,8 +103,9 @@ fun DrawStrokePad(
             candidates = pathElements.map { OnionSkinCandidate(it.id, it.startUs) },
             playheadUs = playheadUs.coerceAtLeast(0L),
             fps = project.fps,
-            previousFrames = 1,
-            nextFrames = 1,
+            previousFrames = onionPreviousFrames,
+            nextFrames = onionNextFrames,
+            frameStep = onionFrameStep,
         )
     } else {
         emptyList()
@@ -158,6 +163,62 @@ fun DrawStrokePad(
                         OutlinedButton(onClick = { exposureFrames = frames }) { Text("${frames}f") }
                     }
                 }
+            }
+        }
+
+        if (frameByFrameEnabled && onionSkinEnabled && !eraserEnabled) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Anteriores $onionPreviousFrames",
+                    modifier = Modifier.width(112.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Slider(
+                    value = onionPreviousFrames.toFloat(),
+                    onValueChange = { onionPreviousFrames = it.roundToInt().coerceIn(0, OnionSkinPolicy.MAX_FRAME_WINDOW) },
+                    valueRange = 0f..OnionSkinPolicy.MAX_FRAME_WINDOW.toFloat(),
+                    steps = OnionSkinPolicy.MAX_FRAME_WINDOW - 1,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Próximos $onionNextFrames",
+                    modifier = Modifier.width(112.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Slider(
+                    value = onionNextFrames.toFloat(),
+                    onValueChange = { onionNextFrames = it.roundToInt().coerceIn(0, OnionSkinPolicy.MAX_FRAME_WINDOW) },
+                    valueRange = 0f..OnionSkinPolicy.MAX_FRAME_WINDOW.toFloat(),
+                    steps = OnionSkinPolicy.MAX_FRAME_WINDOW - 1,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                (1..OnionSkinPolicy.MAX_FRAME_WINDOW).forEach { step ->
+                    if (onionFrameStep == step) {
+                        FilledTonalButton(onClick = { onionFrameStep = step }) { Text("Passo $step") }
+                    } else {
+                        OutlinedButton(onClick = { onionFrameStep = step }) { Text("Passo $step") }
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Onion ${(onionOpacity * 100.0).roundToInt()}%",
+                    modifier = Modifier.width(112.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Slider(
+                    value = onionOpacity.toFloat(),
+                    onValueChange = { onionOpacity = it.toDouble().coerceIn(0.1, 1.0) },
+                    valueRange = 0.1f..1f,
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
 
@@ -437,7 +498,7 @@ fun DrawStrokePad(
                 val shape = element.shape ?: return@forEach
                 val path = shape.path ?: return@forEach
                 val ghostColor = Color(shape.strokeArgb ?: 0xFFFFFFFF.toInt()).copy(
-                    alpha = (ghost.alpha * element.opacity).toFloat().coerceIn(0f, 1f),
+                    alpha = (ghost.alpha * onionOpacity * element.opacity).toFloat().coerceIn(0f, 1f),
                 )
                 path.points.zipWithNext().forEach { (start, end) ->
                     drawLine(

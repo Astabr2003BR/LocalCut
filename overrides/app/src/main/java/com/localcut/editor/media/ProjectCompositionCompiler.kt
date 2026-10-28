@@ -207,7 +207,7 @@ class ProjectCompositionCompiler(
                     if (item.fadeOutUs > 0L) {
                         envelope.addFadeAt(
                             piece.presentationDurationUs - item.fadeOutUs,
-                            piece.fadeOutUs,
+                            item.fadeOutUs,
                             DefaultGainProvider.FADE_OUT_LINEAR,
                         )
                     }

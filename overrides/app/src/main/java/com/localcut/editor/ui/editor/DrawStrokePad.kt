@@ -32,9 +32,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.localcut.editor.domain.design.BrushPresetPolicy
 import com.localcut.editor.domain.design.CanvasPointPx
 import com.localcut.editor.domain.design.DrawStrokeCapturePolicy
 import com.localcut.editor.domain.design.DrawStrokePolicy
+import com.localcut.editor.domain.design.FrameExposurePolicy
 import com.localcut.editor.domain.design.OnionSkinCandidate
 import com.localcut.editor.domain.design.OnionSkinPolicy
 import com.localcut.editor.domain.design.VectorEraserCandidate
@@ -65,13 +67,16 @@ fun DrawStrokePad(
     var capturedPoints by remember(project.id) { mutableStateOf(emptyList<CanvasPointPx>()) }
     var padSize by remember(project.id) { mutableStateOf(IntSize.Zero) }
     var strokeWidthPx by remember(project.id) { mutableDoubleStateOf(DrawStrokePadPolicy.DEFAULT_STROKE_WIDTH_PX) }
+    var brushOpacity by remember(project.id) { mutableDoubleStateOf(1.0) }
+    var selectedBrushId by remember(project.id) { mutableStateOf<String?>(null) }
     var eraserRadiusPx by remember(project.id) { mutableDoubleStateOf(24.0) }
     var strokeArgb by remember(project.id) { mutableIntStateOf(0xFFFFFFFF.toInt()) }
     var frameByFrameEnabled by remember(project.id) { mutableStateOf(false) }
     var onionSkinEnabled by remember(project.id) { mutableStateOf(true) }
+    var exposureFrames by remember(project.id) { mutableIntStateOf(1) }
     var eraserEnabled by remember(project.id) { mutableStateOf(false) }
     val previewColor = drawColorPresets.firstOrNull { it.argb == strokeArgb }?.color ?: Color(strokeArgb)
-    val gestureColor = if (eraserEnabled) Color(0xFFFF6B6B) else previewColor
+    val gestureColor = if (eraserEnabled) Color(0xFFFF6B6B) else previewColor.copy(alpha = brushOpacity.toFloat())
 
     val pathElements = project.designElements.filter { element ->
         element.shape?.kind == ShapeKind.PATH && element.shape.path != null
@@ -97,7 +102,7 @@ fun DrawStrokePad(
         Text(
             when {
                 eraserEnabled -> "Borracha vetorial: arraste sobre um traço ativo para removê-lo. Desfazer restaura o traço."
-                frameByFrameEnabled -> "Modo frame a frame: cada gesto ocupa um frame. Onion skin mostra o frame anterior e o próximo."
+                frameByFrameEnabled -> "Modo frame a frame: cada gesto ocupa a exposição escolhida. Onion skin mostra frames vizinhos."
                 else -> "Arraste o dedo no quadro. Cada gesto vira um PATH editável e pode ser desfeito."
             },
             style = MaterialTheme.typography.bodySmall,
@@ -127,7 +132,39 @@ fun DrawStrokePad(
             }
         }
 
+        if (frameByFrameEnabled && !eraserEnabled) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                listOf(1, 2, 3, 4).forEach { frames ->
+                    if (exposureFrames == frames) {
+                        FilledTonalButton(onClick = { exposureFrames = frames }) { Text("${frames}f") }
+                    } else {
+                        OutlinedButton(onClick = { exposureFrames = frames }) { Text("${frames}f") }
+                    }
+                }
+            }
+        }
+
         if (!eraserEnabled) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                BrushPresetPolicy.presets().forEach { preset ->
+                    val select = {
+                        selectedBrushId = preset.id
+                        strokeWidthPx = preset.strokeWidthPx
+                        brushOpacity = preset.opacity
+                    }
+                    if (selectedBrushId == preset.id) {
+                        FilledTonalButton(onClick = select) { Text(preset.label) }
+                    } else {
+                        OutlinedButton(onClick = select) { Text(preset.label) }
+                    }
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -158,8 +195,30 @@ fun DrawStrokePad(
             } else {
                 Slider(
                     value = strokeWidthPx.toFloat(),
-                    onValueChange = { strokeWidthPx = it.toDouble() },
+                    onValueChange = {
+                        selectedBrushId = null
+                        strokeWidthPx = it.toDouble()
+                    },
                     valueRange = 2f..48f,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+
+        if (!eraserEnabled) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Opacidade ${(brushOpacity * 100.0).roundToInt()}%",
+                    modifier = Modifier.width(112.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Slider(
+                    value = brushOpacity.toFloat(),
+                    onValueChange = {
+                        selectedBrushId = null
+                        brushOpacity = it.toDouble()
+                    },
+                    valueRange = 0.1f..1f,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -176,9 +235,11 @@ fun DrawStrokePad(
                     playheadUs,
                     strokeArgb,
                     strokeWidthPx,
+                    brushOpacity,
                     eraserRadiusPx,
                     padSize,
                     frameByFrameEnabled,
+                    exposureFrames,
                     eraserEnabled,
                     project.fps,
                 ) {
@@ -224,22 +285,26 @@ fun DrawStrokePad(
                                         )?.let(onDeleteElement)
                                     }
                                 } else {
-                                    val frameWindow = if (frameByFrameEnabled) {
-                                        OnionSkinPolicy.frameWindow(playheadUs.coerceAtLeast(0L), project.fps)
+                                    val exposureWindow = if (frameByFrameEnabled) {
+                                        FrameExposurePolicy.window(
+                                            playheadUs = playheadUs.coerceAtLeast(0L),
+                                            fps = project.fps,
+                                            frameCount = exposureFrames,
+                                        )
                                     } else {
                                         null
                                     }
                                     val element = DrawStrokePolicy.createPathElement(
                                         id = DrawStrokePadPolicy.nextStrokeId(project.designElements.mapTo(hashSetOf()) { it.id }),
-                                        startUs = frameWindow?.startUs ?: playheadUs.coerceAtLeast(0L),
-                                        durationUs = frameWindow?.durationUs ?: DrawStrokePadPolicy.DEFAULT_DURATION_US,
+                                        startUs = exposureWindow?.startUs ?: playheadUs.coerceAtLeast(0L),
+                                        durationUs = exposureWindow?.durationUs ?: DrawStrokePadPolicy.DEFAULT_DURATION_US,
                                         points = points,
                                         canvasWidthPx = size.width.toDouble(),
                                         canvasHeightPx = size.height.toDouble(),
                                         strokeArgb = strokeArgb,
                                         strokeWidthPx = strokeWidthPx,
                                         zIndex = DrawStrokePadPolicy.nextZIndex(project.designElements.map { it.zIndex }),
-                                    )
+                                    ).copy(opacity = brushOpacity)
                                     onAddElement(element)
                                 }
                             }
@@ -258,7 +323,9 @@ fun DrawStrokePad(
                 val element = pathElementsById[ghost.elementId] ?: return@forEach
                 val shape = element.shape ?: return@forEach
                 val path = shape.path ?: return@forEach
-                val ghostColor = Color(shape.strokeArgb ?: 0xFFFFFFFF.toInt()).copy(alpha = ghost.alpha.toFloat())
+                val ghostColor = Color(shape.strokeArgb ?: 0xFFFFFFFF.toInt()).copy(
+                    alpha = (ghost.alpha * element.opacity).toFloat().coerceIn(0f, 1f),
+                )
                 path.points.zipWithNext().forEach { (start, end) ->
                     drawLine(
                         color = ghostColor,

@@ -12,9 +12,14 @@ class TermuxAgentEngineRuntime private constructor(context: Context) {
     val approvalClient: TermuxAgentApprovalClient = AdaptiveTermuxApprovalClient(tokenProvider = tokenStore::load)
     val developerAgentClient: BridgeTermuxDeveloperClient =
         AdaptiveTermuxDeveloperAgentClient(tokenProvider = tokenStore::load)
+    private val mediaSourceResolver = AndroidTermuxMediaSourceResolver(appContext.contentResolver)
     val mediaAnalyzeCoordinator = TermuxMediaAnalyzeCoordinator(
         client = jobClient,
-        sourceResolver = AndroidTermuxMediaSourceResolver(appContext.contentResolver),
+        sourceResolver = mediaSourceResolver,
+    )
+    val mediaTrackingCoordinator = TermuxMediaTrackingCoordinator(
+        client = jobClient,
+        sourceResolver = mediaSourceResolver,
     )
     private val pairingService = TermuxEnginePairingService(client, tokenStore)
 

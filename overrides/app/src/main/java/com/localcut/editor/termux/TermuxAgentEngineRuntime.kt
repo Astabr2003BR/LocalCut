@@ -45,14 +45,19 @@ class TermuxAgentEngineRuntime private constructor(context: Context) {
         options: TermuxReverseOptions = TermuxReverseOptions(),
     ): Result<PreparedGeneratedVideo> = runCatching {
         val download = mediaReverseCoordinator.reverse(asset, options).getOrThrow()
-        val prepared = generatedMediaAssetInspector.inspect(download.file).getOrThrow()
-        require(download.media.sizeBytes == prepared.asset.sizeBytes) {
-            "TERMUX_REVERSE_PREPARED_SIZE_MISMATCH"
+        try {
+            val prepared = generatedMediaAssetInspector.inspect(download.file).getOrThrow()
+            require(download.media.sizeBytes == prepared.asset.sizeBytes) {
+                "TERMUX_REVERSE_PREPARED_SIZE_MISMATCH"
+            }
+            require(download.media.mimeType == prepared.asset.mimeType) {
+                "TERMUX_REVERSE_PREPARED_TYPE_MISMATCH"
+            }
+            prepared
+        } catch (error: Throwable) {
+            download.file.delete()
+            throw error
         }
-        require(download.media.mimeType == prepared.asset.mimeType) {
-            "TERMUX_REVERSE_PREPARED_TYPE_MISMATCH"
-        }
-        prepared
     }
 
     companion object {

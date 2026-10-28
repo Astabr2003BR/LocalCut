@@ -22,6 +22,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.localcut.editor.domain.animation.MotionOperationPlanner
+import com.localcut.editor.domain.animation.MotionPreset
+import com.localcut.editor.domain.animation.MotionPresetLibrary
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.AudioProcessingSettings
 import com.localcut.editor.domain.model.CompositingSettings
@@ -374,6 +377,30 @@ fun CreativeToolsPanel(
                 }
 
                 CreativeToolsSection.TIMING -> {
+                    val motionPresetDurationUs = minOf(400_000L, clip.durationUs.coerceAtLeast(1L))
+                    Text("Motion presets", style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        listOf(
+                            MotionPreset.FADE_IN to "Fade",
+                            MotionPreset.SLIDE_UP to "Slide ↑",
+                            MotionPreset.POP_IN to "Pop",
+                            MotionPreset.SPIN_IN to "Spin",
+                        ).forEach { (preset, label) ->
+                            FilledTonalButton(onClick = {
+                                onSetPropertyAnimations(
+                                    MotionPresetLibrary.build(
+                                        preset = preset,
+                                        startOffsetUs = 0L,
+                                        durationUs = motionPresetDurationUs,
+                                    ).map(MotionOperationPlanner::toAnimation),
+                                )
+                            }) { Text(label) }
+                        }
+                    }
+
                     Text("Anime Mode", style = MaterialTheme.typography.labelMedium)
                     Row(
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),

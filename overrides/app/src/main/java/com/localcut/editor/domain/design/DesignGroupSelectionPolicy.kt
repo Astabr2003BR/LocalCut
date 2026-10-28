@@ -28,7 +28,7 @@ object DesignGroupSelectionPolicy {
         groups: List<DesignGroup>,
     ): DesignGroup? {
         val selected = selectedIds.toSet()
-        if (selected.isEmpty() || selected.size != selectedIds.distinct().size) return null
+        if (selected.isEmpty() || selected.size != selectedIds.size) return null
         return groups.singleOrNull { group ->
             group.elementIds.size == selected.size && group.elementIds.toSet() == selected
         }

@@ -30,6 +30,7 @@ import com.localcut.editor.domain.design.CanvasPointPx
 import com.localcut.editor.domain.design.DesignElementGeometryPolicy
 import com.localcut.editor.domain.design.VectorLassoSelectionPolicy
 import com.localcut.editor.domain.history.DeleteDesignElementsCommand
+import com.localcut.editor.domain.history.MoveDesignElementsCommand
 import com.localcut.editor.domain.model.DesignElement
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.ShapeKind
@@ -58,6 +59,28 @@ fun VectorLassoControl(
         playheadUs,
     ) {
         selectCurrentPathIds(project, lassoPolygon, playheadUs)
+    }
+
+    fun moveSelection(dx: Double, dy: Double) {
+        if (lassoPolygon.isEmpty()) return
+        val result = runCatching {
+            val currentSession = runtime.editorViewModel.sessionState.value
+            val currentProject = currentSession.project
+            val currentPlayheadUs = runtime.editorViewModel.previewState.value.positionUs.coerceAtLeast(0L)
+            val ids = selectCurrentPathIds(currentProject, lassoPolygon, currentPlayheadUs)
+            require(ids.isNotEmpty()) { "LASSO_SELECTION_EMPTY" }
+            runtime.editorViewModel.dispatch(
+                EditorAction.Execute(MoveDesignElementsCommand(ids, dx, dy)),
+            )
+        }
+        message = if (result.isSuccess) {
+            "Seleção movida. Desfazer continua disponível."
+        } else {
+            when (result.exceptionOrNull()?.message) {
+                "LASSO_SELECTION_EMPTY" -> "Nenhum traço selecionado no estado atual."
+                else -> "Falha ao mover seleção • ${result.exceptionOrNull()?.message ?: "LASSO_MOVE_FAILED"}"
+            }
+        }
     }
 
     Column(
@@ -182,6 +205,15 @@ fun VectorLassoControl(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+
+        if (selectedIds.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(onClick = { moveSelection(-40.0, 0.0) }) { Text("←") }
+                OutlinedButton(onClick = { moveSelection(40.0, 0.0) }) { Text("→") }
+                OutlinedButton(onClick = { moveSelection(0.0, -40.0) }) { Text("↑") }
+                OutlinedButton(onClick = { moveSelection(0.0, 40.0) }) { Text("↓") }
+            }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

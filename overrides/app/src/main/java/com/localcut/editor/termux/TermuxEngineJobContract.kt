@@ -170,5 +170,6 @@ interface TermuxEngineJobClient : TermuxEngineClient {
     suspend fun getJob(jobId: String): Result<TermuxEngineJob>
     suspend fun cancelJob(jobId: String): Result<TermuxEngineJob>
     suspend fun stageMedia(jobId: String, source: TermuxEngineMediaSource): Result<TermuxEngineStageResult>
-    suspend fun downloadGeneratedMedia(jobId: String, destination: File): Result<TermuxGeneratedMediaDownload>
+    suspend fun downloadGeneratedMedia(jobId: String, destination: File): Result<TermuxGeneratedMediaDownload> =
+        Result.failure(UnsupportedOperationException("TERMUX_GENERATED_MEDIA_DOWNLOAD_UNSUPPORTED"))
 }

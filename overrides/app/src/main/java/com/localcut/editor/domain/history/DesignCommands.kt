@@ -3,6 +3,7 @@ package com.localcut.editor.domain.history
 import com.localcut.editor.domain.design.CaptionEditor
 import com.localcut.editor.domain.model.DesignCanvasSettings
 import com.localcut.editor.domain.model.DesignElement
+import com.localcut.editor.domain.model.DesignGroup
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.ReusableComponent
 import com.localcut.editor.domain.model.TextOverlay
@@ -39,6 +40,9 @@ data class DeleteDesignElementCommand(
         require(index >= 0) { "design element $elementId not found" }
         require(project.reusableComponents.none { elementId in it.elementIds }) {
             "design element $elementId is used by a reusable component"
+        }
+        require(project.designGroups.none { elementId in it.elementIds }) {
+            "design element $elementId is used by a design group"
         }
         val removed = project.designElements[index]
         val elements = project.designElements.toMutableList().also { it.removeAt(index) }
@@ -81,6 +85,54 @@ data class SetProjectCanvasSizeCommand(
         }
         val edited = validatedDesign(project.copy(width = width, height = height))
         return CommandResult(edited, SetProjectCanvasSizeCommand(project.width, project.height))
+    }
+}
+
+data class GroupDesignElementsCommand(
+    val groupId: String,
+    val elementIds: List<String>,
+) : EditorCommand {
+    override fun apply(project: Project): CommandResult {
+        require(groupId.isNotBlank()) { "design group id must not be blank" }
+        require(project.designGroups.none { it.id == groupId }) { "design group $groupId already exists" }
+        val group = DesignGroup(groupId, elementIds)
+        val existingElementIds = project.designElements.mapTo(linkedSetOf()) { it.id }
+        require(group.validationIssues(existingElementIds).isEmpty()) {
+            "invalid design group: ${group.validationIssues(existingElementIds).first()}"
+        }
+        val occupied = project.designGroups.flatMapTo(linkedSetOf()) { it.elementIds }
+        val overlapping = elementIds.filter { it in occupied }
+        require(overlapping.isEmpty()) {
+            "design elements already belong to another group: ${overlapping.distinct().joinToString()}"
+        }
+        val edited = validatedDesign(project.copy(designGroups = project.designGroups + group))
+        return CommandResult(edited, UngroupDesignElementsCommand(groupId))
+    }
+}
+
+data class UngroupDesignElementsCommand(
+    val groupId: String,
+) : EditorCommand {
+    override fun apply(project: Project): CommandResult {
+        val index = project.designGroups.indexOfFirst { it.id == groupId }
+        require(index >= 0) { "design group $groupId not found" }
+        val removed = project.designGroups[index]
+        val groups = project.designGroups.toMutableList().also { it.removeAt(index) }
+        val edited = validatedDesign(project.copy(designGroups = groups))
+        return CommandResult(edited, RestoreDesignGroupCommand(index, removed))
+    }
+}
+
+private data class RestoreDesignGroupCommand(
+    val index: Int,
+    val group: DesignGroup,
+) : EditorCommand {
+    override fun apply(project: Project): CommandResult {
+        require(project.designGroups.none { it.id == group.id }) { "design group ${group.id} already exists" }
+        require(index in 0..project.designGroups.size) { "design group restore index out of range" }
+        val groups = project.designGroups.toMutableList().also { it.add(index, group) }
+        val edited = validatedDesign(project.copy(designGroups = groups))
+        return CommandResult(edited, UngroupDesignElementsCommand(group.id))
     }
 }
 

@@ -30,6 +30,8 @@ object ProjectJson {
         append("],\"designCanvas\":"); appendDesignCanvas(project.designCanvas); comma()
         append("\"reusableComponents\":[")
         project.reusableComponents.forEachIndexed { i, component -> if (i > 0) comma(); appendReusableComponent(component) }
+        append("],\"designGroups\":[")
+        project.designGroups.forEachIndexed { i, group -> if (i > 0) comma(); appendDesignGroup(group) }
         append("],\"beatMarkers\":[")
         project.beatMarkers.forEachIndexed { i, marker -> if (i > 0) comma(); appendBeatMarker(marker) }
         append("]}")
@@ -41,7 +43,7 @@ object ProjectJson {
         if (sourceSchemaVersion > BuildContract.PROJECT_SCHEMA_VERSION) {
             throw UnsupportedProjectSchemaException(sourceSchemaVersion)
         }
-        require(sourceSchemaVersion in 1..6) {
+        require(sourceSchemaVersion in 1..7) {
             "unsupported old schemaVersion=$sourceSchemaVersion"
         }
         val project = Project(
@@ -68,6 +70,9 @@ object ProjectJson {
             } else DesignCanvasSettings(),
             reusableComponents = if (sourceSchemaVersion >= 5) {
                 root.required("reusableComponents").asArray().values.map { decodeReusableComponent(it.asObject()) }
+            } else emptyList(),
+            designGroups = if (sourceSchemaVersion >= 7) {
+                root.required("designGroups").asArray().values.map { decodeDesignGroup(it.asObject()) }
             } else emptyList(),
             beatMarkers = if (sourceSchemaVersion >= 6) {
                 root.required("beatMarkers").asArray().values.map { decodeBeatMarker(it.asObject()) }
@@ -439,6 +444,14 @@ object ProjectJson {
         append("]}")
     }
 
+    private fun StringBuilder.appendDesignGroup(group: DesignGroup) {
+        append('{')
+        field("id", jsonString(group.id)); comma()
+        append("\"elementIds\":[")
+        group.elementIds.forEachIndexed { index, id -> if (index > 0) comma(); append(jsonString(id)) }
+        append("]}")
+    }
+
     private fun StringBuilder.appendBeatMarker(marker: BeatMarker) {
         append('{')
         field("id", jsonString(marker.id)); comma(); field("timeUs", marker.timeUs.toString()); comma(); field("strength", marker.strength.toString())
@@ -804,6 +817,11 @@ object ProjectJson {
         name = o.required("name").asString(),
         elementIds = o.required("elementIds").asArray().values.map { it.asString() },
         exposedProperties = o.required("exposedProperties").asArray().values.map { it.asString() }.toSet(),
+    )
+
+    private fun decodeDesignGroup(o: JObject): DesignGroup = DesignGroup(
+        id = o.required("id").asString(),
+        elementIds = o.required("elementIds").asArray().values.map { it.asString() },
     )
 
     private fun decodeBeatMarker(o: JObject): BeatMarker = BeatMarker(

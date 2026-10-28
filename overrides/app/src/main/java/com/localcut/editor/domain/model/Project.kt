@@ -18,6 +18,7 @@ data class Project(
     val designElements: List<DesignElement> = emptyList(),
     val designCanvas: DesignCanvasSettings = DesignCanvasSettings(),
     val reusableComponents: List<ReusableComponent> = emptyList(),
+    val designGroups: List<DesignGroup> = emptyList(),
     val beatMarkers: List<BeatMarker> = emptyList(),
     val analysis: ProjectAnalysisState = ProjectAnalysisState(),
 ) {

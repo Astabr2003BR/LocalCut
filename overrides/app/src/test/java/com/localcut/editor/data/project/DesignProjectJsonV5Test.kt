@@ -44,8 +44,8 @@ class DesignProjectJsonV5Test {
         val encoded = ProjectJson.encode(project)
         val decoded = ProjectJson.decode(encoded)
 
-        assertEquals(6, BuildContract.PROJECT_SCHEMA_VERSION)
-        assertTrue(encoded.contains("\"schemaVersion\":6"))
+        assertEquals(7, BuildContract.PROJECT_SCHEMA_VERSION)
+        assertTrue(encoded.contains("\"schemaVersion\":7"))
         assertEquals(project.designElements, decoded.designElements)
         assertEquals(project.designCanvas, decoded.designCanvas)
         assertEquals(project.reusableComponents, decoded.reusableComponents)
@@ -54,14 +54,15 @@ class DesignProjectJsonV5Test {
     @Test
     fun schemaV4MigratesDesignStateToNeutralDefaults() {
         val v4 = ProjectJson.encode(Project.create("Legacy", 1080, 1920, 30))
-            .replace("\"schemaVersion\":6", "\"schemaVersion\":4")
+            .replace("\"schemaVersion\":7", "\"schemaVersion\":4")
             .replace(Regex(",\"compositionGraph\":\\{.*}$"), "}")
 
         val decoded = ProjectJson.decode(v4)
 
-        assertEquals(6, decoded.schemaVersion)
+        assertEquals(7, decoded.schemaVersion)
         assertTrue(decoded.designElements.isEmpty())
         assertEquals(DesignCanvasSettings(), decoded.designCanvas)
         assertTrue(decoded.reusableComponents.isEmpty())
+        assertTrue(decoded.designGroups.isEmpty())
     }
 }

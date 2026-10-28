@@ -52,8 +52,8 @@ class AudioProjectJsonV6Test {
         val encoded = ProjectJson.encode(project)
         val decoded = ProjectJson.decode(encoded)
 
-        assertEquals(6, BuildContract.PROJECT_SCHEMA_VERSION)
-        assertTrue(encoded.contains("\"schemaVersion\":6"))
+        assertEquals(7, BuildContract.PROJECT_SCHEMA_VERSION)
+        assertTrue(encoded.contains("\"schemaVersion\":7"))
         assertEquals(processing, decoded.findClip("clip-a")!!.audioProcessing)
         assertEquals(markers, decoded.beatMarkers)
     }
@@ -61,13 +61,15 @@ class AudioProjectJsonV6Test {
     @Test
     fun schemaV5MigratesAudioStateToNeutralDefaults() {
         val v5 = ProjectJson.encode(Project.create("Legacy", 1080, 1920, 30))
-            .replace("\"schemaVersion\":6", "\"schemaVersion\":5")
+            .replace("\"schemaVersion\":7", "\"schemaVersion\":5")
+            .replace(",\"designGroups\":[]", "")
             .replace(Regex(",\"beatMarkers\":.*$"), "}")
             .replace(Regex(",\"audioProcessing\":\\{.*?}([,}])"), "$1")
 
         val decoded = ProjectJson.decode(v5)
 
-        assertEquals(6, decoded.schemaVersion)
+        assertEquals(7, decoded.schemaVersion)
         assertTrue(decoded.beatMarkers.isEmpty())
+        assertTrue(decoded.designGroups.isEmpty())
     }
 }

@@ -16,14 +16,24 @@ data class DeleteDesignElementsCommand(
         val missing = requested.filterNot { it in existingIds }
         require(missing.isEmpty()) { "design elements not found: ${missing.joinToString()}" }
 
-        val protectedIds = project.reusableComponents
+        val componentProtectedIds = project.reusableComponents
             .asSequence()
             .flatMap { it.elementIds.asSequence() }
             .filter { it in requested }
             .distinct()
             .toList()
-        require(protectedIds.isEmpty()) {
-            "design elements are used by reusable components: ${protectedIds.joinToString()}"
+        require(componentProtectedIds.isEmpty()) {
+            "design elements are used by reusable components: ${componentProtectedIds.joinToString()}"
+        }
+
+        val groupProtectedIds = project.designGroups
+            .asSequence()
+            .flatMap { it.elementIds.asSequence() }
+            .filter { it in requested }
+            .distinct()
+            .toList()
+        require(groupProtectedIds.isEmpty()) {
+            "design elements are used by design groups: ${groupProtectedIds.joinToString()}"
         }
 
         val previous = project.designElements

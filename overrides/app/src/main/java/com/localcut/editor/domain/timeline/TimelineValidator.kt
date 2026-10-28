@@ -227,6 +227,28 @@ object TimelineValidator {
                 issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, component.id, detail)
             }
         }
+
+        duplicateIds(project.designGroups.map { it.id }).forEach { id ->
+            issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, id, "duplicate design group id")
+        }
+        project.designGroups.forEach { group ->
+            group.validationIssues(knownElements).forEach { detail ->
+                issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, group.id, detail)
+            }
+        }
+        project.designGroups
+            .flatMap { it.elementIds }
+            .groupingBy { it }
+            .eachCount()
+            .filterValues { it > 1 }
+            .keys
+            .forEach { elementId ->
+                issues += ProjectIssue(
+                    ProjectIssueCode.INVALID_DESIGN_STATE,
+                    elementId,
+                    "design element belongs to multiple groups",
+                )
+            }
     }
 
     private fun validateTransitions(project: Project, issues: MutableList<ProjectIssue>) {

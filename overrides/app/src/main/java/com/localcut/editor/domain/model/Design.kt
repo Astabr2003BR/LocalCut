@@ -93,6 +93,19 @@ data class DesignElement(
     }
 }
 
+data class DesignGroup(
+    val id: String,
+    val elementIds: List<String>,
+) {
+    fun validationIssues(existingElementIds: Set<String>): List<String> = buildList {
+        if (id.isBlank()) add("design group id must not be blank")
+        if (elementIds.size < 2) add("design group requires at least two elements")
+        if (elementIds.distinct().size != elementIds.size) add("design group element ids must be unique")
+        val missing = elementIds.filterNot { it in existingElementIds }
+        if (missing.isNotEmpty()) add("design group references missing elements: ${missing.joinToString()}")
+    }
+}
+
 data class ReusableComponent(
     val id: String,
     val name: String,

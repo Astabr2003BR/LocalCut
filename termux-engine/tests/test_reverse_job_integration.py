@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 import socket
@@ -88,15 +89,11 @@ class ReverseJobIntegrationTest(unittest.TestCase):
         payload.update(fields)
         return self.exchange(payload)
 
-    def test_reverse_job_stages_input_and_publishes_only_generated_media_metadata(self):
-        capabilities = self.request("GET_CAPABILITIES")
-        self.assertTrue(capabilities["ok"])
-        self.assertIn("REVERSE_MEDIA", capabilities["capabilities"])
-
-        created = self.request(
+    def create_reverse_job(self, *, idempotency_key="asset-reverse-v1"):
+        return self.request(
             "CREATE_JOB",
             jobType="ANALYZE_MEDIA",
-            idempotencyKey="asset-reverse-v1",
+            idempotencyKey=idempotency_key,
             input={
                 "mode": "REVERSE",
                 "assetId": "asset-reverse",
@@ -107,10 +104,8 @@ class ReverseJobIntegrationTest(unittest.TestCase):
                 "chunkDurationUs": 1_000_000,
             },
         )
-        self.assertTrue(created["ok"])
-        self.assertEqual("QUEUED", created["job"]["status"])
-        job_id = created["job"]["id"]
 
+    def stage_reverse_job(self, job_id):
         payload = {
             "protocolVersion": 1,
             "projectId": "localcut",
@@ -120,7 +115,43 @@ class ReverseJobIntegrationTest(unittest.TestCase):
             "jobId": job_id,
             "contentLength": 5,
         }
-        staged = self.exchange(payload, b"abcde")
+        return self.exchange(payload, b"abcde")
+
+    def download_generated_media(self, job_id):
+        payload = {
+            "protocolVersion": 1,
+            "projectId": "localcut",
+            "requestId": "reverse-download-12345678",
+            "token": self.token,
+            "operation": "GET_JOB",
+            "jobId": job_id,
+            "includeGeneratedMedia": True,
+        }
+        raw = (json.dumps(payload, separators=(",", ":")) + "\n").encode()
+        with socket.create_connection(("127.0.0.1", self.port), timeout=3) as sock:
+            sock.sendall(raw)
+            stream = sock.makefile("rb")
+            header = json.loads(stream.readline().decode())
+            if not header.get("ok"):
+                return header, b""
+            self.assertTrue(header.get("binaryBody"))
+            content_length = header.get("contentLength")
+            self.assertIsInstance(content_length, int)
+            body = stream.read(content_length)
+            return header, body
+
+    def test_reverse_job_stages_input_and_publishes_only_generated_media_metadata(self):
+        capabilities = self.request("GET_CAPABILITIES")
+        self.assertTrue(capabilities["ok"])
+        self.assertIn("REVERSE_MEDIA", capabilities["capabilities"])
+        self.assertIn("DOWNLOAD_GENERATED_MEDIA", capabilities["capabilities"])
+
+        created = self.create_reverse_job()
+        self.assertTrue(created["ok"])
+        self.assertEqual("QUEUED", created["job"]["status"])
+        job_id = created["job"]["id"]
+
+        staged = self.stage_reverse_job(job_id)
 
         self.assertTrue(staged["ok"])
         self.assertEqual("SUCCEEDED", staged["job"]["status"])
@@ -132,6 +163,26 @@ class ReverseJobIntegrationTest(unittest.TestCase):
         self.assertEqual(64, len(output["media"]["sha256"]))
         self.assertNotIn("path", json.dumps(output).lower())
         self.assertEqual(output["media"], self.output_spool.metadata(job_id))
+
+        header, body = self.download_generated_media(job_id)
+        self.assertTrue(header["ok"])
+        self.assertTrue(header["binaryBody"])
+        self.assertEqual(output["media"]["sizeBytes"], header["contentLength"])
+        self.assertEqual(output["media"]["sha256"], header["sha256"])
+        self.assertEqual(b"reversed:edcba", body)
+        self.assertEqual(header["contentLength"], len(body))
+        self.assertEqual(header["sha256"], hashlib.sha256(body).hexdigest())
+        self.assertNotIn("path", json.dumps(header).lower())
+
+    def test_generated_media_download_fails_closed_before_reverse_succeeds(self):
+        created = self.create_reverse_job(idempotency_key="asset-reverse-not-ready")
+        self.assertTrue(created["ok"])
+
+        header, body = self.download_generated_media(created["job"]["id"])
+
+        self.assertFalse(header["ok"])
+        self.assertEqual("GENERATED_MEDIA_NOT_READY", header["code"])
+        self.assertEqual(b"", body)
 
     def test_reverse_validation_fails_before_job_creation(self):
         invalid = self.request(

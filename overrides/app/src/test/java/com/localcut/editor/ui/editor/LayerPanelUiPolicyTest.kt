@@ -1,8 +1,11 @@
 package com.localcut.editor.ui.editor
 
+import com.localcut.editor.domain.model.CameraCut
+import com.localcut.editor.domain.model.CameraSettings
 import com.localcut.editor.domain.model.CompositionGraph
 import com.localcut.editor.domain.model.CompositionNode
 import com.localcut.editor.domain.model.CompositionNodeKind
+import com.localcut.editor.domain.model.LayerTransform3D
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -180,6 +183,22 @@ class LayerPanelUiPolicyTest {
     }
 
     @Test
+    fun parentTargetsForClipExcludeTargetsThatWouldCreateCycle() {
+        val graph = CompositionGraph(
+            nodes = listOf(
+                CompositionNode("layer", CompositionNodeKind.LAYER, clipId = "clip-1"),
+                CompositionNode("unsafe-null", CompositionNodeKind.NULL, parentId = "layer"),
+                CompositionNode("safe-group", CompositionNodeKind.GROUP),
+            ),
+        )
+
+        assertEquals(
+            listOf("safe-group"),
+            LayerPanelUiPolicy.parentTargets(graph, "clip-1").map { it.id },
+        )
+    }
+
+    @Test
     fun setClipParentRejectsCameraUnknownTargetAndParentCycle() {
         val source = CompositionGraph(
             nodes = listOf(
@@ -198,5 +217,73 @@ class LayerPanelUiPolicyTest {
         val cycle = runCatching { LayerPanelUiPolicy.setClipParent(source, "clip-1", "null") }
         assertTrue(cycle.isFailure)
         assertTrue(cycle.exceptionOrNull()?.message.orEmpty().contains("cycle"))
+    }
+
+    @Test
+    fun planarControllerTransformCanBeEditedButPlaneTiltIsRejected() {
+        val graph = CompositionGraph(
+            nodes = listOf(CompositionNode("null-1", CompositionNodeKind.NULL)),
+        )
+        val transform = LayerTransform3D(
+            x = 120.0,
+            y = -30.0,
+            z = 150.0,
+            scale = 1.5,
+            rotationZDeg = 25.0,
+            opacity = 0.75,
+        )
+
+        val updated = LayerPanelUiPolicy.setControllerTransform(graph, "null-1", transform)
+        assertEquals(transform, updated.nodes.single().transform)
+
+        val tilted = runCatching {
+            LayerPanelUiPolicy.setControllerTransform(
+                updated,
+                "null-1",
+                transform.copy(rotationXDeg = 10.0),
+            )
+        }
+        assertTrue(tilted.isFailure)
+        assertTrue(tilted.exceptionOrNull()?.message.orEmpty().contains("rotationX/rotationY"))
+    }
+
+    @Test
+    fun staticCameraSettingsCanBeEditedSafely() {
+        val graph = LayerPanelUiPolicy.addStaticCamera(CompositionGraph()).graph
+        val settings = CameraSettings(focalLength = 1600.0, orthographic = true)
+
+        val updated = LayerPanelUiPolicy.setCameraSettings(graph, "camera-1", settings)
+
+        assertEquals(settings, updated.nodes.single().camera)
+    }
+
+    @Test
+    fun removingControllerDetachesChildrenAndCameraCutReferenceIsProtected() {
+        val graph = CompositionGraph(
+            nodes = listOf(
+                CompositionNode("null-1", CompositionNodeKind.NULL),
+                CompositionNode("layer", CompositionNodeKind.LAYER, parentId = "null-1", clipId = "clip-1"),
+            ),
+        )
+
+        val removed = LayerPanelUiPolicy.removeControllerNode(graph, "null-1")
+        assertEquals(1, removed.nodes.size)
+        assertNull(removed.nodes.single().parentId)
+
+        val cameraGraph = CompositionGraph(
+            nodes = listOf(CompositionNode("camera-1", CompositionNodeKind.CAMERA, camera = CameraSettings())),
+            cameraCuts = listOf(CameraCut(0L, "camera-1")),
+        )
+        val protected = runCatching { LayerPanelUiPolicy.removeControllerNode(cameraGraph, "camera-1") }
+        assertTrue(protected.isFailure)
+    }
+
+    @Test
+    fun removingLayerThroughControllerApiIsRejected() {
+        val graph = CompositionGraph(
+            nodes = listOf(CompositionNode("layer", CompositionNodeKind.LAYER, clipId = "clip-1")),
+        )
+
+        assertTrue(runCatching { LayerPanelUiPolicy.removeControllerNode(graph, "layer") }.isFailure)
     }
 }

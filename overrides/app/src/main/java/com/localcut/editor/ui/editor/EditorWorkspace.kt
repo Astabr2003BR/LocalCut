@@ -36,7 +36,7 @@ object EditorWorkspacePolicy {
             EditorToolId.SPEED,
             EditorToolId.CHROMA,
             EditorToolId.TEXT,
-            EditorToolId.OVET“Y,
+            EditorToolId.OVERLAY,
             EditorToolId.AUDIO,
             EditorToolId.CANVAS,
         ),

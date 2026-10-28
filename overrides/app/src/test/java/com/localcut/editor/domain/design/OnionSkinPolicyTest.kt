@@ -36,6 +36,29 @@ class OnionSkinPolicyTest {
     }
 
     @Test
+    fun frameStepSkipsIntermediateGhostFrames() {
+        val frameUs = 40_000L
+        val ghosts = OnionSkinPolicy.select(
+            candidates = listOf(
+                OnionSkinCandidate("prev3", 7 * frameUs),
+                OnionSkinCandidate("prev2", 8 * frameUs),
+                OnionSkinCandidate("prev1", 9 * frameUs),
+                OnionSkinCandidate("next1", 11 * frameUs),
+                OnionSkinCandidate("next2", 12 * frameUs),
+                OnionSkinCandidate("next3", 13 * frameUs),
+            ),
+            playheadUs = 10 * frameUs,
+            fps = 25,
+            previousFrames = 3,
+            nextFrames = 3,
+            frameStep = 2,
+        )
+
+        assertEquals(listOf("prev2", "next2"), ghosts.map { it.elementId })
+        assertEquals(listOf(-2, 2), ghosts.map { it.relativeFrame })
+    }
+
+    @Test
     fun fadesWithDistanceAndCapsGhostCountForMobile() {
         val frameUs = 40_000L
         val faded = OnionSkinPolicy.select(
@@ -63,7 +86,7 @@ class OnionSkinPolicyTest {
     }
 
     @Test
-    fun invalidFpsOrFrameWindowFailsClosed() {
+    fun invalidFpsOrFrameWindowOrStepFailsClosed() {
         assertTrue(runCatching { OnionSkinPolicy.frameDurationUs(0) }.isFailure)
         assertTrue(
             runCatching {
@@ -73,6 +96,18 @@ class OnionSkinPolicyTest {
                     fps = 25,
                     previousFrames = 4,
                     nextFrames = 1,
+                )
+            }.isFailure,
+        )
+        assertTrue(
+            runCatching {
+                OnionSkinPolicy.select(
+                    candidates = emptyList(),
+                    playheadUs = 0L,
+                    fps = 25,
+                    previousFrames = 1,
+                    nextFrames = 1,
+                    frameStep = 0,
                 )
             }.isFailure,
         )

@@ -144,6 +144,8 @@ fun AnimationCurvePanel(
                             val snapshotAsset = asset
                             val snapshotStrength = stabilizationStrength.toDouble()
                             val snapshotTrackingOptions = TermuxTrackingQualityPolicy.options(trackingQuality)
+                            val snapshotCanvasWidth = project.width
+                            val snapshotCanvasHeight = project.height
                             stabilization = StabilizationUiState(running = true, message = "Analisando movimento…")
                             scope.launch {
                                 runCatching {
@@ -156,6 +158,9 @@ fun AnimationCurvePanel(
                                         strength = snapshotStrength,
                                         sourceInUs = snapshotClip.sourceInUs,
                                         sourceOutUs = snapshotClip.sourceOutUs,
+                                        baseTransform = snapshotClip.transform,
+                                        canvasWidth = snapshotCanvasWidth,
+                                        canvasHeight = snapshotCanvasHeight,
                                     )
                                     require(correction.isNotEmpty()) { "STABILIZATION_NO_USABLE_MOTION" }
 
@@ -169,6 +174,9 @@ fun AnimationCurvePanel(
                                         currentClip.assetId == snapshotClip.assetId &&
                                             currentClip.sourceInUs == snapshotClip.sourceInUs &&
                                             currentClip.sourceOutUs == snapshotClip.sourceOutUs &&
+                                            currentClip.transform == snapshotClip.transform &&
+                                            currentProject.width == snapshotCanvasWidth &&
+                                            currentProject.height == snapshotCanvasHeight &&
                                             currentAsset.fingerprint == snapshotAsset.fingerprint
                                     ) { "STABILIZATION_CLIP_CHANGED" }
 
@@ -179,7 +187,7 @@ fun AnimationCurvePanel(
                                 }.onSuccess { merged ->
                                     latestOnSetPropertyAnimations(merged)
                                     stabilization = StabilizationUiState(
-                                        message = "Estabilização aplicada. Desfazer continua disponível.",
+                                        message = "Estabilização aplicada com compensação automática de bordas. Desfazer continua disponível.",
                                     )
                                 }.onFailure { error ->
                                     stabilization = StabilizationUiState(
@@ -286,7 +294,8 @@ private fun stabilizationErrorMessage(error: Throwable): String {
         message == "TERMUX_ENGINE_NOT_PAIRED" -> "Pareie o LocalCut com o UserLAnd/Termux antes de estabilizar."
         message == "STABILIZATION_NO_USABLE_MOTION" -> "Não houve movimento confiável suficiente para estabilizar este trecho."
         message == "STABILIZATION_SELECTION_CHANGED" -> "A seleção mudou durante a análise; o resultado não foi aplicado."
-        message == "STABILIZATION_CLIP_CHANGED" -> "O clipe mudou durante a análise; o resultado antigo foi descartado."
+        message == "STABILIZATION_CLIP_CHANGED" -> "O clipe, o transform ou o canvas mudou durante a análise; o resultado antigo foi descartado."
+        message == "STABILIZATION_EDGE_COMPENSATION_TOO_LARGE" -> "O movimento exigiria zoom excessivo para esconder as bordas; a estabilização não foi aplicada."
         message == "TERMUX_TRACKING_REQUIRES_VIDEO" -> "A estabilização requer um clipe de vídeo."
         message?.contains("Connection refused", ignoreCase = true) == true -> "O motor UserLAnd/Termux não está acessível."
         else -> message ?: "Falha ao analisar o movimento no UserLAnd/Termux."

@@ -88,6 +88,10 @@ fun AnimationCurvePanel(
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
+            if (asset?.type == AssetType.VIDEO || asset?.type == AssetType.IMAGE) {
+                MotionPathActionControl(modifier = Modifier.fillMaxWidth())
+            }
+
             if (asset?.type == AssetType.VIDEO) {
                 Text("Estabilização", style = MaterialTheme.typography.titleSmall)
                 Text(
@@ -230,7 +234,7 @@ fun AnimationCurvePanel(
 
             if (animations.isEmpty()) {
                 Text(
-                    "Este clipe ainda não possui animações de propriedade. Aplique uma animação/preset ou estabilização primeiro.",
+                    "Este clipe ainda não possui animações de propriedade. Crie um Motion Path, aplique estabilização ou use outro preset de animação primeiro.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

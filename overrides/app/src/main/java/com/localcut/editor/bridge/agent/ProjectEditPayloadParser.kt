@@ -170,8 +170,14 @@ internal object ProjectEditPayloadParser {
         "patchDesign" -> {
             item.requireOnly(
                 "op", "elementId", "startUs", "durationUs", "x", "y", "scale", "rotationDeg", "opacity",
-                "zIndex", "fillArgb", "strokeArgb", "strokeWidthPx", "cornerRadiusPx",
+                "zIndex", "fillArgb", "strokeArgb", "strokeWidthPx", "cornerRadiusPx", "points", "closed",
             )
+            val points = item.optional("points")?.asArray()?.values?.map { raw ->
+                val point = raw.asObject()
+                point.requireOnly("x", "y")
+                PathPoint(point.requiredDouble("x"), point.requiredDouble("y"))
+            }
+            if (points != null) require(points.size in 2..MAX_PATH_POINTS) { "design path point count invalid" }
             ProjectEditOperation.PatchDesign(
                 elementId = item.requiredNonBlankString("elementId"),
                 startUs = item.optionalLong("startUs"),
@@ -186,6 +192,8 @@ internal object ProjectEditPayloadParser {
                 strokeArgb = item.optionalArgb("strokeArgb"),
                 strokeWidthPx = item.optionalDouble("strokeWidthPx"),
                 cornerRadiusPx = item.optionalDouble("cornerRadiusPx"),
+                points = points,
+                closed = item.optionalBoolean("closed"),
             )
         }
         "patchClip" -> {

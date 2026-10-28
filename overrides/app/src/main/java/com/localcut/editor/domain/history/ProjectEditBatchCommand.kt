@@ -5,12 +5,14 @@ import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.DesignElement
 import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.PathPoint
 import com.localcut.editor.domain.model.TextOverlay
+import com.localcut.editor.domain.model.VectorPath
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.model.TransformValue
 import com.localcut.editor.domain.timeline.TimelineValidator
 
-enum class ProjectItemKind { VIDEO, IMAGE, AUDIO, TEXT, DESIGN }
+enum class ProjectItemKind { VIDEO, IMAGE, AUDIO, TEXT, DESIGN, DRAWING }
 
 sealed interface ProjectEditOperation {
     data class DeleteByKind(val kinds: Set<ProjectItemKind>) : ProjectEditOperation
@@ -62,6 +64,8 @@ sealed interface ProjectEditOperation {
         val strokeArgb: Int? = null,
         val strokeWidthPx: Double? = null,
         val cornerRadiusPx: Double? = null,
+        val points: List<PathPoint>? = null,
+        val closed: Boolean? = null,
     ) : ProjectEditOperation
 
     data class PatchClip(
@@ -147,7 +151,14 @@ private fun deleteByKind(project: Project, kinds: Set<ProjectItemKind>): Project
         .map { it.id }
         .toSet()
     val textIds = if (ProjectItemKind.TEXT in kinds) project.textOverlays.map { it.id }.toSet() else emptySet()
-    val designIds = if (ProjectItemKind.DESIGN in kinds) project.designElements.map { it.id }.toSet() else emptySet()
+    val designIds = when {
+        ProjectItemKind.DESIGN in kinds -> project.designElements.map { it.id }.toSet()
+        ProjectItemKind.DRAWING in kinds -> project.designElements
+            .filter { it.shape?.kind == com.localcut.editor.domain.model.ShapeKind.PATH }
+            .map { it.id }
+            .toSet()
+        else -> emptySet()
+    }
     require(clipIds.isNotEmpty() || textIds.isNotEmpty() || designIds.isNotEmpty()) { "no matching project items" }
     return removeItems(project, clipIds, textIds, designIds)
 }
@@ -301,11 +312,24 @@ private fun patchDesign(project: Project, operation: ProjectEditOperation.PatchD
         scale = operation.scale ?: current.transform.scale,
         rotationDeg = operation.rotationDeg ?: current.transform.rotationDeg,
     )
-    val stylePatchRequested = operation.fillArgb != null || operation.strokeArgb != null ||
-        operation.strokeWidthPx != null || operation.cornerRadiusPx != null
-    val nextShape = if (stylePatchRequested) {
-        val shape = requireNotNull(current.shape) { "design style patch requires shape element" }
+    val shapePatchRequested = operation.fillArgb != null || operation.strokeArgb != null ||
+        operation.strokeWidthPx != null || operation.cornerRadiusPx != null ||
+        operation.points != null || operation.closed != null
+    val nextShape = if (shapePatchRequested) {
+        val shape = requireNotNull(current.shape) { "design patch requires shape element" }
+        val pathPatchRequested = operation.points != null || operation.closed != null
+        val nextPath = if (pathPatchRequested) {
+            require(shape.kind == com.localcut.editor.domain.model.ShapeKind.PATH) { "path patch requires PATH element" }
+            val currentPath = requireNotNull(shape.path) { "PATH element missing path" }
+            VectorPath(
+                points = operation.points ?: currentPath.points,
+                closed = operation.closed ?: currentPath.closed,
+            )
+        } else {
+            shape.path
+        }
         shape.copy(
+            path = nextPath,
             fillArgb = operation.fillArgb ?: shape.fillArgb,
             strokeArgb = operation.strokeArgb ?: shape.strokeArgb,
             strokeWidthPx = operation.strokeWidthPx ?: shape.strokeWidthPx,

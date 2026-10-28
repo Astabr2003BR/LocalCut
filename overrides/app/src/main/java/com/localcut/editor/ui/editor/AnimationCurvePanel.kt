@@ -17,18 +17,25 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.localcut.editor.LocalCutProcessRuntime
+import com.localcut.editor.analysis.StabilizationApplyPolicy
+import com.localcut.editor.analysis.TermuxGlobalMotionAdapter
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.CubicBezierCurve
 import com.localcut.editor.domain.model.EasingKind
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.PropertyAnimation
+import kotlinx.coroutines.launch
 
 data class StabilizationUiState(
-    val clipId: String? = null,
     val running: Boolean = false,
     val message: String? = null,
     val isError: Boolean = false,
@@ -39,8 +46,6 @@ fun AnimationCurvePanel(
     project: Project,
     selectedClipId: String?,
     onSetPropertyAnimations: (List<PropertyAnimation>) -> Unit,
-    stabilizationState: StabilizationUiState = StabilizationUiState(),
-    onStabilizeRequested: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val clip = selectedClipId?.let(project::findClip)
@@ -60,6 +65,12 @@ fun AnimationCurvePanel(
 
         val asset = project.assets.firstOrNull { it.id == clip.assetId }
         val animations = clip.propertyAnimations
+        val appContext = LocalContext.current.applicationContext
+        val scope = rememberCoroutineScope()
+        val latestProject by rememberUpdatedState(project)
+        val latestSelectedClipId by rememberUpdatedState(selectedClipId)
+        val latestOnSetPropertyAnimations by rememberUpdatedState(onSetPropertyAnimations)
+        var stabilization by remember(clip.id) { mutableStateOf(StabilizationUiState()) }
         var x1 by remember(clip.id) { mutableFloatStateOf(0.42f) }
         var y1 by remember(clip.id) { mutableFloatStateOf(0f) }
         var x2 by remember(clip.id) { mutableFloatStateOf(0.58f) }
@@ -73,7 +84,6 @@ fun AnimationCurvePanel(
             verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             if (asset?.type == AssetType.VIDEO) {
-                val runningThisClip = stabilizationState.running && stabilizationState.clipId == clip.id
                 Text("Estabilização", style = MaterialTheme.typography.titleSmall)
                 Text(
                     "Analisa o movimento no UserLAnd/Termux com OpenCV e gera keyframes de correção.",
@@ -81,16 +91,64 @@ fun AnimationCurvePanel(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 FilledTonalButton(
-                    onClick = { onStabilizeRequested(clip.id) },
-                    enabled = !stabilizationState.running,
+                    onClick = {
+                        if (!stabilization.running) {
+                            val snapshotClip = clip
+                            val snapshotAsset = asset
+                            stabilization = StabilizationUiState(running = true, message = "Analisando movimento…")
+                            scope.launch {
+                                runCatching {
+                                    val motion = LocalCutProcessRuntime.get(appContext)
+                                        .mediaTrackingCoordinator
+                                        .analyze(snapshotAsset)
+                                        .getOrThrow()
+                                    val correction = TermuxGlobalMotionAdapter.toStabilizationAnimations(
+                                        result = motion,
+                                        sourceInUs = snapshotClip.sourceInUs,
+                                        sourceOutUs = snapshotClip.sourceOutUs,
+                                    )
+                                    require(correction.isNotEmpty()) { "STABILIZATION_NO_USABLE_MOTION" }
+
+                                    val currentProject = latestProject
+                                    val currentClip = currentProject.findClip(snapshotClip.id)
+                                        ?: error("STABILIZATION_CLIP_CHANGED")
+                                    val currentAsset = currentProject.assets.firstOrNull { it.id == currentClip.assetId }
+                                        ?: error("STABILIZATION_CLIP_CHANGED")
+                                    require(latestSelectedClipId == snapshotClip.id) { "STABILIZATION_SELECTION_CHANGED" }
+                                    require(
+                                        currentClip.assetId == snapshotClip.assetId &&
+                                            currentClip.sourceInUs == snapshotClip.sourceInUs &&
+                                            currentClip.sourceOutUs == snapshotClip.sourceOutUs &&
+                                            currentAsset.fingerprint == snapshotAsset.fingerprint
+                                    ) { "STABILIZATION_CLIP_CHANGED" }
+
+                                    StabilizationApplyPolicy.merge(
+                                        existing = currentClip.propertyAnimations,
+                                        stabilization = correction,
+                                    )
+                                }.onSuccess { merged ->
+                                    latestOnSetPropertyAnimations(merged)
+                                    stabilization = StabilizationUiState(
+                                        message = "Estabilização aplicada. Desfazer continua disponível.",
+                                    )
+                                }.onFailure { error ->
+                                    stabilization = StabilizationUiState(
+                                        message = stabilizationErrorMessage(error),
+                                        isError = true,
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    enabled = !stabilization.running,
                 ) {
-                    Text(if (runningThisClip) "Analisando…" else "Estabilizar vídeo")
+                    Text(if (stabilization.running) "Analisando…" else "Estabilizar vídeo")
                 }
-                if (stabilizationState.clipId == clip.id && stabilizationState.message != null) {
+                stabilization.message?.let { message ->
                     Text(
-                        stabilizationState.message,
+                        message,
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (stabilizationState.isError) {
+                        color = if (stabilization.isError) {
                             MaterialTheme.colorScheme.error
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
@@ -169,6 +227,15 @@ fun AnimationCurvePanel(
             ) { Text("Aplicar Bézier") }
         }
     }
+}
+
+private fun stabilizationErrorMessage(error: Throwable): String = when (error.message) {
+    "OPENCV_UNAVAILABLE" -> "OpenCV não está disponível no UserLAnd/Termux."
+    "STABILIZATION_NO_USABLE_MOTION" -> "Não houve movimento confiável suficiente para estabilizar este trecho."
+    "STABILIZATION_SELECTION_CHANGED" -> "A seleção mudou durante a análise; o resultado não foi aplicado."
+    "STABILIZATION_CLIP_CHANGED" -> "O clipe mudou durante a análise; o resultado antigo foi descartado."
+    "TERMUX_TRACKING_REQUIRES_VIDEO" -> "A estabilização requer um clipe de vídeo."
+    else -> error.message ?: "Falha ao analisar o movimento no UserLAnd/Termux."
 }
 
 @Composable

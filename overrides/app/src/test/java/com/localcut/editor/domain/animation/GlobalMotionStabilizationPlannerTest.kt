@@ -1,6 +1,7 @@
 package com.localcut.editor.domain.animation
 
 import com.localcut.editor.domain.model.PropertyValue
+import com.localcut.editor.domain.model.TransformValue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -63,6 +64,49 @@ class GlobalMotionStabilizationPlannerTest {
         assertEquals(2.0, scalar("transform.y"), 1e-9)
         assertEquals(-10.0, scalar("transform.rotationDeg"), 1e-9)
         assertEquals(1.0 + ((1.0 / 1.21) - 1.0) * 0.5, scalar("transform.scale"), 1e-9)
+    }
+
+    @Test
+    fun stabilizationIsRelativeToExistingClipTransform() {
+        val base = TransformValue(x = 100.0, y = -20.0, scale = 1.5, rotationDeg = 10.0, opacity = 0.7)
+        val animations = GlobalMotionStabilizationPlanner.plan(
+            samples = listOf(GlobalMotionSample(100_000L, 4.0, 2.0, 3.0, 1.0, confidence = 1.0)),
+            strength = 1.0,
+            baseTransform = base,
+        )
+        fun values(property: String) = animations.first { it.propertyId == property }.keyframes.map {
+            (it.value as PropertyValue.Scalar).value
+        }
+
+        assertEquals(listOf(100.0, 96.0), values("transform.x"))
+        assertEquals(listOf(-20.0, -22.0), values("transform.y"))
+        assertEquals(listOf(10.0, 7.0), values("transform.rotationDeg"))
+        assertEquals(listOf(1.5, 1.5), values("transform.scale"))
+    }
+
+    @Test
+    fun edgeCompensationMultipliesBaseScaleAndFailsClosedBeyondSafetyLimit() {
+        val animations = GlobalMotionStabilizationPlanner.plan(
+            samples = listOf(GlobalMotionSample(100_000L, 54.0, 0.0, 0.0, 1.0, confidence = 1.0)),
+            baseTransform = TransformValue(scale = 1.2),
+            canvasWidth = 1080,
+            canvasHeight = 1920,
+            maxEdgeCompensationScale = 2.0,
+        )
+        val scale = animations.first { it.propertyId == "transform.scale" }
+        assertEquals(1.2, (scale.keyframes.first().value as PropertyValue.Scalar).value, 1e-9)
+        assertEquals(1.32, (scale.keyframes.last().value as PropertyValue.Scalar).value, 1e-9)
+
+        val excessive = runCatching {
+            GlobalMotionStabilizationPlanner.plan(
+                samples = listOf(GlobalMotionSample(100_000L, 600.0, 0.0, 0.0, 1.0, confidence = 1.0)),
+                canvasWidth = 1080,
+                canvasHeight = 1920,
+                maxEdgeCompensationScale = 2.0,
+            )
+        }
+        assertTrue(excessive.isFailure)
+        assertEquals("STABILIZATION_EDGE_COMPENSATION_TOO_LARGE", excessive.exceptionOrNull()?.message)
     }
 
     @Test

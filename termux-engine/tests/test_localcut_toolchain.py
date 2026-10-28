@@ -24,13 +24,27 @@ class LocalCutToolchainTest(unittest.TestCase):
         self.assertNotIn("bash", commands)
         self.assertNotIn("python", commands)
         self.assertNotIn("exec", commands)
-        self.assertEqual({"FFMPEG", "FFPROBE", "BLENDER", "OPENTOONZ", "KRITA"}, {s.capability for s in TOOL_SPECS})
+        self.assertEqual(
+            {"FFMPEG", "FFPROBE", "BLENDER", "OPENTOONZ", "KRITA", "GIMP", "GEGL"},
+            {s.capability for s in TOOL_SPECS},
+        )
 
     def test_opentoonz_accepts_common_binary_name_variants(self):
         result = detect_toolchain(lambda command: "/opt/opentoonz" if command == "OpenToonz" else None)
         tool = next(t for t in result["tools"] if t["capability"] == "OPENTOONZ")
         self.assertTrue(tool["available"])
         self.assertEqual("/opt/opentoonz", tool["executable"])
+
+    def test_gimp_accepts_versioned_binary_and_gegl(self):
+        found = {
+            "gimp-3.0": "/usr/bin/gimp-3.0",
+            "gegl": "/usr/bin/gegl",
+        }
+        result = detect_toolchain(found.get)
+        self.assertIn("GIMP", result["capabilities"])
+        self.assertIn("GEGL", result["capabilities"])
+        gimp = next(t for t in result["tools"] if t["capability"] == "GIMP")
+        self.assertEqual("/usr/bin/gimp-3.0", gimp["executable"])
 
 
 if __name__ == "__main__":

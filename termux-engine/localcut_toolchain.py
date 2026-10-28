@@ -20,6 +20,8 @@ TOOL_SPECS = (
     ToolSpec("BLENDER", ("blender",), "cgi-3d-worker"),
     ToolSpec("OPENTOONZ", ("opentoonz", "OpenToonz"), "2d-animation-worker"),
     ToolSpec("KRITA", ("krita",), "paint-worker"),
+    ToolSpec("GIMP", ("gimp", "gimp-3.0"), "image-compositor-worker"),
+    ToolSpec("GEGL", ("gegl",), "image-filter-worker"),
 )
 
 

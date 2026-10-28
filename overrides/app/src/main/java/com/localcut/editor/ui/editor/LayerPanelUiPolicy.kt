@@ -4,6 +4,7 @@ import com.localcut.editor.domain.model.CameraSettings
 import com.localcut.editor.domain.model.CompositionGraph
 import com.localcut.editor.domain.model.CompositionNode
 import com.localcut.editor.domain.model.CompositionNodeKind
+import com.localcut.editor.domain.model.LayerTransform3D
 
 data class LayerGraphNodeCreation(
     val graph: CompositionGraph,
@@ -20,8 +21,15 @@ object LayerPanelUiPolicy {
     fun layerParentId(graph: CompositionGraph, clipId: String): String? =
         layerNode(graph, clipId)?.parentId
 
-    fun parentTargets(graph: CompositionGraph): List<CompositionNode> =
-        graph.nodes.filter { it.kind == CompositionNodeKind.NULL || it.kind == CompositionNodeKind.GROUP }
+    fun parentTargets(graph: CompositionGraph, clipId: String? = null): List<CompositionNode> {
+        val candidates = graph.nodes.filter {
+            it.kind == CompositionNodeKind.NULL || it.kind == CompositionNodeKind.GROUP
+        }
+        val layerId = clipId?.let { layerNode(graph, it)?.id } ?: return candidates
+        return candidates.filter { target ->
+            runCatching { !wouldCreateCycle(graph, layerId, target.id) }.getOrDefault(false)
+        }
+    }
 
     fun addNull(graph: CompositionGraph): LayerGraphNodeCreation {
         val nodeId = nextSequentialNodeId(graph, "null")
@@ -101,6 +109,62 @@ object LayerPanelUiPolicy {
         } else {
             replaceNode(graph, layer.copy(parentId = parentId))
         }
+    }
+
+    fun setControllerTransform(
+        graph: CompositionGraph,
+        nodeId: String,
+        transform: LayerTransform3D,
+    ): CompositionGraph {
+        val node = controllerNode(graph, nodeId)
+        require(transform.validationIssues().isEmpty()) {
+            transform.validationIssues().first()
+        }
+        require(transform.rotationXDeg == 0.0 && transform.rotationYDeg == 0.0) {
+            "rotationX/rotationY require the 3D plane renderer and are not editable here"
+        }
+        return replaceNode(graph, node.copy(transform = transform))
+    }
+
+    fun setCameraSettings(
+        graph: CompositionGraph,
+        nodeId: String,
+        settings: CameraSettings,
+    ): CompositionGraph {
+        val node = graph.nodes.firstOrNull { it.id == nodeId }
+            ?: throw IllegalArgumentException("composition node does not exist: $nodeId")
+        require(node.kind == CompositionNodeKind.CAMERA) { "node is not a camera: $nodeId" }
+        require(settings.validationIssues().isEmpty()) { settings.validationIssues().first() }
+        return replaceNode(graph, node.copy(camera = settings))
+    }
+
+    fun removeControllerNode(graph: CompositionGraph, nodeId: String): CompositionGraph {
+        val node = controllerNode(graph, nodeId)
+        if (node.kind == CompositionNodeKind.CAMERA) {
+            require(graph.cameraCuts.none { it.cameraNodeId == nodeId }) {
+                "camera is referenced by a camera cut and cannot be removed"
+            }
+        }
+        return graph.copy(
+            nodes = graph.nodes
+                .filterNot { it.id == nodeId }
+                .map { child ->
+                    if (child.parentId == nodeId) child.copy(parentId = null) else child
+                },
+        )
+    }
+
+    private fun controllerNode(graph: CompositionGraph, nodeId: String): CompositionNode {
+        val node = graph.nodes.firstOrNull { it.id == nodeId }
+            ?: throw IllegalArgumentException("composition node does not exist: $nodeId")
+        require(
+            node.kind == CompositionNodeKind.NULL ||
+                node.kind == CompositionNodeKind.GROUP ||
+                node.kind == CompositionNodeKind.CAMERA,
+        ) {
+            "node is not an editable controller: $nodeId"
+        }
+        return node
     }
 
     private fun layerNode(graph: CompositionGraph, clipId: String): CompositionNode? =

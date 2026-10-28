@@ -3,6 +3,7 @@ package com.localcut.editor.termux
 import com.localcut.editor.data.project.JNull
 import com.localcut.editor.data.project.JObject
 import com.localcut.editor.data.project.asArray
+import com.localcut.editor.data.project.asBoolean
 import com.localcut.editor.data.project.asDouble
 import com.localcut.editor.data.project.asInt
 import com.localcut.editor.data.project.asLong
@@ -50,6 +51,16 @@ internal object TermuxEngineJobRequestEncoder {
     }
 
     fun getJob(requestId: String, token: String, jobId: String) = jobRequest(requestId, token, "GET_JOB", jobId)
+
+    fun getGeneratedMedia(requestId: String, token: String, jobId: String): String {
+        validateCommon(requestId, token); validateJobId(jobId)
+        return buildString {
+            append('{'); appendCommon(requestId, token, "GET_JOB")
+            append(",\"jobId\":"); append(jsonString(jobId.lowercase()))
+            append(",\"includeGeneratedMedia\":true}\n")
+        }
+    }
+
     fun cancelJob(requestId: String, token: String, jobId: String) = jobRequest(requestId, token, "CANCEL_JOB", jobId)
 
     fun stageMedia(requestId: String, token: String, jobId: String, contentLength: Long): String {
@@ -100,6 +111,27 @@ internal object TermuxEngineJobResponseParser {
             job = parseJob(root),
             sizeBytes = transfer.required("sizeBytes").asLong().also { require(it > 0L) },
             sha256 = sha,
+        )
+    }
+
+    fun parseGeneratedMediaHeader(root: JObject): TermuxGeneratedMediaHeader {
+        requireProtocol(root)
+        require(root.required("binaryBody").asBoolean()) { "TERMUX_GENERATED_MEDIA_BODY_MISSING" }
+        val mediaObject = root.required("media").asObject()
+        val media = TermuxGeneratedMediaMetadata(
+            sizeBytes = mediaObject.required("sizeBytes").asLong(),
+            sha256 = mediaObject.required("sha256").asString().lowercase(),
+            mimeType = mediaObject.required("mimeType").asString(),
+        )
+        val contentLength = root.required("contentLength").asLong()
+        val transportSha = root.required("sha256").asString().lowercase()
+        require(contentLength == media.sizeBytes) { "TERMUX_GENERATED_MEDIA_LENGTH_MISMATCH" }
+        require(transportSha == media.sha256) { "TERMUX_GENERATED_MEDIA_DIGEST_MISMATCH" }
+        return TermuxGeneratedMediaHeader(
+            job = parseJob(root),
+            media = media,
+            contentLength = contentLength,
+            sha256 = transportSha,
         )
     }
 

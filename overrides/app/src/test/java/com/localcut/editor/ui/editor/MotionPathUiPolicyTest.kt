@@ -6,6 +6,7 @@ import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.model.PropertyKeyframe
 import com.localcut.editor.domain.model.PropertyValue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -54,6 +55,27 @@ class MotionPathUiPolicyTest {
         assertEquals(listOf("transform.opacity", "transform.x", "transform.y"), merged.map { it.propertyId })
         assertEquals(opacity, merged.first())
         assertTrue(merged.drop(1).all { animation -> animation.keyframes.all { it.id.startsWith("motion-path-") } })
+    }
+
+    @Test
+    fun generatedPathIsDetectedAndRemovedWithoutTouchingOtherProperties() {
+        val opacity = scalar("transform.opacity", "opacity-old", 0.5)
+        val generated = listOf(
+            scalar("transform.x", "motion-path-x-ui-0", 10.0),
+            scalar("transform.y", "motion-path-y-ui-0", 20.0),
+        )
+        val animations = listOf(opacity) + generated
+
+        assertTrue(MotionPathUiPolicy.hasGeneratedMotionPath(animations))
+        assertEquals(listOf(opacity), MotionPathUiPolicy.removeGeneratedMotionPath(animations))
+
+        val manual = listOf(
+            opacity,
+            scalar("transform.x", "manual-x", 10.0),
+            scalar("transform.y", "manual-y", 20.0),
+        )
+        assertFalse(MotionPathUiPolicy.hasGeneratedMotionPath(manual))
+        assertEquals(manual, MotionPathUiPolicy.removeGeneratedMotionPath(manual))
     }
 
     @Test

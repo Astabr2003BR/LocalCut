@@ -2,6 +2,7 @@ import json
 import socket
 import tempfile
 import threading
+import time
 import unittest
 import sys
 from pathlib import Path
@@ -45,6 +46,18 @@ class FakeTrackingAnalyzer:
                 },
             ],
         }
+
+
+class BlockingTrackingAnalyzer(FakeTrackingAnalyzer):
+    def __init__(self):
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def analyze(self, path, options=None):
+        self.started.set()
+        if not self.release.wait(timeout=3):
+            raise RuntimeError("TEST_TRACKING_RELEASE_TIMEOUT")
+        return super().analyze(path, options=options)
 
 
 class EngineJobsIntegrationTest(unittest.TestCase):
@@ -95,6 +108,45 @@ class EngineJobsIntegrationTest(unittest.TestCase):
         }
         payload.update(fields)
         return self.exchange(payload)
+
+    def wait_for_terminal_job(self, job_id, timeout=3.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            response = self.request("GET_JOB", jobId=job_id)
+            self.assertTrue(response["ok"])
+            job = response["job"]
+            if job["status"] in {"SUCCEEDED", "FAILED", "CANCELLED"}:
+                return job
+            time.sleep(0.02)
+        self.fail("job did not reach a terminal state")
+
+    def create_tracking_job(self, idempotency_key="asset-3-tracking-v1"):
+        return self.request(
+            "CREATE_JOB",
+            jobType="ANALYZE_MEDIA",
+            idempotencyKey=idempotency_key,
+            input={
+                "mode": "TRACKING",
+                "assetId": "asset-3",
+                "mimeType": "video/mp4",
+                "sizeBytes": 5,
+                "maxFrames": 120,
+                "sampleEvery": 3,
+                "maxCorners": 80,
+            },
+        )
+
+    def stage_tracking_job(self, job_id):
+        payload = {
+            "protocolVersion": 1,
+            "projectId": "localcut",
+            "requestId": "track-12345678",
+            "token": self.token,
+            "operation": "STAGE_MEDIA",
+            "jobId": job_id,
+            "contentLength": 5,
+        }
+        return self.exchange(payload, b"abcde")
 
     def test_capabilities_include_jobs_ffprobe_and_tracking_when_available(self):
         result = self.request("GET_CAPABILITIES")
@@ -158,43 +210,47 @@ class EngineJobsIntegrationTest(unittest.TestCase):
         self.assertEqual(64, len(staged["transfer"]["sha256"]))
 
     def test_tracking_mode_stages_media_and_runs_only_typed_opencv_analyzer(self):
-        created = self.request(
-            "CREATE_JOB",
-            jobType="ANALYZE_MEDIA",
-            idempotencyKey="asset-3-tracking-v1",
-            input={
-                "mode": "TRACKING",
-                "assetId": "asset-3",
-                "mimeType": "video/mp4",
-                "sizeBytes": 5,
-                "maxFrames": 120,
-                "sampleEvery": 3,
-                "maxCorners": 80,
-            },
-        )
+        created = self.create_tracking_job()
         self.assertTrue(created["ok"])
         self.assertEqual("QUEUED", created["job"]["status"])
         self.assertEqual(3, created["job"]["input"]["sampleEvery"])
         job_id = created["job"]["id"]
 
-        payload = {
-            "protocolVersion": 1,
-            "projectId": "localcut",
-            "requestId": "track-12345678",
-            "token": self.token,
-            "operation": "STAGE_MEDIA",
-            "jobId": job_id,
-            "contentLength": 5,
-        }
-        staged = self.exchange(payload, b"abcde")
+        staged = self.stage_tracking_job(job_id)
 
         self.assertTrue(staged["ok"])
-        self.assertEqual("SUCCEEDED", staged["job"]["status"])
-        self.assertEqual("opencv-global-motion-v1", staged["job"]["output"]["analysisMode"])
-        self.assertEqual(3, staged["job"]["output"]["analysis"]["sampleEvery"])
-        self.assertEqual(80, staged["job"]["output"]["analysis"]["maxCorners"])
-        self.assertEqual(5, staged["job"]["output"]["analysis"]["sizeBytes"])
-        self.assertEqual(64, len(staged["transfer"]["sha256"]))
+        self.assertEqual("RUNNING", staged["job"]["status"])
+        completed = self.wait_for_terminal_job(job_id)
+        self.assertEqual("SUCCEEDED", completed["status"])
+        self.assertEqual("opencv-global-motion-v1", completed["output"]["analysisMode"])
+        self.assertEqual(3, completed["output"]["analysis"]["sampleEvery"])
+        self.assertEqual(80, completed["output"]["analysis"]["maxCorners"])
+        self.assertEqual(5, completed["output"]["analysis"]["sizeBytes"])
+        self.assertEqual(64, len(completed["output"]["transfer"]["sha256"]))
+
+    def test_tracking_stage_returns_while_background_analyzer_is_busy(self):
+        blocking = BlockingTrackingAnalyzer()
+        self.server.tracking_analyzer = blocking
+        created = self.create_tracking_job(idempotency_key="asset-3-tracking-background")
+        self.assertTrue(created["ok"])
+        job_id = created["job"]["id"]
+        result = {}
+        staging = threading.Thread(
+            target=lambda: result.setdefault("response", self.stage_tracking_job(job_id)),
+            daemon=True,
+        )
+        staging.start()
+        try:
+            self.assertTrue(blocking.started.wait(timeout=1))
+            staging.join(timeout=0.5)
+            self.assertFalse(staging.is_alive(), "STAGE_MEDIA waited for the tracking analyzer")
+            self.assertEqual("RUNNING", result["response"]["job"]["status"])
+        finally:
+            blocking.release.set()
+            staging.join(timeout=2)
+
+        completed = self.wait_for_terminal_job(job_id)
+        self.assertEqual("SUCCEEDED", completed["status"])
 
     def test_tracking_options_fail_closed_before_job_creation(self):
         invalid = self.request(

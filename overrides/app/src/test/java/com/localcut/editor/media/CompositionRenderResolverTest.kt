@@ -110,6 +110,25 @@ class CompositionRenderResolverTest {
     }
 
     @Test
+    fun unsupportedPlaneTiltFailsClosedInsteadOfSilentlyFlattening() {
+        val graph = CompositionGraph(
+            nodes = listOf(
+                CompositionNode(
+                    id = "layer",
+                    kind = CompositionNodeKind.LAYER,
+                    clipId = clip.id,
+                    transform = LayerTransform3D(rotationXDeg = 20.0),
+                ),
+            ),
+        )
+
+        val result = CompositionRenderResolver.resolve(graph, clip)
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("rotationX/rotationY"))
+    }
+
+    @Test
     fun temporalCameraCutsFailClosedUntilDiscreteCutBackendExists() {
         val graph = CompositionGraph(
             nodes = listOf(

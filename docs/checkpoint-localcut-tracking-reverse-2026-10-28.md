@@ -1,4 +1,4 @@
-# LocalCut checkpoint — tracking, stabilization, freeze and reverse foundation — 2026-10-28
+# LocalCut checkpoint — tracking, stabilization, freeze and reverse — 2026-10-28
 
 ## PROJECT
 LocalCut
@@ -9,123 +9,167 @@ LocalCut
 ## PR
 #13 — OPEN + DRAFT. Do not merge without explicit authorization.
 
+## FIXED CI POLICY — ANTI-LOOP
+This rule is mandatory for continuation work:
+
+1. A commit SHA gets at most ONE CI status query/checkpoint.
+2. If that query returns queued/pending/in_progress, do NOT query the same SHA again.
+3. Continue an independent implementation/test block instead.
+4. If a completed checkpoint is red, inspect only the concrete failed workflow/job/log, fix the root cause and create a new SHA.
+5. Only the new SHA may receive another status query.
+6. Never poll GitHub Actions repeatedly waiting for completion.
+7. A missing workflow list on the one permitted query is also considered consumed for that SHA.
+
+This policy exists because repeated status polling previously caused conversation/tool loops.
+
 ## GOAL
 Continue evolving LocalCut as the main Android editor, with UserLAnd/Termux as an optional heavy worker. No AI, no paid dependency, no Play Store publication goal.
 
-## COMPLETED IN THIS BLOCK
-
-### UserLAnd / Termux tracking
-- Remote OpenCV global-motion tracking is exposed through the existing creative server.
-- Reuses `ANALYZE_MEDIA` with `mode=TRACKING`; no second job database/type.
-- Reuses private media spool, idempotency, cancellation and authentication.
-- Tracking options are bounded (`maxFrames`, `sampleEvery`, `maxCorners`).
-- Capabilities `ANALYZE_TRACKING` and `OPENCV_GLOBAL_MOTION` are advertised only when the analyzer is available.
-- Stable base engine remains untouched.
-
-Key commit: `3111fee0cf115f5dba78be427c5236a349ea8fa5`.
-
-### Android tracking protocol
-- Existing secure Android → UserLAnd runtime was reused; no duplicate socket/token protocol.
-- Token remains in Android Keystore.
-- Media remains streamed from `content://`/InputStream; Android private paths are never sent.
+## TRACKING / STABILIZATION
+- OpenCV global-motion tracking uses the existing authenticated Android ↔ UserLAnd/Termux engine.
+- Reuses `ANALYZE_MEDIA` with `mode=TRACKING`; no duplicate job database/protocol.
+- Media is streamed from `content://`/InputStream; Android private paths are never sent to the worker.
 - Upload size and SHA-256 are verified.
-- `TermuxAnalyzeMediaMode.TRACKING`, `TermuxTrackingOptions`, global-motion typed models and parsing are implemented.
-- `TermuxMediaTrackingCoordinator` uses the existing `SocketTermuxEngineJobClient` and `STAGE_MEDIA` path.
-
-Key commits:
-- `1182cbaf35c1c0c83a9267ab67323178c89e47bf`
-- `a48c10df5555afbf5ad8a86c101c75e8655bf4ee`
-- `84266fb5a88b83332ef790c3f239b89194422ba6`
-- `6b499bba17baedd66fbae7141587b57237840612`
-
-### Stabilization
-- Global motion maps into existing `PropertyAnimation` transform properties.
-- Trim-aware: samples outside `sourceInUs/sourceOutUs` are removed and clip-local timing is rebased.
-- A delta that crosses the trim-start boundary is discarded conservatively.
-- Non-destructive merge preserves unrelated property animations and replaces only stabilization transform properties.
-- Animation panel can run tracking through UserLAnd/Termux, apply stabilization and retain undo/autosave through the existing editor command path.
-- Stale analysis is rejected if selection, asset fingerprint, sourceIn or sourceOut changes while analysis is running.
-- Stabilization strength control: 10–100%.
+- Tracking options remain bounded (`maxFrames`, `sampleEvery`, `maxCorners`).
+- Capabilities `ANALYZE_TRACKING` and `OPENCV_GLOBAL_MOTION` are advertised only when OpenCV is available.
+- Tracking result is converted into existing `PropertyAnimation` transforms.
+- Trim-aware stabilization rebases motion to clip-local time and conservatively rejects deltas crossing the trim-start boundary.
+- Non-destructive merge preserves unrelated animations.
+- Stale stabilization is rejected when the asset/fingerprint/trim changes during analysis.
+- Stabilization strength: 10–100%.
 - Tracking quality presets:
-  - FAST: 120 frames, sample every 4, 80 corners.
-  - NORMAL: 180 frames, sample every 2, 120 corners.
-  - PRECISE: 300 frames, sample every 1, 200 corners.
+  - FAST: 120 frames / every 4 / 80 corners.
+  - NORMAL: 180 / every 2 / 120.
+  - PRECISE: 300 / every 1 / 200.
+- Signed zero regression (`-0.0` versus `0.0`) in stabilization was fixed by canonicalizing zero in production code, not by weakening the test.
+
+Important stabilization fix commit:
+- `a8ca720b70a50da45a1ad2391f0fbd0819d15d28`
+
+## LONG-RUNNING WORKER ARCHITECTURE
+Reverse and OpenCV tracking must NOT block the `STAGE_MEDIA` socket while heavy work runs.
+
+Current design:
+- `STAGE_MEDIA` validates and stages bytes, marks the job `RUNNING`, and returns immediately.
+- Heavy Reverse/OpenCV work runs in a background worker.
+- FFmpeg and OpenCV share one heavy-worker lock, so only one resource-intensive creative job executes at a time on the phone/UserLAnd environment.
+- Android waits through typed `GET_JOB` checks with bounded backoff:
+  - starts at 250 ms,
+  - max interval 1 s,
+  - maximum 900 polls (~15 minutes worst case),
+  - coroutine cancellation is preserved.
+- A unit test explicitly proves a never-finishing job stops at the configured poll limit with `TERMUX_JOB_WAIT_TIMEOUT`; generated media download is not attempted.
+- This bounded job wait is application behavior and is separate from the CI anti-loop rule above.
 
 Key commits:
-- `72888cfbdc894d9b4af0d99ef1e0d2dbdfb40994`
-- `d195a555b6693893f342773899b04d4f84606bc7`
-- `3effd129223e28560464a65c93072d62086e0a73`
-- `f935b72879447f1002c0795bb82d1f9a09fb4d66`
+- Reverse background server: `b36234d6caba5d1f8d128265d5d3204e3f03c1bd`
+- Reverse bounded Android await: `25602a6e54dcc9cbf327f70d9a0b048cc45f3007`
+- Shared OpenCV/FFmpeg worker: `cb2e9eb9da7d82d0530361be69fe55537c052bb2`
+- Tracking bounded Android await: `7f284afe7472025245887fc444cc4b0b8a573dda`
+- Anti-loop wait test: `1aa51aee732008f58564fbec50a40e15555f8743`
 
-### Freeze audit
-- Freeze is NOT missing from the backend: `Media3FreezeFramePlanner` already renders freeze holds by splitting a clip into moving/frozen pieces.
+## REVERSE — CURRENT ROUND TRIP
+Reverse is no longer only a planner/foundation. The round trip now includes:
+
+### Worker/server
+- Chunked FFmpeg reverse/areverse execution.
+- Short chunks to avoid whole-video reverse memory behavior.
+- Initial limits:
+  - chunk 0.25–5 s,
+  - default 2 s,
+  - max source duration 10 min.
+- Private generated-media spool per job.
+- Fixed generated output path owned by the engine; no client-supplied worker path.
+- Sidecar metadata, size limit, SHA-256, traversal/symlink protections.
+- Authenticated generated-media download through `GET_JOB + includeGeneratedMedia=true`.
+- Server returns JSON header (`contentLength`, `sha256`, `binaryBody`) followed by exact MP4 bytes.
+- Internal worker paths are never returned to Android.
+
+### Android transport/storage
+- Generated MP4 streams directly to a `.part` file; video is not loaded wholly into RAM.
+- Exact length and SHA-256 are checked before publish.
+- `fsync` happens before rename.
+- Failure removes partial output.
+- Final generated files use LocalCut-owned durable storage: `filesDir/remote-media`, not cache.
+- Existing `FileProvider` authority `${applicationId}.remote-media` is reused.
+- `OwnedMediaFilePolicy` rejects empty files and anything outside the exact LocalCut-owned directory.
+- Existing `AndroidAssetImporter` inspects the generated `content://` URI and validates video type, MIME, size and duration before timeline mutation.
+- Preparation failure removes the generated output file.
+
+### Clip replacement/history
+- Trim mapping for whole-source physical reverse is implemented:
+  - original source `[in, out]` over source duration `D`
+  - reversed source range becomes `[D-out, D-in]`.
+- Position, duration, transform, effects, property animations and compatible time-map settings are preserved.
+- Existing Freeze or logical `timeMap.reverse` causes fail-closed behavior for this first implementation.
+- `ApplyReversedAssetCommand` adds the generated Asset and swaps the selected clip source through the normal `EditorCommand` history path.
+- Undo restores the exact original project state; redo can reapply the generated asset.
+- Original/generated bytes are intentionally not aggressively deleted while history may still reference them.
+
+### Stale-result guard
+Reverse captures a source signature before processing:
+- clip id,
+- asset id,
+- asset fingerprint,
+- source duration,
+- sourceIn/sourceOut.
+
+When the worker returns, the result is discarded and its file deleted if the source media/trim changed, the clip disappeared, or Freeze/logical Reverse became active. Moving the clip or changing compatible visual properties does not unnecessarily invalidate the result.
+
+### Current UI exposure
+- A real Reverse action is currently exposed in the existing Agent Engine media panel.
+- It only enables for a compatible selected VIDEO and when the engine advertises `REVERSE_MEDIA`.
+- UI state shows running/success/error.
+- The action calls the existing runtime; no socket/filesystem logic lives directly in Compose.
+- It verifies that the normal editor command actually replaced the clip; rejected timeline changes cause the generated file to be deleted.
+- The CapCut-style placement inside the focused Speed panel is still a UI placement task; backend functionality must not be reimplemented for that move.
+
+Key Reverse commits in the later round trip include:
+- executor: `e4bb818...`
+- server job: `f124219...`
+- generated download server: `31d5d6b...`
+- Android streamed verified download: `6e13f1c...`
+- reverse coordinator/runtime: `1221817...`
+- durable generated storage: `2e00ff1bb59485ea125762c3699499bec6baf492`
+- LocalCut-owned media boundary: `c831a851d9971cbea399f7d9d33d3df674446eda`
+- FileProvider exposure without copy: `4ea8ee01fec783d32f3fc6fd3787a188eaf285da`
+- generated Asset inspector: `c79cd30303c27b3c009ce03bee38b43f5c6335b0`
+- prepared Reverse Asset: `62964dbce44d9702a56877f212249cc422570b08`
+- trim replacement planner: `22d3c294e774956cfb95d387a3da861bd6105b9e`
+- undoable replacement command: `2a80df9832e5f26d907a5acde1d1c4500415858a`
+- stale guard: `e7624f45e343e58d452a268824d1c1de1d235f3a`
+- Agent Engine Reverse UI: `2a40861bf1228b0c12879ca7cb9a844d5c6cafd7`
+
+## FREEZE
+- Freeze backend already exists through `Media3FreezeFramePlanner`.
+- A mobile policy exists for current-frame freeze durations and clearing freeze.
 - `SetClipTimeMapCommand` recalculates logical duration and timeline validation protects overlaps.
-- Added mobile freeze policy for current-frame freeze durations and clear operation.
-- Policy supports one freeze at a time, forward constant-speed time maps only. Reverse and speed ramps are deliberately rejected in this first UI policy.
-- UI wiring to the focused speed panel is not completed yet because the connector only replaces whole files and `EditorScreen.kt`/`FocusedCreativeToolsPanels.kt` are large. Avoid risky whole-file rewrite for two-line playhead plumbing.
+- Initial policy supports one freeze at a time and deliberately rejects incompatible Reverse/speed-ramp combinations.
+- Focused Speed UI wiring is still pending.
 
 Key commits:
 - test: `ba69e285f3b8e03774eee23f9826433bd8292205`
 - implementation: `d6d009c9a4f3c8e663a31b60f695dc7f1503aa7b`
 
-### Blend modes audit
-- BlendMode enum exists, but Media3 backend explicitly rejects non-NORMAL modes.
-- `VideoCompositorSettings` path currently provides layer alpha/layout, not Multiply/Screen/Overlay equations.
-- Do NOT expose blend buttons until a custom compositor/OpenGL backend exists.
+## BLEND MODES
+- BlendMode enum exists.
+- Current Media3 backend rejects non-NORMAL blend modes.
+- Do not expose Multiply/Screen/Overlay as fake buttons.
+- Correct implementation requires a dedicated compositor/OpenGL blend backend.
 
-### Reverse audit and foundation
-- Media3 time-map backend rejects `reverse=true`; reverse is genuinely missing.
-- FFmpeg official docs warn that `reverse` and `areverse` buffer the full clip in memory; whole-clip reverse is inappropriate for mobile.
-- Added private generated-media spool:
-  - per-job private directory,
-  - fixed `output.mp4` name,
-  - no client-supplied filesystem path,
-  - size limit,
-  - SHA-256,
-  - finalized sidecar metadata,
-  - bounded chunk streaming,
-  - symlink and traversal rejection.
-- Added bounded reverse chunk planner:
-  - source split into short chunks,
-  - output order reversed,
-  - each chunk later processed independently with FFmpeg reverse/areverse,
-  - chunk size 0.25–5s,
-  - default 2s,
-  - initial max clip duration 10 min.
-- FFmpeg execution, secure download protocol and Android import are NOT implemented yet. Reverse must not be called functional yet.
+## CI EVIDENCE / CURRENT RULE
+Historical validated checkpoints include multiple successful Termux and Bridge runs.
+A previous Android failure was diagnosed precisely: 879 tests ran and one stabilization test failed due to signed zero. Production was fixed in `a8ca720...`.
 
-Key commits:
-- output spool test `c697755d578120e5fce6f4f04280e615c1bbeeb0`
-- output spool `11481f1cfa39f05e69fa4cfade8b9cf861c88039`
-- reverse planner test `6dafa3aab29261e973ecd78fb63610c0a4cb7535`
-- reverse planner `c258e22cd10060342a978c5b061c3639b047fa0c`
+Recent code SHAs have each received at most one status query; several were still pending/in-progress at that single checkpoint. Do NOT query those same SHAs again merely to see whether they finished. A later new code SHA may receive one new checkpoint.
 
-## TEST / CI EVIDENCE
-- Remote tracking Termux CI #111: SUCCESS.
-- Later Termux CI checkpoints continued passing (#119, #130, #131, #134, #136).
-- Bridge checkpoints continued passing (#978, #989, #990, #993, #995).
-- At the last bounded check for the newest commits, Android Debug / Multitrack jobs were still queued or in progress. Do not claim the newest Android integration is fully CI-validated until a completed success run is observed.
-- Do not poll CI in a loop.
-
-## KNOWN RISKS / OPEN ITEMS
-1. Confirm latest Android Debug + Multitrack smoke after they finish; one bounded check only.
-2. Freeze policy backend exists but focused speed UI still needs safe playhead plumbing.
-3. Stabilization edge/crop compensation is not implemented. Do not guess transform coordinate units.
-4. Blend modes require a dedicated custom compositor backend.
-5. Reverse requires:
-   - FFmpeg chunk processor,
-   - output download operation,
-   - Android streamed download with SHA-256 verification,
-   - import/generated asset handling,
-   - clip replacement/history behavior.
-6. Do not expose Reverse before the full round trip is complete.
-
-## NEXT ACTION
-Prefer small blocks:
-1. Run one bounded CI check. Fix any real failure first.
-2. Implement/test FFmpeg chunk reverse processor using `shell=False`, fixed generated paths and short chunk windows.
-3. Then implement generated-media fetch protocol and Android download verification.
-4. Only after full round trip, expose Reverse in the Speed panel.
+## OPEN ITEMS — PRIORITY
+1. Let CI validation occur only through the anti-loop checkpoint policy above; fix a failure only when a new permitted checkpoint reports a completed red run.
+2. Move the already-functional Reverse action into the focused Speed panel without duplicating backend logic.
+3. Wire the existing Freeze policy into the focused Speed panel using the actual playhead.
+4. Add generated-media orphan garbage collection only after defining history-safe retention; never delete media still reachable by undo/redo.
+5. Add stabilization edge/crop compensation only after transform coordinate units are confirmed.
+6. Blend modes require a dedicated compositor backend.
 
 ## LAST VALID CHECKPOINT
-This file plus branch HEAD are the source of truth. Keep PR #13 draft/open and do not merge.
+This file plus the current branch HEAD are the source of truth. Keep PR #13 open + draft. Never merge into `main` without explicit user authorization.

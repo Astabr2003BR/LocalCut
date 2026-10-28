@@ -39,6 +39,8 @@ import com.localcut.editor.domain.design.DrawStrokePolicy
 import com.localcut.editor.domain.design.FrameExposurePolicy
 import com.localcut.editor.domain.design.OnionSkinCandidate
 import com.localcut.editor.domain.design.OnionSkinPolicy
+import com.localcut.editor.domain.design.StrokeAssistMode
+import com.localcut.editor.domain.design.StrokeAssistPolicy
 import com.localcut.editor.domain.design.VectorEraserCandidate
 import com.localcut.editor.domain.design.VectorEraserPolicy
 import com.localcut.editor.domain.model.DesignElement
@@ -78,6 +80,7 @@ fun DrawStrokePad(
     var stabilizationStrength by remember(project.id) {
         mutableIntStateOf(DrawStrokePadPolicy.DEFAULT_STABILIZATION_STRENGTH)
     }
+    var strokeAssistMode by remember(project.id) { mutableStateOf(StrokeAssistMode.FREEHAND) }
     val previewColor = drawColorPresets.firstOrNull { it.argb == strokeArgb }?.color ?: Color(strokeArgb)
     val gestureColor = if (eraserEnabled) Color(0xFFFF6B6B) else previewColor.copy(alpha = brushOpacity.toFloat())
 
@@ -105,6 +108,7 @@ fun DrawStrokePad(
         Text(
             when {
                 eraserEnabled -> "Borracha vetorial: arraste sobre um traço ativo para removê-lo. Desfazer restaura o traço."
+                strokeAssistMode == StrokeAssistMode.LINE -> "Linha reta: arraste do ponto inicial ao final; o preview mostra a linha antes de soltar."
                 frameByFrameEnabled -> "Modo frame a frame: cada gesto ocupa a exposição escolhida. Onion skin mostra frames vizinhos."
                 else -> "Arraste o dedo no quadro. Cada gesto vira um PATH editável e pode ser desfeito."
             },
@@ -151,6 +155,21 @@ fun DrawStrokePad(
         }
 
         if (!eraserEnabled) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (strokeAssistMode == StrokeAssistMode.FREEHAND) {
+                    FilledTonalButton(onClick = { strokeAssistMode = StrokeAssistMode.FREEHAND }) { Text("Livre") }
+                } else {
+                    OutlinedButton(onClick = { strokeAssistMode = StrokeAssistMode.FREEHAND }) { Text("Livre") }
+                }
+                if (strokeAssistMode == StrokeAssistMode.LINE) {
+                    FilledTonalButton(onClick = { strokeAssistMode = StrokeAssistMode.LINE }) { Text("Linha reta") }
+                } else {
+                    OutlinedButton(onClick = { strokeAssistMode = StrokeAssistMode.LINE }) { Text("Linha reta") }
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -259,6 +278,7 @@ fun DrawStrokePad(
                     exposureFrames,
                     eraserEnabled,
                     stabilizationStrength,
+                    strokeAssistMode,
                     project.fps,
                 ) {
                     detectDragGestures(
@@ -312,10 +332,11 @@ fun DrawStrokePad(
                                     } else {
                                         null
                                     }
-                                    val preparedPoints = DrawStrokePadPolicy.prepareStrokePoints(
+                                    val stabilizedPoints = DrawStrokePadPolicy.prepareStrokePoints(
                                         points = points,
                                         stabilizationStrength = stabilizationStrength,
                                     )
+                                    val preparedPoints = StrokeAssistPolicy.apply(stabilizedPoints, strokeAssistMode)
                                     val element = DrawStrokePolicy.createPathElement(
                                         id = DrawStrokePadPolicy.nextStrokeId(project.designElements.mapTo(hashSetOf()) { it.id }),
                                         startUs = exposureWindow?.startUs ?: playheadUs.coerceAtLeast(0L),
@@ -359,7 +380,16 @@ fun DrawStrokePad(
                 }
             }
 
-            capturedPoints.zipWithNext().forEach { (start, end) ->
+            val previewPoints = if (
+                !eraserEnabled &&
+                strokeAssistMode == StrokeAssistMode.LINE &&
+                capturedPoints.size >= 2
+            ) {
+                listOf(capturedPoints.first(), capturedPoints.last())
+            } else {
+                capturedPoints
+            }
+            previewPoints.zipWithNext().forEach { (start, end) ->
                 drawLine(
                     color = gestureColor,
                     start = Offset(start.x.toFloat(), start.y.toFloat()),

@@ -108,6 +108,42 @@ class LocalCutCreativeHandler(LocalCutTermuxEngineHandler):
             raise ValueError("OPERATION_NOT_ALLOWED")
         return spool
 
+    def _handle_get_job(self, request_id: str, request: dict) -> None:
+        if request.get("includeGeneratedMedia") is not True:
+            super()._handle_get_job(request_id, request)
+            return
+
+        store = self._require_jobs()
+        job = store.get_job(request.get("jobId"))
+        if (
+            job["status"] != "SUCCEEDED"
+            or job["type"] != "ANALYZE_MEDIA"
+            or job["input"].get("mode") != "REVERSE"
+        ):
+            raise ValueError("GENERATED_MEDIA_NOT_READY")
+
+        outputs = self._generated_media_spool()
+        media = outputs.metadata(job["id"])
+        job_media = (job.get("output") or {}).get("media")
+        if job_media != media:
+            raise ValueError("GENERATED_MEDIA_METADATA_MISMATCH")
+
+        self.wfile.write(
+            _response(
+                True,
+                request_id,
+                job=job,
+                media=media,
+                contentLength=media["sizeBytes"],
+                sha256=media["sha256"],
+                binaryBody=True,
+            )
+        )
+        self.wfile.flush()
+        for chunk in outputs.open_chunks(job["id"]):
+            self.wfile.write(chunk)
+        self.wfile.flush()
+
     def _handle_create_job(self, request_id: str, request: dict) -> None:
         input_data = request.get("input")
         if request.get("jobType") == "ANALYZE_MEDIA" and isinstance(input_data, dict):
@@ -325,9 +361,10 @@ def attach_reverse_support(server, reverse_executor, generated_media_spool):
             reverse_executor is not None
             and bool(getattr(reverse_executor, "available", False))
             and generated_media_spool is not None
-            and "REVERSE_MEDIA" not in result
         ):
-            result.append("REVERSE_MEDIA")
+            for capability in ("REVERSE_MEDIA", "DOWNLOAD_GENERATED_MEDIA"):
+                if capability not in result:
+                    result.append(capability)
         return result
 
     server.capabilities = MethodType(capabilities, server)

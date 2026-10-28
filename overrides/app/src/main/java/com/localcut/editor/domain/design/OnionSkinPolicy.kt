@@ -43,10 +43,12 @@ object OnionSkinPolicy {
         fps: Int,
         previousFrames: Int = 1,
         nextFrames: Int = 1,
+        frameStep: Int = 1,
     ): List<OnionSkinGhost> {
         require(playheadUs >= 0L) { "playhead must be non-negative" }
         require(previousFrames in 0..MAX_FRAME_WINDOW) { "previous frame window out of range" }
         require(nextFrames in 0..MAX_FRAME_WINDOW) { "next frame window out of range" }
+        require(frameStep in 1..MAX_FRAME_WINDOW) { "frame step out of range" }
         require(fps in 1..240) { "fps must be in 1..240" }
 
         val currentFrame = frameIndex(playheadUs, fps)
@@ -56,15 +58,17 @@ object OnionSkinPolicy {
                 val deltaLong = frameIndex(candidate.startUs, fps) - currentFrame
                 if (deltaLong < Int.MIN_VALUE.toLong() || deltaLong > Int.MAX_VALUE.toLong()) return@mapNotNull null
                 val delta = deltaLong.toInt()
-                val included = when {
-                    delta < 0 -> -delta <= previousFrames
-                    delta > 0 -> delta <= nextFrames
+                val distance = kotlin.math.abs(delta)
+                val insideWindow = when {
+                    delta < 0 -> distance <= previousFrames
+                    delta > 0 -> distance <= nextFrames
                     else -> false
                 }
+                val included = insideWindow && distance % frameStep == 0
                 if (!included) null else OnionSkinGhost(
                     elementId = candidate.elementId,
                     relativeFrame = delta,
-                    alpha = alphaForDistance(kotlin.math.abs(delta)),
+                    alpha = alphaForDistance(distance),
                 )
             }
             .sortedWith(

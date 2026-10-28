@@ -56,9 +56,9 @@ object GlobalMotionStabilizationPlanner {
                 ) { "stabilization accumulation overflow" }
             }
 
-            xValues += sample.offsetUs to (-cumulativeX * strength)
-            yValues += sample.offsetUs to (-cumulativeY * strength)
-            rotationValues += sample.offsetUs to (-cumulativeRotation * strength)
+            xValues += sample.offsetUs to canonicalZero(-cumulativeX * strength)
+            yValues += sample.offsetUs to canonicalZero(-cumulativeY * strength)
+            rotationValues += sample.offsetUs to canonicalZero(-cumulativeRotation * strength)
             val inverseScale = 1.0 / cumulativeScale
             val correctionScale = 1.0 + (inverseScale - 1.0) * strength
             require(correctionScale.isFinite() && correctionScale > 0.0) { "stabilization scale invalid" }
@@ -72,6 +72,8 @@ object GlobalMotionStabilizationPlanner {
             scalarAnimation(SCALE, "stabilize-scale", scaleValues),
         )
     }
+
+    private fun canonicalZero(value: Double): Double = if (value == 0.0) 0.0 else value
 
     private fun validateSamples(samples: List<GlobalMotionSample>) {
         require(samples.first().offsetUs > 0L) { "stabilization samples must start after zero" }

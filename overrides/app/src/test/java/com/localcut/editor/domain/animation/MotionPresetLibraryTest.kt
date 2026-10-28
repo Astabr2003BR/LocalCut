@@ -27,7 +27,7 @@ class MotionPresetLibraryTest {
 
     @Test
     fun everyPresetProducesAnimationsAcceptedByCorePlanner() {
-        MotionPreset.entries.forEach { preset ->
+        MotionPreset.values().forEach { preset ->
             val specs = MotionPresetLibrary.build(preset, startOffsetUs = 50_000L, durationUs = 350_000L)
             assertTrue(specs.isNotEmpty())
             specs.forEach { spec -> MotionOperationPlanner.toAnimation(spec) }

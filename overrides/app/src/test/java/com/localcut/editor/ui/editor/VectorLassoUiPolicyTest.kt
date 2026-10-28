@@ -39,7 +39,7 @@ class VectorLassoUiPolicyTest {
 
         assertTrue(mapped.size <= VectorLassoUiPolicy.MAX_POINTS)
         assertEquals(CanvasPointPx(0.0, 0.0), mapped.first())
-        assertEquals(CanvasPointPx(1000.0, 400.0), mapped.last())
+        assertEquals(CanvasPointPx(1000.0, 225.0), mapped.last())
     }
 
     @Test

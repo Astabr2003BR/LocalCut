@@ -41,6 +41,8 @@ import com.localcut.editor.domain.design.OnionSkinCandidate
 import com.localcut.editor.domain.design.OnionSkinPolicy
 import com.localcut.editor.domain.design.StrokeAssistMode
 import com.localcut.editor.domain.design.StrokeAssistPolicy
+import com.localcut.editor.domain.design.StrokeSymmetryMode
+import com.localcut.editor.domain.design.StrokeSymmetryPolicy
 import com.localcut.editor.domain.design.VectorEraserCandidate
 import com.localcut.editor.domain.design.VectorEraserPolicy
 import com.localcut.editor.domain.model.DesignElement
@@ -81,6 +83,7 @@ fun DrawStrokePad(
         mutableIntStateOf(DrawStrokePadPolicy.DEFAULT_STABILIZATION_STRENGTH)
     }
     var strokeAssistMode by remember(project.id) { mutableStateOf(StrokeAssistMode.FREEHAND) }
+    var symmetryMode by remember(project.id) { mutableStateOf(StrokeSymmetryMode.NONE) }
     val previewColor = drawColorPresets.firstOrNull { it.argb == strokeArgb }?.color ?: Color(strokeArgb)
     val gestureColor = if (eraserEnabled) Color(0xFFFF6B6B) else previewColor.copy(alpha = brushOpacity.toFloat())
 
@@ -109,6 +112,7 @@ fun DrawStrokePad(
             when {
                 eraserEnabled -> "Borracha vetorial: arraste sobre um traço ativo para removê-lo. Desfazer restaura o traço."
                 strokeAssistMode == StrokeAssistMode.LINE -> "Linha reta: arraste do ponto inicial ao final; o preview mostra a linha antes de soltar."
+                symmetryMode != StrokeSymmetryMode.NONE -> "Simetria ativa: o traço espelhado é salvo como PATH separado e editável."
                 frameByFrameEnabled -> "Modo frame a frame: cada gesto ocupa a exposição escolhida. Onion skin mostra frames vizinhos."
                 else -> "Arraste o dedo no quadro. Cada gesto vira um PATH editável e pode ser desfeito."
             },
@@ -168,6 +172,26 @@ fun DrawStrokePad(
                     FilledTonalButton(onClick = { strokeAssistMode = StrokeAssistMode.LINE }) { Text("Linha reta") }
                 } else {
                     OutlinedButton(onClick = { strokeAssistMode = StrokeAssistMode.LINE }) { Text("Linha reta") }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (symmetryMode == StrokeSymmetryMode.NONE) {
+                    FilledTonalButton(onClick = { symmetryMode = StrokeSymmetryMode.NONE }) { Text("Simetria OFF") }
+                } else {
+                    OutlinedButton(onClick = { symmetryMode = StrokeSymmetryMode.NONE }) { Text("Simetria OFF") }
+                }
+                if (symmetryMode == StrokeSymmetryMode.VERTICAL_AXIS) {
+                    FilledTonalButton(onClick = { symmetryMode = StrokeSymmetryMode.VERTICAL_AXIS }) { Text("Vertical") }
+                } else {
+                    OutlinedButton(onClick = { symmetryMode = StrokeSymmetryMode.VERTICAL_AXIS }) { Text("Vertical") }
+                }
+                if (symmetryMode == StrokeSymmetryMode.HORIZONTAL_AXIS) {
+                    FilledTonalButton(onClick = { symmetryMode = StrokeSymmetryMode.HORIZONTAL_AXIS }) { Text("Horizontal") }
+                } else {
+                    OutlinedButton(onClick = { symmetryMode = StrokeSymmetryMode.HORIZONTAL_AXIS }) { Text("Horizontal") }
                 }
             }
             Row(
@@ -279,6 +303,7 @@ fun DrawStrokePad(
                     eraserEnabled,
                     stabilizationStrength,
                     strokeAssistMode,
+                    symmetryMode,
                     project.fps,
                 ) {
                     detectDragGestures(
@@ -337,18 +362,32 @@ fun DrawStrokePad(
                                         stabilizationStrength = stabilizationStrength,
                                     )
                                     val preparedPoints = StrokeAssistPolicy.apply(stabilizedPoints, strokeAssistMode)
-                                    val element = DrawStrokePolicy.createPathElement(
-                                        id = DrawStrokePadPolicy.nextStrokeId(project.designElements.mapTo(hashSetOf()) { it.id }),
-                                        startUs = exposureWindow?.startUs ?: playheadUs.coerceAtLeast(0L),
-                                        durationUs = exposureWindow?.durationUs ?: DrawStrokePadPolicy.DEFAULT_DURATION_US,
+                                    val expandedStrokes = StrokeSymmetryPolicy.expand(
                                         points = preparedPoints,
                                         canvasWidthPx = size.width.toDouble(),
                                         canvasHeightPx = size.height.toDouble(),
-                                        strokeArgb = strokeArgb,
-                                        strokeWidthPx = strokeWidthPx,
-                                        zIndex = DrawStrokePadPolicy.nextZIndex(project.designElements.map { it.zIndex }),
-                                    ).copy(opacity = brushOpacity)
-                                    onAddElement(element)
+                                        mode = symmetryMode,
+                                    )
+                                    val reservedIds = project.designElements.mapTo(mutableSetOf()) { it.id }
+                                    val reservedZIndexes = project.designElements.mapTo(mutableListOf()) { it.zIndex }
+                                    expandedStrokes.forEach { strokePoints ->
+                                        val id = DrawStrokePadPolicy.nextStrokeId(reservedIds)
+                                        reservedIds += id
+                                        val zIndex = DrawStrokePadPolicy.nextZIndex(reservedZIndexes)
+                                        reservedZIndexes += zIndex
+                                        val element = DrawStrokePolicy.createPathElement(
+                                            id = id,
+                                            startUs = exposureWindow?.startUs ?: playheadUs.coerceAtLeast(0L),
+                                            durationUs = exposureWindow?.durationUs ?: DrawStrokePadPolicy.DEFAULT_DURATION_US,
+                                            points = strokePoints,
+                                            canvasWidthPx = size.width.toDouble(),
+                                            canvasHeightPx = size.height.toDouble(),
+                                            strokeArgb = strokeArgb,
+                                            strokeWidthPx = strokeWidthPx,
+                                            zIndex = zIndex,
+                                        ).copy(opacity = brushOpacity)
+                                        onAddElement(element)
+                                    }
                                 }
                             }
                             capturedPoints = emptyList()
@@ -380,7 +419,7 @@ fun DrawStrokePad(
                 }
             }
 
-            val previewPoints = if (
+            val previewBasePoints = if (
                 !eraserEnabled &&
                 strokeAssistMode == StrokeAssistMode.LINE &&
                 capturedPoints.size >= 2
@@ -389,14 +428,31 @@ fun DrawStrokePad(
             } else {
                 capturedPoints
             }
-            previewPoints.zipWithNext().forEach { (start, end) ->
-                drawLine(
-                    color = gestureColor,
-                    start = Offset(start.x.toFloat(), start.y.toFloat()),
-                    end = Offset(end.x.toFloat(), end.y.toFloat()),
-                    strokeWidth = if (eraserEnabled) eraserRadiusPx.toFloat().coerceAtLeast(1f) else strokeWidthPx.toFloat(),
-                    cap = StrokeCap.Round,
+            val previewStrokes = if (
+                !eraserEnabled &&
+                previewBasePoints.size >= 2 &&
+                size.width > 0f &&
+                size.height > 0f
+            ) {
+                StrokeSymmetryPolicy.expand(
+                    points = previewBasePoints,
+                    canvasWidthPx = size.width.toDouble(),
+                    canvasHeightPx = size.height.toDouble(),
+                    mode = symmetryMode,
                 )
+            } else {
+                listOf(previewBasePoints)
+            }
+            previewStrokes.forEach { previewPoints ->
+                previewPoints.zipWithNext().forEach { (start, end) ->
+                    drawLine(
+                        color = gestureColor,
+                        start = Offset(start.x.toFloat(), start.y.toFloat()),
+                        end = Offset(end.x.toFloat(), end.y.toFloat()),
+                        strokeWidth = if (eraserEnabled) eraserRadiusPx.toFloat().coerceAtLeast(1f) else strokeWidthPx.toFloat(),
+                        cap = StrokeCap.Round,
+                    )
+                }
             }
         }
     }

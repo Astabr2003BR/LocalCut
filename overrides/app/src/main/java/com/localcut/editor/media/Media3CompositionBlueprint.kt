@@ -4,6 +4,7 @@ import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.AudioProcessingSettings
 import com.localcut.editor.domain.model.CompositingSettings
 import com.localcut.editor.domain.model.EffectInstance
+import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.model.TimeMap
 import com.localcut.editor.domain.model.TransformKeyframe
 import com.localcut.editor.domain.model.TransformValue
@@ -57,6 +58,7 @@ sealed interface Media3BlueprintItem {
         val opacity: Double,
         val volume: Double,
         val keyframes: List<TransformKeyframe>,
+        val propertyAnimations: List<PropertyAnimation> = emptyList(),
         val imageFrameRate: Int?,
         val fadeInUs: Long = 0L,
         val fadeOutUs: Long = 0L,
@@ -106,6 +108,7 @@ object Media3CompositionBlueprintCompiler {
                         opacity = segment.opacity,
                         volume = segment.volume,
                         keyframes = segment.keyframes,
+                        propertyAnimations = segment.propertyAnimations,
                         imageFrameRate = segment.imageFrameRate,
                         fadeInUs = segment.fadeInUs,
                         fadeOutUs = segment.fadeOutUs,

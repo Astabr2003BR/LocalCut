@@ -37,6 +37,17 @@ import com.localcut.editor.domain.model.Easing
 import com.localcut.editor.domain.model.EasingKind
 import com.localcut.editor.session.EditorAction
 
+private enum class MotionPathRangePreset(
+    val label: String,
+    val startFraction: Double,
+    val endFraction: Double,
+) {
+    FULL("Tudo", 0.0, 1.0),
+    START("Início", 0.0, 0.5),
+    MIDDLE("Meio", 0.25, 0.75),
+    END("Final", 0.5, 1.0),
+}
+
 @Composable
 fun MotionPathActionControl(
     modifier: Modifier = Modifier,
@@ -54,6 +65,7 @@ fun MotionPathActionControl(
     var gesture by remember(clip.id) { mutableStateOf(emptyList<CanvasPointPx>()) }
     var message by remember(clip.id) { mutableStateOf<String?>(null) }
     var easingKind by remember(clip.id) { mutableStateOf(EasingKind.LINEAR) }
+    var rangePreset by remember(clip.id) { mutableStateOf(MotionPathRangePreset.FULL) }
     val hasGeneratedPath = MotionPathUiPolicy.hasGeneratedMotionPath(clip.propertyAnimations)
     val easingPresets = listOf(
         EasingKind.LINEAR to "Linear",
@@ -68,7 +80,7 @@ fun MotionPathActionControl(
     ) {
         Text("Motion path", style = MaterialTheme.typography.labelMedium)
         Text(
-            "Desenhe o movimento relativo. O primeiro ponto mantém a posição atual do clipe; o último coincide com o fim do clipe.",
+            "Desenhe o movimento relativo. O primeiro ponto mantém a posição atual do clipe e a trajetória acontece somente na faixa escolhida.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -85,6 +97,25 @@ fun MotionPathActionControl(
                 }
             }
         }
+
+        Text("Faixa do movimento", style = MaterialTheme.typography.labelSmall)
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            MotionPathRangePreset.entries.forEach { preset ->
+                if (rangePreset == preset) {
+                    FilledTonalButton(onClick = { rangePreset = preset }) { Text(preset.label) }
+                } else {
+                    OutlinedButton(onClick = { rangePreset = preset }) { Text(preset.label) }
+                }
+            }
+        }
+        Text(
+            "${(rangePreset.startFraction * 100).toInt()}%–${(rangePreset.endFraction * 100).toInt()}% do clipe. Antes e depois da faixa, a posição fica mantida.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         Canvas(
             modifier = Modifier
@@ -154,6 +185,11 @@ fun MotionPathActionControl(
                             ?: error("MOTION_PATH_CLIP_CHANGED")
                         require(currentClip.assetId == clip.assetId) { "MOTION_PATH_CLIP_CHANGED" }
                         require(surfaceSize.width > 0 && surfaceSize.height > 0) { "MOTION_PATH_SURFACE_UNAVAILABLE" }
+                        val range = MotionPathUiPolicy.resolveRange(
+                            clipDurationUs = currentClip.durationUs,
+                            startFraction = rangePreset.startFraction,
+                            endFraction = rangePreset.endFraction,
+                        )
                         val points = MotionPathUiPolicy.toMotionPoints(
                             gesture = gesture,
                             surfaceWidthPx = surfaceSize.width.toDouble(),
@@ -161,6 +197,8 @@ fun MotionPathActionControl(
                             projectWidthPx = currentSession.project.width.toDouble(),
                             projectHeightPx = currentSession.project.height.toDouble(),
                             durationUs = currentClip.durationUs,
+                            startOffsetUs = range.startOffsetUs,
+                            endOffsetUs = range.endOffsetUs,
                             baseX = currentClip.transform.x,
                             baseY = currentClip.transform.y,
                             easing = Easing(easingKind),
@@ -172,7 +210,7 @@ fun MotionPathActionControl(
                         )
                     }
                     message = if (result.isSuccess) {
-                        "Motion path aplicado. Desfazer continua disponível."
+                        "Motion path aplicado na faixa ${rangePreset.label.lowercase()}. Desfazer continua disponível."
                     } else {
                         when (result.exceptionOrNull()?.message) {
                             "MOTION_PATH_CONFLICTS_WITH_STABILIZATION" ->

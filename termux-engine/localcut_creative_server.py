@@ -31,6 +31,14 @@ def validate_toolchain_capabilities(values) -> tuple[str, ...]:
     return tuple(result)
 
 
+def _ensure_creative_worker_lock(server):
+    lock = getattr(server, "creative_worker_lock", None)
+    if lock is None:
+        lock = threading.Lock()
+        server.creative_worker_lock = lock
+    return lock
+
+
 def _validate_tracking_input(input_data: dict) -> dict:
     descriptor = _validate_descriptor(input_data)
     mime_type = descriptor["mimeType"]
@@ -90,11 +98,71 @@ def _validate_reverse_input(input_data: dict) -> dict:
     }
 
 
+def _execute_tracking_job(server, job_id: str, transfer: dict) -> None:
+    store = server.job_store
+    analyzer = server.tracking_analyzer
+    lock = _ensure_creative_worker_lock(server)
+    if store is None or server.media_spool is None or analyzer is None:
+        return
+
+    with lock:
+        try:
+            current = store.get_job(job_id)
+            if current["status"] == "CANCELLED":
+                return
+            if current["status"] != "RUNNING":
+                return
+            store.update_job(
+                job_id,
+                status="RUNNING",
+                progress=35,
+                log={"operation": "ANALYZE_TRACKING", "status": "RUNNING"},
+            )
+            current = store.get_job(job_id)
+            options = TrackingOptions(
+                max_frames=current["input"]["maxFrames"],
+                sample_every=current["input"]["sampleEvery"],
+                max_corners=current["input"]["maxCorners"],
+            )
+            analysis = analyzer.analyze(server.media_spool.path_for(job_id), options=options)
+            current = store.get_job(job_id)
+            if current["status"] == "CANCELLED":
+                return
+            store.update_job(
+                job_id,
+                status="SUCCEEDED",
+                progress=100,
+                output={
+                    "analysisMode": "opencv-global-motion-v1",
+                    "transfer": {"sizeBytes": transfer["sizeBytes"], "sha256": transfer["sha256"]},
+                    "analysis": analysis,
+                },
+                log={"operation": "ANALYZE_TRACKING", "status": "SUCCEEDED", "exitCode": 0},
+            )
+        except Exception as error:
+            try:
+                current = store.get_job(job_id)
+            except Exception:
+                return
+            if current["status"] == "CANCELLED":
+                return
+            store.update_job(
+                job_id,
+                status="FAILED",
+                progress=100,
+                error={
+                    "code": _error_code(error, "ANALYZE_TRACKING_FAILED"),
+                    "message": "Tracking analysis failed",
+                },
+                log={"operation": "ANALYZE_TRACKING", "status": "FAILED"},
+            )
+
+
 def _execute_reverse_job(server, job_id: str, transfer: dict) -> None:
     store = server.job_store
     outputs = server.generated_media_spool
     executor = server.reverse_executor
-    lock = server.reverse_worker_lock
+    lock = _ensure_creative_worker_lock(server)
     if store is None or server.media_spool is None or outputs is None or executor is None:
         return
 
@@ -264,15 +332,21 @@ class LocalCutCreativeHandler(LocalCutTermuxEngineHandler):
             raise ValueError("MEDIA_LENGTH_MISMATCH")
 
         transfer = spool.stage_bytes(job_id, content_length, self._body_chunks(content_length))
-        store.update_job(
+        running = store.update_job(
             job_id,
             status="RUNNING",
-            progress=35,
+            progress=20,
             log={"operation": "STAGE_MEDIA", "status": "SUCCEEDED", "bytes": transfer["sizeBytes"]},
         )
-        job = self._execute_staged_tracking(job_id, transfer)
+        worker = threading.Thread(
+            target=_execute_tracking_job,
+            args=(self.server, job_id, transfer),
+            name=f"localcut-tracking-{job_id[:8]}",
+            daemon=True,
+        )
+        worker.start()
         public_transfer = {"sizeBytes": transfer["sizeBytes"], "sha256": transfer["sha256"]}
-        self.wfile.write(_response(True, request_id, job=job, transfer=public_transfer))
+        self.wfile.write(_response(True, request_id, job=running, transfer=public_transfer))
 
     def _handle_stage_reverse(self, request_id: str, request: dict, job: dict) -> None:
         store = self._require_jobs()
@@ -304,46 +378,6 @@ class LocalCutCreativeHandler(LocalCutTermuxEngineHandler):
         public_transfer = {"sizeBytes": transfer["sizeBytes"], "sha256": transfer["sha256"]}
         self.wfile.write(_response(True, request_id, job=running, transfer=public_transfer))
 
-    def _execute_staged_tracking(self, job_id: str, transfer: dict) -> dict:
-        store = self._require_jobs()
-        try:
-            analyzer = self._tracking_analyzer()
-            current = store.get_job(job_id)
-            options = TrackingOptions(
-                max_frames=current["input"]["maxFrames"],
-                sample_every=current["input"]["sampleEvery"],
-                max_corners=current["input"]["maxCorners"],
-            )
-            analysis = analyzer.analyze(self.server.media_spool.path_for(job_id), options=options)
-            current = store.get_job(job_id)
-            if current["status"] == "CANCELLED":
-                return current
-            return store.update_job(
-                job_id,
-                status="SUCCEEDED",
-                progress=100,
-                output={
-                    "analysisMode": "opencv-global-motion-v1",
-                    "transfer": {"sizeBytes": transfer["sizeBytes"], "sha256": transfer["sha256"]},
-                    "analysis": analysis,
-                },
-                log={"operation": "ANALYZE_TRACKING", "status": "SUCCEEDED", "exitCode": 0},
-            )
-        except (ValueError, KeyError, FileNotFoundError, RuntimeError) as error:
-            current = store.get_job(job_id)
-            if current["status"] == "CANCELLED":
-                return current
-            return store.update_job(
-                job_id,
-                status="FAILED",
-                progress=100,
-                error={
-                    "code": _error_code(error, "ANALYZE_TRACKING_FAILED"),
-                    "message": "Tracking analysis failed",
-                },
-                log={"operation": "ANALYZE_TRACKING", "status": "FAILED"},
-            )
-
 
 def attach_toolchain_capabilities(server, capabilities):
     validated = validate_toolchain_capabilities(capabilities)
@@ -362,6 +396,7 @@ def attach_toolchain_capabilities(server, capabilities):
 
 def attach_tracking_support(server, tracking_analyzer):
     server.tracking_analyzer = tracking_analyzer
+    _ensure_creative_worker_lock(server)
     server.RequestHandlerClass = LocalCutCreativeHandler
     base_capabilities = server.capabilities
 
@@ -380,7 +415,7 @@ def attach_tracking_support(server, tracking_analyzer):
 def attach_reverse_support(server, reverse_executor, generated_media_spool):
     server.reverse_executor = reverse_executor
     server.generated_media_spool = generated_media_spool
-    server.reverse_worker_lock = threading.Lock()
+    _ensure_creative_worker_lock(server)
     server.RequestHandlerClass = LocalCutCreativeHandler
     base_capabilities = server.capabilities
 

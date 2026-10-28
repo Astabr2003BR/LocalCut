@@ -16,13 +16,13 @@ object TransformEffectFactory {
     fun create(
         transform: TransformValue,
         keyframes: List<TransformKeyframe>,
-        propertyAnimations: List<PropertyAnimation> = emptyList(),
         opacity: Double,
         outputWidth: Int,
         outputHeight: Int,
         transformSpaceWidth: Int,
         transformSpaceHeight: Int,
         presentationStartUs: Long = 0L,
+        propertyAnimations: List<PropertyAnimation> = emptyList(),
     ): List<Effect> {
         val matrixEffect = MatrixTransformation { presentationTimeUs ->
             val value = PropertyTransformRenderResolver.valueAt(

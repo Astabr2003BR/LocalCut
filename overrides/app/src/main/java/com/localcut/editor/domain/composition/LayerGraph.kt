@@ -13,6 +13,15 @@ object LayerGraph {
     fun validate(graph: CompositionGraph, knownClipIds: Set<String>): List<String> = buildList {
         if (graph.nodes.any { it.id.isBlank() }) add("composition node id must not be blank")
         if (graph.nodes.map { it.id }.distinct().size != graph.nodes.size) add("composition node ids must be unique")
+        graph.nodes
+            .filter { it.kind == CompositionNodeKind.LAYER }
+            .mapNotNull { it.clipId?.takeIf(String::isNotBlank) }
+            .groupingBy { it }
+            .eachCount()
+            .filterValues { it > 1 }
+            .keys
+            .forEach { clipId -> add("layer clip references must be unique: $clipId") }
+
         val nodes = graph.nodes.associateBy { it.id }
         graph.nodes.forEach { node ->
             addAll(node.transform.validationIssues())

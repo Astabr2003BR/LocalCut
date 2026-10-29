@@ -29,12 +29,14 @@ import com.localcut.editor.LocalCutProcessRuntime
 import com.localcut.editor.domain.design.CanvasPointPx
 import com.localcut.editor.domain.design.DesignElementGeometryPolicy
 import com.localcut.editor.domain.design.DesignGroupSelectionPolicy
+import com.localcut.editor.domain.design.DesignSelectionLayoutPolicy
 import com.localcut.editor.domain.design.DesignSelectionTransformPolicy
 import com.localcut.editor.domain.history.DeleteDesignElementsCommand
 import com.localcut.editor.domain.history.GroupDesignElementsCommand
 import com.localcut.editor.domain.history.MoveDesignElementsCommand
 import com.localcut.editor.domain.history.TransformDesignElementsCommand
 import com.localcut.editor.domain.history.UngroupDesignElementsCommand
+import com.localcut.editor.domain.history.UpdateDesignElementsCommand
 import com.localcut.editor.domain.model.DesignElement
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.ShapeKind
@@ -130,6 +132,42 @@ fun VectorLassoControl(
             when (result.exceptionOrNull()?.message) {
                 "LASSO_SELECTION_EMPTY" -> "Nenhum traço selecionado no estado atual."
                 else -> "Falha ao transformar seleção • ${result.exceptionOrNull()?.message ?: "LASSO_TRANSFORM_FAILED"}"
+            }
+        }
+    }
+
+    fun layoutSelection(action: String) {
+        val result = runCatching {
+            val (currentProject, ids) = currentSelection()
+            require(!DesignGroupSelectionPolicy.containsGroupedMember(ids, currentProject.designGroups)) {
+                "LASSO_LAYOUT_GROUPED"
+            }
+            val byId = currentProject.designElements.associateBy { it.id }
+            val selected = ids.map { id -> byId[id] ?: error("LASSO_ELEMENT_MISSING") }
+            val width = currentProject.width.toDouble()
+            val height = currentProject.height.toDouble()
+            val updated = when (action) {
+                "LEFT" -> DesignSelectionLayoutPolicy.alignLeft(selected, width, height)
+                "CENTER_X" -> DesignSelectionLayoutPolicy.alignCenterX(selected, width, height)
+                "RIGHT" -> DesignSelectionLayoutPolicy.alignRight(selected, width, height)
+                "TOP" -> DesignSelectionLayoutPolicy.alignTop(selected, width, height)
+                "CENTER_Y" -> DesignSelectionLayoutPolicy.alignCenterY(selected, width, height)
+                "BOTTOM" -> DesignSelectionLayoutPolicy.alignBottom(selected, width, height)
+                "DISTRIBUTE_X" -> DesignSelectionLayoutPolicy.distributeHorizontally(selected, width, height)
+                "DISTRIBUTE_Y" -> DesignSelectionLayoutPolicy.distributeVertically(selected, width, height)
+                else -> error("LASSO_LAYOUT_ACTION_INVALID")
+            }
+            runtime.editorViewModel.dispatch(
+                EditorAction.Execute(UpdateDesignElementsCommand(updated)),
+            )
+        }
+        message = if (result.isSuccess) {
+            "Layout aplicado em uma única operação. Desfazer restaura a seleção anterior."
+        } else {
+            when (result.exceptionOrNull()?.message) {
+                "LASSO_SELECTION_EMPTY" -> "Nenhum traço selecionado no estado atual."
+                "LASSO_LAYOUT_GROUPED" -> "Desagrupe antes de alinhar ou distribuir para preservar a geometria interna do grupo."
+                else -> "Falha no layout • ${result.exceptionOrNull()?.message ?: "LASSO_LAYOUT_FAILED"}"
             }
         }
     }
@@ -324,6 +362,28 @@ fun VectorLassoControl(
                 OutlinedButton(onClick = { transformSelection(1.0, -15.0) }) { Text("↺ 15°") }
                 OutlinedButton(onClick = { transformSelection(1.0, 15.0) }) { Text("↻ 15°") }
             }
+
+            if (liveSelectedIds.size >= 2 && !selectionContainsGroupedMember) {
+                Text("Alinhar", style = MaterialTheme.typography.labelSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick = { layoutSelection("LEFT") }) { Text("Esq.") }
+                    OutlinedButton(onClick = { layoutSelection("CENTER_X") }) { Text("Centro X") }
+                    OutlinedButton(onClick = { layoutSelection("RIGHT") }) { Text("Dir.") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick = { layoutSelection("TOP") }) { Text("Topo") }
+                    OutlinedButton(onClick = { layoutSelection("CENTER_Y") }) { Text("Meio Y") }
+                    OutlinedButton(onClick = { layoutSelection("BOTTOM") }) { Text("Base") }
+                }
+                if (liveSelectedIds.size >= 3) {
+                    Text("Distribuir", style = MaterialTheme.typography.labelSmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(onClick = { layoutSelection("DISTRIBUTE_X") }) { Text("Horizontal") }
+                        OutlinedButton(onClick = { layoutSelection("DISTRIBUTE_Y") }) { Text("Vertical") }
+                    }
+                }
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedButton(
                     onClick = { groupSelection() },
@@ -336,7 +396,7 @@ fun VectorLassoControl(
             }
             if (selectionContainsGroupedMember) {
                 Text(
-                    "Elementos agrupados são transformados juntos. Desagrupe antes de excluir.",
+                    "Elementos agrupados são transformados juntos. Desagrupe antes de alinhar, distribuir ou excluir.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

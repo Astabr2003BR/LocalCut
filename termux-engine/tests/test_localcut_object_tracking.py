@@ -60,6 +60,30 @@ class ObjectTrackingCoreTest(unittest.TestCase):
             OpenCvObjectPositionTracker.clamp_roi_pixels([-10.0, -20.0, 500.0, 500.0], 100, 100),
         )
 
+    def test_frame_budget_is_limited_to_selected_clip_source_range(self):
+        self.assertEqual(
+            61,
+            OpenCvObjectPositionTracker.frame_budget(
+                fps=30.0,
+                source_in_us=2_000_000,
+                source_out_us=4_000_000,
+                max_frames=300,
+            ),
+        )
+        self.assertEqual(
+            120,
+            OpenCvObjectPositionTracker.frame_budget(
+                fps=30.0,
+                source_in_us=2_000_000,
+                source_out_us=None,
+                max_frames=120,
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "OBJECT_TRACKING_SOURCE_RANGE_INVALID"):
+            OpenCvObjectPositionTracker.frame_budget(30.0, 4_000_000, 2_000_000, 300)
+        with self.assertRaisesRegex(ValueError, "OBJECT_TRACKING_SOURCE_RANGE_TOO_SHORT"):
+            OpenCvObjectPositionTracker.frame_budget(30.0, 0, 1_000, 300)
+
 
 if __name__ == "__main__":
     unittest.main()

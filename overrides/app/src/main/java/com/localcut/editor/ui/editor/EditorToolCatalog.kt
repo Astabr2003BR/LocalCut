@@ -84,7 +84,7 @@ object EditorToolCatalog {
         tool(EditorToolId.DRAW, "Desenhar", EditorToolGroup.DESIGN, any, EditorToolState.LIVE),
         tool(EditorToolId.TRACKING, "Tracking", EditorToolGroup.ADVANCED, visual, EditorToolState.PLANNED),
         tool(EditorToolId.STABILIZE, "Estabilizar", EditorToolGroup.ADVANCED, setOf(EditorSelectionKind.VIDEO), EditorToolState.PLANNED),
-        tool(EditorToolId.CAMERA, "Câmera", EditorToolGroup.ADVANCED, any, EditorToolState.PARTIAL),
+        tool(EditorToolId.CAMERA, "Câmera", EditorToolGroup.ADVANCED, any, EditorToolState.LIVE),
         tool(EditorToolId.TEMPLATES, "Modelos", EditorToolGroup.DESIGN, project + EditorSelectionKind.DESIGN, EditorToolState.PARTIAL),
     )
 

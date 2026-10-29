@@ -37,10 +37,11 @@ fun CameraCutActionControl(
     val graph = project.compositionGraph
     val cameras = graph.nodes.filter { it.kind == CompositionNodeKind.CAMERA }
     val playheadUs = preview.positionUs.coerceAtLeast(0L)
+    val cutTimeUs = CameraCutFrameSnapPolicy.snap(playheadUs, project.fps)
     val activeCameraId = runCatching { CameraCutUiPolicy.activeCameraId(graph, playheadUs) }.getOrNull()
     val activeCamera = activeCameraId?.let { id -> cameras.firstOrNull { it.id == id } }
         ?: cameras.singleOrNull()
-    val exactCut = runCatching { CameraCutUiPolicy.exactCutAt(graph, playheadUs) }.getOrNull()
+    val exactCut = runCatching { CameraCutUiPolicy.exactCutAt(graph, cutTimeUs) }.getOrNull()
     var message by remember { mutableStateOf<String?>(null) }
 
     fun applyGraph(operation: () -> com.localcut.editor.domain.model.CompositionGraph) {
@@ -87,7 +88,7 @@ fun CameraCutActionControl(
                 if (activeCamera != null) {
                     OutlinedButton(
                         onClick = {
-                            applyGraph { CameraCutUiPolicy.duplicateActiveCameraAt(graph, playheadUs).graph }
+                            applyGraph { CameraCutUiPolicy.duplicateActiveCameraAt(graph, cutTimeUs).graph }
                         },
                     ) { Text("Duplicar ativa") }
                 }
@@ -95,7 +96,10 @@ fun CameraCutActionControl(
         }
 
         if (cameras.size >= 2) {
-            Text("Cortar para câmera no playhead", style = MaterialTheme.typography.labelSmall)
+            Text(
+                "Cortar para câmera no frame ${formatCameraTime(cutTimeUs)}",
+                style = MaterialTheme.typography.labelSmall,
+            )
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -110,7 +114,7 @@ fun CameraCutActionControl(
                                 applyGraph {
                                     CameraCutUiPolicy.upsertCut(
                                         graph = graph,
-                                        startUs = playheadUs,
+                                        startUs = cutTimeUs,
                                         cameraNodeId = camera.id,
                                     )
                                 }

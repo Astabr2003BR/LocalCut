@@ -95,6 +95,17 @@ class EditorToolCatalogTest {
     }
 
     @Test
+    fun cameraToolIsLiveAfterRealCameraCutAndRenderBackendExists() {
+        val camera = EditorToolCatalog.all.single { it.id == EditorToolId.CAMERA }
+
+        assertTrue(camera.enabled)
+        assertEquals(EditorToolState.LIVE, camera.state)
+        EditorSelectionKind.entries.forEach { selection ->
+            assertTrue("camera must remain reachable for $selection", selection in camera.selections)
+        }
+    }
+
+    @Test
     fun manualCaptionsAreLiveAndReachableFromEverySelection() {
         val captions = EditorToolCatalog.all.single { it.id == EditorToolId.CAPTIONS }
 

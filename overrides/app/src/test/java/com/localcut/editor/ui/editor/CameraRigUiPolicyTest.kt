@@ -53,14 +53,14 @@ class CameraRigUiPolicyTest {
 
         assertEquals(
             listOf("null-1", "group-1"),
-            LayerPanelUiPolicy.controllerParentTargets(graph, "camera-1").map { it.id },
+            CameraRigUiPolicy.parentTargets(graph, "camera-1").map { it.id },
         )
 
-        val parented = LayerPanelUiPolicy.setControllerParent(graph, "camera-1", "null-1")
-        assertEquals("null-1", LayerPanelUiPolicy.controllerParentId(parented, "camera-1"))
+        val parented = CameraRigUiPolicy.setParent(graph, "camera-1", "null-1")
+        assertEquals("null-1", CameraRigUiPolicy.parentId(parented, "camera-1"))
 
-        val detached = LayerPanelUiPolicy.setControllerParent(parented, "camera-1", null)
-        assertNull(LayerPanelUiPolicy.controllerParentId(detached, "camera-1"))
+        val detached = CameraRigUiPolicy.setParent(parented, "camera-1", null)
+        assertNull(CameraRigUiPolicy.parentId(detached, "camera-1"))
     }
 
     @Test
@@ -74,17 +74,17 @@ class CameraRigUiPolicyTest {
         )
 
         assertTrue(runCatching {
-            LayerPanelUiPolicy.setControllerParent(graph, "camera-1", "layer-1")
+            CameraRigUiPolicy.setParent(graph, "camera-1", "layer-1")
         }.isFailure)
         assertTrue(runCatching {
-            LayerPanelUiPolicy.setControllerParent(graph, "camera-1", "null-1")
+            CameraRigUiPolicy.setParent(graph, "camera-1", "null-1")
         }.isFailure)
 
         val locked = graph.copy(
             nodes = graph.nodes.map { if (it.id == "camera-1") it.copy(locked = true) else it },
         )
         assertTrue(runCatching {
-            LayerPanelUiPolicy.setControllerParent(locked, "camera-1", null)
+            CameraRigUiPolicy.setParent(locked, "camera-1", null)
         }.isFailure)
         assertFalse(LayerPanelUiPolicy.isControllerLocked(graph, "camera-1"))
     }

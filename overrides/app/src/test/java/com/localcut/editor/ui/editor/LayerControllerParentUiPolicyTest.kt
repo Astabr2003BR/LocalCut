@@ -3,7 +3,9 @@ package com.localcut.editor.ui.editor
 import com.localcut.editor.domain.model.CompositionGraph
 import com.localcut.editor.domain.model.CompositionNode
 import com.localcut.editor.domain.model.CompositionNodeKind
+import com.localcut.editor.domain.model.LayerTransform3D
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -43,5 +45,52 @@ class LayerControllerParentUiPolicyTest {
         )
 
         assertTrue(runCatching { LayerPanelUiPolicy.setControllerParent(graph, "camera", "group") }.isFailure)
+    }
+
+    @Test
+    fun nullAndGroupVisibilityCanBeToggledIndependentlyOfLock() {
+        val graph = CompositionGraph(
+            nodes = listOf(CompositionNode("group", CompositionNodeKind.GROUP)),
+        )
+
+        val hidden = LayerPanelUiPolicy.setControllerVisible(graph, "group", false)
+        assertFalse(LayerPanelUiPolicy.isControllerVisible(hidden, "group"))
+
+        val locked = LayerPanelUiPolicy.setControllerLocked(hidden, "group", true)
+        assertTrue(LayerPanelUiPolicy.isControllerLocked(locked, "group"))
+
+        val shownWhileLocked = LayerPanelUiPolicy.setControllerVisible(locked, "group", true)
+        assertTrue(LayerPanelUiPolicy.isControllerVisible(shownWhileLocked, "group"))
+    }
+
+    @Test
+    fun lockedControllerRejectsGeometryParentAndRemovalUntilUnlocked() {
+        val graph = CompositionGraph(
+            nodes = listOf(
+                CompositionNode("root", CompositionNodeKind.GROUP),
+                CompositionNode("child", CompositionNodeKind.NULL),
+            ),
+        )
+        val locked = LayerPanelUiPolicy.setControllerLocked(graph, "child", true)
+
+        assertTrue(
+            runCatching {
+                LayerPanelUiPolicy.setControllerTransform(
+                    locked,
+                    "child",
+                    LayerTransform3D(x = 25.0),
+                )
+            }.isFailure,
+        )
+        assertTrue(runCatching { LayerPanelUiPolicy.setControllerParent(locked, "child", "root") }.isFailure)
+        assertTrue(runCatching { LayerPanelUiPolicy.removeControllerNode(locked, "child") }.isFailure)
+
+        val unlocked = LayerPanelUiPolicy.setControllerLocked(locked, "child", false)
+        val moved = LayerPanelUiPolicy.setControllerTransform(
+            unlocked,
+            "child",
+            LayerTransform3D(x = 25.0),
+        )
+        assertEquals(25.0, moved.nodes.single { it.id == "child" }.transform.x, 0.0)
     }
 }

@@ -106,6 +106,16 @@ class EditorToolCatalogTest {
     }
 
     @Test
+    fun stabilizationShortcutIsLiveOnlyForVideoAndRoutesToAnimationPanel() {
+        val stabilize = EditorToolCatalog.all.single { it.id == EditorToolId.STABILIZE }
+
+        assertTrue(stabilize.enabled)
+        assertEquals(EditorToolState.LIVE, stabilize.state)
+        assertEquals(setOf(EditorSelectionKind.VIDEO), stabilize.selections)
+        assertEquals(EditorToolId.ANIMATION, EditorToolCatalog.actionTarget(EditorToolId.STABILIZE))
+    }
+
+    @Test
     fun manualCaptionsAreLiveAndReachableFromEverySelection() {
         val captions = EditorToolCatalog.all.single { it.id == EditorToolId.CAPTIONS }
 

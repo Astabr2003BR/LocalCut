@@ -44,6 +44,7 @@ object EditorWorkspacePolicy {
         ),
         EditorWorkspace.DESIGN to listOf(
             EditorToolId.DESIGN,
+            EditorToolId.TEMPLATES,
             EditorToolId.CANVAS,
             EditorToolId.TEXT,
             EditorToolId.MEDIA,

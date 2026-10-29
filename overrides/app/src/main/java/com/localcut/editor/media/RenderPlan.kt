@@ -76,6 +76,7 @@ sealed interface RenderSegment {
         val timeMap: TimeMap = TimeMap(),
         val audioProcessing: AudioProcessingSettings = AudioProcessingSettings(),
         val propertyAnimations: List<PropertyAnimation> = emptyList(),
+        val compositionContainer: CompositionTransformContainer? = null,
     ) : RenderSegment {
         val isImage: Boolean get() = assetType == AssetType.IMAGE
     }

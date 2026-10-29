@@ -23,6 +23,7 @@ object TransformEffectFactory {
         transformSpaceHeight: Int,
         presentationStartUs: Long = 0L,
         propertyAnimations: List<PropertyAnimation> = emptyList(),
+        compositionContainer: CompositionTransformContainer? = null,
     ): List<Effect> {
         val matrixEffect = MatrixTransformation { presentationTimeUs ->
             val value = PropertyTransformRenderResolver.valueAt(
@@ -31,6 +32,7 @@ object TransformEffectFactory {
                 propertyAnimations = propertyAnimations,
                 presentationTimeUs = presentationTimeUs,
                 presentationStartUs = presentationStartUs,
+                compositionContainer = compositionContainer,
             )
             val matrix = Matrix()
             // Domain coordinates are pixels with +Y down. Media3 matrix coordinates are normalized.

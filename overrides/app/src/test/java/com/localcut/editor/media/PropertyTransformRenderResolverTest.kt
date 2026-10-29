@@ -76,6 +76,66 @@ class PropertyTransformRenderResolverTest {
     }
 
     @Test
+    fun discreteCameraCutSwitchesContainerExactlyAtCutTimestamp() {
+        val cameraA = CompositionTransformContainer(x = 200.0, y = 0.0, scale = 1.0, rotationDeg = 0.0)
+        val cameraB = CompositionTransformContainer(x = 100.0, y = 0.0, scale = 1.0, rotationDeg = 0.0)
+        val timeline = CompositionTransformTimeline(
+            listOf(
+                TimedCompositionTransformContainer(0L, cameraA),
+                TimedCompositionTransformContainer(1_000_000L, cameraB),
+            ),
+        )
+        val flattenedBase = TransformValue(x = 210.0)
+
+        val before = PropertyTransformRenderResolver.valueAt(
+            transform = flattenedBase,
+            keyframes = emptyList(),
+            propertyAnimations = emptyList(),
+            presentationTimeUs = 999_999L,
+            presentationStartUs = 0L,
+            compositionContainer = cameraA,
+            compositionContainerTimeline = timeline,
+        )
+        val atCut = PropertyTransformRenderResolver.valueAt(
+            transform = flattenedBase,
+            keyframes = emptyList(),
+            propertyAnimations = emptyList(),
+            presentationTimeUs = 1_000_000L,
+            presentationStartUs = 0L,
+            compositionContainer = cameraA,
+            compositionContainerTimeline = timeline,
+        )
+
+        assertEquals(210.0, before.x, 1e-9)
+        assertEquals(110.0, atCut.x, 1e-9)
+    }
+
+    @Test
+    fun discreteCameraCutKeepsModernAnimationInLocalSpace() {
+        val cameraA = CompositionTransformContainer(x = 200.0, y = 0.0, scale = 1.0, rotationDeg = 0.0)
+        val cameraB = CompositionTransformContainer(x = 100.0, y = 0.0, scale = 1.0, rotationDeg = 0.0)
+        val timeline = CompositionTransformTimeline(
+            listOf(
+                TimedCompositionTransformContainer(0L, cameraA),
+                TimedCompositionTransformContainer(1_000_000L, cameraB),
+            ),
+        )
+        val xAnimation = scalarAnimation("transform.x", 10.0, 30.0)
+
+        val value = PropertyTransformRenderResolver.valueAt(
+            transform = TransformValue(x = 210.0),
+            keyframes = emptyList(),
+            propertyAnimations = listOf(xAnimation),
+            presentationTimeUs = 1_000_000L,
+            presentationStartUs = 0L,
+            compositionContainer = cameraA,
+            compositionContainerTimeline = timeline,
+        )
+
+        assertEquals(130.0, value.x, 1e-9)
+    }
+
+    @Test
     fun emptyOrUnrelatedPropertyAnimationsKeepLegacyValue() {
         val base = TransformValue(x = 7.0, y = -3.0, scale = 1.1, rotationDeg = 4.0, opacity = 0.7)
         val value = PropertyTransformRenderResolver.valueAt(

@@ -30,15 +30,16 @@ class EditorWorkspacePolicyTest {
     }
 
     @Test
-    fun animationWorkspacePrioritizesAnimationLayersAndCamera() {
+    fun animationWorkspacePrioritizesAnimationLayersCameraAndStabilization() {
         val ids = EditorWorkspacePolicy.toolsFor(
             workspace = EditorWorkspace.MOTION,
             selection = EditorSelectionKind.VIDEO,
         ).map { it.id }
 
         assertEquals(EditorToolId.ANIMATION, ids.first())
-        assertTrue(EditorToolId.LAYERS in ids)
         assertTrue(EditorToolId.CAMERA in ids)
+        assertTrue(EditorToolId.STABILIZE in ids)
+        assertTrue(EditorToolId.LAYERS in ids)
         assertTrue(EditorToolId.MASK in ids)
         assertFalse(EditorToolId.MEDIA in ids)
     }
@@ -51,6 +52,7 @@ class EditorWorkspacePolicyTest {
         ).map { it.id }
 
         assertTrue(EditorToolId.CAMERA in ids)
+        assertFalse(EditorToolId.STABILIZE in ids)
     }
 
     @Test

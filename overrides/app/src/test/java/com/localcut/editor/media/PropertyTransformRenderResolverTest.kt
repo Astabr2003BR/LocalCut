@@ -41,6 +41,41 @@ class PropertyTransformRenderResolverTest {
     }
 
     @Test
+    fun compositionContainerIsAppliedAfterModernLocalTransformAnimation() {
+        val container = CompositionTransformContainer(
+            x = 100.0,
+            y = 50.0,
+            scale = 2.0,
+            rotationDeg = 90.0,
+        )
+        // Local (10,20,1x,5deg) already flattened through the container.
+        val flattenedBase = TransformValue(
+            x = 60.0,
+            y = 70.0,
+            scale = 2.0,
+            rotationDeg = 95.0,
+            opacity = 0.8,
+        )
+        val xAnimation = scalarAnimation("transform.x", 10.0, 20.0)
+
+        val value = PropertyTransformRenderResolver.valueAt(
+            transform = flattenedBase,
+            keyframes = emptyList(),
+            propertyAnimations = listOf(xAnimation),
+            presentationTimeUs = 1_000_000L,
+            presentationStartUs = 0L,
+            compositionContainer = container,
+        )
+
+        // The local +10px X movement is scaled by 2 and rotated by the parent into +20px world Y.
+        assertEquals(60.0, value.x, 1e-9)
+        assertEquals(90.0, value.y, 1e-9)
+        assertEquals(2.0, value.scale, 1e-9)
+        assertEquals(95.0, value.rotationDeg, 1e-9)
+        assertEquals(0.8, value.opacity, 1e-9)
+    }
+
+    @Test
     fun emptyOrUnrelatedPropertyAnimationsKeepLegacyValue() {
         val base = TransformValue(x = 7.0, y = -3.0, scale = 1.1, rotationDeg = 4.0, opacity = 0.7)
         val value = PropertyTransformRenderResolver.valueAt(

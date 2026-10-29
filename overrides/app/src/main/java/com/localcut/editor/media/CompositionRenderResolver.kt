@@ -12,7 +12,7 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-internal data class CompositionTransformContainer(
+data class CompositionTransformContainer(
     val x: Double,
     val y: Double,
     val scale: Double,

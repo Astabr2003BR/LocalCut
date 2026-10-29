@@ -1,9 +1,12 @@
 package com.localcut.editor.ui.editor
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -31,6 +34,9 @@ fun CompositionControllerControls(
     onRemove: () -> Unit,
     canRemove: Boolean,
     modifier: Modifier = Modifier,
+    parentId: String? = null,
+    parentTargets: List<CompositionNode> = emptyList(),
+    onSetParent: (String?) -> Unit = {},
 ) {
     require(
         node.kind == CompositionNodeKind.NULL ||
@@ -50,6 +56,27 @@ fun CompositionControllerControls(
             "${controllerLabel(node.kind)} • ${node.id}",
             style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
         )
+
+        if (!isCamera) {
+            Text("Parent do controlador", style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (parentId == null) {
+                    FilledTonalButton(onClick = {}, enabled = false) { Text("Sem parent") }
+                } else {
+                    OutlinedButton(onClick = { onSetParent(null) }) { Text("Desvincular") }
+                }
+                parentTargets.forEach { target ->
+                    if (target.id == parentId) {
+                        FilledTonalButton(onClick = {}, enabled = false) { Text(target.id) }
+                    } else {
+                        OutlinedButton(onClick = { onSetParent(target.id) }) { Text("Vincular ${target.id}") }
+                    }
+                }
+            }
+        }
 
         Text("X ${"%.0f".format(transform.x)} px", style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
         Slider(

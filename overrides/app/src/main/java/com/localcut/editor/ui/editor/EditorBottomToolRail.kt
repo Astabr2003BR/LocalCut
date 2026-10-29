@@ -78,6 +78,10 @@ fun EditorBottomToolRail(
                 }
             }
 
+            if (activeTool == EditorToolId.LAYERS) {
+                CameraCutActionControl(modifier = Modifier.fillMaxWidth())
+            }
+
             if (activeTool == EditorToolId.DRAW) {
                 VectorLassoControl(modifier = Modifier.fillMaxWidth())
             }

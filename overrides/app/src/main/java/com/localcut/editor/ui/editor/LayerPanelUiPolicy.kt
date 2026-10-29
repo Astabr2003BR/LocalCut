@@ -31,6 +31,43 @@ object LayerPanelUiPolicy {
         }
     }
 
+    fun controllerParentId(graph: CompositionGraph, nodeId: String): String? =
+        controllerNode(graph, nodeId).parentId
+
+    fun controllerParentTargets(graph: CompositionGraph, nodeId: String): List<CompositionNode> {
+        val node = controllerNode(graph, nodeId)
+        require(node.kind == CompositionNodeKind.NULL || node.kind == CompositionNodeKind.GROUP) {
+            "only NULL or GROUP controllers can be parented"
+        }
+        return graph.nodes.filter { candidate ->
+            candidate.id != nodeId &&
+                (candidate.kind == CompositionNodeKind.NULL || candidate.kind == CompositionNodeKind.GROUP) &&
+                runCatching { !wouldCreateCycle(graph, nodeId, candidate.id) }.getOrDefault(false)
+        }
+    }
+
+    fun setControllerParent(
+        graph: CompositionGraph,
+        nodeId: String,
+        parentId: String?,
+    ): CompositionGraph {
+        val node = controllerNode(graph, nodeId)
+        require(node.kind == CompositionNodeKind.NULL || node.kind == CompositionNodeKind.GROUP) {
+            "only NULL or GROUP controllers can be parented"
+        }
+        if (parentId == null) return replaceNode(graph, node.copy(parentId = null))
+
+        val parent = graph.nodes.firstOrNull { it.id == parentId }
+            ?: throw IllegalArgumentException("parent target does not exist: $parentId")
+        require(parent.kind == CompositionNodeKind.NULL || parent.kind == CompositionNodeKind.GROUP) {
+            "parent target must be a NULL or GROUP node: $parentId"
+        }
+        require(!wouldCreateCycle(graph, nodeId, parentId)) {
+            "parent assignment would create a composition cycle"
+        }
+        return replaceNode(graph, node.copy(parentId = parentId))
+    }
+
     fun addNull(graph: CompositionGraph): LayerGraphNodeCreation {
         val nodeId = nextSequentialNodeId(graph, "null")
         return LayerGraphNodeCreation(
@@ -217,12 +254,12 @@ object LayerPanelUiPolicy {
             },
         )
 
-    private fun wouldCreateCycle(graph: CompositionGraph, layerNodeId: String, parentId: String): Boolean {
+    private fun wouldCreateCycle(graph: CompositionGraph, nodeId: String, parentId: String): Boolean {
         val nodes = graph.nodes.associateBy { it.id }
         val visited = mutableSetOf<String>()
         var currentId: String? = parentId
         while (currentId != null) {
-            if (currentId == layerNodeId) return true
+            if (currentId == nodeId) return true
             if (!visited.add(currentId)) {
                 throw IllegalArgumentException("composition graph already contains a parent cycle")
             }

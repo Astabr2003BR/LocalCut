@@ -28,6 +28,7 @@ object EditorWorkspacePolicy {
         ),
         EditorWorkspace.MOTION to listOf(
             EditorToolId.ANIMATION,
+            EditorToolId.STABILIZE,
             EditorToolId.CAMERA,
             EditorToolId.LAYERS,
             EditorToolId.MASK,

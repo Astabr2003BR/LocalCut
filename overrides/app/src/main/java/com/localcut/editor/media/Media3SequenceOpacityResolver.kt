@@ -23,6 +23,7 @@ object Media3SequenceOpacityResolver {
                             propertyAnimations = item.propertyAnimations,
                             presentationTimeUs = presentationTimeUs,
                             presentationStartUs = presentationStartUs,
+                            compositionContainer = item.compositionContainer,
                         )
                         KeyframeRenderResolver.effectiveOpacity(item.opacity, value).toFloat()
                     }

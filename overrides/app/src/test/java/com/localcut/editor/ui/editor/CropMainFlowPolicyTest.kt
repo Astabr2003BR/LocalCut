@@ -1,6 +1,7 @@
 package com.localcut.editor.ui.editor
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -26,11 +27,8 @@ class CropMainFlowPolicyTest {
     }
 
     @Test
-    fun cropRoutesToDedicatedContextPanel() {
-        assertEquals(
-            ContextPanelKind.CROP,
-            EditorChromeUiPolicy.panelFor(EditorToolId.CROP),
-        )
+    fun cropUsesItsOwnRailControlInsteadOfSharingChromaPanel() {
+        assertNull(EditorChromeUiPolicy.panelFor(EditorToolId.CROP))
     }
 
     @Test

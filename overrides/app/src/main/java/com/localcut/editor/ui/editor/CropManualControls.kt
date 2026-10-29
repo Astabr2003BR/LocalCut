@@ -59,10 +59,6 @@ fun CropManualControls(
                     settings.crop.right != 1.0 || settings.crop.bottom != 1.0,
             ) { Text("Resetar recorte") }
         }
-        ChromaKeyColorControls(
-            settings = settings,
-            onSetCompositing = onSetCompositing,
-        )
     }
 }
 

@@ -85,6 +85,13 @@ fun EditorBottomToolRail(
                 FlipActionControl(modifier = Modifier.fillMaxWidth())
             }
 
+            if (
+                activeTool == EditorToolId.CROP &&
+                selection in setOf(EditorSelectionKind.VIDEO, EditorSelectionKind.IMAGE)
+            ) {
+                CropActionControl(modifier = Modifier.fillMaxWidth())
+            }
+
             if (activeTool == EditorToolId.LAYERS || activeTool == EditorToolId.CAMERA) {
                 CameraCutActionControl(modifier = Modifier.fillMaxWidth())
             }
@@ -225,6 +232,7 @@ private fun toolGlyph(id: EditorToolId): String = when (id) {
     EditorToolId.COLOR -> "◐"
     EditorToolId.SPEED -> "⏱"
     EditorToolId.MASK -> "◉"
+    EditorToolId.CROP -> "⌑"
     EditorToolId.CHROMA -> "◆"
     EditorToolId.ANIMATION -> "◇"
     EditorToolId.LAYERS -> "▱"

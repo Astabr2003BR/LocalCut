@@ -14,8 +14,14 @@ import org.junit.Test
 
 class Media3PropertyAnimationBlueprintTest {
     @Test
-    fun renderSegmentPropertyAnimationsSurviveBlueprintCompilation() {
+    fun renderSegmentPropertyAnimationsAndCompositionContainerSurviveBlueprintCompilation() {
         val animation = xAnimation()
+        val container = CompositionTransformContainer(
+            x = 100.0,
+            y = 50.0,
+            scale = 2.0,
+            rotationDeg = 90.0,
+        )
         val segment = RenderSegment.Media(
             clipId = "clip-1",
             assetId = "asset-1",
@@ -31,6 +37,7 @@ class Media3PropertyAnimationBlueprintTest {
             keyframes = emptyList(),
             imageFrameRate = null,
             propertyAnimations = listOf(animation),
+            compositionContainer = container,
         )
         val plan = RenderPlan(
             width = 1080,
@@ -47,6 +54,7 @@ class Media3PropertyAnimationBlueprintTest {
         val media = blueprint.visualLayers.single().items.single() as Media3BlueprintItem.Media
 
         assertEquals(listOf(animation), media.propertyAnimations)
+        assertEquals(container, media.compositionContainer)
     }
 
     @Test

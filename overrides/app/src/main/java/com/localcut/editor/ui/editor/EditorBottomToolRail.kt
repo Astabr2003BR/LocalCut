@@ -78,6 +78,13 @@ fun EditorBottomToolRail(
                 }
             }
 
+            if (
+                activeTool == EditorToolId.EDIT &&
+                selection in setOf(EditorSelectionKind.VIDEO, EditorSelectionKind.IMAGE)
+            ) {
+                FlipActionControl(modifier = Modifier.fillMaxWidth())
+            }
+
             if (activeTool == EditorToolId.LAYERS || activeTool == EditorToolId.CAMERA) {
                 CameraCutActionControl(modifier = Modifier.fillMaxWidth())
             }

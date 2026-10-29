@@ -168,6 +168,11 @@ fun CameraCutActionControl(
                 },
                 canRemove = graph.cameraCuts.none { it.cameraNodeId == activeCamera.id },
                 modifier = Modifier.fillMaxWidth(),
+                onSetLocked = { locked ->
+                    applyGraph {
+                        LayerPanelUiPolicy.setControllerLocked(graph, activeCamera.id, locked)
+                    }
+                },
             )
         }
 

@@ -33,10 +33,10 @@ class StatefulAudioDsp(
     }
 
     private val normalizationGain = dbToLinear(settings.normalizationGainDb)
-    private val eqStates = settings.eqBands.map(::PeakingEqState)
-    private val noiseGateState = settings.noiseGate?.let(::NoiseGateState)
-    private val compressorState = settings.compressor?.let(::CompressorState)
-    private val limiterCeiling = settings.limiter?.let { dbToLinear(it.ceilingDb).toFloat() }
+    private val eqStates = settings.eqBands.map { band -> PeakingEqState(band) }
+    private val noiseGateState = settings.noiseGate?.let { gate -> NoiseGateState(gate) }
+    private val compressorState = settings.compressor?.let { compressor -> CompressorState(compressor) }
+    private val limiterCeiling = settings.limiter?.let { limiter -> dbToLinear(limiter.ceilingDb).toFloat() }
 
     fun process(samples: FloatArray): FloatArray {
         require(samples.size % channelCount == 0) {
@@ -46,7 +46,7 @@ class StatefulAudioDsp(
 
         val out = samples.copyOf()
         applyGain(out, normalizationGain)
-        eqStates.forEach { it.process(out) }
+        eqStates.forEach { state -> state.process(out) }
         noiseGateState?.process(out)
         compressorState?.process(out)
         applyPan(out, settings.pan)
@@ -59,7 +59,7 @@ class StatefulAudioDsp(
     }
 
     fun reset() {
-        eqStates.forEach { it.reset() }
+        eqStates.forEach { state -> state.reset() }
         noiseGateState?.reset()
         compressorState?.reset()
     }

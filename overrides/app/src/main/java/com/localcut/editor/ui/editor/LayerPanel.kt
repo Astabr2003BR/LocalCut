@@ -76,6 +76,13 @@ fun LayerPanel(
                 }
                 OutlinedButton(
                     onClick = {
+                        onSetCompositionGraph(LayerPanelUiPolicy.addGroup(graph).graph)
+                    },
+                ) {
+                    Text("+ Grupo")
+                }
+                OutlinedButton(
+                    onClick = {
                         onSetCompositionGraph(LayerPanelUiPolicy.addStaticCamera(graph).graph)
                     },
                     enabled = canAddStaticCamera,
@@ -94,7 +101,7 @@ fun LayerPanel(
                 text = when {
                     staticCamera != null -> "Câmera estática: ${staticCamera.id} • preview/export compartilham a mesma composição."
                     cameraNodes.size > 1 -> "Projeto com múltiplas câmeras: criação estática desativada; camera cuts não são editáveis neste painel."
-                    else -> "Parenting: crie um Null para controlar camadas em conjunto."
+                    else -> "Parenting: crie um Null ou Grupo para controlar camadas em conjunto."
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -147,7 +154,7 @@ fun LayerPanel(
                         }
                         if (parentTargets.isEmpty()) {
                             Text(
-                                "Crie um Null para usar parenting nesta camada.",
+                                "Crie um Null ou Grupo para usar parenting nesta camada.",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

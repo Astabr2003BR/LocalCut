@@ -83,7 +83,7 @@ object EditorToolCatalog {
         tool(EditorToolId.DESIGN, "Design", EditorToolGroup.DESIGN, project + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
         tool(EditorToolId.DRAW, "Desenhar", EditorToolGroup.DESIGN, any, EditorToolState.LIVE),
         tool(EditorToolId.TRACKING, "Tracking", EditorToolGroup.ADVANCED, visual, EditorToolState.PLANNED),
-        tool(EditorToolId.STABILIZE, "Estabilizar", EditorToolGroup.ADVANCED, setOf(EditorSelectionKind.VIDEO), EditorToolState.PLANNED),
+        tool(EditorToolId.STABILIZE, "Estabilizar", EditorToolGroup.ADVANCED, setOf(EditorSelectionKind.VIDEO), EditorToolState.LIVE),
         tool(EditorToolId.CAMERA, "Câmera", EditorToolGroup.ADVANCED, any, EditorToolState.LIVE),
         tool(EditorToolId.TEMPLATES, "Modelos", EditorToolGroup.DESIGN, project + EditorSelectionKind.DESIGN, EditorToolState.PARTIAL),
     )
@@ -159,6 +159,7 @@ object EditorToolCatalog {
 
     fun actionTarget(id: EditorToolId): EditorToolId = when (id) {
         EditorToolId.CAPTIONS -> EditorToolId.TEXT
+        EditorToolId.STABILIZE -> EditorToolId.ANIMATION
         else -> id
     }
 

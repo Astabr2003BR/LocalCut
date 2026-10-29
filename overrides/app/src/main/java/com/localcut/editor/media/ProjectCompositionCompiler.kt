@@ -230,6 +230,7 @@ class ProjectCompositionCompiler(
                         transformSpaceWidth = blueprint.transformSpaceWidth,
                         transformSpaceHeight = blueprint.transformSpaceHeight,
                         presentationStartUs = effectClockOriginUs,
+                        compositionContainer = item.compositionContainer,
                     )
                 )
                 addAll(

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import math
 import threading
 from types import MethodType
 
@@ -12,6 +13,7 @@ from localcut_engine import (
     _safe_int,
     _validate_descriptor,
 )
+from localcut_object_tracking import NormalizedTrackingRoi, ObjectTrackingOptions, OpenCvObjectPositionTracker
 from localcut_outputs import GeneratedMediaSpool
 from localcut_reverse import ReverseChunkPlanner, ReverseFfmpegExecutor
 from localcut_toolchain import TOOL_SPECS, detect_toolchain
@@ -37,6 +39,18 @@ def _ensure_creative_worker_lock(server):
         lock = threading.Lock()
         server.creative_worker_lock = lock
     return lock
+
+
+def _safe_unit_float(value, code: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(code)
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(code) from exc
+    if not math.isfinite(parsed) or parsed < 0.0 or parsed > 1.0:
+        raise ValueError(code)
+    return parsed
 
 
 def _validate_tracking_input(input_data: dict) -> dict:
@@ -71,6 +85,54 @@ def _validate_tracking_input(input_data: dict) -> dict:
         "maxFrames": options.max_frames,
         "sampleEvery": options.sample_every,
         "maxCorners": options.max_corners,
+    }
+
+
+def _validate_object_tracking_input(input_data: dict) -> dict:
+    descriptor = _validate_descriptor(input_data)
+    if not descriptor["mimeType"].startswith("video/"):
+        raise ValueError("OBJECT_TRACKING_MEDIA_TYPE_INVALID")
+    roi_data = input_data.get("roi")
+    if not isinstance(roi_data, dict):
+        raise ValueError("OBJECT_TRACKING_ROI_INVALID")
+    roi = NormalizedTrackingRoi(
+        x=_safe_unit_float(roi_data.get("x"), "OBJECT_TRACKING_ROI_INVALID"),
+        y=_safe_unit_float(roi_data.get("y"), "OBJECT_TRACKING_ROI_INVALID"),
+        width=_safe_unit_float(roi_data.get("width"), "OBJECT_TRACKING_ROI_INVALID"),
+        height=_safe_unit_float(roi_data.get("height"), "OBJECT_TRACKING_ROI_INVALID"),
+    )
+    options = ObjectTrackingOptions(
+        max_frames=_safe_int(
+            input_data.get("maxFrames", ObjectTrackingOptions.max_frames),
+            "OBJECT_TRACKING_MAX_FRAMES_INVALID",
+            2,
+            600,
+        ),
+        sample_every=_safe_int(
+            input_data.get("sampleEvery", ObjectTrackingOptions.sample_every),
+            "OBJECT_TRACKING_SAMPLE_EVERY_INVALID",
+            1,
+            30,
+        ),
+        max_corners=_safe_int(
+            input_data.get("maxCorners", ObjectTrackingOptions.max_corners),
+            "OBJECT_TRACKING_MAX_CORNERS_INVALID",
+            20,
+            500,
+        ),
+    )
+    return {
+        "mode": "OBJECT_TRACKING",
+        **descriptor,
+        "maxFrames": options.max_frames,
+        "sampleEvery": options.sample_every,
+        "maxCorners": options.max_corners,
+        "roi": {
+            "x": roi.x,
+            "y": roi.y,
+            "width": roi.width,
+            "height": roi.height,
+        },
     }
 
 
@@ -158,6 +220,74 @@ def _execute_tracking_job(server, job_id: str, transfer: dict) -> None:
             )
 
 
+def _execute_object_tracking_job(server, job_id: str, transfer: dict) -> None:
+    store = server.job_store
+    analyzer = server.object_tracking_analyzer
+    lock = _ensure_creative_worker_lock(server)
+    if store is None or server.media_spool is None or analyzer is None:
+        return
+
+    with lock:
+        try:
+            current = store.get_job(job_id)
+            if current["status"] == "CANCELLED":
+                return
+            if current["status"] != "RUNNING":
+                return
+            store.update_job(
+                job_id,
+                status="RUNNING",
+                progress=35,
+                log={"operation": "ANALYZE_OBJECT_TRACKING", "status": "RUNNING"},
+            )
+            current = store.get_job(job_id)
+            input_data = current["input"]
+            roi_data = input_data["roi"]
+            roi = NormalizedTrackingRoi(
+                x=roi_data["x"],
+                y=roi_data["y"],
+                width=roi_data["width"],
+                height=roi_data["height"],
+            )
+            options = ObjectTrackingOptions(
+                max_frames=input_data["maxFrames"],
+                sample_every=input_data["sampleEvery"],
+                max_corners=input_data["maxCorners"],
+            )
+            analysis = analyzer.analyze(server.media_spool.path_for(job_id), roi=roi, options=options)
+            current = store.get_job(job_id)
+            if current["status"] == "CANCELLED":
+                return
+            store.update_job(
+                job_id,
+                status="SUCCEEDED",
+                progress=100,
+                output={
+                    "analysisMode": "opencv-object-position-v1",
+                    "transfer": {"sizeBytes": transfer["sizeBytes"], "sha256": transfer["sha256"]},
+                    "analysis": analysis,
+                },
+                log={"operation": "ANALYZE_OBJECT_TRACKING", "status": "SUCCEEDED", "exitCode": 0},
+            )
+        except Exception as error:
+            try:
+                current = store.get_job(job_id)
+            except Exception:
+                return
+            if current["status"] == "CANCELLED":
+                return
+            store.update_job(
+                job_id,
+                status="FAILED",
+                progress=100,
+                error={
+                    "code": _error_code(error, "ANALYZE_OBJECT_TRACKING_FAILED"),
+                    "message": "Object tracking analysis failed",
+                },
+                log={"operation": "ANALYZE_OBJECT_TRACKING", "status": "FAILED"},
+            )
+
+
 def _execute_reverse_job(server, job_id: str, transfer: dict) -> None:
     store = server.job_store
     outputs = server.generated_media_spool
@@ -233,6 +363,12 @@ class LocalCutCreativeHandler(LocalCutTermuxEngineHandler):
             raise RuntimeError("OPENCV_UNAVAILABLE")
         return analyzer
 
+    def _object_tracking_analyzer(self):
+        analyzer = getattr(self.server, "object_tracking_analyzer", None)
+        if analyzer is None or not bool(getattr(analyzer, "available", False)):
+            raise RuntimeError("OPENCV_UNAVAILABLE")
+        return analyzer
+
     def _reverse_executor(self):
         executor = getattr(self.server, "reverse_executor", None)
         if executor is None or not bool(getattr(executor, "available", False)):
@@ -295,6 +431,17 @@ class LocalCutCreativeHandler(LocalCutTermuxEngineHandler):
                 )
                 self.wfile.write(_response(True, request_id, job=job))
                 return
+            if input_data.get("mode") == "OBJECT_TRACKING":
+                self._object_tracking_analyzer()
+                normalized_input = _validate_object_tracking_input(input_data)
+                job = self._require_jobs().create_job(
+                    project_id=PROJECT_ID,
+                    job_type="ANALYZE_MEDIA",
+                    idempotency_key=request.get("idempotencyKey"),
+                    input_data=normalized_input,
+                )
+                self.wfile.write(_response(True, request_id, job=job))
+                return
             if input_data.get("mode") == "REVERSE":
                 self._reverse_executor()
                 self._generated_media_spool()
@@ -313,10 +460,11 @@ class LocalCutCreativeHandler(LocalCutTermuxEngineHandler):
         store = self._require_jobs()
         job_id = request.get("jobId")
         job = store.get_job(job_id)
-        if job["type"] == "ANALYZE_MEDIA" and job["input"].get("mode") == "REVERSE":
+        mode = job["input"].get("mode") if job["type"] == "ANALYZE_MEDIA" else None
+        if mode == "REVERSE":
             self._handle_stage_reverse(request_id, request, job)
             return
-        if job["type"] != "ANALYZE_MEDIA" or job["input"].get("mode") != "TRACKING":
+        if mode not in ("TRACKING", "OBJECT_TRACKING"):
             super()._handle_stage_media(request_id, request)
             return
 
@@ -338,10 +486,12 @@ class LocalCutCreativeHandler(LocalCutTermuxEngineHandler):
             progress=20,
             log={"operation": "STAGE_MEDIA", "status": "SUCCEEDED", "bytes": transfer["sizeBytes"]},
         )
+        target = _execute_tracking_job if mode == "TRACKING" else _execute_object_tracking_job
+        prefix = "localcut-tracking" if mode == "TRACKING" else "localcut-object-tracking"
         worker = threading.Thread(
-            target=_execute_tracking_job,
+            target=target,
             args=(self.server, job_id, transfer),
-            name=f"localcut-tracking-{job_id[:8]}",
+            name=f"{prefix}-{job_id[:8]}",
             daemon=True,
         )
         worker.start()
@@ -394,8 +544,9 @@ def attach_toolchain_capabilities(server, capabilities):
     return server
 
 
-def attach_tracking_support(server, tracking_analyzer):
+def attach_tracking_support(server, tracking_analyzer, object_tracking_analyzer=None):
     server.tracking_analyzer = tracking_analyzer
+    server.object_tracking_analyzer = object_tracking_analyzer
     _ensure_creative_worker_lock(server)
     server.RequestHandlerClass = LocalCutCreativeHandler
     base_capabilities = server.capabilities
@@ -404,6 +555,10 @@ def attach_tracking_support(server, tracking_analyzer):
         result = list(base_capabilities())
         if tracking_analyzer is not None and bool(getattr(tracking_analyzer, "available", False)):
             for capability in ("ANALYZE_TRACKING", "OPENCV_GLOBAL_MOTION"):
+                if capability not in result:
+                    result.append(capability)
+        if object_tracking_analyzer is not None and bool(getattr(object_tracking_analyzer, "available", False)):
+            for capability in ("ANALYZE_OBJECT_TRACKING", "OBJECT_TRACKING_POSITION"):
                 if capability not in result:
                     result.append(capability)
         return result
@@ -439,6 +594,7 @@ def create_toolchain_server(
     *args,
     toolchain_capabilities=None,
     tracking_analyzer=None,
+    object_tracking_analyzer=None,
     reverse_executor=None,
     generated_media_spool=None,
     **kwargs,
@@ -453,7 +609,9 @@ def create_toolchain_server(
     server = attach_toolchain_capabilities(server, validated)
     if tracking_analyzer is None and "OPENCV" in validated:
         tracking_analyzer = OpenCvGlobalMotionAnalyzer()
-    server = attach_tracking_support(server, tracking_analyzer)
+    if object_tracking_analyzer is None and "OPENCV" in validated:
+        object_tracking_analyzer = OpenCvObjectPositionTracker()
+    server = attach_tracking_support(server, tracking_analyzer, object_tracking_analyzer)
 
     media_spool = kwargs.get("media_spool")
     if reverse_executor is None and "FFMPEG" in validated:

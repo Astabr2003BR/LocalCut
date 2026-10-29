@@ -82,6 +82,10 @@ fun EditorBottomToolRail(
                 CameraCutActionControl(modifier = Modifier.fillMaxWidth())
             }
 
+            if (activeTool == EditorToolId.TEMPLATES) {
+                TemplatesActionControl(modifier = Modifier.fillMaxWidth())
+            }
+
             if (activeTool == EditorToolId.DRAW) {
                 VectorLassoControl(modifier = Modifier.fillMaxWidth())
             }

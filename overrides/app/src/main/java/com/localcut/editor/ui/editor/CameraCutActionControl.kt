@@ -33,10 +33,13 @@ fun CameraCutActionControl(
     val runtime = remember(context) { LocalCutProcessRuntime.get(context) }
     val session by runtime.editorViewModel.sessionState.collectAsState()
     val preview by runtime.previewController.state.collectAsState()
-    val graph = session.project.compositionGraph
+    val project = session.project
+    val graph = project.compositionGraph
     val cameras = graph.nodes.filter { it.kind == CompositionNodeKind.CAMERA }
     val playheadUs = preview.positionUs.coerceAtLeast(0L)
     val activeCameraId = runCatching { CameraCutUiPolicy.activeCameraId(graph, playheadUs) }.getOrNull()
+    val activeCamera = activeCameraId?.let { id -> cameras.firstOrNull { it.id == id } }
+        ?: cameras.singleOrNull()
     val exactCut = runCatching { CameraCutUiPolicy.exactCutAt(graph, playheadUs) }.getOrNull()
     var message by remember { mutableStateOf<String?>(null) }
 
@@ -81,6 +84,13 @@ fun CameraCutActionControl(
                         applyGraph { CameraCutUiPolicy.addCamera(graph).graph }
                     },
                 ) { Text("+ Câmera") }
+                if (activeCamera != null) {
+                    OutlinedButton(
+                        onClick = {
+                            applyGraph { CameraCutUiPolicy.duplicateActiveCameraAt(graph, playheadUs).graph }
+                        },
+                    ) { Text("Duplicar ativa") }
+                }
             }
         }
 
@@ -134,6 +144,31 @@ fun CameraCutActionControl(
                     }
                 }
             }
+        }
+
+        if (activeCamera != null) {
+            Text("Ajuste da câmera ativa", style = MaterialTheme.typography.labelLarge)
+            CompositionControllerControls(
+                project = project,
+                node = activeCamera,
+                onSetTransform = { transform ->
+                    applyGraph {
+                        LayerPanelUiPolicy.setControllerTransform(graph, activeCamera.id, transform)
+                    }
+                },
+                onSetCameraSettings = { settings ->
+                    applyGraph {
+                        LayerPanelUiPolicy.setCameraSettings(graph, activeCamera.id, settings)
+                    }
+                },
+                onRemove = {
+                    applyGraph {
+                        LayerPanelUiPolicy.removeControllerNode(graph, activeCamera.id)
+                    }
+                },
+                canRemove = graph.cameraCuts.none { it.cameraNodeId == activeCamera.id },
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
 
         message?.let { text ->

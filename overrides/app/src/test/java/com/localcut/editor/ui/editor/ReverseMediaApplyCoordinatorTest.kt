@@ -31,7 +31,7 @@ class ReverseMediaApplyCoordinatorTest {
         assertEquals("reversed", project.findClip("clip")?.assetId)
         assertEquals("reversed", result.asset.id)
         assertTrue(generated.exists())
-        generated.delete()
+        assertTrue(generated.delete())
     }
 
     @Test

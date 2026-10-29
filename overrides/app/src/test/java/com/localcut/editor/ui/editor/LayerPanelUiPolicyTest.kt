@@ -155,7 +155,7 @@ class LayerPanelUiPolicyTest {
                     parentId = "null-1",
                     clipId = "clip-1",
                     visible = false,
-                    locked = true,
+                    locked = false,
                 ),
             ),
         )
@@ -165,7 +165,7 @@ class LayerPanelUiPolicyTest {
 
         assertNull(layer.parentId)
         assertFalse(layer.visible)
-        assertTrue(layer.locked)
+        assertFalse(layer.locked)
     }
 
     @Test

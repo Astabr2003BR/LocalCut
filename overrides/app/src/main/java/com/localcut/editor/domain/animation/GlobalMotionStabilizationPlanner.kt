@@ -102,7 +102,11 @@ object GlobalMotionStabilizationPlanner {
             } else {
                 1.0
             }
-            val relativeScale = maxOf(correctionScale, edgeScale)
+            val relativeScale = if (canvasWidth != null && canvasHeight != null) {
+                maxOf(correctionScale, edgeScale)
+            } else {
+                correctionScale
+            }
             if (canvasWidth != null) {
                 require(relativeScale <= maxEdgeCompensationScale) {
                     "STABILIZATION_EDGE_COMPENSATION_TOO_LARGE"

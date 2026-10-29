@@ -14,13 +14,22 @@ import org.junit.Test
 
 class Media3PropertyAnimationBlueprintTest {
     @Test
-    fun renderSegmentPropertyAnimationsAndCompositionContainerSurviveBlueprintCompilation() {
+    fun renderSegmentPropertyAnimationsCompositionContainerAndTimelineSurviveBlueprintCompilation() {
         val animation = xAnimation()
         val container = CompositionTransformContainer(
             x = 100.0,
             y = 50.0,
             scale = 2.0,
             rotationDeg = 90.0,
+        )
+        val timeline = CompositionTransformTimeline(
+            listOf(
+                TimedCompositionTransformContainer(0L, container),
+                TimedCompositionTransformContainer(
+                    1_000_000L,
+                    CompositionTransformContainer(x = 20.0, y = 10.0, scale = 1.0, rotationDeg = 0.0),
+                ),
+            ),
         )
         val segment = RenderSegment.Media(
             clipId = "clip-1",
@@ -38,6 +47,7 @@ class Media3PropertyAnimationBlueprintTest {
             imageFrameRate = null,
             propertyAnimations = listOf(animation),
             compositionContainer = container,
+            compositionContainerTimeline = timeline,
         )
         val plan = RenderPlan(
             width = 1080,
@@ -55,6 +65,7 @@ class Media3PropertyAnimationBlueprintTest {
 
         assertEquals(listOf(animation), media.propertyAnimations)
         assertEquals(container, media.compositionContainer)
+        assertEquals(timeline, media.compositionContainerTimeline)
     }
 
     @Test

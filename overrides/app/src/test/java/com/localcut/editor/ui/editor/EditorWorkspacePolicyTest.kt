@@ -56,7 +56,7 @@ class EditorWorkspacePolicyTest {
     }
 
     @Test
-    fun designWorkspaceKeepsCreationAndCanvasToolsSeparate() {
+    fun designWorkspaceKeepsCreationCanvasAndTemplatesSeparate() {
         val ids = EditorWorkspacePolicy.toolsFor(
             workspace = EditorWorkspace.DESIGN,
             selection = EditorSelectionKind.PROJECT,
@@ -64,6 +64,7 @@ class EditorWorkspacePolicyTest {
 
         assertTrue(EditorToolId.DESIGN in ids)
         assertTrue(EditorToolId.CANVAS in ids)
+        assertTrue(EditorToolId.TEMPLATES in ids)
         assertTrue(EditorToolId.TEXT in ids)
         assertTrue(EditorToolId.MEDIA in ids)
         assertFalse(EditorToolId.SPEED in ids)
@@ -97,7 +98,7 @@ class EditorWorkspacePolicyTest {
     }
 
     @Test
-    fun projectWorkspaceUsesOnlyLiveProjectTools() {
+    fun projectWorkspaceUsesLiveProjectToolsIncludingTemplates() {
         val ids = EditorWorkspacePolicy.toolsFor(
             workspace = EditorWorkspace.PROJECT,
             selection = EditorSelectionKind.PROJECT,
@@ -107,7 +108,7 @@ class EditorWorkspacePolicyTest {
         assertTrue(EditorToolId.CANVAS in ids)
         assertTrue(EditorToolId.TEXT in ids)
         assertTrue(EditorToolId.AUDIO in ids)
-        assertFalse(EditorToolId.TEMPLATES in ids)
+        assertTrue(EditorToolId.TEMPLATES in ids)
         assertFalse(EditorToolId.CAMERA in ids)
     }
 

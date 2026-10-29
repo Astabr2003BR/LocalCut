@@ -220,6 +220,18 @@ fun LayerPanel(
                                     LayerPanelUiPolicy.setControllerParent(graph, node.id, parentId),
                                 )
                             },
+                            onSetVisible = { visible ->
+                                if (node.kind != CompositionNodeKind.CAMERA) {
+                                    onSetCompositionGraph(
+                                        LayerPanelUiPolicy.setControllerVisible(graph, node.id, visible),
+                                    )
+                                }
+                            },
+                            onSetLocked = { locked ->
+                                onSetCompositionGraph(
+                                    LayerPanelUiPolicy.setControllerLocked(graph, node.id, locked),
+                                )
+                            },
                         )
                     }
                 }

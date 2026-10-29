@@ -116,6 +116,18 @@ class EditorToolCatalogTest {
     }
 
     @Test
+    fun reusableComponentTemplatesAreLiveForProjectAndDesignSelections() {
+        val templates = EditorToolCatalog.all.single { it.id == EditorToolId.TEMPLATES }
+
+        assertTrue(templates.enabled)
+        assertEquals(EditorToolState.LIVE, templates.state)
+        assertEquals(
+            setOf(EditorSelectionKind.PROJECT, EditorSelectionKind.DESIGN),
+            templates.selections,
+        )
+    }
+
+    @Test
     fun manualCaptionsAreLiveAndReachableFromEverySelection() {
         val captions = EditorToolCatalog.all.single { it.id == EditorToolId.CAPTIONS }
 

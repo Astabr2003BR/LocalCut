@@ -50,6 +50,7 @@ class ObjectTrackingOptions:
 
 class OpenCvObjectPositionTracker:
     MIN_TRACKED_POINTS = 4
+    MAX_SOURCE_TIME_US = 600_000_000
 
     def __init__(self, cv2_module=None, numpy_module=None):
         self._cv2 = cv2_module
@@ -109,11 +110,29 @@ class OpenCvObjectPositionTracker:
         y = max(0.0, min(y, float(frame_height) - height))
         return [x, y, width, height]
 
+    @classmethod
+    def frame_budget(cls, fps: float, source_in_us: int, source_out_us: int | None, max_frames: int) -> int:
+        if not math.isfinite(float(fps)) or fps <= 0.0:
+            raise ValueError("OBJECT_TRACKING_FPS_UNAVAILABLE")
+        if not (0 <= int(source_in_us) <= cls.MAX_SOURCE_TIME_US):
+            raise ValueError("OBJECT_TRACKING_SOURCE_RANGE_INVALID")
+        if source_out_us is None:
+            return int(max_frames)
+        if not (int(source_in_us) < int(source_out_us) <= cls.MAX_SOURCE_TIME_US):
+            raise ValueError("OBJECT_TRACKING_SOURCE_RANGE_INVALID")
+        duration_us = int(source_out_us) - int(source_in_us)
+        available_frames = int(math.floor(duration_us * fps / 1_000_000.0)) + 1
+        if available_frames < 2:
+            raise ValueError("OBJECT_TRACKING_SOURCE_RANGE_TOO_SHORT")
+        return min(int(max_frames), available_frames)
+
     def analyze(
         self,
         path: str | Path,
         roi: NormalizedTrackingRoi,
         options: ObjectTrackingOptions | None = None,
+        source_in_us: int = 0,
+        source_out_us: int | None = None,
     ) -> dict:
         media_path = Path(path)
         if not media_path.is_file():
@@ -131,6 +150,9 @@ class OpenCvObjectPositionTracker:
             fps = float(capture.get(cv2.CAP_PROP_FPS))
             if not math.isfinite(fps) or fps <= 0.0:
                 raise RuntimeError("OBJECT_TRACKING_FPS_UNAVAILABLE")
+            frame_budget = self.frame_budget(fps, source_in_us, source_out_us, options.max_frames)
+            if source_in_us > 0:
+                capture.set(cv2.CAP_PROP_POS_MSEC, float(source_in_us) / 1000.0)
 
             ok, frame = capture.read()
             if not ok or frame is None:
@@ -157,7 +179,7 @@ class OpenCvObjectPositionTracker:
             valid_samples = 0
             samples: list[dict] = []
 
-            while decoded_frames < options.max_frames:
+            while decoded_frames < frame_budget:
                 ok, frame = capture.read()
                 if not ok or frame is None:
                     break
@@ -237,6 +259,8 @@ class OpenCvObjectPositionTracker:
                 "frameWidth": frame_width,
                 "frameHeight": frame_height,
                 "frameRate": fps,
+                "sourceInUs": int(source_in_us),
+                "sourceOutUs": int(source_out_us) if source_out_us is not None else None,
                 "samples": samples,
             }
         finally:

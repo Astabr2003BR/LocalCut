@@ -37,6 +37,8 @@ fun CompositionControllerControls(
     parentId: String? = null,
     parentTargets: List<CompositionNode> = emptyList(),
     onSetParent: (String?) -> Unit = {},
+    onSetVisible: (Boolean) -> Unit = {},
+    onSetLocked: (Boolean) -> Unit = {},
 ) {
     require(
         node.kind == CompositionNodeKind.NULL ||
@@ -47,6 +49,7 @@ fun CompositionControllerControls(
     var transform by remember(node.id, node.transform) { mutableStateOf(node.transform) }
     var camera by remember(node.id, node.camera) { mutableStateOf(node.camera ?: CameraSettings()) }
     val isCamera = node.kind == CompositionNodeKind.CAMERA
+    val locked = node.locked
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -57,6 +60,32 @@ fun CompositionControllerControls(
             style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
         )
 
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (!isCamera) {
+                if (node.visible) {
+                    OutlinedButton(onClick = { onSetVisible(false) }) { Text("Ocultar") }
+                } else {
+                    FilledTonalButton(onClick = { onSetVisible(true) }) { Text("Mostrar") }
+                }
+            }
+            if (locked) {
+                FilledTonalButton(onClick = { onSetLocked(false) }) { Text("Desbloquear") }
+            } else {
+                OutlinedButton(onClick = { onSetLocked(true) }) { Text("Bloquear") }
+            }
+        }
+
+        if (locked) {
+            Text(
+                "Controlador bloqueado. Desbloqueie para editar transform, parent ou câmera.",
+                style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
         if (!isCamera) {
             Text("Parent do controlador", style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
             Row(
@@ -66,13 +95,16 @@ fun CompositionControllerControls(
                 if (parentId == null) {
                     FilledTonalButton(onClick = {}, enabled = false) { Text("Sem parent") }
                 } else {
-                    OutlinedButton(onClick = { onSetParent(null) }) { Text("Desvincular") }
+                    OutlinedButton(onClick = { onSetParent(null) }, enabled = !locked) { Text("Desvincular") }
                 }
                 parentTargets.forEach { target ->
                     if (target.id == parentId) {
                         FilledTonalButton(onClick = {}, enabled = false) { Text(target.id) }
                     } else {
-                        OutlinedButton(onClick = { onSetParent(target.id) }) { Text("Vincular ${target.id}") }
+                        OutlinedButton(
+                            onClick = { onSetParent(target.id) },
+                            enabled = !locked,
+                        ) { Text("Vincular ${target.id}") }
                     }
                 }
             }
@@ -84,6 +116,7 @@ fun CompositionControllerControls(
             onValueChange = { transform = transform.copy(x = it.toDouble()) },
             onValueChangeFinished = { onSetTransform(transform) },
             valueRange = -project.width.toFloat()..project.width.toFloat(),
+            enabled = !locked,
         )
 
         Text("Y ${"%.0f".format(transform.y)} px", style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
@@ -92,6 +125,7 @@ fun CompositionControllerControls(
             onValueChange = { transform = transform.copy(y = it.toDouble()) },
             onValueChangeFinished = { onSetTransform(transform) },
             valueRange = -project.height.toFloat()..project.height.toFloat(),
+            enabled = !locked,
         )
 
         Text("Z ${"%.0f".format(transform.z)}", style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
@@ -100,6 +134,7 @@ fun CompositionControllerControls(
             onValueChange = { transform = transform.copy(z = it.toDouble()) },
             onValueChangeFinished = { onSetTransform(transform) },
             valueRange = -SAFE_DEPTH_LIMIT..SAFE_DEPTH_LIMIT,
+            enabled = !locked,
         )
 
         Text("Escala ${"%.2f".format(transform.scale)}×", style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
@@ -108,6 +143,7 @@ fun CompositionControllerControls(
             onValueChange = { transform = transform.copy(scale = it.toDouble()) },
             onValueChangeFinished = { onSetTransform(transform) },
             valueRange = 0.1f..4f,
+            enabled = !locked,
         )
 
         Text("Rotação Z ${"%.0f".format(transform.rotationZDeg)}°", style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
@@ -116,6 +152,7 @@ fun CompositionControllerControls(
             onValueChange = { transform = transform.copy(rotationZDeg = it.toDouble()) },
             onValueChangeFinished = { onSetTransform(transform) },
             valueRange = -180f..180f,
+            enabled = !locked,
         )
 
         if (!isCamera) {
@@ -125,6 +162,7 @@ fun CompositionControllerControls(
                 onValueChange = { transform = transform.copy(opacity = it.toDouble()) },
                 onValueChangeFinished = { onSetTransform(transform) },
                 valueRange = 0f..1f,
+                enabled = !locked,
             )
         } else {
             Text("Distância focal ${"%.0f".format(camera.focalLength)}", style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
@@ -133,7 +171,7 @@ fun CompositionControllerControls(
                 onValueChange = { camera = camera.copy(focalLength = it.toDouble()) },
                 onValueChangeFinished = { onSetCameraSettings(camera) },
                 valueRange = MIN_FOCAL_LENGTH..MAX_FOCAL_LENGTH,
-                enabled = !camera.orthographic,
+                enabled = !locked && !camera.orthographic,
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -147,6 +185,7 @@ fun CompositionControllerControls(
                         camera = camera.copy(orthographic = enabled)
                         onSetCameraSettings(camera)
                     },
+                    enabled = !locked,
                 )
             }
         }
@@ -166,10 +205,11 @@ fun CompositionControllerControls(
                     transform = LayerTransform3D()
                     onSetTransform(transform)
                 },
+                enabled = !locked,
             ) { Text("Resetar") }
             OutlinedButton(
                 onClick = onRemove,
-                enabled = canRemove,
+                enabled = canRemove && !locked,
             ) { Text("Remover") }
         }
     }

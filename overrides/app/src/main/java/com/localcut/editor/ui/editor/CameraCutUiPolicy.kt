@@ -33,6 +33,45 @@ object CameraCutUiPolicy {
         )
     }
 
+    fun duplicateActiveCameraAt(
+        graph: CompositionGraph,
+        playheadUs: Long,
+    ): LayerGraphNodeCreation {
+        require(playheadUs >= 0L) { "playhead must be non-negative" }
+        val activeId = activeCameraId(graph, playheadUs)
+            ?: throw IllegalArgumentException("no active camera to duplicate")
+        val source = graph.nodes.firstOrNull { it.id == activeId }
+            ?: throw IllegalArgumentException("active camera does not exist: $activeId")
+        require(source.kind == CompositionNodeKind.CAMERA) {
+            "active camera must reference a camera node: $activeId"
+        }
+
+        val nodeId = nextCameraId(graph)
+        val clone = source.copy(
+            id = nodeId,
+            parentId = null,
+            clipId = null,
+        )
+        val cameras = graph.nodes.count { it.kind == CompositionNodeKind.CAMERA }
+        val seededCuts = when {
+            graph.cameraCuts.isNotEmpty() -> graph.cameraCuts
+            cameras == 1 -> listOf(CameraCut(0L, source.id))
+            else -> throw IllegalArgumentException("multiple cameras require a base camera cut at zero")
+        }
+        val graphWithClone = graph.copy(
+            nodes = graph.nodes + clone,
+            cameraCuts = seededCuts,
+        )
+        return LayerGraphNodeCreation(
+            graph = upsertCut(
+                graph = graphWithClone,
+                startUs = playheadUs,
+                cameraNodeId = nodeId,
+            ),
+            nodeId = nodeId,
+        )
+    }
+
     fun activeCameraId(graph: CompositionGraph, playheadUs: Long): String? {
         require(playheadUs >= 0L) { "playhead must be non-negative" }
         val cuts = graph.cameraCuts

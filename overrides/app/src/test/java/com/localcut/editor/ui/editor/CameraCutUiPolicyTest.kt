@@ -5,6 +5,7 @@ import com.localcut.editor.domain.model.CameraSettings
 import com.localcut.editor.domain.model.CompositionGraph
 import com.localcut.editor.domain.model.CompositionNode
 import com.localcut.editor.domain.model.CompositionNodeKind
+import com.localcut.editor.domain.model.LayerTransform3D
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -24,6 +25,31 @@ class CameraCutUiPolicyTest {
         assertEquals(2, cameras.size)
         assertEquals(listOf(CameraCut(0L, first.nodeId)), second.graph.cameraCuts)
         assertEquals(second.nodeId, cameras.last().id)
+    }
+
+    @Test
+    fun duplicateActiveCameraCopiesSettingsAndCutsToCloneAtPlayhead() {
+        val source = CompositionNode(
+            id = "camera-a",
+            kind = CompositionNodeKind.CAMERA,
+            transform = LayerTransform3D(x = 120.0, y = -40.0, z = 50.0, scale = 1.2, rotationZDeg = 8.0),
+            camera = CameraSettings(focalLength = 1350.0, orthographic = false),
+        )
+        val graph = CompositionGraph(nodes = listOf(source))
+
+        val created = CameraCutUiPolicy.duplicateActiveCameraAt(graph, 1_500_000L)
+        val clone = created.graph.nodes.single { it.id == created.nodeId }
+
+        assertEquals(source.transform, clone.transform)
+        assertEquals(source.camera, clone.camera)
+        assertEquals(
+            listOf(
+                CameraCut(0L, source.id),
+                CameraCut(1_500_000L, created.nodeId),
+            ),
+            created.graph.cameraCuts,
+        )
+        assertEquals(created.nodeId, CameraCutUiPolicy.activeCameraId(created.graph, 1_500_000L))
     }
 
     @Test

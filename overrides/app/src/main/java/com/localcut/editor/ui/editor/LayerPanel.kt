@@ -166,6 +166,18 @@ fun LayerPanel(
             if (controllerNodes.isNotEmpty()) {
                 Text("Controladores", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                 controllerNodes.forEach { node ->
+                    val canParentController =
+                        node.kind == CompositionNodeKind.NULL || node.kind == CompositionNodeKind.GROUP
+                    val controllerParentId = if (canParentController) {
+                        LayerPanelUiPolicy.controllerParentId(graph, node.id)
+                    } else {
+                        null
+                    }
+                    val controllerParentTargets = if (canParentController) {
+                        LayerPanelUiPolicy.controllerParentTargets(graph, node.id)
+                    } else {
+                        emptyList()
+                    }
                     Surface(
                         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
                         shape = MaterialTheme.shapes.small,
@@ -191,6 +203,13 @@ fun LayerPanel(
                             canRemove = node.kind != CompositionNodeKind.CAMERA ||
                                 graph.cameraCuts.none { it.cameraNodeId == node.id },
                             modifier = Modifier.fillMaxWidth().padding(8.dp),
+                            parentId = controllerParentId,
+                            parentTargets = controllerParentTargets,
+                            onSetParent = { parentId ->
+                                onSetCompositionGraph(
+                                    LayerPanelUiPolicy.setControllerParent(graph, node.id, parentId),
+                                )
+                            },
                         )
                     }
                 }

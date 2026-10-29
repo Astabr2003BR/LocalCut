@@ -48,8 +48,12 @@ fun CropActionControl(
                 val current = runtime.editorViewModel.sessionState.value
                 val currentClip = current.project.findClip(capturedClipId)
                 if (
-                    current.selectedClipId == capturedClipId &&
-                    currentClip?.compositing == capturedCompositing
+                    CropApplyGuard.canApply(
+                        capturedClipId = capturedClipId,
+                        capturedCompositing = capturedCompositing,
+                        currentSelectedClipId = current.selectedClipId,
+                        currentCompositing = currentClip?.compositing,
+                    )
                 ) {
                     runtime.editorViewModel.dispatch(EditorAction.SetSelectedCompositing(updated))
                 }

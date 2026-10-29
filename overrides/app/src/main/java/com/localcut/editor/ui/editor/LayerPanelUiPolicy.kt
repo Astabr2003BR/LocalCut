@@ -21,6 +21,12 @@ object LayerPanelUiPolicy {
     fun layerParentId(graph: CompositionGraph, clipId: String): String? =
         layerNode(graph, clipId)?.parentId
 
+    fun isControllerVisible(graph: CompositionGraph, nodeId: String): Boolean =
+        controllerNode(graph, nodeId).visible
+
+    fun isControllerLocked(graph: CompositionGraph, nodeId: String): Boolean =
+        controllerNode(graph, nodeId).locked
+
     fun parentTargets(graph: CompositionGraph, clipId: String? = null): List<CompositionNode> {
         val candidates = graph.nodes.filter {
             it.kind == CompositionNodeKind.NULL || it.kind == CompositionNodeKind.GROUP
@@ -52,6 +58,7 @@ object LayerPanelUiPolicy {
         parentId: String?,
     ): CompositionGraph {
         val node = controllerNode(graph, nodeId)
+        require(!node.locked) { "controller is locked: $nodeId" }
         require(node.kind == CompositionNodeKind.NULL || node.kind == CompositionNodeKind.GROUP) {
             "only NULL or GROUP controllers can be parented"
         }
@@ -161,12 +168,34 @@ object LayerPanelUiPolicy {
         }
     }
 
+    fun setControllerVisible(
+        graph: CompositionGraph,
+        nodeId: String,
+        visible: Boolean,
+    ): CompositionGraph {
+        val node = controllerNode(graph, nodeId)
+        require(node.kind == CompositionNodeKind.NULL || node.kind == CompositionNodeKind.GROUP) {
+            "only NULL or GROUP controller visibility affects child rendering"
+        }
+        return replaceNode(graph, node.copy(visible = visible))
+    }
+
+    fun setControllerLocked(
+        graph: CompositionGraph,
+        nodeId: String,
+        locked: Boolean,
+    ): CompositionGraph {
+        val node = controllerNode(graph, nodeId)
+        return replaceNode(graph, node.copy(locked = locked))
+    }
+
     fun setControllerTransform(
         graph: CompositionGraph,
         nodeId: String,
         transform: LayerTransform3D,
     ): CompositionGraph {
         val node = controllerNode(graph, nodeId)
+        require(!node.locked) { "controller is locked: $nodeId" }
         require(transform.validationIssues().isEmpty()) {
             transform.validationIssues().first()
         }
@@ -184,12 +213,14 @@ object LayerPanelUiPolicy {
         val node = graph.nodes.firstOrNull { it.id == nodeId }
             ?: throw IllegalArgumentException("composition node does not exist: $nodeId")
         require(node.kind == CompositionNodeKind.CAMERA) { "node is not a camera: $nodeId" }
+        require(!node.locked) { "controller is locked: $nodeId" }
         require(settings.validationIssues().isEmpty()) { settings.validationIssues().first() }
         return replaceNode(graph, node.copy(camera = settings))
     }
 
     fun removeControllerNode(graph: CompositionGraph, nodeId: String): CompositionGraph {
         val node = controllerNode(graph, nodeId)
+        require(!node.locked) { "controller is locked: $nodeId" }
         if (node.kind == CompositionNodeKind.CAMERA) {
             require(graph.cameraCuts.none { it.cameraNodeId == nodeId }) {
                 "camera is referenced by a camera cut and cannot be removed"

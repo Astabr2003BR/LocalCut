@@ -32,6 +32,11 @@ internal object TermuxEngineJobRequestEncoder {
         } else {
             null
         }
+        val objectTracking = if (input.mode == TermuxAnalyzeMediaMode.OBJECT_TRACKING) {
+            requireNotNull(input.objectTrackingOptions)
+        } else {
+            null
+        }
         val reverse = if (input.mode == TermuxAnalyzeMediaMode.REVERSE) {
             input.reverseOptions ?: TermuxReverseOptions()
         } else {
@@ -50,6 +55,16 @@ internal object TermuxEngineJobRequestEncoder {
                 append(",\"maxFrames\":"); append(it.maxFrames)
                 append(",\"sampleEvery\":"); append(it.sampleEvery)
                 append(",\"maxCorners\":"); append(it.maxCorners)
+            }
+            objectTracking?.let {
+                append(",\"maxFrames\":"); append(it.maxFrames)
+                append(",\"sampleEvery\":"); append(it.sampleEvery)
+                append(",\"maxCorners\":"); append(it.maxCorners)
+                append(",\"roi\":{")
+                append("\"x\":"); append(it.roi.x); append(',')
+                append("\"y\":"); append(it.roi.y); append(',')
+                append("\"width\":"); append(it.roi.width); append(',')
+                append("\"height\":"); append(it.roi.height); append('}')
             }
             reverse?.let {
                 append(",\"chunkDurationUs\":"); append(it.chunkDurationUs)
@@ -105,6 +120,7 @@ internal object TermuxEngineJobRequestEncoder {
 
 internal object TermuxEngineJobResponseParser {
     private const val GLOBAL_MOTION_MODE = "opencv-global-motion-v1"
+    private const val OBJECT_TRACKING_MODE = "opencv-object-position-v1"
 
     fun parseJob(root: JObject): TermuxEngineJob {
         requireProtocol(root)
@@ -163,7 +179,16 @@ internal object TermuxEngineJobResponseParser {
         } else {
             null
         }
-        val analysis = if (analysisObject != null && globalMotion == null) parseAnalysis(analysisObject) else null
+        val objectTracking = if (analysisMode == OBJECT_TRACKING_MODE && analysisObject != null) {
+            parseObjectTracking(analysisObject)
+        } else {
+            null
+        }
+        val analysis = if (analysisObject != null && globalMotion == null && objectTracking == null) {
+            parseAnalysis(analysisObject)
+        } else {
+            null
+        }
         return TermuxEngineJob(
             id = job.required("id").asString(),
             type = job.required("type").asString(),
@@ -173,6 +198,7 @@ internal object TermuxEngineJobResponseParser {
             analysis = analysis,
             analysisMode = analysisMode,
             globalMotion = globalMotion,
+            objectTracking = objectTracking,
         )
     }
 
@@ -201,6 +227,28 @@ internal object TermuxEngineJobResponseParser {
             )
         }
         return TermuxGlobalMotionAnalysis(framesDecoded, frameRate, samples)
+    }
+
+    private fun parseObjectTracking(root: JObject): TermuxObjectTrackingAnalysis {
+        val samples = root.required("samples").asArray().values.map { value ->
+            val sample = value.asObject()
+            TermuxObjectTrackingSample(
+                frameIndex = sample.required("frameIndex").asInt(),
+                timeUs = sample.required("timeUs").asLong(),
+                dxNorm = sample.required("dxNorm").asDouble(),
+                dyNorm = sample.required("dyNorm").asDouble(),
+                centerXNorm = sample.required("centerXNorm").asDouble(),
+                centerYNorm = sample.required("centerYNorm").asDouble(),
+                confidence = sample.required("confidence").asDouble(),
+            )
+        }
+        return TermuxObjectTrackingAnalysis(
+            framesDecoded = root.required("framesDecoded").asInt(),
+            frameWidth = root.required("frameWidth").asInt(),
+            frameHeight = root.required("frameHeight").asInt(),
+            frameRate = root.required("frameRate").asDouble(),
+            samples = samples,
+        )
     }
 
     private fun parseAnalysis(root: JObject): TermuxMediaAnalysis {

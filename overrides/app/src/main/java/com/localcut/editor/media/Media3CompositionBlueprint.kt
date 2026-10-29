@@ -66,6 +66,7 @@ sealed interface Media3BlueprintItem {
         val timeMap: TimeMap = TimeMap(),
         val audioProcessing: AudioProcessingSettings = AudioProcessingSettings(),
         val propertyAnimations: List<PropertyAnimation> = emptyList(),
+        val compositionContainer: CompositionTransformContainer? = null,
     ) : Media3BlueprintItem
 }
 
@@ -116,6 +117,7 @@ object Media3CompositionBlueprintCompiler {
                         timeMap = segment.timeMap,
                         audioProcessing = segment.audioProcessing,
                         propertyAnimations = segment.propertyAnimations,
+                        compositionContainer = segment.compositionContainer,
                     )
                 }
             },

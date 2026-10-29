@@ -101,6 +101,24 @@ object LayerPanelUiPolicy {
         )
     }
 
+    fun addNullParentForClip(graph: CompositionGraph, clipId: String): LayerGraphNodeCreation {
+        requireClipParentEditable(graph, clipId)
+        val created = addNull(graph)
+        return LayerGraphNodeCreation(
+            graph = setClipParent(created.graph, clipId, created.nodeId),
+            nodeId = created.nodeId,
+        )
+    }
+
+    fun addGroupParentForClip(graph: CompositionGraph, clipId: String): LayerGraphNodeCreation {
+        requireClipParentEditable(graph, clipId)
+        val created = addGroup(graph)
+        return LayerGraphNodeCreation(
+            graph = setClipParent(created.graph, clipId, created.nodeId),
+            nodeId = created.nodeId,
+        )
+    }
+
     fun addStaticCamera(graph: CompositionGraph): LayerGraphNodeCreation {
         require(graph.nodes.none { it.kind == CompositionNodeKind.CAMERA }) {
             "a static camera already exists"
@@ -140,6 +158,7 @@ object LayerPanelUiPolicy {
     ): CompositionGraph {
         require(clipId.isNotBlank()) { "clipId must not be blank" }
         val existingLayer = layerNode(graph, clipId)
+        require(existingLayer?.locked != true) { "layer is locked: $clipId" }
 
         if (parentId == null) {
             if (existingLayer == null) return graph
@@ -233,6 +252,11 @@ object LayerPanelUiPolicy {
                     if (child.parentId == nodeId) child.copy(parentId = null) else child
                 },
         )
+    }
+
+    private fun requireClipParentEditable(graph: CompositionGraph, clipId: String) {
+        require(clipId.isNotBlank()) { "clipId must not be blank" }
+        require(layerNode(graph, clipId)?.locked != true) { "layer is locked: $clipId" }
     }
 
     private fun controllerNode(graph: CompositionGraph, nodeId: String): CompositionNode {

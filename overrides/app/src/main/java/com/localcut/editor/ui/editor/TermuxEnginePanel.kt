@@ -149,6 +149,7 @@ fun TermuxEnginePanel(modifier: Modifier = Modifier) {
             )
         }
 
+        TermuxEngineRecoveryCard(engineState = state)
         TermuxMediaAnalyzePanel(engineState = state)
         TermuxApprovalPanel(engineState = state)
     }

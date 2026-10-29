@@ -151,13 +151,23 @@ fun LayerPanel(
                                     ) { Text("Vincular ${target.id}") }
                                 }
                             }
-                        }
-                        if (parentTargets.isEmpty()) {
-                            Text(
-                                "Crie um Null ou Grupo para usar parenting nesta camada.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+
+                            if (selectedParentId == null) {
+                                OutlinedButton(
+                                    onClick = {
+                                        onSetCompositionGraph(
+                                            LayerPanelUiPolicy.addNullParentForClip(graph, clipId).graph,
+                                        )
+                                    },
+                                ) { Text("+ Null pai") }
+                                OutlinedButton(
+                                    onClick = {
+                                        onSetCompositionGraph(
+                                            LayerPanelUiPolicy.addGroupParentForClip(graph, clipId).graph,
+                                        )
+                                    },
+                                ) { Text("+ Grupo pai") }
+                            }
                         }
                     }
                 }

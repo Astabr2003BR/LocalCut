@@ -35,6 +35,10 @@ class TermuxAgentEngineRuntime private constructor(context: Context) {
         client = jobClient,
         sourceResolver = mediaSourceResolver,
     )
+    val mediaObjectTrackingCoordinator = TermuxMediaObjectTrackingCoordinator(
+        client = jobClient,
+        sourceResolver = mediaSourceResolver,
+    )
     val mediaReverseCoordinator = TermuxMediaReverseCoordinator(
         client = jobClient,
         sourceResolver = mediaSourceResolver,

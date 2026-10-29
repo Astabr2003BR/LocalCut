@@ -10,6 +10,7 @@ import com.localcut.editor.domain.model.LayerTransform3D
 import com.localcut.editor.domain.model.TransformKeyframe
 import com.localcut.editor.domain.model.TransformValue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -129,22 +130,51 @@ class CompositionRenderResolverTest {
     }
 
     @Test
-    fun temporalCameraCutsFailClosedUntilDiscreteCutBackendExists() {
-        val graph = CompositionGraph(
-            nodes = listOf(
-                CompositionNode("camera-a", CompositionNodeKind.CAMERA),
-                CompositionNode("camera-b", CompositionNodeKind.CAMERA),
-                CompositionNode("layer", CompositionNodeKind.LAYER, clipId = clip.id),
-            ),
-            cameraCuts = listOf(
-                CameraCut(0L, "camera-a"),
-                CameraCut(1_000_000L, "camera-b"),
-            ),
-        )
+    fun temporalCameraCutsCreateDiscreteContainerTimeline() {
+        val graph = cameraCutGraph()
 
-        val result = CompositionRenderResolver.resolve(graph, clip)
+        val resolved = CompositionRenderResolver.resolve(graph, clip).getOrThrow()
+        val timeline = resolved.containerTimeline
 
-        assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("camera cuts"))
+        assertNotNull(timeline)
+        assertEquals(200.0, timeline!!.containerAt(999_999L).x, 1e-9)
+        assertEquals(100.0, timeline.containerAt(1_000_000L).x, 1e-9)
+        assertEquals(210.0, resolved.transform.x, 1e-9)
     }
+
+    @Test
+    fun cameraCutBaselineUsesCameraActiveAtClipStart() {
+        val graph = cameraCutGraph()
+        val laterClip = clip.copy(startUs = 1_500_000L)
+
+        val resolved = CompositionRenderResolver.resolve(graph, laterClip).getOrThrow()
+
+        assertEquals(100.0, resolved.container?.x, 1e-9)
+        assertEquals(110.0, resolved.transform.x, 1e-9)
+    }
+
+    private fun cameraCutGraph() = CompositionGraph(
+        nodes = listOf(
+            CompositionNode(
+                id = "camera-a",
+                kind = CompositionNodeKind.CAMERA,
+                transform = LayerTransform3D(x = 0.0),
+            ),
+            CompositionNode(
+                id = "camera-b",
+                kind = CompositionNodeKind.CAMERA,
+                transform = LayerTransform3D(x = 100.0),
+            ),
+            CompositionNode(
+                id = "layer",
+                kind = CompositionNodeKind.LAYER,
+                clipId = clip.id,
+                transform = LayerTransform3D(x = 200.0),
+            ),
+        ),
+        cameraCuts = listOf(
+            CameraCut(0L, "camera-a"),
+            CameraCut(1_000_000L, "camera-b"),
+        ),
+    )
 }

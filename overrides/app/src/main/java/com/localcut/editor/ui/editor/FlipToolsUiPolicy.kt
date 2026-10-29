@@ -18,6 +18,10 @@ object FlipToolsUiPolicy {
     fun toggleVertical(effects: List<EffectInstance>): List<EffectInstance> =
         toggle(effects, VERTICAL_TYPE_ID, "ui-flip-vertical")
 
+    fun clear(effects: List<EffectInstance>): List<EffectInstance> = effects.filterNot { effect ->
+        effect.typeId == HORIZONTAL_TYPE_ID || effect.typeId == VERTICAL_TYPE_ID
+    }
+
     private fun toggle(
         effects: List<EffectInstance>,
         typeId: String,

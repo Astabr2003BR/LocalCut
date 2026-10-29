@@ -78,7 +78,7 @@ fun EditorBottomToolRail(
                 }
             }
 
-            if (activeTool == EditorToolId.LAYERS) {
+            if (activeTool == EditorToolId.LAYERS || activeTool == EditorToolId.CAMERA) {
                 CameraCutActionControl(modifier = Modifier.fillMaxWidth())
             }
 

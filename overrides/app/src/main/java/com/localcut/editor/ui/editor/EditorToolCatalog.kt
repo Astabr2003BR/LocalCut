@@ -85,7 +85,7 @@ object EditorToolCatalog {
         tool(EditorToolId.TRACKING, "Tracking", EditorToolGroup.ADVANCED, visual, EditorToolState.PLANNED),
         tool(EditorToolId.STABILIZE, "Estabilizar", EditorToolGroup.ADVANCED, setOf(EditorSelectionKind.VIDEO), EditorToolState.LIVE),
         tool(EditorToolId.CAMERA, "Câmera", EditorToolGroup.ADVANCED, any, EditorToolState.LIVE),
-        tool(EditorToolId.TEMPLATES, "Modelos", EditorToolGroup.DESIGN, project + EditorSelectionKind.DESIGN, EditorToolState.PARTIAL),
+        tool(EditorToolId.TEMPLATES, "Modelos", EditorToolGroup.DESIGN, project + EditorSelectionKind.DESIGN, EditorToolState.LIVE),
     )
 
     fun primaryToolsFor(selection: EditorSelectionKind): List<EditorToolDefinition> {
@@ -99,6 +99,7 @@ object EditorToolCatalog {
                 EditorToolId.OVERLAY,
                 EditorToolId.CANVAS,
                 EditorToolId.DESIGN,
+                EditorToolId.TEMPLATES,
             )
             EditorSelectionKind.VIDEO -> listOf(
                 EditorToolId.EDIT,

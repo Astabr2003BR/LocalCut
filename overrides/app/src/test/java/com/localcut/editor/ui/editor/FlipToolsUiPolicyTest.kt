@@ -25,4 +25,18 @@ class FlipToolsUiPolicyTest {
         assertTrue(FlipToolsUiPolicy.isVerticalEnabled(verticalOnly))
         assertTrue(verticalOnly.any { it.id == grain.id })
     }
+
+    @Test
+    fun clearRemovesOnlyFlipEffects() {
+        val grain = EffectInstance("grain", "localcut.grain")
+        val both = FlipToolsUiPolicy.toggleVertical(
+            FlipToolsUiPolicy.toggleHorizontal(listOf(grain)),
+        )
+
+        val cleared = FlipToolsUiPolicy.clear(both)
+
+        assertFalse(FlipToolsUiPolicy.isHorizontalEnabled(cleared))
+        assertFalse(FlipToolsUiPolicy.isVerticalEnabled(cleared))
+        assertTrue(cleared.single().id == grain.id)
+    }
 }

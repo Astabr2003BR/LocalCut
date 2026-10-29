@@ -44,6 +44,19 @@ object LayerPanelUiPolicy {
         )
     }
 
+    fun addGroup(graph: CompositionGraph): LayerGraphNodeCreation {
+        val nodeId = nextSequentialNodeId(graph, "group")
+        return LayerGraphNodeCreation(
+            graph = graph.copy(
+                nodes = graph.nodes + CompositionNode(
+                    id = nodeId,
+                    kind = CompositionNodeKind.GROUP,
+                ),
+            ),
+            nodeId = nodeId,
+        )
+    }
+
     fun addStaticCamera(graph: CompositionGraph): LayerGraphNodeCreation {
         require(graph.nodes.none { it.kind == CompositionNodeKind.CAMERA }) {
             "a static camera already exists"

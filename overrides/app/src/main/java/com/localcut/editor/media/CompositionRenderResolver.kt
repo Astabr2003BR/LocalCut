@@ -12,16 +12,64 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
+internal data class CompositionTransformContainer(
+    val x: Double,
+    val y: Double,
+    val scale: Double,
+    val rotationDeg: Double,
+) {
+    init {
+        require(x.isFinite() && y.isFinite()) { "composition container position must be finite" }
+        require(scale.isFinite() && scale > 0.0) { "composition container scale must be finite and positive" }
+        require(rotationDeg.isFinite()) { "composition container rotation must be finite" }
+    }
+}
+
+internal object CompositionTransformMath {
+    fun apply(container: CompositionTransformContainer, local: TransformValue): TransformValue {
+        val radians = container.rotationDeg * PI / 180.0
+        val scaledX = local.x * container.scale
+        val scaledY = local.y * container.scale
+        val rotatedX = scaledX * cos(radians) - scaledY * sin(radians)
+        val rotatedY = scaledX * sin(radians) + scaledY * cos(radians)
+        return TransformValue(
+            x = container.x + rotatedX,
+            y = container.y + rotatedY,
+            scale = container.scale * local.scale,
+            rotationDeg = container.rotationDeg + local.rotationDeg,
+            opacity = local.opacity,
+        )
+    }
+
+    fun remove(container: CompositionTransformContainer, world: TransformValue): TransformValue {
+        val radians = -container.rotationDeg * PI / 180.0
+        val translatedX = world.x - container.x
+        val translatedY = world.y - container.y
+        val unrotatedX = translatedX * cos(radians) - translatedY * sin(radians)
+        val unrotatedY = translatedX * sin(radians) + translatedY * cos(radians)
+        return TransformValue(
+            x = unrotatedX / container.scale,
+            y = unrotatedY / container.scale,
+            scale = world.scale / container.scale,
+            rotationDeg = world.rotationDeg - container.rotationDeg,
+            opacity = world.opacity,
+        )
+    }
+}
+
 internal data class ResolvedCompositionTransform(
     val transform: TransformValue,
     val keyframes: List<TransformKeyframe>,
     val opacity: Double,
+    val container: CompositionTransformContainer? = null,
 )
 
 /**
  * Flattens static LocalCut parenting/null/camera metadata into the legacy 2D transform contract
- * consumed by preview/export. Temporal camera cuts deliberately fail closed until a discrete-cut
- * renderer is available so the editor never silently interpolates between cameras.
+ * consumed by preview/export. The reversible container is also retained so modern per-property
+ * animations can be evaluated in local clip space and then composed into world/camera space.
+ * Temporal camera cuts deliberately fail closed until a discrete-cut renderer is available so the
+ * editor never silently interpolates between cameras.
  */
 internal object CompositionRenderResolver {
     fun resolve(graph: CompositionGraph, clip: Clip): Result<ResolvedCompositionTransform> = runCatching {
@@ -57,32 +105,31 @@ internal object CompositionRenderResolver {
         val world = WorldTransformResolver.resolve(graph, layer.id)
         requirePlanar(world, "layer ${layer.id}")
         val container = if (cameraNodeId == null) {
-            ContainerTransform(
+            CompositionTransformContainer(
                 x = world.x,
                 y = world.y,
                 scale = world.scale,
                 rotationDeg = world.rotationZDeg,
-                opacity = world.opacity,
             )
         } else {
             val cameraWorld = WorldTransformResolver.resolve(graph, cameraNodeId)
             requirePlanar(cameraWorld, "camera $cameraNodeId")
             val projected = CameraProjection.project(graph, layer.id, cameraNodeId)
-            ContainerTransform(
+            CompositionTransformContainer(
                 x = projected.x,
                 y = projected.y,
                 scale = projected.scale,
                 rotationDeg = world.rotationZDeg - cameraWorld.rotationZDeg,
-                opacity = world.opacity,
             )
         }
 
         ResolvedCompositionTransform(
-            transform = compose(container, clip.transform),
+            transform = CompositionTransformMath.apply(container, clip.transform),
             keyframes = clip.keyframes.map { keyframe ->
-                keyframe.copy(value = compose(container, keyframe.value))
+                keyframe.copy(value = CompositionTransformMath.apply(container, keyframe.value))
             },
-            opacity = clip.opacity * container.opacity,
+            opacity = clip.opacity * world.opacity,
+            container = container,
         )
     }
 
@@ -117,27 +164,4 @@ internal object CompositionRenderResolver {
             "$subject rotationX/rotationY requires a 3D plane renderer and cannot be flattened safely"
         }
     }
-
-    private fun compose(container: ContainerTransform, local: TransformValue): TransformValue {
-        val radians = container.rotationDeg * PI / 180.0
-        val scaledX = local.x * container.scale
-        val scaledY = local.y * container.scale
-        val rotatedX = scaledX * cos(radians) - scaledY * sin(radians)
-        val rotatedY = scaledX * sin(radians) + scaledY * cos(radians)
-        return TransformValue(
-            x = container.x + rotatedX,
-            y = container.y + rotatedY,
-            scale = container.scale * local.scale,
-            rotationDeg = container.rotationDeg + local.rotationDeg,
-            opacity = local.opacity,
-        )
-    }
-
-    private data class ContainerTransform(
-        val x: Double,
-        val y: Double,
-        val scale: Double,
-        val rotationDeg: Double,
-        val opacity: Double,
-    )
 }

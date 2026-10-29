@@ -38,7 +38,7 @@ class TermuxMediaAnalyzeCoordinator(
             sizeBytes = sizeBytes,
             sourceDurationUs = asset.sourceDurationUs,
         )
-        val created = client.createAnalyzeMediaJob(input, idempotencyKey("analyze-media-v1", asset, sizeBytes, null)).getOrThrow()
+        val created = client.createAnalyzeMediaJob(input, idempotencyKey("analyze-media-v1", asset, sizeBytes)).getOrThrow()
         when (created.status) {
             TermuxEngineJobStatus.QUEUED -> {
                 val source = sourceResolver.resolve(asset)
@@ -87,7 +87,7 @@ class TermuxMediaTrackingCoordinator(
         )
         val created = client.createAnalyzeMediaJob(
             input,
-            idempotencyKey("analyze-tracking-v1", asset, sizeBytes, options),
+            idempotencyKey("analyze-tracking-v1", asset, sizeBytes, tracking = options),
         ).getOrThrow()
         val afterStage = when (created.status) {
             TermuxEngineJobStatus.QUEUED -> {
@@ -105,6 +105,64 @@ class TermuxMediaTrackingCoordinator(
             "TERMUX_TRACKING_ANALYSIS_MODE_INVALID"
         }
         return finished.globalMotion ?: error("TERMUX_TRACKING_RESULT_MISSING")
+    }
+}
+
+class TermuxMediaObjectTrackingCoordinator(
+    private val client: TermuxEngineJobClient,
+    private val sourceResolver: TermuxMediaSourceResolver,
+    private val awaitPolicy: TermuxJobAwaitPolicy = TermuxJobAwaitPolicy(),
+    private val pollDelay: suspend (Long) -> Unit = { delay(it) },
+) {
+    suspend fun analyze(
+        asset: Asset,
+        options: TermuxObjectTrackingOptions,
+    ): Result<TermuxObjectTrackingAnalysis> = try {
+        Result.success(analyzeOrThrow(asset, options))
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        Result.failure(error)
+    }
+
+    private suspend fun analyzeOrThrow(
+        asset: Asset,
+        options: TermuxObjectTrackingOptions,
+    ): TermuxObjectTrackingAnalysis {
+        require(asset.type == AssetType.VIDEO && asset.mimeType?.startsWith("video/") == true) {
+            "TERMUX_OBJECT_TRACKING_REQUIRES_VIDEO"
+        }
+        val sizeBytes = asset.sizeBytes?.takeIf { it > 0L }
+            ?: error("TERMUX_MEDIA_SIZE_UNAVAILABLE")
+        val input = TermuxAnalyzeMediaInput(
+            assetId = asset.id,
+            displayName = asset.displayName,
+            mimeType = requireNotNull(asset.mimeType),
+            sizeBytes = sizeBytes,
+            sourceDurationUs = asset.sourceDurationUs,
+            mode = TermuxAnalyzeMediaMode.OBJECT_TRACKING,
+            objectTrackingOptions = options,
+        )
+        val created = client.createAnalyzeMediaJob(
+            input,
+            idempotencyKey("object-tracking-v1", asset, sizeBytes, objectTracking = options),
+        ).getOrThrow()
+        val afterStage = when (created.status) {
+            TermuxEngineJobStatus.QUEUED -> {
+                val source = sourceResolver.resolve(asset)
+                require(source.contentLength == sizeBytes) { "TERMUX_MEDIA_SIZE_MISMATCH" }
+                client.stageMedia(created.id, source).getOrThrow().job
+            }
+            else -> created
+        }
+        val finished = awaitTerminalJob(client, afterStage, awaitPolicy, pollDelay)
+        require(finished.status == TermuxEngineJobStatus.SUCCEEDED) {
+            finished.errorCode ?: "TERMUX_OBJECT_TRACKING_JOB_NOT_SUCCEEDED"
+        }
+        require(finished.analysisMode == "opencv-object-position-v1") {
+            "TERMUX_OBJECT_TRACKING_ANALYSIS_MODE_INVALID"
+        }
+        return finished.objectTracking ?: error("TERMUX_OBJECT_TRACKING_RESULT_MISSING")
     }
 }
 
@@ -148,7 +206,7 @@ class TermuxMediaReverseCoordinator(
         )
         val created = client.createAnalyzeMediaJob(
             input,
-            idempotencyKey("reverse-media-v1", asset, sizeBytes, null, options),
+            idempotencyKey("reverse-media-v1", asset, sizeBytes, reverse = options),
         ).getOrThrow()
         val afterStage = when (created.status) {
             TermuxEngineJobStatus.QUEUED -> {
@@ -203,7 +261,8 @@ private fun idempotencyKey(
     prefix: String,
     asset: Asset,
     sizeBytes: Long,
-    tracking: TermuxTrackingOptions?,
+    tracking: TermuxTrackingOptions? = null,
+    objectTracking: TermuxObjectTrackingOptions? = null,
     reverse: TermuxReverseOptions? = null,
 ): String {
     val material = buildString {
@@ -215,6 +274,15 @@ private fun idempotencyKey(
             append('\n'); append(it.maxFrames)
             append('\n'); append(it.sampleEvery)
             append('\n'); append(it.maxCorners)
+        }
+        objectTracking?.let {
+            append('\n'); append(it.maxFrames)
+            append('\n'); append(it.sampleEvery)
+            append('\n'); append(it.maxCorners)
+            append('\n'); append(it.roi.x)
+            append('\n'); append(it.roi.y)
+            append('\n'); append(it.roi.width)
+            append('\n'); append(it.roi.height)
         }
         reverse?.let {
             append('\n'); append(it.chunkDurationUs)

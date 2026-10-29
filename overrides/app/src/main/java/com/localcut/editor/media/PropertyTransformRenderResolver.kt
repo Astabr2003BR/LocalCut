@@ -20,18 +20,24 @@ object PropertyTransformRenderResolver {
         propertyAnimations: List<PropertyAnimation>,
         presentationTimeUs: Long,
         presentationStartUs: Long,
+        compositionContainer: CompositionTransformContainer? = null,
     ): TransformValue {
-        val legacy = KeyframeRenderResolver.valueAt(
+        val legacyWorld = KeyframeRenderResolver.valueAt(
             transform = transform,
             keyframes = keyframes,
             presentationTimeUs = presentationTimeUs,
             presentationStartUs = presentationStartUs,
         )
-        if (propertyAnimations.isEmpty()) return legacy
+        if (propertyAnimations.isEmpty()) return legacyWorld
 
         val modern = propertyAnimations.filter { it.propertyId in supportedProperties }
+        if (modern.isEmpty()) return legacyWorld
         val ids = modern.map { it.propertyId }
         require(ids.distinct().size == ids.size) { "duplicate transform property animation" }
+
+        val legacyLocal = compositionContainer?.let { container ->
+            CompositionTransformMath.remove(container, legacyWorld)
+        } ?: legacyWorld
         val localTimeUs = if (presentationTimeUs <= presentationStartUs) {
             0L
         } else {
@@ -47,12 +53,15 @@ object PropertyTransformRenderResolver {
                 ?: throw IllegalArgumentException("transform property animation must be scalar: $propertyId")
         }
 
-        return TransformValue(
-            x = scalar(X, legacy.x),
-            y = scalar(Y, legacy.y),
-            scale = scalar(SCALE, legacy.scale),
-            rotationDeg = scalar(ROTATION, legacy.rotationDeg),
-            opacity = scalar(OPACITY, legacy.opacity),
+        val local = TransformValue(
+            x = scalar(X, legacyLocal.x),
+            y = scalar(Y, legacyLocal.y),
+            scale = scalar(SCALE, legacyLocal.scale),
+            rotationDeg = scalar(ROTATION, legacyLocal.rotationDeg),
+            opacity = scalar(OPACITY, legacyLocal.opacity),
         )
+        return compositionContainer?.let { container ->
+            CompositionTransformMath.apply(container, local)
+        } ?: local
     }
 }

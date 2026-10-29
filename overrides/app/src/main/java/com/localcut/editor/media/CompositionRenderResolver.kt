@@ -25,6 +25,29 @@ data class CompositionTransformContainer(
     }
 }
 
+data class TimedCompositionTransformContainer(
+    val startUs: Long,
+    val container: CompositionTransformContainer,
+)
+
+data class CompositionTransformTimeline(
+    val entries: List<TimedCompositionTransformContainer>,
+) {
+    init {
+        require(entries.isNotEmpty()) { "composition transform timeline must not be empty" }
+        require(entries.first().startUs == 0L) { "composition transform timeline must start at zero" }
+        require(entries.all { it.startUs >= 0L }) { "composition transform timeline timestamps must be non-negative" }
+        require(entries.zipWithNext().all { (left, right) -> right.startUs > left.startUs }) {
+            "composition transform timeline must be strictly ordered"
+        }
+    }
+
+    fun containerAt(presentationTimeUs: Long): CompositionTransformContainer {
+        require(presentationTimeUs >= 0L) { "presentation time must be non-negative" }
+        return entries.last { it.startUs <= presentationTimeUs }.container
+    }
+}
+
 internal object CompositionTransformMath {
     fun apply(container: CompositionTransformContainer, local: TransformValue): TransformValue {
         val radians = container.rotationDeg * PI / 180.0
@@ -62,14 +85,14 @@ internal data class ResolvedCompositionTransform(
     val keyframes: List<TransformKeyframe>,
     val opacity: Double,
     val container: CompositionTransformContainer? = null,
+    val containerTimeline: CompositionTransformTimeline? = null,
 )
 
 /**
- * Flattens static LocalCut parenting/null/camera metadata into the legacy 2D transform contract
- * consumed by preview/export. The reversible container is also retained so modern per-property
- * animations can be evaluated in local clip space and then composed into world/camera space.
- * Temporal camera cuts deliberately fail closed until a discrete-cut renderer is available so the
- * editor never silently interpolates between cameras.
+ * Flattens LocalCut parenting/null/camera metadata into the legacy 2D transform contract consumed
+ * by preview/export. A reversible baseline container keeps modern PropertyAnimation in local clip
+ * space. When camera cuts exist, a strictly discrete container timeline selects the active camera
+ * at each presentation timestamp without physically splitting the clip or interpolating cameras.
  */
 internal object CompositionRenderResolver {
     fun resolve(graph: CompositionGraph, clip: Clip): Result<ResolvedCompositionTransform> = runCatching {
@@ -101,35 +124,96 @@ internal object CompositionRenderResolver {
             )
         }
 
-        val cameraNodeId = staticCameraNodeId(graph)
         val world = WorldTransformResolver.resolve(graph, layer.id)
         requirePlanar(world, "layer ${layer.id}")
-        val container = if (cameraNodeId == null) {
-            CompositionTransformContainer(
+        val timeline = cameraContainerTimeline(graph, layer.id, world)
+        val baselineContainer = timeline?.containerAt(clip.startUs) ?: containerFor(
+            graph = graph,
+            layerId = layer.id,
+            world = world,
+            cameraNodeId = staticCameraNodeId(graph),
+        )
+
+        ResolvedCompositionTransform(
+            transform = CompositionTransformMath.apply(baselineContainer, clip.transform),
+            keyframes = clip.keyframes.map { keyframe ->
+                keyframe.copy(value = CompositionTransformMath.apply(baselineContainer, keyframe.value))
+            },
+            opacity = clip.opacity * world.opacity,
+            container = baselineContainer,
+            containerTimeline = timeline,
+        )
+    }
+
+    private fun cameraContainerTimeline(
+        graph: CompositionGraph,
+        layerId: String,
+        world: LayerTransform3D,
+    ): CompositionTransformTimeline? {
+        if (graph.cameraCuts.isEmpty()) return null
+        require(graph.cameraCuts.all { it.startUs >= 0L }) { "camera cuts must use non-negative timestamps" }
+        require(graph.cameraCuts.zipWithNext().all { (left, right) -> right.startUs > left.startUs }) {
+            "camera cuts must be strictly ordered"
+        }
+
+        val cutAtZero = graph.cameraCuts.firstOrNull()?.takeIf { it.startUs == 0L }
+        val entries = buildList {
+            add(
+                TimedCompositionTransformContainer(
+                    startUs = 0L,
+                    container = containerFor(
+                        graph = graph,
+                        layerId = layerId,
+                        world = world,
+                        cameraNodeId = cutAtZero?.cameraNodeId,
+                    ),
+                )
+            )
+            graph.cameraCuts.forEach { cut ->
+                if (cut.startUs == 0L) return@forEach
+                add(
+                    TimedCompositionTransformContainer(
+                        startUs = cut.startUs,
+                        container = containerFor(
+                            graph = graph,
+                            layerId = layerId,
+                            world = world,
+                            cameraNodeId = cut.cameraNodeId,
+                        ),
+                    )
+                )
+            }
+        }
+        return CompositionTransformTimeline(entries)
+    }
+
+    private fun containerFor(
+        graph: CompositionGraph,
+        layerId: String,
+        world: LayerTransform3D,
+        cameraNodeId: String?,
+    ): CompositionTransformContainer {
+        if (cameraNodeId == null) {
+            return CompositionTransformContainer(
                 x = world.x,
                 y = world.y,
                 scale = world.scale,
                 rotationDeg = world.rotationZDeg,
             )
-        } else {
-            val cameraWorld = WorldTransformResolver.resolve(graph, cameraNodeId)
-            requirePlanar(cameraWorld, "camera $cameraNodeId")
-            val projected = CameraProjection.project(graph, layer.id, cameraNodeId)
-            CompositionTransformContainer(
-                x = projected.x,
-                y = projected.y,
-                scale = projected.scale,
-                rotationDeg = world.rotationZDeg - cameraWorld.rotationZDeg,
-            )
         }
 
-        ResolvedCompositionTransform(
-            transform = CompositionTransformMath.apply(container, clip.transform),
-            keyframes = clip.keyframes.map { keyframe ->
-                keyframe.copy(value = CompositionTransformMath.apply(container, keyframe.value))
-            },
-            opacity = clip.opacity * world.opacity,
-            container = container,
+        val cameraNode = graph.nodes.firstOrNull { it.id == cameraNodeId }
+        require(cameraNode?.kind == CompositionNodeKind.CAMERA) {
+            "camera cut must reference a camera node: $cameraNodeId"
+        }
+        val cameraWorld = WorldTransformResolver.resolve(graph, cameraNodeId)
+        requirePlanar(cameraWorld, "camera $cameraNodeId")
+        val projected = CameraProjection.project(graph, layerId, cameraNodeId)
+        return CompositionTransformContainer(
+            x = projected.x,
+            y = projected.y,
+            scale = projected.scale,
+            rotationDeg = world.rotationZDeg - cameraWorld.rotationZDeg,
         )
     }
 
@@ -146,15 +230,7 @@ internal object CompositionRenderResolver {
     }
 
     private fun staticCameraNodeId(graph: CompositionGraph): String? {
-        if (graph.cameraCuts.size > 1) {
-            throw IllegalArgumentException("temporal camera cuts are not supported by the static composition renderer yet")
-        }
-        graph.cameraCuts.singleOrNull()?.let { cut ->
-            require(cut.startUs == 0L) {
-                "temporal camera cuts are not supported by the static composition renderer yet"
-            }
-            return cut.cameraNodeId
-        }
+        if (graph.cameraCuts.isNotEmpty()) return null
         val cameras = graph.nodes.filter { it.kind == CompositionNodeKind.CAMERA }
         return cameras.singleOrNull()?.id
     }

@@ -182,6 +182,7 @@ object ProjectRenderPlanCompiler {
                 timeMap = clip.timeMap,
                 audioProcessing = clip.audioProcessing,
                 compositionContainer = composition?.container,
+                compositionContainerTimeline = composition?.containerTimeline,
             )
             cursorUs = Math.addExact(clip.startUs, clip.durationUs)
         }

@@ -35,6 +35,7 @@ fun LayerPanel(
     val graph = project.compositionGraph
     val parentTargets = LayerPanelUiPolicy.parentTargets(graph, selectedClipId)
     val selectedParentId = selectedClipId?.let { LayerPanelUiPolicy.layerParentId(graph, it) }
+    val selectedLayerLocked = selectedClipId?.let { LayerPanelUiPolicy.isClipLocked(graph, it) } ?: false
     val cameraNodes = graph.nodes.filter { it.kind == CompositionNodeKind.CAMERA }
     val staticCamera = cameraNodes.singleOrNull()
     val canAddStaticCamera = cameraNodes.isEmpty() && graph.cameraCuts.isEmpty()
@@ -71,16 +72,12 @@ fun LayerPanel(
                     onClick = {
                         onSetCompositionGraph(LayerPanelUiPolicy.addNull(graph).graph)
                     },
-                ) {
-                    Text("+ Null")
-                }
+                ) { Text("+ Null") }
                 OutlinedButton(
                     onClick = {
                         onSetCompositionGraph(LayerPanelUiPolicy.addGroup(graph).graph)
                     },
-                ) {
-                    Text("+ Grupo")
-                }
+                ) { Text("+ Grupo") }
                 OutlinedButton(
                     onClick = {
                         onSetCompositionGraph(LayerPanelUiPolicy.addStaticCamera(graph).graph)
@@ -100,7 +97,7 @@ fun LayerPanel(
             Text(
                 text = when {
                     staticCamera != null -> "Câmera estática: ${staticCamera.id} • preview/export compartilham a mesma composição."
-                    cameraNodes.size > 1 -> "Projeto com múltiplas câmeras: criação estática desativada; camera cuts não são editáveis neste painel."
+                    cameraNodes.size > 1 -> "Projeto com múltiplas câmeras: criação estática desativada; use a ferramenta Câmera para editar cortes."
                     else -> "Parenting: crie um Null ou Grupo para controlar camadas em conjunto."
                 },
                 style = MaterialTheme.typography.labelSmall,
@@ -122,6 +119,13 @@ fun LayerPanel(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        if (selectedLayerLocked) {
+                            Text(
+                                "Camada bloqueada. Desbloqueie para alterar o parent.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -135,6 +139,7 @@ fun LayerPanel(
                                             LayerPanelUiPolicy.setClipParent(graph, clipId, null),
                                         )
                                     },
+                                    enabled = !selectedLayerLocked,
                                 ) { Text("Desvincular") }
                             }
 
@@ -148,6 +153,7 @@ fun LayerPanel(
                                                 LayerPanelUiPolicy.setClipParent(graph, clipId, target.id),
                                             )
                                         },
+                                        enabled = !selectedLayerLocked,
                                     ) { Text("Vincular ${target.id}") }
                                 }
                             }
@@ -159,6 +165,7 @@ fun LayerPanel(
                                             LayerPanelUiPolicy.addNullParentForClip(graph, clipId).graph,
                                         )
                                     },
+                                    enabled = !selectedLayerLocked,
                                 ) { Text("+ Null pai") }
                                 OutlinedButton(
                                     onClick = {
@@ -166,6 +173,7 @@ fun LayerPanel(
                                             LayerPanelUiPolicy.addGroupParentForClip(graph, clipId).graph,
                                         )
                                     },
+                                    enabled = !selectedLayerLocked,
                                 ) { Text("+ Grupo pai") }
                             }
                         }
@@ -286,9 +294,7 @@ fun LayerPanel(
                                         ),
                                     )
                                 },
-                            ) {
-                                Text(if (visible) "Ocultar" else "Mostrar")
-                            }
+                            ) { Text(if (visible) "Ocultar" else "Mostrar") }
                             if (locked) {
                                 FilledTonalButton(
                                     onClick = {

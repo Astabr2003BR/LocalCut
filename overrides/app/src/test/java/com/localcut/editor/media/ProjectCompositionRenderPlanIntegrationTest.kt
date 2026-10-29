@@ -3,6 +3,7 @@ package com.localcut.editor.media
 import com.localcut.editor.BuildContract
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
+import com.localcut.editor.domain.model.CameraCut
 import com.localcut.editor.domain.model.CameraSettings
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.CompositionGraph
@@ -14,6 +15,7 @@ import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.model.TransformValue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -100,6 +102,53 @@ class ProjectCompositionRenderPlanIntegrationTest {
 
         assertTrue(media.transform.x > 100.0)
         assertTrue(media.transform.scale > 1.0)
+    }
+
+    @Test
+    fun discreteCameraCutTimelineReachesVisualRenderSegmentWithoutSplittingClip() {
+        val asset = videoAsset()
+        val clip = Clip(
+            id = "clip-1",
+            assetId = asset.id,
+            startUs = 0L,
+            durationUs = 2_000_000L,
+            sourceInUs = 0L,
+            sourceOutUs = 2_000_000L,
+            transform = TransformValue(x = 10.0),
+        )
+        val project = project(
+            asset = asset,
+            clip = clip,
+            graph = CompositionGraph(
+                nodes = listOf(
+                    CompositionNode("camera-a", CompositionNodeKind.CAMERA),
+                    CompositionNode(
+                        id = "camera-b",
+                        kind = CompositionNodeKind.CAMERA,
+                        transform = LayerTransform3D(x = 100.0),
+                    ),
+                    CompositionNode(
+                        id = "layer",
+                        kind = CompositionNodeKind.LAYER,
+                        clipId = clip.id,
+                        transform = LayerTransform3D(x = 200.0),
+                    ),
+                ),
+                cameraCuts = listOf(
+                    CameraCut(0L, "camera-a"),
+                    CameraCut(1_000_000L, "camera-b"),
+                ),
+            ),
+        )
+
+        val plan = ProjectRenderPlanCompiler.compile(project, RenderMode.EXPORT, resolver).getOrThrow()
+        val mediaSegments = plan.visualLayers.single().segments.filterIsInstance<RenderSegment.Media>()
+        val media = mediaSegments.single()
+
+        assertEquals(1, mediaSegments.size)
+        assertNotNull(media.compositionContainerTimeline)
+        assertEquals(200.0, media.compositionContainerTimeline!!.containerAt(999_999L).x, 1e-9)
+        assertEquals(100.0, media.compositionContainerTimeline!!.containerAt(1_000_000L).x, 1e-9)
     }
 
     private fun videoAsset() = Asset(

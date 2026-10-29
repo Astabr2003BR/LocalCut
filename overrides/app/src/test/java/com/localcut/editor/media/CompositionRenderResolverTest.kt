@@ -148,8 +148,9 @@ class CompositionRenderResolverTest {
         val laterClip = clip.copy(startUs = 1_500_000L)
 
         val resolved = CompositionRenderResolver.resolve(graph, laterClip).getOrThrow()
+        val container = requireNotNull(resolved.container)
 
-        assertEquals(100.0, resolved.container?.x, 1e-9)
+        assertEquals(100.0, container.x, 1e-9)
         assertEquals(110.0, resolved.transform.x, 1e-9)
     }
 

@@ -49,7 +49,6 @@ object CameraCutUiPolicy {
         val nodeId = nextCameraId(graph)
         val clone = source.copy(
             id = nodeId,
-            parentId = null,
             clipId = null,
         )
         val cameras = graph.nodes.count { it.kind == CompositionNodeKind.CAMERA }

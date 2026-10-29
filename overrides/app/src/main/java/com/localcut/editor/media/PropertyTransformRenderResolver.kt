@@ -21,6 +21,7 @@ object PropertyTransformRenderResolver {
         presentationTimeUs: Long,
         presentationStartUs: Long,
         compositionContainer: CompositionTransformContainer? = null,
+        compositionContainerTimeline: CompositionTransformTimeline? = null,
     ): TransformValue {
         val legacyWorld = KeyframeRenderResolver.valueAt(
             transform = transform,
@@ -28,12 +29,13 @@ object PropertyTransformRenderResolver {
             presentationTimeUs = presentationTimeUs,
             presentationStartUs = presentationStartUs,
         )
-        if (propertyAnimations.isEmpty()) return legacyWorld
+        if (propertyAnimations.isEmpty() && compositionContainerTimeline == null) return legacyWorld
 
         val modern = propertyAnimations.filter { it.propertyId in supportedProperties }
-        if (modern.isEmpty()) return legacyWorld
-        val ids = modern.map { it.propertyId }
-        require(ids.distinct().size == ids.size) { "duplicate transform property animation" }
+        if (modern.isNotEmpty()) {
+            val ids = modern.map { it.propertyId }
+            require(ids.distinct().size == ids.size) { "duplicate transform property animation" }
+        }
 
         val legacyLocal = compositionContainer?.let { container ->
             CompositionTransformMath.remove(container, legacyWorld)
@@ -60,7 +62,9 @@ object PropertyTransformRenderResolver {
             rotationDeg = scalar(ROTATION, legacyLocal.rotationDeg),
             opacity = scalar(OPACITY, legacyLocal.opacity),
         )
-        return compositionContainer?.let { container ->
+        val activeContainer = compositionContainerTimeline?.containerAt(presentationTimeUs)
+            ?: compositionContainer
+        return activeContainer?.let { container ->
             CompositionTransformMath.apply(container, local)
         } ?: local
     }

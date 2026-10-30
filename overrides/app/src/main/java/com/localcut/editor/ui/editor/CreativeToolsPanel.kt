@@ -26,6 +26,7 @@ import com.localcut.editor.domain.animation.MotionOperationPlanner
 import com.localcut.editor.domain.animation.MotionPreset
 import com.localcut.editor.domain.animation.MotionPresetLibrary
 import com.localcut.editor.domain.model.AssetType
+import com.localcut.editor.domain.model.AudioDuckingSettings
 import com.localcut.editor.domain.model.AudioProcessingSettings
 import com.localcut.editor.domain.model.CompositingSettings
 import com.localcut.editor.domain.model.CropMode
@@ -47,6 +48,7 @@ fun CreativeToolsPanel(
     onSetCompositing: (CompositingSettings) -> Unit,
     onSetTimeMap: (TimeMap) -> Unit,
     onSetAudioProcessing: (AudioProcessingSettings) -> Unit,
+    onSetTrackDucking: (String, AudioDuckingSettings?) -> Unit,
     onSetPropertyAnimations: (List<PropertyAnimation>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -58,6 +60,7 @@ fun CreativeToolsPanel(
             project = project,
             selectedClipId = selectedClipId,
             onSetAudioProcessing = onSetAudioProcessing,
+            onSetTrackDucking = onSetTrackDucking,
             modifier = modifier,
         )
         return
@@ -540,6 +543,7 @@ fun CreativeToolsPanel(
                         project = project,
                         selectedClipId = selectedClipId,
                         onSetAudioProcessing = onSetAudioProcessing,
+                        onSetTrackDucking = onSetTrackDucking,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }

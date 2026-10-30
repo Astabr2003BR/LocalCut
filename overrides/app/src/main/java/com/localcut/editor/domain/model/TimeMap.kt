@@ -30,7 +30,7 @@ data class TimeMap(
             add("freeze segment values must be non-negative and duration must be positive")
         }
         if (freezeSegments.sortedBy { it.startOffsetUs }.zipWithNext().any { (left, right) ->
-                left.startOffsetUs + left.durationUs > right.startOffsetUs
+                left.durationUs > right.startOffsetUs - left.startOffsetUs
             }) {
             add("freeze segments must not overlap")
         }

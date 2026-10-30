@@ -48,7 +48,7 @@ object TimeMapEvaluator {
 
         var low = 0L
         var high = maxOf(1L, (sourceRangeUs.toDouble() / timeMap.baseSpeed).roundToLong())
-        val freezeBudget = timeMap.freezeSegments.sumOf { it.durationUs }
+        val freezeBudget = timeMap.freezeSegments.fold(0L) { total, freeze -> safeAdd(total, freeze.durationUs) }
         high = safeAdd(high, freezeBudget)
         var guard = 0
         while (forwardSourceOffsetAt(timeMap, high) < sourceRangeUs && guard < 62) {

@@ -59,4 +59,36 @@ class TimeMapEvaluatorTest {
 
         assertTrue(duration in 999_998L..1_000_002L)
     }
+
+    @Test
+    fun freezeOverlapValidationDoesNotOverflowLongEndOffset() {
+        val map = TimeMap(
+            freezeSegments = listOf(
+                FreezeSegment(startOffsetUs = 1L, durationUs = Long.MAX_VALUE, sourceOffsetUs = 0L),
+                FreezeSegment(startOffsetUs = 10L, durationUs = 1L, sourceOffsetUs = 0L),
+            ),
+        )
+
+        assertTrue("freeze segments must not overlap" in map.validationIssues())
+    }
+
+    @Test
+    fun rampDurationSolverSaturatesHugeFreezeBudgetInsteadOfWrappingNegative() {
+        val huge = 5_000_000_000_000_000_000L
+        val map = TimeMap(
+            speedPoints = listOf(SpeedPoint(0L, 1.0), SpeedPoint(1L, 1.0)),
+            freezeSegments = listOf(
+                FreezeSegment(startOffsetUs = 1_000_000L, durationUs = huge, sourceOffsetUs = 0L),
+                FreezeSegment(
+                    startOffsetUs = 5_000_000_000_001_000_000L,
+                    durationUs = huge,
+                    sourceOffsetUs = 0L,
+                ),
+            ),
+        )
+
+        val duration = TimeMapEvaluator.presentationDurationUs(500_000L, map)
+
+        assertTrue(duration in 499_998L..500_002L)
+    }
 }

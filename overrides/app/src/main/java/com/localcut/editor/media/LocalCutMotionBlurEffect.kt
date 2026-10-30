@@ -50,8 +50,7 @@ private class LocalCutMotionBlurShaderProgram(
     private var height = 0
     private var historyTextureIds = IntArray(0)
     private var historyFramebufferIds = IntArray(0)
-    private var historyCount = 0
-    private var nextHistoryIndex = 0
+    private var historyRing = MotionBlurHistoryRing(0)
     private var lastPresentationTimeUs: Long? = null
 
     init {
@@ -78,8 +77,6 @@ private class LocalCutMotionBlurShaderProgram(
         releaseHistory()
         width = inputWidth
         height = inputHeight
-        historyCount = 0
-        nextHistoryIndex = 0
         lastPresentationTimeUs = null
 
         val effectiveSamples = MotionBlurPolicy.effectiveSamples(
@@ -95,16 +92,14 @@ private class LocalCutMotionBlurShaderProgram(
     override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
         try {
             if (MotionBlurPolicy.shouldResetHistory(lastPresentationTimeUs, presentationTimeUs)) {
-                historyCount = 0
-                nextHistoryIndex = 0
+                historyRing.reset()
             }
 
-            val availableSamples = 1 + historyCount
-            val weights = MotionBlurPolicy.weights(shutterAngle, availableSamples)
+            val availableSamples = 1 + historyRing.size
             drawTemporalPass(
                 inputTexId = inputTexId,
                 availableSamples = availableSamples,
-                weights = weights,
+                weights = MotionBlurPolicy.weights(shutterAngle, availableSamples),
             )
             copyCurrentFrameIntoHistory(inputTexId)
             lastPresentationTimeUs = presentationTimeUs
@@ -139,6 +134,7 @@ private class LocalCutMotionBlurShaderProgram(
         require(capacity in 0 until LocalCutMotionBlurShaderContract.MAX_SHADER_SAMPLES) {
             "motion blur history capacity exceeds shader contract"
         }
+        historyRing = MotionBlurHistoryRing(capacity)
         if (capacity == 0) {
             historyTextureIds = IntArray(0)
             historyFramebufferIds = IntArray(0)
@@ -149,7 +145,6 @@ private class LocalCutMotionBlurShaderProgram(
         GLES20.glGetIntegerv(GLES20.GL_FRAMEBUFFER_BINDING, previousFramebuffer, 0)
         val textures = IntArray(capacity)
         val framebuffers = IntArray(capacity)
-        var allocated = 0
         try {
             repeat(capacity) { index ->
                 val textureId = GlUtil.createTexture(width, height, useHdr)
@@ -168,12 +163,12 @@ private class LocalCutMotionBlurShaderProgram(
                 check(status == GLES20.GL_FRAMEBUFFER_COMPLETE) {
                     "motion blur framebuffer incomplete: 0x${status.toString(16)}"
                 }
-                allocated += 1
             }
             historyTextureIds = textures
             historyFramebufferIds = framebuffers
         } catch (error: Throwable) {
-            releaseAllocated(textures, framebuffers, allocated)
+            releaseAllocated(textures, framebuffers)
+            historyRing = MotionBlurHistoryRing(0)
             throw VideoFrameProcessingException(error)
         } finally {
             GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, previousFramebuffer[0])
@@ -201,10 +196,25 @@ private class LocalCutMotionBlurShaderProgram(
         require(weights.size == availableSamples)
 
         glProgram.setSamplerTexIdUniform("uCurrentSampler", inputTexId, 0)
+        val newestFirst = historyRing.newestFirstIndices()
         repeat(LocalCutMotionBlurShaderContract.MAX_SHADER_SAMPLES - 1) { age ->
-            val textureId = historyTextureForAge(age) ?: inputTexId
+            val historyIndex = newestFirst.getOrNull(age)
+            val textureId = historyIndex?.let(historyTextureIds::get) ?: inputTexId
             glProgram.setSamplerTexIdUniform("uHistory$age", textureId, age + 1)
         }
+        setWeights(weights, availableSamples)
+    }
+
+    private fun bindCopyUniforms(inputTexId: Int) {
+        glProgram.setSamplerTexIdUniform("uCurrentSampler", inputTexId, 0)
+        repeat(LocalCutMotionBlurShaderContract.MAX_SHADER_SAMPLES - 1) { age ->
+            // Never bind an owned history texture while that texture may be the active FBO target.
+            glProgram.setSamplerTexIdUniform("uHistory$age", inputTexId, age + 1)
+        }
+        setWeights(LocalCutMotionBlurShaderContract.currentFrameOnlyWeights().take(1), 1)
+    }
+
+    private fun setWeights(weights: List<Float>, availableSamples: Int) {
         repeat(LocalCutMotionBlurShaderContract.MAX_SHADER_SAMPLES) { index ->
             glProgram.setFloatUniform("uWeight$index", weights.getOrElse(index) { 0f })
         }
@@ -212,7 +222,7 @@ private class LocalCutMotionBlurShaderProgram(
     }
 
     private fun copyCurrentFrameIntoHistory(inputTexId: Int) {
-        if (historyFramebufferIds.isEmpty()) return
+        val writeIndex = historyRing.nextWriteIndex() ?: return
 
         val previousFramebuffer = IntArray(1)
         val previousViewport = IntArray(4)
@@ -221,15 +231,11 @@ private class LocalCutMotionBlurShaderProgram(
         try {
             GLES20.glBindFramebuffer(
                 GLES20.GL_FRAMEBUFFER,
-                historyFramebufferIds[nextHistoryIndex],
+                historyFramebufferIds[writeIndex],
             )
             GLES20.glViewport(0, 0, width, height)
             glProgram.use()
-            bindTemporalUniforms(
-                inputTexId = inputTexId,
-                availableSamples = 1,
-                weights = LocalCutMotionBlurShaderContract.currentFrameOnlyWeights().take(1),
-            )
+            bindCopyUniforms(inputTexId)
             glProgram.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
             checkGl("motion blur history copy")
@@ -242,44 +248,50 @@ private class LocalCutMotionBlurShaderProgram(
                 previousViewport[3],
             )
         }
-
-        nextHistoryIndex = (nextHistoryIndex + 1) % historyFramebufferIds.size
-        historyCount = minOf(historyCount + 1, historyFramebufferIds.size)
-    }
-
-    private fun historyTextureForAge(age: Int): Int? {
-        if (age !in 0 until historyCount || historyTextureIds.isEmpty()) return null
-        val index = Math.floorMod(nextHistoryIndex - 1 - age, historyTextureIds.size)
-        return historyTextureIds[index]
+        historyRing.commitWrite()
     }
 
     private fun releaseHistory() {
-        if (historyFramebufferIds.isNotEmpty()) {
-            GLES20.glDeleteFramebuffers(
-                historyFramebufferIds.size,
-                historyFramebufferIds,
-                0,
-            )
-            checkGl("motion blur framebuffer release")
+        var failure: Throwable? = null
+        try {
+            if (historyFramebufferIds.isNotEmpty()) {
+                GLES20.glDeleteFramebuffers(
+                    historyFramebufferIds.size,
+                    historyFramebufferIds,
+                    0,
+                )
+                checkGl("motion blur framebuffer release")
+            }
+        } catch (error: Throwable) {
+            failure = error
         }
-        historyTextureIds.forEach(GlUtil::deleteTexture)
+
+        historyTextureIds.forEach { textureId ->
+            try {
+                GlUtil.deleteTexture(textureId)
+            } catch (error: Throwable) {
+                if (failure == null) failure = error else failure.addSuppressed(error)
+            }
+        }
+
         historyTextureIds = IntArray(0)
         historyFramebufferIds = IntArray(0)
-        historyCount = 0
-        nextHistoryIndex = 0
+        historyRing = MotionBlurHistoryRing(0)
         lastPresentationTimeUs = null
+        failure?.let { throw it }
     }
 
     private fun releaseAllocated(
         textures: IntArray,
         framebuffers: IntArray,
-        allocated: Int,
     ) {
-        if (allocated > 0) {
-            GLES20.glDeleteFramebuffers(allocated, framebuffers, 0)
+        runCatching {
+            if (framebuffers.isNotEmpty()) {
+                GLES20.glDeleteFramebuffers(framebuffers.size, framebuffers, 0)
+            }
         }
-        for (index in 0 until allocated) {
-            if (textures[index] != 0) runCatching { GlUtil.deleteTexture(textures[index]) }
+        textures.filter { it != 0 }.forEach { textureId ->
+            runCatching { GlUtil.deleteTexture(textureId) }
         }
     }
 

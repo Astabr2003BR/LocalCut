@@ -18,7 +18,7 @@ class ObjectTrackingSourceGeometryPolicyTest {
     }
 
     @Test
-    fun 90And270SwapDimensions() {
+    fun `90And270SwapDimensions`() {
         assertEquals(
             ObjectTrackingSourceGeometry(1080, 1920),
             ObjectTrackingSourceGeometryPolicy.oriented(1920, 1080, 90),

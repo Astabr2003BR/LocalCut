@@ -6,12 +6,13 @@ import java.io.ByteArrayInputStream
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TermuxMediaObjectTrackingCoordinatorTest {
     @Test
-    fun objectTrackingUsesSafeStreamAndRoiBoundIdempotencyKey() = runBlocking {
+    fun objectTrackingUsesSafeStreamAndTrimBoundIdempotencyKey() = runBlocking {
         val fake = FakeObjectTrackingClient()
         var resolvedUri: String? = null
         val coordinator = TermuxMediaObjectTrackingCoordinator(
@@ -24,18 +25,28 @@ class TermuxMediaObjectTrackingCoordinatorTest {
         val asset = videoAsset()
         val options = TermuxObjectTrackingOptions(
             roi = TermuxObjectTrackingRoi(0.1, 0.2, 0.3, 0.4),
+            sourceInUs = 250_000L,
+            sourceOutUs = 1_500_000L,
             maxFrames = 120,
             sampleEvery = 2,
             maxCorners = 80,
         )
 
         val result = coordinator.analyze(asset, options).getOrThrow()
+        val firstKey = fake.idempotencyKeys.single()
+        coordinator.analyze(
+            asset,
+            options.copy(sourceInUs = 300_000L, sourceOutUs = 1_500_000L),
+        ).getOrThrow()
+        val secondKey = fake.idempotencyKeys.last()
 
         assertEquals(asset.uri, resolvedUri)
         assertTrue(fake.staged)
-        assertTrue(fake.idempotencyKey!!.matches(Regex("^object-tracking-v1:[0-9a-f]{64}$")))
+        assertTrue(firstKey.matches(Regex("^object-tracking-v1:[0-9a-f]{64}$")))
+        assertNotEquals(firstKey, secondKey)
         assertEquals(TermuxAnalyzeMediaMode.OBJECT_TRACKING, fake.lastInput?.mode)
-        assertEquals(options, fake.lastInput?.objectTrackingOptions)
+        assertEquals(300_000L, fake.lastInput?.objectTrackingOptions?.sourceInUs)
+        assertEquals(1_500_000L, fake.lastInput?.objectTrackingOptions?.sourceOutUs)
         assertEquals(320, result.frameWidth)
         assertEquals(33_333L, result.samples.single().timeUs)
     }
@@ -75,7 +86,7 @@ class TermuxMediaObjectTrackingCoordinatorTest {
 
     private class FakeObjectTrackingClient : TermuxEngineJobClient {
         var staged = false
-        var idempotencyKey: String? = null
+        val idempotencyKeys = mutableListOf<String>()
         var lastInput: TermuxAnalyzeMediaInput? = null
         private val jobId = "123e4567-e89b-12d3-a456-426614174000"
 
@@ -91,7 +102,7 @@ class TermuxMediaObjectTrackingCoordinatorTest {
             idempotencyKey: String,
         ): Result<TermuxEngineJob> {
             lastInput = input
-            this.idempotencyKey = idempotencyKey
+            idempotencyKeys += idempotencyKey
             return Result.success(TermuxEngineJob(jobId, "ANALYZE_MEDIA", TermuxEngineJobStatus.QUEUED, 0))
         }
 

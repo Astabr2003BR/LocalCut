@@ -46,11 +46,11 @@ class TermuxObjectTrackingJobContractTest {
     }
 
     @Test
-    fun parserPreservesTypedObjectPositionResult() {
+    fun parserPreservesTypedObjectPositionResultAndReturnedSourceRange() {
         val sha = "d".repeat(64)
         val parsed = TermuxEngineJobResponseParser.parseStage(
             MiniJson.parse(
-                """{"protocolVersion":1,"job":{"id":"123e4567-e89b-12d3-a456-426614174000","type":"ANALYZE_MEDIA","status":"SUCCEEDED","progress":100,"output":{"analysisMode":"opencv-object-position-v1","analysis":{"framesDecoded":12,"frameWidth":1920,"frameHeight":1080,"frameRate":30.0,"samples":[{"frameIndex":3,"timeUs":100000,"dxNorm":0.05,"dyNorm":-0.02,"centerXNorm":0.45,"centerYNorm":0.55,"confidence":0.9}]}},"error":null},"transfer":{"sizeBytes":12,"sha256":"$sha"}}""",
+                """{"protocolVersion":1,"job":{"id":"123e4567-e89b-12d3-a456-426614174000","type":"ANALYZE_MEDIA","status":"SUCCEEDED","progress":100,"output":{"analysisMode":"opencv-object-position-v1","analysis":{"framesDecoded":12,"frameWidth":1920,"frameHeight":1080,"frameRate":30.0,"sourceInUs":250000,"sourceOutUs":2500000,"samples":[{"frameIndex":3,"timeUs":100000,"dxNorm":0.05,"dyNorm":-0.02,"centerXNorm":0.45,"centerYNorm":0.55,"confidence":0.9}]}},"error":null},"transfer":{"sizeBytes":12,"sha256":"$sha"}}""",
             ).asObject(),
         )
 
@@ -61,6 +61,8 @@ class TermuxObjectTrackingJobContractTest {
         assertNotNull(tracking)
         assertEquals(1920, tracking?.frameWidth)
         assertEquals(1080, tracking?.frameHeight)
+        assertEquals(250_000L, tracking?.sourceInUs)
+        assertEquals(2_500_000L, tracking?.sourceOutUs)
         assertEquals(100_000L, tracking?.samples?.single()?.timeUs)
         assertEquals(0.05, tracking?.samples?.single()?.dxNorm ?: 0.0, 0.0)
         assertEquals(-0.02, tracking?.samples?.single()?.dyNorm ?: 0.0, 0.0)

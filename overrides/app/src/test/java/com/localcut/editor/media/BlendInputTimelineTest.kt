@@ -24,20 +24,21 @@ class BlendInputTimelineTest {
     }
 
     @Test
-    fun consumingPrimaryReleasesItAndPrunesObsoleteSecondaryFrames() {
+    fun queueAndPrimaryConsumptionReleaseOnlyFramesMadeObsoleteByNextPrimary() {
         val timeline = BlendInputTimeline<String>()
         timeline.registerInput(0)
         timeline.registerInput(1)
         timeline.queue(0, 100L, "p100")
         timeline.queue(0, 200L, "p200")
         timeline.queue(1, 80L, "s80")
-        timeline.queue(1, 90L, "s90")
+
+        val releasedWhileQueueing = timeline.queue(1, 90L, "s90")
         timeline.queue(1, 210L, "s210")
+        val releasedAfterConsume = timeline.consumePrimaryAndPrune()
 
-        val released = timeline.consumePrimaryAndPrune()
-
-        assertEquals(listOf("p100", "s80"), released.map { it.payload })
-        assertEquals(listOf("p200", "s90"), timeline.selectForNextOutput()!!.map { it.payload })
+        assertEquals(listOf("s80"), releasedWhileQueueing.map { it.payload })
+        assertEquals(listOf("p100"), releasedAfterConsume.map { it.payload })
+        assertEquals(listOf("p200", "s210"), timeline.selectForNextOutput()!!.map { it.payload })
     }
 
     @Test

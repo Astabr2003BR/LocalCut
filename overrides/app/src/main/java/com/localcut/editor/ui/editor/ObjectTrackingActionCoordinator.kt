@@ -27,6 +27,7 @@ class ObjectTrackingActionCoordinator(
         asset: Asset,
         captured: ObjectTrackingApplySnapshot,
         roi: NormalizedMediaRoi,
+        sourceGeometry: ObjectTrackingSourceGeometry,
         projectWidth: Int,
         projectHeight: Int,
         quality: TermuxTrackingQuality = TermuxTrackingQuality.NORMAL,
@@ -36,6 +37,7 @@ class ObjectTrackingActionCoordinator(
                 asset = asset,
                 captured = captured,
                 roi = roi,
+                sourceGeometry = sourceGeometry,
                 projectWidth = projectWidth,
                 projectHeight = projectHeight,
                 quality = quality,
@@ -51,6 +53,7 @@ class ObjectTrackingActionCoordinator(
         asset: Asset,
         captured: ObjectTrackingApplySnapshot,
         roi: NormalizedMediaRoi,
+        sourceGeometry: ObjectTrackingSourceGeometry,
         projectWidth: Int,
         projectHeight: Int,
         quality: TermuxTrackingQuality,
@@ -95,6 +98,10 @@ class ObjectTrackingActionCoordinator(
 
         // One analysis request only. No blind retry: staging/analysis is not repeated here.
         val analysis = analysisGateway.analyze(asset, options).getOrThrow()
+        require(
+            analysis.frameWidth == sourceGeometry.widthPx &&
+                analysis.frameHeight == sourceGeometry.heightPx
+        ) { "OBJECT_TRACKING_SOURCE_GEOMETRY_MISMATCH" }
 
         // Re-read mutable editor state after the asynchronous job to catch trim/edit/delete races.
         val currentClip = currentClipProvider(captured.clipId)

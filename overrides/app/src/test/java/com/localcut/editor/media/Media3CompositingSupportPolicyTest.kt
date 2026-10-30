@@ -5,7 +5,6 @@ import com.localcut.editor.domain.model.BlendMode
 import com.localcut.editor.domain.model.CompositingSettings
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.model.TransformValue
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -16,17 +15,14 @@ class Media3CompositingSupportPolicyTest {
     }
 
     @Test
-    fun everyNonNormalBlendModeFailsExplicitlyUntilSharedGpuBackendSupportsIt() {
-        BlendMode.values()
-            .filterNot { it == BlendMode.NORMAL }
-            .forEach { blendMode ->
-                val failure = Media3CompositionSupportPolicy.validate(
-                    plan(CompositingSettings(blendMode = blendMode)),
-                    RenderMode.EXPORT,
-                ).exceptionOrNull() as RenderPlanException
-
-                assertEquals("mode=$blendMode", RenderPlanErrorCode.UNSUPPORTED_COMPOSITING, failure.code)
-            }
+    fun everyDeclaredBlendModeIsSupportedBySharedPixelCompositor() {
+        BlendMode.values().forEach { blendMode ->
+            val result = Media3CompositionSupportPolicy.validate(
+                plan(CompositingSettings(blendMode = blendMode)),
+                RenderMode.EXPORT,
+            )
+            assertTrue("mode=$blendMode failure=${result.exceptionOrNull()?.message}", result.isSuccess)
+        }
     }
 
     private fun plan(compositing: CompositingSettings): RenderPlan = RenderPlan(

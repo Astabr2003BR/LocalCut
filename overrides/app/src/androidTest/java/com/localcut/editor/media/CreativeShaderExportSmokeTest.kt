@@ -166,7 +166,7 @@ class CreativeShaderExportSmokeTest {
         val completed = CountDownLatch(1)
         val failure = AtomicReference<Throwable?>(null)
         instrumentation.runOnMainSync {
-            Transformer.Builder(context)
+            val transformerBuilder = Transformer.Builder(context)
                 .setVideoMimeType(MimeTypes.VIDEO_H264)
                 .setAudioMimeType(MimeTypes.AUDIO_AAC)
                 .addListener(object : Transformer.Listener {
@@ -183,8 +183,11 @@ class CreativeShaderExportSmokeTest {
                         completed.countDown()
                     }
                 })
-                .build()
-                .start(composition, outputFile.absolutePath)
+            LocalCutFrameProcessorIntegration.configureTransformerBuilder(
+                builder = transformerBuilder,
+                context = context,
+                project = project,
+            ).build().start(composition, outputFile.absolutePath)
         }
         assertTrue("Transformer export timed out", completed.await(120, TimeUnit.SECONDS))
         failure.get()?.let { throw AssertionError("Transformer export failed", it) }

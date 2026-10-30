@@ -34,6 +34,54 @@ class ObjectTrackingPathPlannerTest {
     }
 
     @Test
+    fun sourceGeometryUsesSameInitialFitAsMedia3Presentation() {
+        val animations = ObjectTrackingPathPlanner.planFromSourceGeometry(
+            samples = listOf(
+                ObjectTrackingPositionSample(100_000L, dxNorm = 0.10, dyNorm = 0.10, confidence = 1.0),
+            ),
+            sourceWidthPx = 1200,
+            sourceHeightPx = 900,
+            outputWidthPx = 1600,
+            outputHeightPx = 900,
+            transformSpaceWidthPx = 1600.0,
+            transformSpaceHeightPx = 900.0,
+            baseX = 0.0,
+            baseY = 0.0,
+        )
+
+        val x = animations.single { it.propertyId == "transform.x" }.keyframes.map {
+            (it.value as PropertyValue.Scalar).value
+        }
+        val y = animations.single { it.propertyId == "transform.y" }.keyframes.map {
+            (it.value as PropertyValue.Scalar).value
+        }
+
+        // 4:3 source is pillarboxed to 75% of a 16:9 output before the clip transform.
+        assertEquals(listOf(0.0, 120.0), x)
+        assertEquals(listOf(0.0, 90.0), y)
+    }
+
+    @Test
+    fun sourceGeometryHandlesLetterboxedWideSource() {
+        val animations = ObjectTrackingPathPlanner.planFromSourceGeometry(
+            samples = listOf(ObjectTrackingPositionSample(100_000L, 0.10, 0.10, 1.0)),
+            sourceWidthPx = 1600,
+            sourceHeightPx = 900,
+            outputWidthPx = 900,
+            outputHeightPx = 900,
+            transformSpaceWidthPx = 900.0,
+            transformSpaceHeightPx = 900.0,
+            baseX = 0.0,
+            baseY = 0.0,
+        )
+
+        val x = animations.single { it.propertyId == "transform.x" }.keyframes.last().value as PropertyValue.Scalar
+        val y = animations.single { it.propertyId == "transform.y" }.keyframes.last().value as PropertyValue.Scalar
+        assertEquals(90.0, x.value, 0.0)
+        assertEquals(50.625, y.value, 1e-9)
+    }
+
+    @Test
     fun rejectsUnorderedNonFiniteOrUnusableTracking() {
         assertTrue(runCatching {
             ObjectTrackingPathPlanner.plan(

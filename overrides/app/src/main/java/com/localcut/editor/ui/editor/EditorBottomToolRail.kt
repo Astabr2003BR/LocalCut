@@ -115,6 +115,10 @@ fun EditorBottomToolRail(
                 MotionPathActionControl(modifier = Modifier.fillMaxWidth())
             }
 
+            if (activeTool == EditorToolId.TRACKING && selection == EditorSelectionKind.VIDEO) {
+                ObjectTrackingActionControl(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp))
+            }
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

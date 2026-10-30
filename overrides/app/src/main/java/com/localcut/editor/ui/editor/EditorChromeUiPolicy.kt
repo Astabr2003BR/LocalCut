@@ -11,7 +11,6 @@ enum class ContextPanelKind {
     MASK,
     CHROMA,
     ANIMATION,
-    TRACKING,
     LAYERS,
     DESIGN,
     CANVAS,
@@ -59,7 +58,6 @@ object EditorChromeUiPolicy {
         EditorToolId.MASK -> ContextPanelKind.MASK
         EditorToolId.CHROMA -> ContextPanelKind.CHROMA
         EditorToolId.ANIMATION -> ContextPanelKind.ANIMATION
-        EditorToolId.TRACKING -> ContextPanelKind.TRACKING
         EditorToolId.LAYERS -> ContextPanelKind.LAYERS
         EditorToolId.DESIGN -> ContextPanelKind.DESIGN
         EditorToolId.DRAW -> ContextPanelKind.DESIGN

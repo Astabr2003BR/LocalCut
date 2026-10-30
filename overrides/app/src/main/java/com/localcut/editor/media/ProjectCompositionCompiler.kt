@@ -195,6 +195,9 @@ class ProjectCompositionCompiler(
                 if (item.volume != 1.0) {
                     add(GainProcessor(DefaultGainProvider.Builder(item.volume.toFloat()).build()))
                 }
+                if (item.duckingEnvelope.windows.isNotEmpty()) {
+                    add(GainProcessor(DuckingGainProvider(item.duckingEnvelope)))
+                }
                 if (item.fadeInUs > 0L || item.fadeOutUs > 0L) {
                     val envelope = DefaultGainProvider.Builder(1f)
                     if (item.fadeInUs > 0L) {

@@ -3,6 +3,8 @@ package com.localcut.editor.media
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.BaseAudioProcessor
+import androidx.media3.common.audio.SonicAudioProcessor
+import com.localcut.editor.audio.AudioPitchPolicy
 import com.localcut.editor.audio.StatefulAudioDsp
 import com.localcut.editor.domain.model.AudioProcessingSettings
 import java.nio.ByteBuffer
@@ -71,6 +73,20 @@ class LocalCutAudioProcessor(
 }
 
 object Media3AudioProcessingFactory {
-    fun create(settings: AudioProcessingSettings): List<AudioProcessor> =
-        if (settings == AudioProcessingSettings()) emptyList() else listOf(LocalCutAudioProcessor(settings))
+    fun create(settings: AudioProcessingSettings): List<AudioProcessor> {
+        require(settings.validationIssues().isEmpty()) {
+            "invalid audio processing: ${settings.validationIssues().first()}"
+        }
+        return buildList {
+            if (settings.pitchSemitones != 0.0) {
+                add(
+                    SonicAudioProcessor().apply {
+                        setSpeed(1.0f)
+                        setPitch(AudioPitchPolicy.factorForSemitones(settings.pitchSemitones))
+                    },
+                )
+            }
+            if (settings.hasSampleDsp()) add(LocalCutAudioProcessor(settings))
+        }
+    }
 }

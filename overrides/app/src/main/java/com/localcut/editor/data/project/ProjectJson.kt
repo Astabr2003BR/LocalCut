@@ -372,7 +372,9 @@ object ProjectJson {
         append("],\"compressor\":"); appendCompressor(settings.compressor); comma()
         append("\"limiter\":"); appendLimiter(settings.limiter); comma()
         append("\"noiseGate\":"); appendNoiseGate(settings.noiseGate); comma()
-        field("pan", settings.pan.toString()); comma(); field("normalizationGainDb", settings.normalizationGainDb.toString())
+        field("pan", settings.pan.toString()); comma()
+        field("normalizationGainDb", settings.normalizationGainDb.toString()); comma()
+        field("pitchSemitones", settings.pitchSemitones.toString())
         append('}')
     }
 
@@ -644,6 +646,7 @@ object ProjectJson {
         noiseGate = decodeNoiseGate(o.optional("noiseGate")),
         pan = o.required("pan").asDouble(),
         normalizationGainDb = o.required("normalizationGainDb").asDouble(),
+        pitchSemitones = o.optional("pitchSemitones")?.asDouble() ?: 0.0,
     )
 
     private fun decodeCompressor(value: JValue?): CompressorSettings? = when (value) {

@@ -87,6 +87,19 @@ class EditorToolCatalogTest {
     }
 
     @Test
+    fun objectTrackingIsLiveOnlyForVideoAfterRealRoiAndOpenCvApplyPipelineExists() {
+        val tracking = EditorToolCatalog.all.single { it.id == EditorToolId.TRACKING }
+
+        assertTrue(tracking.enabled)
+        assertEquals(EditorToolState.LIVE, tracking.state)
+        assertEquals(setOf(EditorSelectionKind.VIDEO), tracking.selections)
+        assertEquals(EditorToolId.TRACKING, EditorToolCatalog.actionTarget(EditorToolId.TRACKING))
+        assertTrue(EditorToolCatalog.primaryToolsFor(EditorSelectionKind.VIDEO).any { it.id == EditorToolId.TRACKING })
+        assertFalse(EditorToolCatalog.primaryToolsFor(EditorSelectionKind.IMAGE).any { it.id == EditorToolId.TRACKING })
+        assertFalse(EditorToolCatalog.primaryToolsFor(EditorSelectionKind.AUDIO).any { it.id == EditorToolId.TRACKING })
+    }
+
+    @Test
     fun layerPanelIsLiveOnlyAfterRealVisibilityBackendExists() {
         val layers = EditorToolCatalog.all.single { it.id == EditorToolId.LAYERS }
 
@@ -150,6 +163,7 @@ class EditorToolCatalogTest {
         assertFalse(EditorToolId.MASK in ids)
         assertFalse(EditorToolId.CHROMA in ids)
         assertFalse(EditorToolId.COLOR in ids)
+        assertFalse(EditorToolId.TRACKING in ids)
     }
 
     @Test

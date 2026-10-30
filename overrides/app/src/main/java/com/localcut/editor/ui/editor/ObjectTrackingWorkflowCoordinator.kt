@@ -64,6 +64,9 @@ class ObjectTrackingWorkflowCoordinator(
         require(playheadUs >= clip.startUs && playheadUs < clipEndUs) {
             "OBJECT_TRACKING_PLAYHEAD_OUTSIDE_CLIP"
         }
+        require(ObjectTrackingSelectionAnchorPolicy.canCapture(playheadUs, clip, project.fps)) {
+            "OBJECT_TRACKING_SELECTION_ANCHOR_REQUIRED"
+        }
         val asset = requireNotNull(project.assets.firstOrNull { it.id == clip.assetId }) {
             "OBJECT_TRACKING_ASSET_NOT_FOUND"
         }

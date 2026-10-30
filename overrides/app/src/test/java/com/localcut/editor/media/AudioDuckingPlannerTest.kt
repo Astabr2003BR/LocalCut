@@ -5,6 +5,7 @@ import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -138,6 +139,31 @@ class AudioDuckingPlannerTest {
         assertEquals(1, envelope.windows.size)
         assertEquals(0L, envelope.windows.single().sourceStartUs)
         assertEquals(500_000L, envelope.windows.single().sourceEndUs)
+    }
+
+    @Test
+    fun indexRejectsNonMonotonicEffectEndsInsteadOfUsingInvalidBinarySearch() {
+        val source = Track(
+            id = "voice-track",
+            type = TrackType.AUDIO,
+            order = 0,
+            clips = listOf(
+                clip(id = "long", startUs = 0L, durationUs = 10_000_000L),
+                clip(id = "nested", startUs = 1_000_000L, durationUs = 1_000_000L),
+            ),
+        )
+        val settings = AudioDuckingSettings(
+            sourceTrackId = source.id,
+            reductionDb = -12.0,
+            attackUs = 100_000L,
+            releaseUs = 250_000L,
+        )
+
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            AudioDuckingIndex(source, settings)
+        }
+
+        assertTrue(error.message.orEmpty().contains("monotonic", ignoreCase = true))
     }
 
     private fun clip(id: String, startUs: Long, durationUs: Long): Clip = Clip(

@@ -32,9 +32,11 @@ Características:
 - histórico copiado para texturas próprias — texture ID de entrada do Media3 não é retido entre frames;
 - copy pass nunca liga a textura-FBO alvo como sampler;
 - FBO e viewport do Media3 são salvos/restaurados após a cópia;
-- histórico é resetado em configure, release, timestamp não crescente e salto temporal >250 ms;
+- histórico é resetado em configure, `flush()`, release, timestamp não crescente e salto temporal >250 ms;
+- `flush()` chama `super.flush()` conforme contrato Media3 e elimina ghosting após seek/troca de stream;
 - ring buffer determinístico newest-first;
-- resources de history são liberados mesmo após falha parcial.
+- recursos de history são liberados mesmo após falha parcial;
+- `GlUtil.deleteFbo`, `deleteTexture` e `checkGlError` são usados para lifecycle/erro GL.
 
 ## Política mobile de memória
 
@@ -139,6 +141,7 @@ Um erro de sintaxe ocorreu somente no harness temporário local (`List<Int>=` se
 - `35eec424f235af6fb389146a1f6005865d6f3127` — Media3 wiring
 - `af74206e9b6a33dc5dc0c536b3a3df8d888248c4` — RED UI
 - `5f7223eb0eb6d55617aa72d1916337d0b783ee0c` — Motion browser UI
+- `f7476c62d83a617430247aebd6d3a58655f244a1` — flush/reset + GL lifecycle audit fix
 
 ## CI discipline
 
@@ -150,6 +153,8 @@ Para o RED `39e1658500ab2eba215dd03f082beac4f51fc247`, houve uma única consulta
 - Termux Agent Engine CI #593: in_progress
 
 Esse SHA não será consultado novamente.
+
+Para `7e15975bf7293b9e7b30b255d44b1e26e4b731c9`, a única consulta retornou nenhum workflow ainda associado. Esse SHA também não será consultado novamente.
 
 ## Gate final
 

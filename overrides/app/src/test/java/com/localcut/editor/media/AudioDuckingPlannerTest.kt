@@ -107,6 +107,39 @@ class AudioDuckingPlannerTest {
         assertEquals(1f, after, 0.0001f)
     }
 
+    @Test
+    fun indexedPlannerHandlesLargeUnsortedSidechainAndReturnsOnlyLocalOverlap() {
+        val sourceClips = (0 until 1_000)
+            .map { index ->
+                clip(
+                    id = "voice-$index",
+                    startUs = index * 2_000_000L,
+                    durationUs = 500_000L,
+                )
+            }
+            .reversed()
+        val source = Track(
+            id = "voice-track",
+            type = TrackType.AUDIO,
+            order = 0,
+            clips = sourceClips,
+        )
+        val settings = AudioDuckingSettings(
+            sourceTrackId = source.id,
+            reductionDb = -12.0,
+            attackUs = 100_000L,
+            releaseUs = 250_000L,
+        )
+        val targetStartUs = 990 * 2_000_000L
+        val target = clip(id = "music", startUs = targetStartUs, durationUs = 1_000_000L)
+
+        val envelope = AudioDuckingIndex(source, settings).plan(target)
+
+        assertEquals(1, envelope.windows.size)
+        assertEquals(0L, envelope.windows.single().sourceStartUs)
+        assertEquals(500_000L, envelope.windows.single().sourceEndUs)
+    }
+
     private fun clip(id: String, startUs: Long, durationUs: Long): Clip = Clip(
         id = id,
         assetId = "asset-$id",

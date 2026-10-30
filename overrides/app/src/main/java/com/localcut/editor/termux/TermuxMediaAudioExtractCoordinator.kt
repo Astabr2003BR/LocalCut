@@ -61,11 +61,16 @@ class TermuxMediaAudioExtractCoordinator(
         require(root.isDirectory) { "TERMUX_EXTRACT_AUDIO_OUTPUT_DIRECTORY_INVALID" }
         val destination = File(root, "audio-${finished.id}-${UUID.randomUUID()}.m4a").canonicalFile
         require(destination.parentFile == root) { "TERMUX_EXTRACT_AUDIO_OUTPUT_PATH_INVALID" }
-        val download = client.downloadGeneratedMedia(finished.id, destination).getOrThrow()
-        require(download.job.id == finished.id) { "TERMUX_EXTRACT_AUDIO_DOWNLOAD_JOB_MISMATCH" }
-        require(download.media.mimeType == "audio/mp4") { "TERMUX_EXTRACT_AUDIO_DOWNLOAD_TYPE_INVALID" }
-        require(download.file.canonicalFile == destination) { "TERMUX_EXTRACT_AUDIO_OUTPUT_PATH_INVALID" }
-        return download
+        try {
+            val download = client.downloadGeneratedMedia(finished.id, destination).getOrThrow()
+            require(download.job.id == finished.id) { "TERMUX_EXTRACT_AUDIO_DOWNLOAD_JOB_MISMATCH" }
+            require(download.media.mimeType == "audio/mp4") { "TERMUX_EXTRACT_AUDIO_DOWNLOAD_TYPE_INVALID" }
+            require(download.file.canonicalFile == destination) { "TERMUX_EXTRACT_AUDIO_OUTPUT_PATH_INVALID" }
+            return download
+        } catch (error: Throwable) {
+            destination.delete()
+            throw error
+        }
     }
 }
 

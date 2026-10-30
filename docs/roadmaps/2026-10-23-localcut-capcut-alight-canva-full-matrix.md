@@ -1,9 +1,11 @@
 # LocalCut Capability Matrix — CapCut + Alight Motion + useful Canva video/design
 
 Date: 2026-10-23
+Last verified refresh: 2026-10-30 against `feature/localcut-bridge-v1`
 
 Legend:
 - LIVE: implemented and backed by real editor/renderer behavior with focused tests or an existing validated production path.
+- LIVE/PARTIAL VALIDATION: real implementation exists and is reachable, but one or more Android CI/device/visual gates are still pending.
 - PARTIAL: model/foundation or some backend exists, but the complete user workflow/backend is not yet proven.
 - PLANNED: researched capability target, not yet exposed as complete.
 - EXCLUDED-AI: intentionally deferred because it depends on generative/AI functionality.
@@ -40,7 +42,7 @@ Legend:
 | Rectangle/ellipse/freeform masks | CapCut/Alight | LIVE |
 | Mask feather/expand/invert | CapCut/Alight | LIVE backend where supported; dedicated UI refinement pending |
 | Chroma key | CapCut | LIVE |
-| Blend modes | CapCut/Alight | PARTIAL model; advanced renderer pending |
+| Blend modes | CapCut/Alight | LIVE/PARTIAL VALIDATION — real multi-texture Media3 compositor + mobile UI + undo/redo; final Android gate pending |
 | Group/clipping masks | Alight/Canva | PLANNED |
 
 ## Animation / motion design
@@ -50,12 +52,12 @@ Legend:
 | Hold/linear/ease/bounce/elastic/steps | Alight | LIVE evaluator + mobile UI |
 | Cubic bezier/custom curves | Alight | LIVE evaluator + mobile Bézier editor |
 | Seeded random/cyclic timing | Alight | LIVE evaluator + mobile presets |
-| Parenting | Alight | PARTIAL graph |
-| Groups/null controllers | Alight/Canva | PARTIAL graph/model |
-| Camera objects/cuts | Alight | PARTIAL model |
+| Parenting | Alight | LIVE planar parenting + mobile parent controls; broader camera/3D rig workflow pending |
+| Groups/null controllers | Alight/Canva | LIVE/PARTIAL — real GROUP/NULL creation and parenting; advanced group operations pending |
+| Camera objects/cuts | Alight | PARTIAL — camera transform pipeline exists; discrete camera cuts/3D plane workflow pending |
 | 2.5D depth/parallax | Alight | PARTIAL |
 | Motion path | Alight | PARTIAL metadata |
-| Motion blur | Alight | PARTIAL metadata; renderer PLANNED |
+| Motion blur | Alight | LIVE/PARTIAL VALIDATION — real temporal GPU effect + mobile UI; final Android/physical visual gate pending |
 | Anime motion recipes | LocalCut | LIVE/PARTIAL recipes |
 
 ## Color / effects / filters
@@ -81,9 +83,9 @@ Legend:
 | Constant speed | CapCut/Canva | LIVE |
 | Speed ramp | CapCut | LIVE backend |
 | Custom speed curve editor | CapCut | PARTIAL model; UI PLANNED |
-| Reverse | CapCut | PARTIAL model; renderer PLANNED — no negative-speed hack |
-| Freeze/frame hold | CapCut | PARTIAL model; renderer PLANNED |
-| General source-time remap | Alight/pro editors | PARTIAL |
+| Reverse | CapCut | LIVE/PARTIAL VALIDATION — generated-media FFmpeg round trip + trim-safe replacement + history/UI; physical Android validation pending |
+| Freeze/frame hold | CapCut | LIVE/PARTIAL VALIDATION — Media3 freeze planner + playhead UI/history + export compatibility guards |
+| General source-time remap | Alight/pro editors | PARTIAL — shared TimeMap evaluator covers speed/ramp/reverse/freeze semantics; broader arbitrary remap UI pending |
 
 ## Text / captions
 
@@ -115,7 +117,7 @@ Legend:
 | Compressor | Professional audio | LIVE DSP + mobile toggle |
 | Limiter | Professional audio | LIVE DSP + mobile toggle |
 | Noise gate | Professional audio | LIVE DSP + mobile toggle |
-| Extract audio from video | CapCut | PLANNED command |
+| Extract audio from video | CapCut | PLANNED command — pending codebase audit before implementation |
 | Beat markers/local beat detection | CapCut/Canva rhythm workflows | LIVE foundation; editor workflow PARTIAL |
 | Voice-over record/import | CapCut/Canva | PLANNED |
 | AI vocal isolation/enhancement | CapCut | EXCLUDED-AI |
@@ -135,15 +137,16 @@ Legend:
 | Distribute | Canva | PLANNED |
 | Reusable local components | Canva/Alight | LIVE foundation |
 | Local templates/browser | Canva | PARTIAL components; browser PLANNED |
-| Replace media preserving timing/layout | Canva | PLANNED |
+| Replace media preserving timing/layout | Canva | PLANNED generic workflow; Reverse has its own trim-safe replacement path |
 | Canvas/aspect/social presets | Canva/CapCut | PLANNED UI |
+| Drawing symmetry — vertical/horizontal/both axes | Krita/Clip Studio/FlipaClip workflows | LIVE backend + DrawStrokePad UI (`Ambos`) |
 
 ## Tracking / analysis
 
 | Capability | Target inspiration | LocalCut status |
 |---|---|---|
-| Motion tracking | CapCut/Alight parenting workflows | PARTIAL metadata/contracts |
-| Stabilization | CapCut | PARTIAL metadata/contracts |
+| Motion tracking | CapCut/Alight parenting workflows | LIVE/PARTIAL VALIDATION — VIDEO object tracking workflow + ROI + Termux/OpenCV + history; unsupported combinations fail closed; physical Android gate pending |
+| Stabilization | CapCut | LIVE/PARTIAL VALIDATION — global-motion analysis + non-destructive property-animation render path + removal; physical Android gate pending |
 | Auto-reframe | CapCut/Canva | PARTIAL metadata; analyzer PLANNED |
 | Tracked parenting | Alight | PLANNED integration |
 | Generative cutout/background removal | CapCut/Canva | EXCLUDED-AI |
@@ -159,7 +162,7 @@ Legend:
 | PNG/image sequence | Alight | PLANNED |
 | Project package | Alight | LIVE/PARTIAL archive contract |
 | Stable APK upgrade signing | LocalCut | LIVE |
-| Preview/export shared semantics | Professional requirement | PARTIAL with growing smoke coverage |
+| Preview/export shared semantics | Professional requirement | PARTIAL with growing smoke coverage and shared Media3 paths for multiple advanced effects |
 | Still-image + audio export regression | Screenshot-driven LocalCut requirement | instrumentation smoke added; final CI result pending |
 
 ## Mobile UI / workflow
@@ -181,8 +184,14 @@ Legend:
 
 ## Remaining major non-AI parity targets
 
-The authorization is broad, but these are intentionally not marked complete until real backends/tests exist: reverse, freeze/frame-hold, temporal motion blur, advanced blend modes, lock enforcement, full groups/parenting/camera workflow, RGB curves/LUT import, large transitions/effects browser, voice-over, extract-audio command, tracking/stabilization/reframe analyzers, replace-media workflow, social canvas presets, GIF/image-sequence export, full template browser and additional project-package workflows.
+The authorization remains broad, but completed implementations are no longer kept in this pending list. Current major targets are: lock enforcement; timeline zoom/ruler and ripple/insert/overwrite refinement; full camera cuts/3D rig workflow; RGB curves/LUT import; larger transitions/effects browser; voice-over; extract-audio command after codebase audit; auto-reframe analyzer; tracked-parenting integration; generic replace-media workflow; social canvas presets; GIF/image-sequence export; full template browser; and additional project-package workflows.
+
+Implemented advanced blocks that still have validation gates are tracked separately rather than mislabeled as PLANNED: Reverse, Freeze Frame, Motion Blur, advanced Blend, Object Tracking and Stabilization.
+
+## Verification notes — 2026-10-30
+
+This refresh was reconciled against newer checkpoints and current branch code rather than the original 2026-10-23 assumptions. Historical checkpoints remain useful evidence, but newer checkpoints supersede stale capability statements when they conflict. Device/Android gates are intentionally left visible where they have not been proven.
 
 ## Research notes
 
-Capability categories were refreshed on 2026-10-23 from official CapCut editing material, Alight Motion product/help documentation and Canva video/design documentation. Public GitHub Android editors using Media3/Compose were inspected only for architectural patterns and ecosystem constraints; LocalCut does not copy their code or UI.
+Capability categories were originally refreshed on 2026-10-23 from official CapCut editing material, Alight Motion product/help documentation and Canva video/design documentation. Public GitHub Android editors using Media3/Compose were inspected only for architectural patterns and ecosystem constraints; LocalCut does not copy their code or UI.

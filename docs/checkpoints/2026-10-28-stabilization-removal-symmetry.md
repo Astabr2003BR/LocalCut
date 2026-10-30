@@ -67,7 +67,7 @@ Behavior:
 - identical full strokes are deduplicated in stable order.
 - a stroke exactly on one symmetry axis therefore does not create duplicate overlapping PATHs.
 - canvas/point validation remains fail closed.
-- the existing `DrawStrokePad` preview and commit paths already call `StrokeSymmetryPolicy.expand(...)`, so the new mode is supported by those paths once selected.
+- the existing `DrawStrokePad` preview and commit paths call `StrokeSymmetryPolicy.expand(...)`.
 
 Key commits:
 - tests: `6c028e2f9488c7c329b7b9ae90f778c7bf171d8e`
@@ -76,9 +76,16 @@ Key commits:
 Local evidence:
 - `PASS both-axis symmetry dedupe`
 
-### UI caveat
-The `DrawStrokePad` currently exposes buttons only for OFF / Vertical / Horizontal. `BOTH_AXES` is not yet selectable from the UI.
-The GitHub connector only supports whole-file replacement for writes, and `DrawStrokePad.kt` is a large Compose file. Do not risk a full-file rewrite solely for this one button unless the complete current file has been safely reconstructed/verified. Backend support is ready; UI exposure is a small pending integration task.
+### UI status update — verified 2026-10-30
+The older caveat that `BOTH_AXES` was not selectable is no longer true.
+
+Current `DrawStrokePad` exposes all four symmetry choices:
+- `Simetria OFF`
+- `Vertical`
+- `Horizontal`
+- `Ambos` → `StrokeSymmetryMode.BOTH_AXES`
+
+Therefore both-axis symmetry is reachable from the mobile drawing UI and the old pending-integration note is superseded by current branch code.
 
 ## CI anti-loop state
 Consumed SHAs from the main checkpoint remain consumed and must not be queried again, including:
@@ -86,4 +93,4 @@ Consumed SHAs from the main checkpoint remain consumed and must not be queried a
 - `f396abbb...`
 - `fa11cdb...` (its one query returned no workflow runs yet, so it is still consumed by rule).
 
-This addendum commit is a new SHA and may receive exactly one CI status query.
+A new checkpoint commit may receive at most one CI status query, subject to the project rule that no APK/AAB is generated without explicit authorization. Documentation-only/code commits that use `[skip ci]` intentionally avoid Android APK generation.

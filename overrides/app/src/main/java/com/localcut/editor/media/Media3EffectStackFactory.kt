@@ -14,6 +14,7 @@ import com.localcut.editor.domain.model.EffectInstance
 import com.localcut.editor.domain.model.EffectParameter
 import com.localcut.editor.effects.EffectRegistry
 import kotlin.math.pow
+import kotlin.math.roundToInt
 
 @OptIn(UnstableApi::class)
 internal object Media3EffectStackFactory {
@@ -33,6 +34,7 @@ internal object Media3EffectStackFactory {
         "localcut.color.sepia",
         "localcut.color.hsl",
         "localcut.blur.gaussian",
+        "localcut.motion_blur",
     ) + LocalCutStylizeEffect.SUPPORTED_TYPES + matrixEffectTypes
 
     fun canRender(effect: EffectInstance): Boolean =
@@ -102,6 +104,10 @@ internal object Media3EffectStackFactory {
             val radius = number(effect, "radius")
             if (radius <= 0.0) null else GaussianBlur(radius.toFloat())
         }
+        "localcut.motion_blur" -> LocalCutMotionBlurEffect(
+            shutterAngle = number(effect, "shutterAngle"),
+            requestedSamples = number(effect, "samples").roundToInt(),
+        )
         "localcut.flip.horizontal" -> MatrixTransformation {
             Matrix().apply { postScale(-1f, 1f) }
         }

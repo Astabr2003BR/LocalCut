@@ -61,6 +61,20 @@ private class FlakyStore: ProjectStore {
 }
 
 fun main(){
+    test("flushNow persists pending edit before debounce fires"){
+        val scheduler=ManualScheduler(); val store=FlakyStore().apply { failNext=false }
+        val saver=DebouncedProjectSaver(store,scheduler,450)
+        val p=Project.create("backgrounded",1080,1920,30)
+        saver.submit(p)
+        assertTrue(scheduler.action != null, "debounced save should still be pending")
+
+        val result=saver.flushNow()
+
+        assertTrue(result.isSuccess)
+        assertEquals(1,store.saves)
+        assertEquals(p,store.last)
+        assertTrue(scheduler.action == null, "lifecycle flush must cancel the delayed duplicate save")
+    }
     test("failed autosave retries automatically without another edit"){
         val scheduler=ManualScheduler(); val store=FlakyStore()
         val saver=DebouncedProjectSaver(store,scheduler,0)

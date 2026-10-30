@@ -30,18 +30,39 @@ class EditorWorkspacePolicyTest {
     }
 
     @Test
-    fun animationWorkspacePrioritizesAnimationLayersCameraAndStabilization() {
+    fun animationWorkspacePrioritizesAnimationTrackingLayersCameraAndStabilization() {
         val ids = EditorWorkspacePolicy.toolsFor(
             workspace = EditorWorkspace.MOTION,
             selection = EditorSelectionKind.VIDEO,
         ).map { it.id }
 
         assertEquals(EditorToolId.ANIMATION, ids.first())
+        assertTrue(EditorToolId.TRACKING in ids)
         assertTrue(EditorToolId.CAMERA in ids)
         assertTrue(EditorToolId.STABILIZE in ids)
         assertTrue(EditorToolId.LAYERS in ids)
         assertTrue(EditorToolId.MASK in ids)
         assertFalse(EditorToolId.MEDIA in ids)
+    }
+
+    @Test
+    fun trackingIsHiddenOutsideVideoSelection() {
+        val imageIds = EditorWorkspacePolicy.toolsFor(
+            workspace = EditorWorkspace.MOTION,
+            selection = EditorSelectionKind.IMAGE,
+        ).map { it.id }.toSet()
+        val audioIds = EditorWorkspacePolicy.toolsFor(
+            workspace = EditorWorkspace.MOTION,
+            selection = EditorSelectionKind.AUDIO,
+        ).map { it.id }.toSet()
+        val projectIds = EditorWorkspacePolicy.toolsFor(
+            workspace = EditorWorkspace.MOTION,
+            selection = EditorSelectionKind.PROJECT,
+        ).map { it.id }.toSet()
+
+        assertFalse(EditorToolId.TRACKING in imageIds)
+        assertFalse(EditorToolId.TRACKING in audioIds)
+        assertFalse(EditorToolId.TRACKING in projectIds)
     }
 
     @Test
@@ -53,6 +74,7 @@ class EditorWorkspacePolicyTest {
 
         assertTrue(EditorToolId.CAMERA in ids)
         assertFalse(EditorToolId.STABILIZE in ids)
+        assertFalse(EditorToolId.TRACKING in ids)
     }
 
     @Test

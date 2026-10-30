@@ -16,6 +16,28 @@ internal data class BlendGpuInput(
 internal class LocalCutBlendFrameComposer(
     private val glProgram: LocalCutBlendGlProgram = LocalCutBlendGlProgram(),
 ) {
+    fun composeSingle(
+        input: BlendGpuInput,
+        transparentBackdrop: GlTextureInfo,
+        output: GlTextureInfo,
+    ) {
+        LocalCutBlendShaderContract.validateAlphaScale(input.alphaScale)
+        require(input.texture.width == transparentBackdrop.width && input.texture.height == transparentBackdrop.height) {
+            "BLEND_TEXTURE_SIZE_MISMATCH"
+        }
+        require(output.texId != transparentBackdrop.texId && output.texId != input.texture.texId) {
+            "BLEND_TEXTURE_READ_WRITE_ALIAS"
+        }
+        glProgram.draw(
+            backdrop = transparentBackdrop,
+            source = input.texture,
+            output = output,
+            mode = input.mode,
+            backdropAlphaScale = 0f,
+            sourceAlphaScale = input.alphaScale,
+        )
+    }
+
     fun compose(
         inputs: List<BlendGpuInput>,
         output: GlTextureInfo,

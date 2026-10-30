@@ -16,6 +16,10 @@ object ObjectTrackingUiPolicy {
         require(!MotionPathUiPolicy.hasGeneratedMotionPath(existing)) {
             "OBJECT_TRACKING_CONFLICTS_WITH_MOTION_PATH"
         }
+        val replacingGeneratedTracking = hasGeneratedObjectTracking(existing)
+        require(replacingGeneratedTracking || existing.none { it.propertyId in motionProperties }) {
+            "OBJECT_TRACKING_CONFLICTS_WITH_POSITION_ANIMATION"
+        }
         require(tracking.map { it.propertyId }.toSet() == motionProperties && tracking.size == motionProperties.size) {
             "object tracking must contain exactly transform.x and transform.y"
         }

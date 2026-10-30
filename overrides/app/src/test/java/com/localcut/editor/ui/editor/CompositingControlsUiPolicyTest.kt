@@ -1,5 +1,6 @@
 package com.localcut.editor.ui.editor
 
+import com.localcut.editor.domain.model.BlendMode
 import com.localcut.editor.domain.model.CompositingSettings
 import com.localcut.editor.domain.model.MaskKind
 import com.localcut.editor.media.Media3CompositingEffectFactory
@@ -35,5 +36,24 @@ class CompositingControlsUiPolicyTest {
         assertEquals(0.0, spill.chromaKey.edgeFeatherPx, 0.0)
         assertTrue(spill.validationIssues().isEmpty())
         assertTrue(Media3CompositingEffectFactory.canRender(spill))
+    }
+
+    @Test
+    fun blendModeSelectionPreservesOtherCompositingAndAllowsEveryImplementedMode() {
+        val source = CreativeToolsUiPolicy.greenScreen(
+            CreativeToolsUiPolicy.setMaskPreset(CompositingSettings(), MaskKind.RECTANGLE),
+            enabled = true,
+        )
+
+        BlendMode.entries.forEach { mode ->
+            val updated = CreativeToolsUiPolicy.setBlendMode(source, mode)
+
+            assertEquals(mode, updated.blendMode)
+            assertEquals(source.masks, updated.masks)
+            assertEquals(source.chromaKey, updated.chromaKey)
+            assertEquals(source.crop, updated.crop)
+            assertTrue(updated.validationIssues().isEmpty())
+            assertTrue(Media3CompositingEffectFactory.canRender(updated))
+        }
     }
 }

@@ -20,16 +20,14 @@ class _FakeObjectTracker:
     def __init__(self):
         self.calls = []
 
-    def analyze(self, path, roi, options, source_in_us=0, source_out_us=None):
-        self.calls.append((path, roi, options, source_in_us, source_out_us))
+    def analyze(self, path, roi, options):
+        self.calls.append((path, roi, options))
         return {
             "trackingMode": "opencv-object-position-v1",
             "framesDecoded": 4,
             "frameWidth": 320,
             "frameHeight": 240,
             "frameRate": 30.0,
-            "sourceInUs": source_in_us,
-            "sourceOutUs": source_out_us,
             "samples": [
                 {
                     "frameIndex": 1,
@@ -53,9 +51,6 @@ class _FakeStore:
             "progress": 20,
             "input": {
                 "mode": "OBJECT_TRACKING",
-                "sourceDurationUs": 3_000_000,
-                "sourceInUs": 500_000,
-                "sourceOutUs": 2_500_000,
                 "maxFrames": 120,
                 "sampleEvery": 2,
                 "maxCorners": 80,
@@ -79,7 +74,7 @@ class ObjectTrackingServerTest(unittest.TestCase):
         probe.close()
         return port
 
-    def test_validator_normalizes_bounded_roi_options_and_source_range(self):
+    def test_validator_normalizes_bounded_roi_and_options(self):
         normalized = _validate_object_tracking_input(
             {
                 "mode": "OBJECT_TRACKING",
@@ -87,9 +82,7 @@ class ObjectTrackingServerTest(unittest.TestCase):
                 "displayName": "clip.mp4",
                 "mimeType": "video/mp4",
                 "sizeBytes": 12,
-                "sourceDurationUs": 3_000_000,
-                "sourceInUs": 500_000,
-                "sourceOutUs": 2_500_000,
+                "sourceDurationUs": 1_000_000,
                 "maxFrames": 120,
                 "sampleEvery": 2,
                 "maxCorners": 80,
@@ -99,18 +92,11 @@ class ObjectTrackingServerTest(unittest.TestCase):
         self.assertEqual("OBJECT_TRACKING", normalized["mode"])
         self.assertEqual(120, normalized["maxFrames"])
         self.assertEqual({"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.4}, normalized["roi"])
-        self.assertEqual(500_000, normalized["sourceInUs"])
-        self.assertEqual(2_500_000, normalized["sourceOutUs"])
 
         invalid = dict(normalized)
         invalid["roi"] = {"x": 0.9, "y": 0.2, "width": 0.2, "height": 0.4}
         with self.assertRaises(ValueError):
             _validate_object_tracking_input(invalid)
-
-        invalid_range = dict(normalized)
-        invalid_range["sourceOutUs"] = 3_500_000
-        with self.assertRaises(ValueError):
-            _validate_object_tracking_input(invalid_range)
 
     def test_server_advertises_object_tracking_only_when_real_backend_is_available(self):
         tracker = _FakeObjectTracker()
@@ -129,7 +115,7 @@ class ObjectTrackingServerTest(unittest.TestCase):
         finally:
             server.server_close()
 
-    def test_worker_uses_roi_source_range_and_publishes_distinct_analysis_mode(self):
+    def test_worker_uses_roi_and_publishes_distinct_analysis_mode(self):
         tracker = _FakeObjectTracker()
         store = _FakeStore()
         server = SimpleNamespace(
@@ -144,8 +130,6 @@ class ObjectTrackingServerTest(unittest.TestCase):
         self.assertEqual("opencv-object-position-v1", store.job["output"]["analysisMode"])
         self.assertEqual(0.1, tracker.calls[0][1].x)
         self.assertEqual(120, tracker.calls[0][2].max_frames)
-        self.assertEqual(500_000, tracker.calls[0][3])
-        self.assertEqual(2_500_000, tracker.calls[0][4])
 
 
 if __name__ == "__main__":

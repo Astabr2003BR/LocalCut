@@ -11,9 +11,28 @@ data class PreviewState(
     val fps: Int = 30,
     val playing: Boolean = false,
     val errorMessage: String? = null,
-)
+    val outputWidth: Int? = null,
+    val outputHeight: Int? = null,
+) {
+    init {
+        require((outputWidth == null) == (outputHeight == null)) { "preview output geometry must be provided together" }
+        require(outputWidth == null || outputWidth > 0) { "preview output width must be > 0" }
+        require(outputHeight == null || outputHeight > 0) { "preview output height must be > 0" }
+    }
+}
 
-data class PreviewLoadResult(val durationUs: Long, val fps: Int)
+data class PreviewLoadResult(
+    val durationUs: Long,
+    val fps: Int,
+    val outputWidth: Int? = null,
+    val outputHeight: Int? = null,
+) {
+    init {
+        require((outputWidth == null) == (outputHeight == null)) { "preview load geometry must be provided together" }
+        require(outputWidth == null || outputWidth > 0) { "preview load width must be > 0" }
+        require(outputHeight == null || outputHeight > 0) { "preview load height must be > 0" }
+    }
+}
 
 interface PreviewController {
     val state: StateFlow<PreviewState>
@@ -75,7 +94,12 @@ class DefaultPreviewController(
             }
             .map { loaded ->
                 transport.load(loaded.durationUs, loaded.fps)
-                mutableState.value = PreviewState(durationUs = loaded.durationUs, fps = loaded.fps)
+                mutableState.value = PreviewState(
+                    durationUs = loaded.durationUs,
+                    fps = loaded.fps,
+                    outputWidth = loaded.outputWidth,
+                    outputHeight = loaded.outputHeight,
+                )
                 ticker.stop()
                 if (loaded.durationUs > 0L) ticker.start(::pollPosition)
             }

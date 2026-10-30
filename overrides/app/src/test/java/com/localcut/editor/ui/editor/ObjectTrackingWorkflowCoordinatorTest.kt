@@ -39,7 +39,7 @@ class ObjectTrackingWorkflowCoordinatorTest {
             selection = PreviewSelectionRect(200.0, 100.0, 300.0, 200.0),
             viewportWidthPx = 1000,
             viewportHeightPx = 500,
-            playheadUs = 500_000L,
+            playheadUs = 0L,
         ).getOrThrow()
 
         assertEquals("clip-1", command.clipId)
@@ -81,6 +81,34 @@ class ObjectTrackingWorkflowCoordinatorTest {
     }
 
     @Test
+    fun roiCapturedAwayFromTrackerAnchorFailsBeforeMetadataOrOpenCv() = runBlocking {
+        val currentProject = project(parentX = 0.0)
+        val geometry = FakeGeometryGateway(Result.success(ObjectTrackingSourceGeometry(1000, 500)))
+        val analysis = FakeAnalysisGateway { options -> trackingResult(options) }
+        val workflow = ObjectTrackingWorkflowCoordinator(
+            geometryGateway = geometry,
+            actionCoordinator = ObjectTrackingActionCoordinator(
+                analysisGateway = analysis,
+                currentClipProvider = { id -> currentProject.findClip(id) },
+            ),
+            currentProjectProvider = { currentProject },
+        )
+
+        val result = workflow.buildCommand(
+            clipId = "clip-1",
+            selection = PreviewSelectionRect(100.0, 100.0, 200.0, 200.0),
+            viewportWidthPx = 1000,
+            viewportHeightPx = 500,
+            playheadUs = 500_000L,
+        )
+
+        assertTrue(result.isFailure)
+        assertEquals("OBJECT_TRACKING_SELECTION_ANCHOR_REQUIRED", result.exceptionOrNull()?.message)
+        assertEquals(0, geometry.calls)
+        assertEquals(0, analysis.calls)
+    }
+
+    @Test
     fun geometryFailurePreventsOpenCvJob() = runBlocking {
         val currentProject = project(parentX = 0.0)
         val geometry = FakeGeometryGateway(Result.failure(IllegalArgumentException("OBJECT_TRACKING_SOURCE_WIDTH_UNAVAILABLE")))
@@ -99,7 +127,7 @@ class ObjectTrackingWorkflowCoordinatorTest {
             selection = PreviewSelectionRect(100.0, 100.0, 200.0, 200.0),
             viewportWidthPx = 1000,
             viewportHeightPx = 500,
-            playheadUs = 500_000L,
+            playheadUs = 0L,
         )
 
         assertTrue(result.isFailure)
@@ -130,7 +158,7 @@ class ObjectTrackingWorkflowCoordinatorTest {
             selection = PreviewSelectionRect(100.0, 100.0, 200.0, 200.0),
             viewportWidthPx = 1000,
             viewportHeightPx = 500,
-            playheadUs = 500_000L,
+            playheadUs = 0L,
         )
 
         assertTrue(result.isFailure)

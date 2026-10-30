@@ -3,7 +3,7 @@ package com.localcut.editor.media
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.BaseAudioProcessor
-import com.localcut.editor.audio.AudioDsp
+import com.localcut.editor.audio.StatefulAudioDsp
 import com.localcut.editor.domain.model.AudioProcessingSettings
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -11,11 +11,25 @@ import java.nio.ByteOrder
 class LocalCutAudioProcessor(
     private val settings: AudioProcessingSettings,
 ) : BaseAudioProcessor() {
+    private var dsp: StatefulAudioDsp? = null
+
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT && inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT) {
             throw AudioProcessor.UnhandledAudioFormatException(inputAudioFormat)
         }
         return inputAudioFormat
+    }
+
+    override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
+        dsp = StatefulAudioDsp(
+            channelCount = inputAudioFormat.channelCount,
+            sampleRateHz = inputAudioFormat.sampleRate,
+            settings = settings,
+        )
+    }
+
+    override fun onReset() {
+        dsp = null
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
@@ -26,16 +40,14 @@ class LocalCutAudioProcessor(
             C.ENCODING_PCM_FLOAT -> readPcmFloat(inputBuffer)
             else -> error("unsupported PCM encoding")
         }
-        val processed = AudioDsp.processInterleaved(
-            samples = samples,
-            channelCount = inputAudioFormat.channelCount,
-            sampleRateHz = inputAudioFormat.sampleRate,
-            settings = settings,
-        )
+        val processed = checkNotNull(dsp) { "audio processor must be flushed before queuing input" }
+            .process(samples)
         val output = replaceOutputBuffer(bytes).order(ByteOrder.nativeOrder())
         when (inputAudioFormat.encoding) {
             C.ENCODING_PCM_16BIT -> processed.forEach { sample ->
-                val value = (sample.coerceIn(-1f, 1f) * Short.MAX_VALUE.toFloat()).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                val value = (sample.coerceIn(-1f, 1f) * Short.MAX_VALUE.toFloat())
+                    .toInt()
+                    .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
                 output.putShort(value.toShort())
             }
             C.ENCODING_PCM_FLOAT -> processed.forEach { output.putFloat(it.coerceIn(-1f, 1f)) }

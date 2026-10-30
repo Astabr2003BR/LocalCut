@@ -70,6 +70,7 @@ object TimelineValidator {
                     ducking.sourceTrackId == track.id -> "ducking source track must differ from target track"
                     tracksById[ducking.sourceTrackId] == null -> "ducking source track is missing"
                     tracksById.getValue(ducking.sourceTrackId).type != TrackType.AUDIO -> "ducking source must be an audio track"
+                    track.clips.any { it.timeMap != TimeMap() } -> "ducking target does not support speed/time-map edits yet"
                     else -> null
                 }
                 if (detail != null) {

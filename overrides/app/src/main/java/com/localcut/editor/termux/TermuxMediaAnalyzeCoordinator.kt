@@ -276,6 +276,8 @@ private fun idempotencyKey(
             append('\n'); append(it.maxCorners)
         }
         objectTracking?.let {
+            append('\n'); append(it.sourceInUs)
+            append('\n'); append(it.sourceOutUs ?: -1L)
             append('\n'); append(it.maxFrames)
             append('\n'); append(it.sampleEvery)
             append('\n'); append(it.maxCorners)

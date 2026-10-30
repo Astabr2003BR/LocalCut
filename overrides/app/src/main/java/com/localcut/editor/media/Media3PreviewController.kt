@@ -228,6 +228,12 @@ private class Media3PreviewEngine(
             project = project,
             runtime = runtimeProvider.current(),
         ).outputSettings
+        val outputSize = RenderOutputSizeResolver.resolve(
+            projectWidth = project.width,
+            projectHeight = project.height,
+            mode = RenderMode.FAST_PREVIEW,
+            outputSettings = outputSettings,
+        )
         return compiler.compile(
             project = project,
             mode = RenderMode.FAST_PREVIEW,
@@ -235,7 +241,12 @@ private class Media3PreviewEngine(
         ).map { composition ->
             player.setComposition(composition)
             player.prepare()
-            PreviewLoadResult(durationUs, project.fps)
+            PreviewLoadResult(
+                durationUs = durationUs,
+                fps = project.fps,
+                outputWidth = outputSize.width,
+                outputHeight = outputSize.height,
+            )
         }
     }
 

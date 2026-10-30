@@ -253,7 +253,8 @@ internal class LocalCutBlendFrameProcessor private constructor(
         // does not combine layers, and LocalCut needs these settings afterwards to resolve alpha
         // and blend at the exact composition timestamp.
         val proxy = original.buildUpon().setMetadata(metadata).build()
-        synchronized(originalByProxy) { originalByProxy[proxy] = original
+        synchronized(originalByProxy) {
+            originalByProxy[proxy] = original
         }
         queuedOriginals.add(original)
 
@@ -269,7 +270,19 @@ internal class LocalCutBlendFrameProcessor private constructor(
             queuedOriginals.remove(original)
             throw error
         }
-        return preWriter.takeOutput()
+
+        val processed = preWriter.takeOutput()
+        val processedFrame = processed.frame as? HardwareBufferFrame
+            ?: throw IllegalStateException("BLEND_PREPROCESS_OUTPUT_MUST_USE_HARDWARE_BUFFER")
+        // DefaultGlFrameProcessor writes pixels and contentTimeUs to its FrameWriter output but
+        // does not propagate the input metadata. Restore the composition metadata that LocalCut's
+        // blend stage still needs (presentation time, sequence index and compositor settings).
+        val frameWithMetadata = processedFrame
+            .buildUpon()
+            .setMetadata(metadata)
+            .setContentTimeUs(processedFrame.contentTimeUs)
+            .build()
+        return AsyncFrame(frameWithMetadata, processed.acquireFence)
     }
 
     private fun queueWithBackpressure(

@@ -20,6 +20,7 @@ class EffectBrowserUiPolicyTest {
                 EffectBrowserCategory.BLUR,
                 EffectBrowserCategory.TEXTURE,
                 EffectBrowserCategory.DISTORTION,
+                EffectBrowserCategory.MOTION,
             ),
             EffectBrowserUiPolicy.categories(),
         )
@@ -78,6 +79,18 @@ class EffectBrowserUiPolicyTest {
             listOf("amplitude", "frequency"),
             EffectBrowserUiPolicy.adjustableParameters(emptyList(), ripple).map { it.name },
         )
+
+        val motionBlur = EffectBrowserUiPolicy.presets(EffectBrowserCategory.MOTION).single()
+        assertEquals("localcut.motion_blur", motionBlur.typeId)
+        assertEquals("Motion Blur", motionBlur.label)
+        assertEquals(
+            listOf("shutterAngle", "samples"),
+            EffectBrowserUiPolicy.adjustableParameters(emptyList(), motionBlur).map { it.name },
+        )
+        assertEquals(
+            listOf("Obturador", "Amostras"),
+            EffectBrowserUiPolicy.adjustableParameters(emptyList(), motionBlur).map { it.label },
+        )
     }
 
     @Test
@@ -90,6 +103,21 @@ class EffectBrowserUiPolicyTest {
         assertEquals(
             5.0,
             (effect.parameters.getValue("intensity") as EffectParameter.Number).value,
+            0.0,
+        )
+        assertTrue(Media3EffectStackFactory.canRender(effect))
+    }
+
+    @Test
+    fun motionBlurSamplesClampToRegistryBoundsAndStayRenderable() {
+        val motionBlur = EffectBrowserUiPolicy.presets(EffectBrowserCategory.MOTION).single()
+        val source = EffectBrowserUiPolicy.setValue(emptyList(), motionBlur, 180.0)
+        val result = EffectBrowserUiPolicy.setParameter(source, motionBlur, "samples", 99.0)
+        val effect = result.single()
+
+        assertEquals(
+            64.0,
+            (effect.parameters.getValue("samples") as EffectParameter.Number).value,
             0.0,
         )
         assertTrue(Media3EffectStackFactory.canRender(effect))

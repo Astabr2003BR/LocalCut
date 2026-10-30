@@ -23,6 +23,11 @@ object AudioToolsUiPolicy {
         return validated(source.copy(normalizationGainDb = gainDb))
     }
 
+    fun setPitchSemitones(source: AudioProcessingSettings, semitones: Double): AudioProcessingSettings {
+        require(semitones.isFinite() && semitones in -24.0..24.0) { "pitch semitones must be in -24..24" }
+        return validated(source.copy(pitchSemitones = semitones))
+    }
+
     fun setEqGain(
         source: AudioProcessingSettings,
         band: AudioEqBand,
@@ -94,7 +99,7 @@ object AudioToolsUiPolicy {
 
     fun setNoiseGateAttack(source: AudioProcessingSettings, attackMs: Double): AudioProcessingSettings {
         require(attackMs.isFinite() && attackMs in 0.1..1_000.0) { "noise gate attack must be in 0.1..1000 ms" }
-        return updateNoiseGate(source) { it.copy(attackMs = attackMs) }
+        return updateNoiseGate(source) { it.copy(attackMs = attackMs)) }
     }
 
     fun setNoiseGateRelease(source: AudioProcessingSettings, releaseMs: Double): AudioProcessingSettings {

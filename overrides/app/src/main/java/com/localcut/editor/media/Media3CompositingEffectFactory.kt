@@ -14,7 +14,6 @@ import androidx.media3.effect.Crop
 import androidx.media3.effect.GlEffect
 import androidx.media3.effect.GlShaderProgram
 import androidx.media3.effect.Presentation
-import com.localcut.editor.domain.model.BlendMode
 import com.localcut.editor.domain.model.CompositingSettings
 import com.localcut.editor.domain.model.CropMode
 import com.localcut.editor.domain.model.CropSettings
@@ -27,7 +26,8 @@ import kotlin.math.min
 internal object Media3CompositingEffectFactory {
     fun canRender(settings: CompositingSettings): Boolean {
         if (settings.validationIssues().isNotEmpty()) return false
-        if (settings.blendMode != BlendMode.NORMAL) return false
+        // BlendMode is intentionally not rendered in this per-item effect stack. It needs both the
+        // source and the already-composited backdrop and is handled by LocalCutBlendFrameProcessor.
         if (settings.chromaKey.enabled && settings.chromaKey.edgeFeatherPx != 0.0) return false
         if (settings.masks.size > 1) return false
         val mask = settings.masks.singleOrNull()
@@ -103,7 +103,7 @@ internal class LocalCutCompositingEffect(
 }
 
 @UnstableApi
-internal class LocalCutCompositingShaderProgram(
+private class LocalCutCompositingShaderProgram(
     private val settings: CompositingSettings,
     useHdr: Boolean,
 ) : BaseGlShaderProgram(
@@ -332,11 +332,9 @@ internal class LocalCutCompositingShaderProgram(
                 }
 
                 float finalAlpha = chromaAlpha * maskAlpha;
-                gl_FragColor = vec4(outputRgb, source.a * finalAlpha);
+                gl_FragColor = vec4(outputRgb * finalAlpha, source.a * finalAlpha);
             }
         """.trimIndent()
-
-        internal fun fragmentShaderForTest(): String = FRAGMENT_SHADER
 
         private fun maskBounds(mask: MaskSpec?): FloatArray {
             if (mask == null || mask.points.size < 2) {
@@ -365,8 +363,8 @@ internal class LocalCutCompositingShaderProgram(
         }
 
         private fun argbToRgb(argb: Int): FloatArray = floatArrayOf(
-            ((argb ushr 16) and 0xFF) / 255f,
-            ((argb ushr 8) and 0xFF) / 255f,
+            ((argb shr 16) and 0xFF) / 255f,
+            ((argb shr 8) and 0xFF) / 255f,
             (argb and 0xFF) / 255f,
         )
     }

@@ -28,6 +28,7 @@ enum class TermuxAnalyzeMediaMode {
     TRACKING,
     OBJECT_TRACKING,
     REVERSE,
+    EXTRACT_AUDIO,
 }
 
 data class TermuxTrackingOptions(
@@ -126,6 +127,15 @@ data class TermuxAnalyzeMediaInput(
                 require(trackingOptions == null && objectTrackingOptions == null) { "TERMUX_REVERSE_OPTIONS_MODE_INVALID" }
                 require(sourceDurationUs != null && sourceDurationUs in 1L..600_000_000L) {
                     "TERMUX_REVERSE_DURATION_INVALID"
+                }
+            }
+            TermuxAnalyzeMediaMode.EXTRACT_AUDIO -> {
+                require(mimeType.startsWith("video/")) { "TERMUX_EXTRACT_AUDIO_REQUIRES_VIDEO" }
+                require(trackingOptions == null && objectTrackingOptions == null && reverseOptions == null) {
+                    "TERMUX_EXTRACT_AUDIO_OPTIONS_MODE_INVALID"
+                }
+                require(sourceDurationUs != null && sourceDurationUs in 1L..600_000_000L) {
+                    "TERMUX_EXTRACT_AUDIO_DURATION_INVALID"
                 }
             }
         }
@@ -256,7 +266,7 @@ data class TermuxGeneratedMediaMetadata(
     init {
         require(sizeBytes > 0L) { "TERMUX_GENERATED_MEDIA_LENGTH_INVALID" }
         require(sha256.matches(Regex("^[0-9a-f]{64}$"))) { "TERMUX_GENERATED_MEDIA_DIGEST_INVALID" }
-        require(mimeType == "video/mp4") { "TERMUX_GENERATED_MEDIA_TYPE_INVALID" }
+        require(mimeType == "video/mp4" || mimeType == "audio/mp4") { "TERMUX_GENERATED_MEDIA_TYPE_INVALID" }
     }
 }
 

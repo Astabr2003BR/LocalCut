@@ -110,6 +110,12 @@ private class LocalCutMotionBlurShaderProgram(
         }
     }
 
+    override fun flush() {
+        historyRing.reset()
+        lastPresentationTimeUs = null
+        super.flush()
+    }
+
     override fun release() {
         var failure: Throwable? = null
         try {
@@ -253,19 +259,13 @@ private class LocalCutMotionBlurShaderProgram(
 
     private fun releaseHistory() {
         var failure: Throwable? = null
-        try {
-            if (historyFramebufferIds.isNotEmpty()) {
-                GLES20.glDeleteFramebuffers(
-                    historyFramebufferIds.size,
-                    historyFramebufferIds,
-                    0,
-                )
-                checkGl("motion blur framebuffer release")
+        historyFramebufferIds.filter { it != 0 }.forEach { framebufferId ->
+            try {
+                GlUtil.deleteFbo(framebufferId)
+            } catch (error: Throwable) {
+                if (failure == null) failure = error else failure.addSuppressed(error)
             }
-        } catch (error: Throwable) {
-            failure = error
         }
-
         historyTextureIds.forEach { textureId ->
             try {
                 GlUtil.deleteTexture(textureId)
@@ -285,10 +285,8 @@ private class LocalCutMotionBlurShaderProgram(
         textures: IntArray,
         framebuffers: IntArray,
     ) {
-        runCatching {
-            if (framebuffers.isNotEmpty()) {
-                GLES20.glDeleteFramebuffers(framebuffers.size, framebuffers, 0)
-            }
+        framebuffers.filter { it != 0 }.forEach { framebufferId ->
+            runCatching { GlUtil.deleteFbo(framebufferId) }
         }
         textures.filter { it != 0 }.forEach { textureId ->
             runCatching { GlUtil.deleteTexture(textureId) }
@@ -296,9 +294,10 @@ private class LocalCutMotionBlurShaderProgram(
     }
 
     private fun checkGl(operation: String) {
-        val error = GLES20.glGetError()
-        check(error == GLES20.GL_NO_ERROR) {
-            "$operation failed with GL error 0x${error.toString(16)}"
+        try {
+            GlUtil.checkGlError()
+        } catch (error: GlUtil.GlException) {
+            throw IllegalStateException(operation, error)
         }
     }
 

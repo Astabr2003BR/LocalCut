@@ -6,6 +6,7 @@ object MotionBlurPolicy {
     const val MAX_REQUESTED_SAMPLES = 64
     const val MAX_EFFECTIVE_SAMPLES = 8
     const val HISTORY_MEMORY_BUDGET_BYTES = 80L * 1024L * 1024L
+    const val MAX_CONTIGUOUS_FRAME_GAP_US = 250_000L
 
     fun effectiveSamples(
         requestedSamples: Int,
@@ -54,5 +55,16 @@ object MotionBlurPolicy {
         val total = raw.sum()
         require(total.isFinite() && total > 0.0) { "motion blur weights must have positive finite sum" }
         return raw.map { (it / total).toFloat() }
+    }
+
+    fun shouldResetHistory(
+        previousPresentationTimeUs: Long?,
+        presentationTimeUs: Long,
+    ): Boolean {
+        require(presentationTimeUs >= 0L) { "motion blur presentation time must be non-negative" }
+        if (previousPresentationTimeUs == null) return false
+        require(previousPresentationTimeUs >= 0L) { "motion blur previous presentation time must be non-negative" }
+        if (presentationTimeUs <= previousPresentationTimeUs) return true
+        return presentationTimeUs - previousPresentationTimeUs > MAX_CONTIGUOUS_FRAME_GAP_US
     }
 }

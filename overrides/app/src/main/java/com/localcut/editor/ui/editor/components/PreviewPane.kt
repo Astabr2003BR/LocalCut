@@ -20,11 +20,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +43,7 @@ import com.localcut.editor.media.Media3PreviewController
 import com.localcut.editor.media.PreviewPlayerViewPolicy
 import com.localcut.editor.media.PreviewResumePolicy
 import com.localcut.editor.media.PreviewState
+import com.localcut.editor.ui.editor.ObjectTrackingPreviewSession
 import com.localcut.editor.ui.editor.PreviewSelectionRect
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicReference
@@ -66,6 +68,7 @@ fun PreviewPane(
     val latestState = rememberUpdatedState(state)
     val playerViewRef = remember(controller) { AtomicReference<PlayerView?>(null) }
     val previousViewportHeightDp = remember(controller) { AtomicReference(viewportHeight.value) }
+    val railTracking by ObjectTrackingPreviewSession.state.collectAsState()
 
     DisposableEffect(hostView, controller) {
         val lifecycleOwner = hostView.findViewTreeLifecycleOwner()
@@ -176,11 +179,22 @@ fun PreviewPane(
                     }
                 }
 
+                val sessionEnabled = railTracking.enabled
+                val overlayEnabled = trackingSelectionEnabled || sessionEnabled
                 ObjectTrackingPreviewOverlay(
-                    enabled = trackingSelectionEnabled && state.durationUs > 0L,
-                    selection = trackingSelection,
-                    onSelectionChange = onTrackingSelectionChange,
-                    onViewportSizeChanged = onTrackingViewportSizeChanged,
+                    enabled = overlayEnabled && state.durationUs > 0L,
+                    selection = if (trackingSelectionEnabled) trackingSelection else railTracking.selection,
+                    onSelectionChange = { selection ->
+                        if (trackingSelectionEnabled) {
+                            onTrackingSelectionChange(selection)
+                        } else {
+                            ObjectTrackingPreviewSession.setSelection(selection)
+                        }
+                    },
+                    onViewportSizeChanged = { size ->
+                        ObjectTrackingPreviewSession.updateViewport(size.width, size.height)
+                        onTrackingViewportSizeChanged(size)
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
 

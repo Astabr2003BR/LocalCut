@@ -6,6 +6,7 @@ import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.AudioDuckingSettings
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.TimeMap
 import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackType
 import org.junit.Assert.assertEquals
@@ -32,6 +33,28 @@ class SetTrackDuckingCommandTest {
 
         assertTrue(history.redo())
         assertEquals(settings, history.project.tracks.first { it.id == "music-track" }.ducking)
+    }
+
+    @Test
+    fun targetWithTimeMapRejectsDuckingInsteadOfMisaligningGainClock() {
+        val initial = project()
+        val target = initial.tracks.first { it.id == "music-track" }
+        val spedTarget = target.copy(
+            clips = target.clips.map { clip ->
+                clip.copy(
+                    durationUs = 500_000L,
+                    timeMap = TimeMap(baseSpeed = 2.0),
+                )
+            },
+        )
+        val project = initial.copy(
+            tracks = initial.tracks.map { if (it.id == target.id) spedTarget else it },
+        )
+        val settings = AudioDuckingSettings(sourceTrackId = "voice-track")
+
+        val result = runCatching { SetTrackDuckingCommand("music-track", settings).apply(project) }
+
+        assertTrue(result.isFailure)
     }
 
     private fun project(): Project {

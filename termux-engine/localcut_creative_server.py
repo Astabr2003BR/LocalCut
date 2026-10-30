@@ -121,9 +121,32 @@ def _validate_object_tracking_input(input_data: dict) -> dict:
             500,
         ),
     )
+    source_in_us = _safe_int(
+        input_data.get("sourceInUs", 0),
+        "OBJECT_TRACKING_SOURCE_RANGE_INVALID",
+        0,
+        OpenCvObjectPositionTracker.MAX_SOURCE_TIME_US,
+    )
+    raw_source_out_us = input_data.get("sourceOutUs")
+    source_out_us = None if raw_source_out_us is None else _safe_int(
+        raw_source_out_us,
+        "OBJECT_TRACKING_SOURCE_RANGE_INVALID",
+        1,
+        OpenCvObjectPositionTracker.MAX_SOURCE_TIME_US,
+    )
+    if source_out_us is not None and source_out_us <= source_in_us:
+        raise ValueError("OBJECT_TRACKING_SOURCE_RANGE_INVALID")
+    source_duration_us = descriptor.get("sourceDurationUs")
+    if source_duration_us is not None:
+        if source_in_us >= source_duration_us:
+            raise ValueError("OBJECT_TRACKING_SOURCE_RANGE_INVALID")
+        if source_out_us is not None and source_out_us > source_duration_us:
+            raise ValueError("OBJECT_TRACKING_SOURCE_RANGE_INVALID")
     return {
         "mode": "OBJECT_TRACKING",
         **descriptor,
+        "sourceInUs": source_in_us,
+        "sourceOutUs": source_out_us,
         "maxFrames": options.max_frames,
         "sampleEvery": options.sample_every,
         "maxCorners": options.max_corners,
@@ -254,7 +277,13 @@ def _execute_object_tracking_job(server, job_id: str, transfer: dict) -> None:
                 sample_every=input_data["sampleEvery"],
                 max_corners=input_data["maxCorners"],
             )
-            analysis = analyzer.analyze(server.media_spool.path_for(job_id), roi=roi, options=options)
+            analysis = analyzer.analyze(
+                server.media_spool.path_for(job_id),
+                roi=roi,
+                options=options,
+                source_in_us=input_data["sourceInUs"],
+                source_out_us=input_data.get("sourceOutUs"),
+            )
             current = store.get_job(job_id)
             if current["status"] == "CANCELLED":
                 return

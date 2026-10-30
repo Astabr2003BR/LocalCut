@@ -253,6 +253,29 @@ fun FocusedMaskPanel(
         var expansion by remember(clip.id, mask?.expansionPx) { mutableFloatStateOf((mask?.expansionPx ?: 0.0).toFloat()) }
         var opacity by remember(clip.id, mask?.opacity) { mutableFloatStateOf((mask?.opacity ?: 1.0).toFloat()) }
 
+        Text("Mesclagem", style = MaterialTheme.typography.labelLarge)
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            BlendModeUiPolicy.options().forEach { option ->
+                val active = clip.compositing.blendMode == option.mode
+                val click = {
+                    onSetCompositing(
+                        CreativeToolsUiPolicy.setBlendMode(
+                            clip.compositing,
+                            option.mode,
+                        ),
+                    )
+                }
+                if (active) {
+                    FilledTonalButton(onClick = click) { Text(option.label) }
+                } else {
+                    OutlinedButton(onClick = click) { Text(option.label) }
+                }
+            }
+        }
+
         Text("Formato", style = MaterialTheme.typography.labelLarge)
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),

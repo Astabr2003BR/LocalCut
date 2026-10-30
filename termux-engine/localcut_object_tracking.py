@@ -137,6 +137,24 @@ class OpenCvObjectPositionTracker:
             return False
 
     @staticmethod
+    def prepare_orientation(capture, cv2) -> int:
+        meta_prop = getattr(cv2, "CAP_PROP_ORIENTATION_META", None)
+        rotation = 0
+        if meta_prop is not None:
+            try:
+                raw = float(capture.get(meta_prop))
+                if math.isfinite(raw):
+                    rotation = int(round(raw)) % 360
+            except (AttributeError, TypeError, ValueError):
+                rotation = 0
+        if rotation not in (0, 90, 180, 270):
+            raise RuntimeError("OBJECT_TRACKING_ORIENTATION_INVALID")
+        orientation_enabled = OpenCvObjectPositionTracker.enable_orientation_auto(capture, cv2)
+        if rotation in (90, 270) and not orientation_enabled:
+            raise RuntimeError("OBJECT_TRACKING_ORIENTATION_UNSUPPORTED")
+        return rotation
+
+    @staticmethod
     def decoded_frame_size(frame) -> tuple[int, int]:
         try:
             shape = frame.shape
@@ -165,10 +183,7 @@ class OpenCvObjectPositionTracker:
         try:
             if not capture.isOpened():
                 raise RuntimeError("OBJECT_TRACKING_VIDEO_OPEN_FAILED")
-            # Make metadata rotation explicit when the active backend supports it. Geometry below is
-            # still derived from the decoded frame itself, so unsupported backends fail consistently
-            # rather than trusting container width/height that may describe the unrotated stream.
-            self.enable_orientation_auto(capture, cv2)
+            self.prepare_orientation(capture, cv2)
             fps = float(capture.get(cv2.CAP_PROP_FPS))
             if not math.isfinite(fps) or fps <= 0.0:
                 raise RuntimeError("OBJECT_TRACKING_FPS_UNAVAILABLE")

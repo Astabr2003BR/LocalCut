@@ -9,17 +9,20 @@ import com.localcut.editor.domain.animation.MotionPathPlanner
 import com.localcut.editor.domain.animation.MotionPathPoint
 import com.localcut.editor.domain.animation.ObjectTrackingPathPlanner
 import com.localcut.editor.domain.animation.ObjectTrackingPositionSample
+import com.localcut.editor.domain.model.PropertyAnimation
+import com.localcut.editor.domain.model.PropertyKeyframe
+import com.localcut.editor.domain.model.PropertyValue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ObjectTrackingUiPolicyTest {
-    private fun tracking() = ObjectTrackingPathPlanner.plan(
+    private fun tracking(baseX: Double = 0.0) = ObjectTrackingPathPlanner.plan(
         samples = listOf(ObjectTrackingPositionSample(100_000L, 0.1, 0.2, 0.9)),
         renderWidthPx = 1000.0,
         renderHeightPx = 500.0,
-        baseX = 0.0,
+        baseX = baseX,
         baseY = 0.0,
     )
 
@@ -63,5 +66,37 @@ class ObjectTrackingUiPolicyTest {
         val motionPathConflict = runCatching { ObjectTrackingUiPolicy.merge(path, tracking()) }
         assertTrue(motionPathConflict.isFailure)
         assertEquals("OBJECT_TRACKING_CONFLICTS_WITH_MOTION_PATH", motionPathConflict.exceptionOrNull()?.message)
+    }
+
+    @Test
+    fun mergeRejectsManualPositionAnimationInsteadOfDeletingItSilently() {
+        val manualX = PropertyAnimation(
+            propertyId = "transform.x",
+            keyframes = listOf(
+                PropertyKeyframe(
+                    id = "manual-x-0",
+                    offsetUs = 0L,
+                    value = PropertyValue.Scalar(25.0),
+                ),
+            ),
+        )
+
+        val conflict = runCatching { ObjectTrackingUiPolicy.merge(listOf(manualX), tracking()) }
+
+        assertTrue(conflict.isFailure)
+        assertEquals("OBJECT_TRACKING_CONFLICTS_WITH_POSITION_ANIMATION", conflict.exceptionOrNull()?.message)
+    }
+
+    @Test
+    fun mergeCanReplacePreviouslyGeneratedObjectTrackingAtomically() {
+        val existing = tracking(baseX = 10.0)
+        val replacement = tracking(baseX = 50.0)
+
+        val merged = ObjectTrackingUiPolicy.merge(existing, replacement)
+
+        assertEquals(2, merged.size)
+        assertTrue(ObjectTrackingUiPolicy.hasGeneratedObjectTracking(merged))
+        val x = merged.single { it.propertyId == "transform.x" }
+        assertEquals(50.0, (x.keyframes.first().value as PropertyValue.Scalar).value, 0.0)
     }
 }

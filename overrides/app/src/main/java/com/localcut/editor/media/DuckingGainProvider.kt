@@ -23,10 +23,13 @@ internal class DuckingGainProvider(
         if (!envelope.hasEffectAtOrAfter(positionUs)) return C.TIME_END_OF_SOURCE
 
         val nextStartUs = envelope.nextWindowStartAtOrAfter(positionUs)
-            ?: return samplePosition + 1L
+            ?: return nextSampleOrUnset(samplePosition)
         val nextStartSample = usToSamplesFloor(nextStartUs, sampleRate)
-        return if (nextStartSample > samplePosition) nextStartSample else samplePosition + 1L
+        return if (nextStartSample > samplePosition) nextStartSample else nextSampleOrUnset(samplePosition)
     }
+
+    private fun nextSampleOrUnset(samplePosition: Long): Long =
+        if (samplePosition == Long.MAX_VALUE) C.TIME_UNSET else samplePosition + 1L
 
     private fun samplesToUs(samplePosition: Long, sampleRate: Int): Long {
         val wholeSeconds = samplePosition / sampleRate.toLong()

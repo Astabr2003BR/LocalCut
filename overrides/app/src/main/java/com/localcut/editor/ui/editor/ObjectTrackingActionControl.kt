@@ -11,6 +11,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -18,8 +20,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.localcut.editor.LocalCutProcessRuntime
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.mobile.AndroidObjectTrackingVideoMetadataReader
 import com.localcut.editor.session.EditorAction
@@ -29,17 +31,15 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun ObjectTrackingActionControl(
-    viewModel: EditorViewModel,
-    selectedClipId: String?,
-    selection: PreviewSelectionRect?,
-    viewportSize: IntSize,
-    playheadUs: Long,
-    onApplied: () -> Unit,
-    onClearSelection: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current.applicationContext
+    val editorRuntime = remember(context) { LocalCutProcessRuntime.get(context) }
+    val viewModel = editorRuntime.editorViewModel
     val termuxRuntime = remember(context) { TermuxAgentEngineRuntime.get(context) }
+    val editorSession by viewModel.sessionState.collectAsState()
+    val preview by viewModel.previewState.collectAsState()
+    val trackingSession by ObjectTrackingPreviewSession.state.collectAsState()
     val geometryResolver = remember(context) {
         ObjectTrackingSourceGeometryResolver(AndroidObjectTrackingVideoMetadataReader(context))
     }
@@ -58,14 +58,24 @@ fun ObjectTrackingActionControl(
     }
     val scope = rememberCoroutineScope()
 
-    val project = viewModel.sessionState.value.project
+    DisposableEffect(Unit) {
+        ObjectTrackingPreviewSession.setEnabled(true)
+        onDispose { ObjectTrackingPreviewSession.setEnabled(false) }
+    }
+
+    val selectedClipId = editorSession.selectedClipId
+    val project = editorSession.project
     val clip = selectedClipId?.let(project::findClip)
     val asset = clip?.let { selected -> project.assets.firstOrNull { it.id == selected.assetId } }
     val videoSelected = clip != null && asset?.type == AssetType.VIDEO
-    val playheadInsideClip = clip != null &&
-        playheadUs >= clip.startUs &&
-        playheadUs < clip.startUs + clip.durationUs
-    val hasViewport = viewportSize.width > 0 && viewportSize.height > 0
+    val clipEndUs = clip?.let { selected ->
+        runCatching { Math.addExact(selected.startUs, selected.durationUs) }.getOrNull()
+    }
+    val playheadUs = preview.positionUs
+    val playheadInsideClip = clip != null && clipEndUs != null &&
+        playheadUs >= clip.startUs && playheadUs < clipEndUs
+    val selection = trackingSession.selection
+    val hasViewport = trackingSession.viewportWidthPx > 0 && trackingSession.viewportHeightPx > 0
 
     var quality by remember(selectedClipId) { mutableStateOf(TermuxTrackingQuality.NORMAL) }
     var running by remember { mutableStateOf(false) }
@@ -117,8 +127,8 @@ fun ObjectTrackingActionControl(
                                     workflow.buildCommand(
                                         clipId = clipId,
                                         selection = selectedRoi,
-                                        viewportWidthPx = viewportSize.width,
-                                        viewportHeightPx = viewportSize.height,
+                                        viewportWidthPx = trackingSession.viewportWidthPx,
+                                        viewportHeightPx = trackingSession.viewportHeightPx,
                                         playheadUs = playheadUs,
                                         quality = quality,
                                     ).fold(
@@ -129,7 +139,7 @@ fun ObjectTrackingActionControl(
                                                 appliedClip != null &&
                                                 ObjectTrackingUiPolicy.hasGeneratedObjectTracking(appliedClip.propertyAnimations)
                                             ) {
-                                                onApplied()
+                                                ObjectTrackingPreviewSession.setSelection(null)
                                                 "Tracking aplicado ao clipe."
                                             } else {
                                                 "Falha no Tracking • a timeline rejeitou a aplicação."
@@ -152,7 +162,7 @@ fun ObjectTrackingActionControl(
             }
             OutlinedButton(
                 onClick = {
-                    onClearSelection()
+                    ObjectTrackingPreviewSession.setSelection(null)
                     statusText = null
                 },
                 enabled = selection != null && !running,

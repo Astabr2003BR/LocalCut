@@ -1,85 +1,69 @@
 package com.localcut.editor.termux
 
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TermuxEngineRecoveryPolicyTest {
     @Test
-    fun pairedRecoveryUsesExistingLauncherAndSafeRepairCommand() {
-        val home = "${'$'}HOME"
-        val quick = TermuxEngineRecoveryPolicy.quickCommand(paired = true)
-        val repair = TermuxEngineRecoveryPolicy.repairCommand(paired = true)
-
-        assertEquals("bash \"$home/.localcut-engine/start-localcut-engine\"", quick)
-        assertTrue(repair.contains("pkg install -y git python ffmpeg"))
-        assertTrue(repair.contains(TermuxEngineRecoveryPolicy.DEVELOPMENT_BRANCH))
-        assertTrue(repair.contains("termux-engine/setup_termux.sh"))
-        assertTrue(repair.endsWith("bash termux-engine/restart_termux.sh"))
-        assertSafe(quick)
-        assertSafe(repair)
+    fun pairedBootstrapUpdatesOnlyManagedSourceAndEnablesAutomation() {
+        val command = TermuxEngineRecoveryPolicy.bootstrapCommand(paired = true)
+        assertTrue(command.contains("pkg install -y git python ffmpeg"))
+        assertTrue(command.contains(TermuxEngineRecoveryPolicy.REPOSITORY_URL))
+        assertTrue(command.contains(TermuxEngineRecoveryPolicy.DEVELOPMENT_BRANCH))
+        assertTrue(command.contains("termux-engine-ci.yml/runs"))
+        assertTrue(command.contains("status=success"))
+        assertTrue(command.contains("merge-base --is-ancestor HEAD"))
+        assertTrue(command.contains("bootstrap_termux.sh"))
+        assertSafe(command)
     }
 
     @Test
-    fun connectedEngineMissingReverseCapabilitiesOffersRepair() {
-        val legacyCapabilities = setOf(
-            "ANALYZE_MEDIA",
-            "CANCEL_JOB",
-            "CREATE_JOB",
-            "FFPROBE",
-            "GET_CAPABILITIES",
-            "GET_JOB",
-            "GET_STATUS",
-            "PING",
-            "STAGE_MEDIA",
-        )
-
-        assertEquals(
-            setOf("REVERSE_MEDIA", "DOWNLOAD_GENERATED_MEDIA"),
-            TermuxEngineRecoveryPolicy.missingReverseCapabilities(legacyCapabilities),
-        )
+    fun connectedEngineMissingCreativeCapabilitiesOffersMigration() {
         assertTrue(
             TermuxEngineRecoveryPolicy.shouldOfferRepair(
                 paired = true,
                 connected = true,
                 errorCode = null,
-                capabilities = legacyCapabilities,
-            )
+                managedReady = false,
+                capabilities = setOf("FFPROBE", "ANALYZE_MEDIA"),
+            ),
         )
     }
 
     @Test
-    fun connectedEngineWithReverseCapabilitiesDoesNotOfferRepair() {
-        val capabilities = setOf(
-            "ANALYZE_MEDIA",
-            "REVERSE_MEDIA",
-            "DOWNLOAD_GENERATED_MEDIA",
-        )
-
-        assertTrue(TermuxEngineRecoveryPolicy.missingReverseCapabilities(capabilities).isEmpty())
+    fun confirmedManagedEngineWithFullCreativeCapabilitiesNeedsNoManualRepair() {
         assertFalse(
             TermuxEngineRecoveryPolicy.shouldOfferRepair(
                 paired = true,
                 connected = true,
                 errorCode = null,
-                capabilities = capabilities,
-            )
+                managedReady = true,
+                capabilities = TermuxAutomationPolicy.REQUIRED_CREATIVE_CAPABILITIES +
+                    TermuxAutomationPolicy.MANAGED_AUTOMATION_CAPABILITY,
+            ),
         )
     }
 
     @Test
-    fun unpairedRecoveryStartsPairingFromManagedSource() {
-        val home = "${'$'}HOME"
-        val quick = TermuxEngineRecoveryPolicy.quickCommand(paired = false)
-        val repair = TermuxEngineRecoveryPolicy.repairCommand(paired = false)
+    fun pairedOfflineEngineWithoutManagedEvidenceOffersBootstrap() {
+        assertTrue(
+            TermuxEngineRecoveryPolicy.shouldOfferRepair(
+                paired = true,
+                connected = false,
+                errorCode = null,
+                managedReady = false,
+                capabilities = emptySet(),
+            ),
+        )
+    }
 
-        assertTrue(quick.contains("$home/.localcut-engine/source"))
-        assertTrue(quick.endsWith("python termux-engine/localcut_supervisor.py --pair"))
-        assertTrue(repair.contains(TermuxEngineRecoveryPolicy.REPOSITORY_URL))
-        assertTrue(repair.endsWith(quick))
-        assertSafe(quick)
-        assertSafe(repair)
+    @Test
+    fun unpairedBootstrapPreparesAutomationBeforePairing() {
+        val command = TermuxEngineRecoveryPolicy.bootstrapCommand(paired = false)
+        assertTrue(command.contains("setup_termux.sh --enable-external-automation"))
+        assertTrue(command.endsWith("python termux-engine/localcut_supervisor.py --pair"))
+        assertSafe(command)
     }
 
     private fun assertSafe(command: String) {

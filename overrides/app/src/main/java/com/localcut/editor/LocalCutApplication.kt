@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.widget.Toast
 import com.localcut.editor.bridge.agent.BridgeColdStartRecovery
 import com.localcut.editor.diagnostics.ProcessExitDiagnostics
+import com.localcut.editor.termux.AndroidTermuxAutomation
 import com.localcut.editor.termux.TermuxAgentEngineRuntime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -21,6 +22,23 @@ class LocalCutApplication : Application(), Application.ActivityLifecycleCallback
         super.onCreate()
         ProcessExitDiagnostics.install(this)
         registerActivityLifecycleCallbacks(this)
+        runCatching {
+            val termuxRuntime = TermuxAgentEngineRuntime.get(this)
+            if (
+                termuxRuntime.tokenStore.load() != null &&
+                AndroidTermuxAutomation.isManagedReady(this)
+            ) {
+                termuxRuntime.wakeAutomation()
+                    .onSuccess { dispatched ->
+                        ProcessExitDiagnostics.mark(this, "termux:auto-wake:dispatched=$dispatched")
+                    }
+                    .onFailure { error ->
+                        ProcessExitDiagnostics.mark(this, "termux:auto-wake:failed=${error.message}")
+                    }
+            }
+        }.onFailure { error ->
+            ProcessExitDiagnostics.mark(this, "termux:auto-wake:init-failed=${error.message}")
+        }
     }
 
     override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {

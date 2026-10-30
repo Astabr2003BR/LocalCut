@@ -24,6 +24,7 @@ from localcut_engine import (
     _validate_token,
 )
 from localcut_jobs import FfprobeMediaAnalyzer, JobStore, MediaSpool
+from localcut_managed_automation import attach_managed_automation_capability
 
 DEFAULT_APPROVALS_FILE = DEFAULT_ENGINE_DIR / "approvals.sqlite3"
 DEFAULT_LOCK_FILE = DEFAULT_ENGINE_DIR / "supervisor.lock"
@@ -129,6 +130,7 @@ def main() -> None:
             media_spool=media_spool,
             analyzer=analyzer,
         )
+        media_server = attach_managed_automation_capability(media_server)
         agent_server = create_agent_server(
             args.host,
             args.agent_port,

@@ -16,11 +16,19 @@ class TermuxAgentEngineRuntime private constructor(context: Context) {
     private val generatedMediaDirectory = TermuxGeneratedMediaStoragePolicy.durableDirectory(appContext.filesDir)
 
     val tokenStore: TermuxEngineTokenStore = AndroidKeystoreTermuxEngineTokenStore(appContext)
-    val jobClient: TermuxEngineJobClient = AdaptiveTermuxEngineJobClient(tokenProvider = tokenStore::load)
+    private val baseJobClient: TermuxEngineJobClient = AdaptiveTermuxEngineJobClient(tokenProvider = tokenStore::load)
+    val jobClient: TermuxEngineJobClient = RecoveringTermuxEngineJobClient(
+        delegate = baseJobClient,
+        wakeAction = { wakeAutomation() },
+    )
     val client: TermuxEngineClient = jobClient
     val approvalClient: TermuxAgentApprovalClient = AdaptiveTermuxApprovalClient(tokenProvider = tokenStore::load)
-    val developerAgentClient: BridgeTermuxDeveloperClient =
+    private val baseDeveloperAgentClient: BridgeTermuxDeveloperClient =
         AdaptiveTermuxDeveloperAgentClient(tokenProvider = tokenStore::load)
+    val developerAgentClient: BridgeTermuxDeveloperClient = PreflightTermuxDeveloperAgentClient(
+        delegate = baseDeveloperAgentClient,
+        engineClient = client,
+    )
     private val mediaSourceResolver = AndroidTermuxMediaSourceResolver(appContext.contentResolver)
     private val sharedMediaStager = SharedMediaStager(appContext)
     private val generatedMediaGarbageCollector = GeneratedMediaGarbageCollector(
@@ -51,6 +59,9 @@ class TermuxAgentEngineRuntime private constructor(context: Context) {
     private val pairingService = TermuxEnginePairingService(client, tokenStore)
 
     suspend fun pair(pairingCode: String): Result<Unit> = pairingService.pair(pairingCode)
+
+    fun wakeAutomation(force: Boolean = false): Result<Boolean> =
+        AndroidTermuxAutomation.wake(appContext, force = force)
 
     suspend fun reverseMedia(
         asset: Asset,

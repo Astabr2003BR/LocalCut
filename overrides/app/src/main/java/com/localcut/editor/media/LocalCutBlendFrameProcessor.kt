@@ -247,12 +247,12 @@ internal class LocalCutBlendFrameProcessor private constructor(
     private fun preprocessOne(asyncFrame: AsyncFrame): AsyncFrame {
         val original = asyncFrame.frame as? HardwareBufferFrame
             ?: throw IllegalArgumentException("BLEND_INPUT_MUST_USE_HARDWARE_BUFFER")
-        val metadata = HashMap<String, Any>(original.metadata)
-        metadata[DefaultGlFrameProcessor.KEY_COMPOSITION_EFFECTS] = ImmutableList.of<Effect>()
+        val preProcessorMetadata = HashMap<String, Any>(original.metadata)
+        preProcessorMetadata[DefaultGlFrameProcessor.KEY_COMPOSITION_EFFECTS] = ImmutableList.of<Effect>()
         // Keep the real compositor settings in metadata. With one frame the official compositor
         // does not combine layers, and LocalCut needs these settings afterwards to resolve alpha
         // and blend at the exact composition timestamp.
-        val proxy = original.buildUpon().setMetadata(metadata).build()
+        val proxy = original.buildUpon().setMetadata(preProcessorMetadata).build()
         synchronized(originalByProxy) {
             originalByProxy[proxy] = original
         }
@@ -275,11 +275,12 @@ internal class LocalCutBlendFrameProcessor private constructor(
         val processedFrame = processed.frame as? HardwareBufferFrame
             ?: throw IllegalStateException("BLEND_PREPROCESS_OUTPUT_MUST_USE_HARDWARE_BUFFER")
         // DefaultGlFrameProcessor writes pixels and contentTimeUs to its FrameWriter output but
-        // does not propagate the input metadata. Restore the composition metadata that LocalCut's
-        // blend stage still needs (presentation time, sequence index and compositor settings).
+        // does not propagate the input metadata. Restore the unmodified original metadata here:
+        // item effects were already applied by preProcessor, while composition effects must remain
+        // available for postProcessor after LocalCut performs the blend.
         val frameWithMetadata = processedFrame
             .buildUpon()
-            .setMetadata(metadata)
+            .setMetadata(original.metadata)
             .setContentTimeUs(processedFrame.contentTimeUs)
             .build()
         return AsyncFrame(frameWithMetadata, processed.acquireFence)

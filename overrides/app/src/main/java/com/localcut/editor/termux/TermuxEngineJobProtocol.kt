@@ -57,6 +57,10 @@ internal object TermuxEngineJobRequestEncoder {
                 append(",\"maxCorners\":"); append(it.maxCorners)
             }
             objectTracking?.let {
+                append(",\"sourceInUs\":"); append(it.sourceInUs)
+                it.sourceOutUs?.let { sourceOutUs ->
+                    append(",\"sourceOutUs\":"); append(sourceOutUs)
+                }
                 append(",\"maxFrames\":"); append(it.maxFrames)
                 append(",\"sampleEvery\":"); append(it.sampleEvery)
                 append(",\"maxCorners\":"); append(it.maxCorners)

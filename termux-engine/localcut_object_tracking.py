@@ -126,6 +126,28 @@ class OpenCvObjectPositionTracker:
             raise ValueError("OBJECT_TRACKING_SOURCE_RANGE_TOO_SHORT")
         return min(int(max_frames), available_frames)
 
+    @staticmethod
+    def enable_orientation_auto(capture, cv2) -> bool:
+        prop = getattr(cv2, "CAP_PROP_ORIENTATION_AUTO", None)
+        if prop is None:
+            return False
+        try:
+            return bool(capture.set(prop, 1.0))
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def decoded_frame_size(frame) -> tuple[int, int]:
+        try:
+            shape = frame.shape
+            frame_height = int(shape[0])
+            frame_width = int(shape[1])
+        except (AttributeError, IndexError, TypeError, ValueError) as exc:
+            raise ValueError("OBJECT_TRACKING_FRAME_SIZE_INVALID") from exc
+        if frame_width <= 0 or frame_height <= 0:
+            raise ValueError("OBJECT_TRACKING_FRAME_SIZE_INVALID")
+        return frame_width, frame_height
+
     def analyze(
         self,
         path: str | Path,
@@ -143,10 +165,10 @@ class OpenCvObjectPositionTracker:
         try:
             if not capture.isOpened():
                 raise RuntimeError("OBJECT_TRACKING_VIDEO_OPEN_FAILED")
-            frame_width = int(round(float(capture.get(cv2.CAP_PROP_FRAME_WIDTH))))
-            frame_height = int(round(float(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))))
-            if frame_width <= 0 or frame_height <= 0:
-                raise RuntimeError("OBJECT_TRACKING_FRAME_SIZE_INVALID")
+            # Make metadata rotation explicit when the active backend supports it. Geometry below is
+            # still derived from the decoded frame itself, so unsupported backends fail consistently
+            # rather than trusting container width/height that may describe the unrotated stream.
+            self.enable_orientation_auto(capture, cv2)
             fps = float(capture.get(cv2.CAP_PROP_FPS))
             if not math.isfinite(fps) or fps <= 0.0:
                 raise RuntimeError("OBJECT_TRACKING_FPS_UNAVAILABLE")
@@ -157,6 +179,7 @@ class OpenCvObjectPositionTracker:
             ok, frame = capture.read()
             if not ok or frame is None:
                 raise RuntimeError("OBJECT_TRACKING_DECODE_FAILED")
+            frame_width, frame_height = self.decoded_frame_size(frame)
             previous_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             roi_pixels = self.clamp_roi_pixels(
                 [
@@ -188,6 +211,9 @@ class OpenCvObjectPositionTracker:
                 if frame_index % options.sample_every != 0:
                     continue
 
+                current_width, current_height = self.decoded_frame_size(frame)
+                if current_width != frame_width or current_height != frame_height:
+                    raise RuntimeError("OBJECT_TRACKING_FRAME_SIZE_CHANGED")
                 current_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 if previous_points is None or len(previous_points) < self.MIN_TRACKED_POINTS:
                     previous_points = self._detect_features(

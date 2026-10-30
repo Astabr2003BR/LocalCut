@@ -72,6 +72,7 @@ class ObjectTrackingActionCoordinator(
 
         // Fail before staging media or starting OpenCV. These cases cannot produce a safe result.
         ObjectTrackingUiPolicy.requireStartCompatible(clip.propertyAnimations)
+        require(clip.keyframes.isEmpty()) { "OBJECT_TRACKING_LEGACY_KEYFRAMES_UNSUPPORTED" }
         require(!clip.timeMap.reverse) { "OBJECT_TRACKING_REVERSE_UNSUPPORTED" }
         require(clip.timeMap.freezeSegments.isEmpty()) { "OBJECT_TRACKING_FREEZE_UNSUPPORTED" }
         require(clip.sourceInUs >= 0L && clip.sourceOutUs > clip.sourceInUs) {

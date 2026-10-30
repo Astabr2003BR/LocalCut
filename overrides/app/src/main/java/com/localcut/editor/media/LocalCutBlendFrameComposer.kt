@@ -31,10 +31,12 @@ internal class LocalCutBlendFrameComposer(
 
         val renderedTargets = mutableMapOf<BlendRenderTarget, GlTextureInfo>()
         plan.steps.forEach { step ->
-            val backdrop = when (val ref = step.backdrop) {
-                is BlendBackdropRef.Input -> inputs[ref.inputId].texture
-                is BlendBackdropRef.Target -> renderedTargets[ref.target]
-                    ?: error("BLEND_BACKDROP_TARGET_UNAVAILABLE")
+            val (backdrop, backdropAlphaScale) = when (val ref = step.backdrop) {
+                is BlendBackdropRef.Input -> inputs[ref.inputId].let { input -> input.texture to input.alphaScale }
+                is BlendBackdropRef.Target -> {
+                    val texture = renderedTargets[ref.target] ?: error("BLEND_BACKDROP_TARGET_UNAVAILABLE")
+                    texture to 1f
+                }
             }
             val source = inputs[step.sourceInputId]
             val target = when (step.target) {
@@ -51,6 +53,7 @@ internal class LocalCutBlendFrameComposer(
                 source = source.texture,
                 output = target,
                 mode = step.mode,
+                backdropAlphaScale = backdropAlphaScale,
                 sourceAlphaScale = source.alphaScale,
             )
             renderedTargets[step.target] = target

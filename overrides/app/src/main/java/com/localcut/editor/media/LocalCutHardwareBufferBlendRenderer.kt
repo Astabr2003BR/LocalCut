@@ -10,6 +10,7 @@ import android.opengl.EGLDisplay
 import android.opengl.GLES20
 import androidx.annotation.RequiresApi
 import androidx.media3.common.C
+import androidx.media3.common.Effect
 import androidx.media3.common.GlTextureInfo
 import androidx.media3.common.util.GlUtil
 import androidx.media3.common.video.AsyncFrame
@@ -17,6 +18,7 @@ import androidx.media3.common.video.Frame
 import androidx.media3.common.video.HardwareBufferFrame
 import androidx.media3.effect.DefaultGlFrameProcessor
 import androidx.media3.effect.HardwareBufferJniWrapper
+import com.google.common.collect.ImmutableList
 import com.google.common.collect.ImmutableMap
 
 @RequiresApi(26)
@@ -137,7 +139,7 @@ internal class LocalCutHardwareBufferBlendRenderer(
 
             val outputMetadata = ImmutableMap.builder<String, Any>()
                 .putAll(first.metadata)
-                .put(DefaultGlFrameProcessor.KEY_ITEM_EFFECTS, emptyList<Any>())
+                .put(DefaultGlFrameProcessor.KEY_ITEM_EFFECTS, ImmutableList.of<Effect>())
                 .buildKeepingLast()
             return LocalCutHardwareBufferFrame(
                 hardwareBuffer = outputBuffer,

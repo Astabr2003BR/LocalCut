@@ -9,7 +9,7 @@ import threading
 
 from localcut_agent import ApprovalStore, DeveloperAgentPolicy, SafeAgentExecutor, TermuxNotificationSink
 from localcut_agent_rpc import DEFAULT_AGENT_PORT, create_agent_server
-from localcut_creative_server import create_toolchain_server
+from localcut_audio_extension import create_audio_toolchain_server
 from localcut_engine import (
     DEFAULT_CREDENTIALS_FILE,
     DEFAULT_ENGINE_DIR,
@@ -121,7 +121,7 @@ def main() -> None:
         approvals = ApprovalStore(args.approvals_file)
         notifications = TermuxNotificationSink()
 
-        media_server = create_toolchain_server(
+        media_server = create_audio_toolchain_server(
             args.host,
             args.port,
             token,

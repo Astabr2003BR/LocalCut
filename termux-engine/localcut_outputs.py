@@ -11,6 +11,16 @@ from localcut_jobs import _validate_job_id
 
 DEFAULT_MAX_GENERATED_BYTES = 4 * 1024 * 1024 * 1024
 MAX_CHUNK_BYTES = 1024 * 1024
+_MEDIA_FILES = {
+    "video/mp4": "output.mp4",
+    "audio/mp4": "output.m4a",
+}
+
+
+def _media_file_name(mime_type: str) -> str:
+    if mime_type not in _MEDIA_FILES:
+        raise ValueError("GENERATED_MEDIA_TYPE_INVALID")
+    return _MEDIA_FILES[mime_type]
 
 
 class GeneratedMediaSpool:
@@ -22,24 +32,23 @@ class GeneratedMediaSpool:
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(self.root, 0o700)
 
-    def prepare_output(self, job_id: str) -> Path:
+    def prepare_output(self, job_id: str, mime_type: str = "video/mp4") -> Path:
         normalized_id = _validate_job_id(job_id)
+        file_name = _media_file_name(mime_type)
         job_dir = self.root / normalized_id
         job_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(job_dir, 0o700)
-        output = job_dir / "output.mp4"
         metadata = job_dir / "output.json"
-        for path in (output, metadata):
-            try:
-                path.unlink()
-            except FileNotFoundError:
-                pass
-        return output
+        for supported_name in _MEDIA_FILES.values():
+            self._unlink_if_present(job_dir / supported_name)
+        self._unlink_if_present(metadata)
+        return job_dir / file_name
 
-    def finalize(self, job_id: str) -> dict:
+    def finalize(self, job_id: str, mime_type: str = "video/mp4") -> dict:
         normalized_id = _validate_job_id(job_id)
+        file_name = _media_file_name(mime_type)
         job_dir = self.root / normalized_id
-        output = job_dir / "output.mp4"
+        output = job_dir / file_name
         if output.is_symlink():
             raise ValueError("GENERATED_MEDIA_INVALID")
         if not output.is_file():
@@ -61,7 +70,7 @@ class GeneratedMediaSpool:
         result = {
             "sizeBytes": stat_result.st_size,
             "sha256": digest.hexdigest(),
-            "mimeType": "video/mp4",
+            "mimeType": mime_type,
         }
         self._write_metadata(job_dir / "output.json", result)
         os.chmod(output, 0o600)
@@ -70,11 +79,10 @@ class GeneratedMediaSpool:
     def metadata(self, job_id: str) -> dict:
         normalized_id = _validate_job_id(job_id)
         job_dir = self.root / normalized_id
-        output = job_dir / "output.mp4"
         metadata_path = job_dir / "output.json"
-        if output.is_symlink() or metadata_path.is_symlink():
+        if metadata_path.is_symlink():
             raise ValueError("GENERATED_MEDIA_INVALID")
-        if not output.is_file() or not metadata_path.is_file():
+        if not metadata_path.is_file():
             raise FileNotFoundError("GENERATED_MEDIA_NOT_READY")
         try:
             raw = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -85,6 +93,15 @@ class GeneratedMediaSpool:
         size_bytes = raw.get("sizeBytes")
         sha256 = raw.get("sha256")
         mime_type = raw.get("mimeType")
+        try:
+            file_name = _media_file_name(mime_type)
+        except ValueError as exc:
+            raise ValueError("GENERATED_MEDIA_METADATA_INVALID") from exc
+        output = job_dir / file_name
+        if output.is_symlink():
+            raise ValueError("GENERATED_MEDIA_INVALID")
+        if not output.is_file():
+            raise FileNotFoundError("GENERATED_MEDIA_NOT_READY")
         if (
             not isinstance(size_bytes, int)
             or size_bytes <= 0
@@ -92,7 +109,6 @@ class GeneratedMediaSpool:
             or not isinstance(sha256, str)
             or len(sha256) != 64
             or any(ch not in "0123456789abcdef" for ch in sha256)
-            or mime_type != "video/mp4"
         ):
             raise ValueError("GENERATED_MEDIA_METADATA_INVALID")
         if output.stat().st_size != size_bytes:
@@ -105,7 +121,7 @@ class GeneratedMediaSpool:
             raise ValueError("GENERATED_MEDIA_CHUNK_SIZE_INVALID")
         normalized_id = _validate_job_id(job_id)
         metadata = self.metadata(normalized_id)
-        output = self.root / normalized_id / "output.mp4"
+        output = self.root / normalized_id / _media_file_name(metadata["mimeType"])
         remaining = metadata["sizeBytes"]
         with output.open("rb") as handle:
             while remaining > 0:
@@ -120,6 +136,13 @@ class GeneratedMediaSpool:
     def remove(self, job_id: str) -> None:
         normalized_id = _validate_job_id(job_id)
         shutil.rmtree(self.root / normalized_id, ignore_errors=True)
+
+    @staticmethod
+    def _unlink_if_present(path: Path) -> None:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
 
     @staticmethod
     def _write_metadata(path: Path, value: dict) -> None:

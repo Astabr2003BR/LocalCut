@@ -4,6 +4,7 @@ import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.CompositingSettings
 import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.model.TimeMap
+import com.localcut.editor.domain.model.TransformKeyframe
 import com.localcut.editor.domain.model.TransformValue
 
 data class ObjectTrackingApplySnapshot(
@@ -14,6 +15,7 @@ data class ObjectTrackingApplySnapshot(
     val sourceInUs: Long,
     val sourceOutUs: Long,
     val transform: TransformValue,
+    val keyframes: List<TransformKeyframe>,
     val propertyAnimations: List<PropertyAnimation>,
     val compositing: CompositingSettings,
     val timeMap: TimeMap,
@@ -28,6 +30,7 @@ object ObjectTrackingApplyGuard {
         sourceInUs = clip.sourceInUs,
         sourceOutUs = clip.sourceOutUs,
         transform = clip.transform,
+        keyframes = clip.keyframes.toList(),
         propertyAnimations = clip.propertyAnimations.toList(),
         compositing = clip.compositing,
         timeMap = clip.timeMap,

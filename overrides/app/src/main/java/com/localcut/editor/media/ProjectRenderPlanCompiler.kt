@@ -3,7 +3,6 @@ package com.localcut.editor.media
 import com.localcut.editor.domain.model.*
 import com.localcut.editor.domain.timeline.TimelineMath
 import com.localcut.editor.domain.timeline.TimelineValidator
-import kotlin.math.roundToInt
 
 object ProjectRenderPlanCompiler {
     fun compile(
@@ -41,7 +40,12 @@ object ProjectRenderPlanCompiler {
         }
         val durationUs = TimelineMath.durationUs(project)
         val outputFps = outputSettings.fps ?: project.fps
-        val (width, height) = outputSize(project.width, project.height, mode, outputSettings)
+        val outputSize = RenderOutputSizeResolver.resolve(
+            projectWidth = project.width,
+            projectHeight = project.height,
+            mode = mode,
+            outputSettings = outputSettings,
+        )
         val assets = project.assets.associateBy { it.id }
         val visualLayers = visualTracks.flatMap { track ->
             buildVisualLayers(
@@ -55,8 +59,8 @@ object ProjectRenderPlanCompiler {
             )
         }
         RenderPlan(
-            width = width,
-            height = height,
+            width = outputSize.width,
+            height = outputSize.height,
             transformSpaceWidth = project.width,
             transformSpaceHeight = project.height,
             fps = outputFps,
@@ -196,23 +200,4 @@ object ProjectRenderPlanCompiler {
             laneIndex = laneIndex,
         )
     }
-
-    private fun outputSize(
-        projectWidth: Int,
-        projectHeight: Int,
-        mode: RenderMode,
-        outputSettings: RenderOutputSettings,
-    ): Pair<Int, Int> {
-        val width = outputSettings.width ?: projectWidth
-        val height = outputSettings.height ?: projectHeight
-        if (mode != RenderMode.FAST_PREVIEW) return width to height
-
-        val previewLongEdge = outputSettings.previewMaxLongEdge ?: FAST_PREVIEW_LONG_EDGE
-        val longEdge = maxOf(width, height)
-        if (longEdge <= previewLongEdge) return width to height
-        val scale = previewLongEdge.toDouble() / longEdge.toDouble()
-        return maxOf(1, (width * scale).roundToInt()) to maxOf(1, (height * scale).roundToInt())
-    }
-
-    private const val FAST_PREVIEW_LONG_EDGE = 720
 }

@@ -46,8 +46,30 @@ class Media3ChromaKeyBackendTest {
     }
 
     @Test
-    fun freeformAndBlendRemainBlockedUntilTheirDedicatedBackendsExist() {
+    fun validFreeformAndDedicatedBlendBackendAreReportedAsRenderable() {
         val freeform = CompositingSettings(
+            masks = listOf(
+                MaskSpec(
+                    id = "free",
+                    kind = MaskKind.FREEFORM,
+                    points = listOf(
+                        MaskPoint(0.5, 0.1),
+                        MaskPoint(0.9, 0.5),
+                        MaskPoint(0.5, 0.9),
+                        MaskPoint(0.1, 0.5),
+                    ),
+                ),
+            ),
+        )
+        val blend = CompositingSettings(blendMode = BlendMode.SCREEN)
+
+        assertTrue(Media3CompositingEffectFactory.canRender(freeform))
+        assertTrue(Media3CompositingEffectFactory.canRender(blend))
+    }
+
+    @Test
+    fun invalidTwoPointFreeformStillFailsClosed() {
+        val invalid = CompositingSettings(
             masks = listOf(
                 MaskSpec(
                     id = "free",
@@ -56,9 +78,7 @@ class Media3ChromaKeyBackendTest {
                 ),
             ),
         )
-        val blend = CompositingSettings(blendMode = BlendMode.SCREEN)
 
-        assertFalse(Media3CompositingEffectFactory.canRender(freeform))
-        assertFalse(Media3CompositingEffectFactory.canRender(blend))
+        assertFalse(Media3CompositingEffectFactory.canRender(invalid))
     }
 }

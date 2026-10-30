@@ -20,7 +20,14 @@ private class FakeEngine : PreviewEngine {
     var errorListener: ((String) -> Unit)? = null
     override fun load(project: Project): Result<PreviewLoadResult> {
         loadCount++
-        return Result.success(PreviewLoadResult(durationUs = project.tracks.flatMap { it.clips }.maxOfOrNull { it.startUs + it.durationUs } ?: 0L, fps = project.fps))
+        return Result.success(
+            PreviewLoadResult(
+                durationUs = project.tracks.flatMap { it.clips }.maxOfOrNull { it.startUs + it.durationUs } ?: 0L,
+                fps = project.fps,
+                outputWidth = project.width,
+                outputHeight = project.height,
+            ),
+        )
     }
     override fun play() { playCount++ }
     override fun pause() { pauseCount++ }
@@ -52,11 +59,13 @@ private fun project(durationUs: Long = 5_000_000L): Project {
 }
 
 fun main() {
-    case("load exposes duration and fps") {
+    case("load exposes duration fps and exact render geometry") {
         val engine = FakeEngine(); val ticker = FakeTicker(); val controller = DefaultPreviewController(engine, ticker)
         controller.load(project()).getOrThrow()
         assertThat(controller.state.value.durationUs == 5_000_000L, "duration")
         assertThat(controller.state.value.fps == 30, "fps")
+        assertThat(controller.state.value.outputWidth == 1080, "output width")
+        assertThat(controller.state.value.outputHeight == 1920, "output height")
     }
     case("play pause and position polling") {
         val engine = FakeEngine(); val ticker = FakeTicker(); val controller = DefaultPreviewController(engine, ticker)
@@ -98,13 +107,14 @@ fun main() {
         assertThat(engine.loadCount == 2, "load count")
         assertThat(controller.state.value.durationUs == 3_000_000L, "new duration")
     }
-    case("rendered preview load resets transport without project reload") {
+    case("rendered preview load resets transport and clears unknown geometry") {
         val engine = FakeEngine(); val ticker = FakeTicker(); val controller = DefaultPreviewController(engine, ticker)
         controller.load(project()).getOrThrow(); controller.seekToUs(2_000_000L)
         controller.loadResult(Result.success(PreviewLoadResult(durationUs = 1_000_000L, fps = 24))).getOrThrow()
         assertThat(engine.loadCount == 1, "project engine must not reload")
         assertThat(controller.state.value.durationUs == 1_000_000L, "rendered duration")
         assertThat(controller.state.value.positionUs == 0L && controller.state.value.fps == 24, "rendered state reset")
+        assertThat(controller.state.value.outputWidth == null && controller.state.value.outputHeight == null, "rendered geometry must be unknown")
     }
     case("engine error becomes visible state") {
         val engine = FakeEngine(); val controller = DefaultPreviewController(engine, FakeTicker())

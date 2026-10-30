@@ -2,6 +2,7 @@ package com.localcut.editor.ui.editor
 
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.AudioProcessingSettings
+import com.localcut.editor.domain.model.BlendMode
 import com.localcut.editor.domain.model.ChromaKeySettings
 import com.localcut.editor.domain.model.CompositingSettings
 import com.localcut.editor.domain.model.CompressorSettings
@@ -181,6 +182,9 @@ object CreativeToolsUiPolicy {
         val bounded = speed.coerceIn(0.1, 10.0)
         return source.toMutableList().also { it[index] = bounded }
     }
+
+    fun setBlendMode(source: CompositingSettings, mode: BlendMode): CompositingSettings =
+        source.copy(blendMode = mode)
 
     fun setMaskPreset(source: CompositingSettings, kind: MaskKind): CompositingSettings {
         require(kind in setOf(MaskKind.RECTANGLE, MaskKind.ELLIPSE, MaskKind.FREEFORM)) {

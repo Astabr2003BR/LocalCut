@@ -45,7 +45,7 @@ class EditorChromeUiPolicyTest {
     }
 
     @Test
-    fun incompatibleToolClosesInsteadOfOpeningAnotherPanel() {
+    fun incompatibleOrNotYetLiveToolClosesInsteadOfOpeningAnotherPanel() {
         assertNull(EditorChromeUiPolicy.resolveActiveTool(EditorToolId.MASK, EditorSelectionKind.AUDIO))
         assertNull(EditorChromeUiPolicy.resolveActiveTool(EditorToolId.SPEED, EditorSelectionKind.IMAGE))
         assertNull(EditorChromeUiPolicy.resolveActiveTool(EditorToolId.TRACKING, EditorSelectionKind.VIDEO))
@@ -66,6 +66,7 @@ class EditorChromeUiPolicyTest {
         assertEquals(ContextPanelKind.MASK, EditorChromeUiPolicy.panelFor(EditorToolId.MASK))
         assertEquals(ContextPanelKind.CHROMA, EditorChromeUiPolicy.panelFor(EditorToolId.CHROMA))
         assertEquals(ContextPanelKind.ANIMATION, EditorChromeUiPolicy.panelFor(EditorToolId.ANIMATION))
+        assertEquals(ContextPanelKind.TRACKING, EditorChromeUiPolicy.panelFor(EditorToolId.TRACKING))
         assertEquals(ContextPanelKind.LAYERS, EditorChromeUiPolicy.panelFor(EditorToolId.LAYERS))
         assertEquals(ContextPanelKind.DESIGN, EditorChromeUiPolicy.panelFor(EditorToolId.DESIGN))
         assertEquals(ContextPanelKind.CANVAS, EditorChromeUiPolicy.panelFor(EditorToolId.CANVAS))

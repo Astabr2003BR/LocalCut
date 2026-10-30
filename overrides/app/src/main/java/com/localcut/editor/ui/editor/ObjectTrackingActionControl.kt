@@ -12,6 +12,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,11 +59,6 @@ fun ObjectTrackingActionControl(
     }
     val scope = rememberCoroutineScope()
 
-    DisposableEffect(Unit) {
-        ObjectTrackingPreviewSession.setEnabled(true)
-        onDispose { ObjectTrackingPreviewSession.setEnabled(false) }
-    }
-
     val selectedClipId = editorSession.selectedClipId
     val project = editorSession.project
     val clip = selectedClipId?.let(project::findClip)
@@ -74,6 +70,9 @@ fun ObjectTrackingActionControl(
     val playheadUs = preview.positionUs
     val playheadInsideClip = clip != null && clipEndUs != null &&
         playheadUs >= clip.startUs && playheadUs < clipEndUs
+    val canCaptureAtAnchor = clip != null && playheadInsideClip && runCatching {
+        ObjectTrackingSelectionAnchorPolicy.canCapture(playheadUs, clip, project.fps)
+    }.getOrDefault(false)
     val selection = trackingSession.selection
     val hasViewport = trackingSession.viewportWidthPx > 0 && trackingSession.viewportHeightPx > 0
 
@@ -81,12 +80,27 @@ fun ObjectTrackingActionControl(
     var running by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf<String?>(null) }
 
+    DisposableEffect(Unit) {
+        onDispose { ObjectTrackingPreviewSession.setEnabled(false) }
+    }
+
+    LaunchedEffect(selectedClipId, clip?.startUs, videoSelected) {
+        ObjectTrackingPreviewSession.setSelection(null)
+        if (clip != null && videoSelected) {
+            viewModel.seekToUs(ObjectTrackingSelectionAnchorPolicy.anchorProjectTimeUs(clip))
+        }
+    }
+
+    LaunchedEffect(canCaptureAtAnchor) {
+        ObjectTrackingPreviewSession.setEnabled(canCaptureAtAnchor)
+    }
+
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(
-            "Marque o objeto no preview e execute o rastreamento.",
+            "Marque o objeto no primeiro frame do clipe e execute o rastreamento.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -156,7 +170,7 @@ fun ObjectTrackingActionControl(
                         running = false
                     }
                 },
-                enabled = videoSelected && playheadInsideClip && selection != null && hasViewport && !running,
+                enabled = videoSelected && canCaptureAtAnchor && selection != null && hasViewport && !running,
             ) {
                 Text(if (running) "Rastreando…" else "Rastrear objeto")
             }
@@ -177,6 +191,11 @@ fun ObjectTrackingActionControl(
             )
             !playheadInsideClip -> Text(
                 "Posicione o cursor dentro do clipe selecionado.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            !canCaptureAtAnchor -> Text(
+                "Tracking usa o primeiro frame como âncora. Volte o cursor ao início do clipe para marcar o objeto.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -209,6 +228,8 @@ private fun objectTrackingFailureMessage(code: String?): String = when (code) {
         "Tracking descartado • o clipe, o canvas, a câmera ou as camadas mudaram durante o processamento."
     "OBJECT_TRACKING_PLAYHEAD_OUTSIDE_CLIP" ->
         "Falha no Tracking • posicione o cursor dentro do clipe selecionado."
+    "OBJECT_TRACKING_SELECTION_ANCHOR_REQUIRED" ->
+        "Falha no Tracking • a seleção deve ser feita no primeiro frame do clipe."
     "OBJECT_TRACKING_SELECTION_OUTSIDE_VIEWPORT",
     "OBJECT_TRACKING_SELECTION_OUTSIDE_MEDIA",
     "OBJECT_TRACKING_ROI_TOO_SMALL" ->

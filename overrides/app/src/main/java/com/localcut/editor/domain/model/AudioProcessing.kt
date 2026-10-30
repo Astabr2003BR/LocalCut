@@ -50,6 +50,20 @@ data class NoiseGateSettings(
     }
 }
 
+data class AudioDuckingSettings(
+    val sourceTrackId: String,
+    val reductionDb: Double = -12.0,
+    val attackUs: Long = 100_000L,
+    val releaseUs: Long = 250_000L,
+) {
+    fun validationIssues(): List<String> = buildList {
+        if (sourceTrackId.isBlank()) add("ducking source track must not be blank")
+        if (!reductionDb.isFinite() || reductionDb !in -48.0..0.0) add("ducking reduction must be finite and in -48..0 dB")
+        if (attackUs < 0L || attackUs > 5_000_000L) add("ducking attack must be in 0..5000000 us")
+        if (releaseUs < 0L || releaseUs > 10_000_000L) add("ducking release must be in 0..10000000 us")
+    }
+}
+
 data class AudioProcessingSettings(
     val eqBands: List<EqBand> = emptyList(),
     val compressor: CompressorSettings? = null,

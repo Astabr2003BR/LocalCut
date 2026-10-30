@@ -11,7 +11,6 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.effect.MultipleInputVideoGraph
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.CompositionPlayer
 import androidx.media3.transformer.EditedMediaItem
@@ -138,9 +137,6 @@ class Media3PreviewController(
                 surfaceReady = surfaceReady,
             )
         ) {
-            // PlayerView owns the normal Media3 surface lifecycle. Re-register only after the
-            // recreated surface is actually ready; returning from Home/pickers can briefly leave
-            // SurfaceView/TextureView present but not usable yet on Android 16.
             runCatching {
                 when (videoOutput) {
                     is SurfaceView -> player.setVideoSurfaceView(videoOutput)
@@ -200,6 +196,7 @@ private class Media3PreviewEngine(
 ) : PreviewEngine {
     private val appContext = context.applicationContext
     private var activePlayer: CompositionPlayer? = null
+    private var activeUsesCustomProcessor: Boolean = false
     private var errorCallback: (String) -> Unit = {}
 
     val player: CompositionPlayer
@@ -217,7 +214,7 @@ private class Media3PreviewEngine(
     }
 
     override fun load(project: Project): Result<PreviewLoadResult> {
-        val player = ensurePlayer()
+        val player = ensurePlayer(project)
         val durationUs = TimelineMath.durationUs(project)
         if (durationUs == 0L) {
             player.pause()
@@ -274,19 +271,33 @@ private class Media3PreviewEngine(
     }
     override fun release() = releaseForBackground()
 
-    private fun ensurePlayer(): CompositionPlayer {
-        activePlayer?.let { return it }
-        return CompositionPlayer.Builder(appContext)
-            .setVideoGraphFactory(MultipleInputVideoGraph.Factory())
-            .build()
-            .also { player ->
-                player.addListener(object : Player.Listener {
-                    override fun onPlayerError(error: PlaybackException) {
-                        errorCallback(error.message ?: "Media3 playback error")
-                    }
-                })
-                activePlayer = player
+    private fun ensurePlayer(project: Project? = null): CompositionPlayer {
+        val requestedCustomProcessor = project?.let(LocalCutFrameProcessorIntegration::shouldUseCustomProcessor)
+        activePlayer?.let { current ->
+            if (requestedCustomProcessor == null || requestedCustomProcessor == activeUsesCustomProcessor) {
+                return current
             }
+            current.release()
+            activePlayer = null
+        }
+
+        val builder = CompositionPlayer.Builder(appContext)
+        if (project == null) {
+            builder.setVideoGraphFactory(androidx.media3.effect.MultipleInputVideoGraph.Factory())
+            activeUsesCustomProcessor = false
+        } else {
+            LocalCutFrameProcessorIntegration.configurePreviewBuilder(builder, appContext, project)
+            activeUsesCustomProcessor = requestedCustomProcessor == true
+        }
+
+        return builder.build().also { created ->
+            created.addListener(object : Player.Listener {
+                override fun onPlayerError(error: PlaybackException) {
+                    errorCallback(error.message ?: "Media3 playback error")
+                }
+            })
+            activePlayer = created
+        }
     }
 }
 

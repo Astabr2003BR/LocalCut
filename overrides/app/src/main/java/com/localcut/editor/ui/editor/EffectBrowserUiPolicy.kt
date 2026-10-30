@@ -12,6 +12,7 @@ enum class EffectBrowserCategory {
     BLUR,
     TEXTURE,
     DISTORTION,
+    MOTION,
 }
 
 data class EffectBrowserPreset(
@@ -40,6 +41,7 @@ object EffectBrowserUiPolicy {
         EffectBrowserCategory.BLUR,
         EffectBrowserCategory.TEXTURE,
         EffectBrowserCategory.DISTORTION,
+        EffectBrowserCategory.MOTION,
     )
 
     private val presets = listOf(
@@ -61,6 +63,7 @@ object EffectBrowserUiPolicy {
         EffectBrowserPreset(EffectBrowserCategory.DISTORTION, "Mosaic", "localcut.mosaic", "blockSize", 12.0),
         EffectBrowserPreset(EffectBrowserCategory.DISTORTION, "Ripple", "localcut.ripple", "amplitude", 10.0),
         EffectBrowserPreset(EffectBrowserCategory.DISTORTION, "Displace", "localcut.displacement", "amount", 12.0),
+        EffectBrowserPreset(EffectBrowserCategory.MOTION, "Motion Blur", "localcut.motion_blur", "shutterAngle", 180.0),
     )
 
     fun categories(): List<EffectBrowserCategory> = orderedCategories
@@ -163,6 +166,7 @@ object EffectBrowserUiPolicy {
         EffectBrowserCategory.BLUR -> "Desfoque"
         EffectBrowserCategory.TEXTURE -> "Textura"
         EffectBrowserCategory.DISTORTION -> "Distorção"
+        EffectBrowserCategory.MOTION -> "Movimento"
     }
 
     private fun numericRange(typeId: String, parameterName: String): ClosedFloatingPointRange<Double>? {
@@ -185,6 +189,8 @@ object EffectBrowserUiPolicy {
         "amplitude" -> "Amplitude"
         "frequency" -> "Frequência"
         "stops" -> "Exposição"
+        "shutterAngle" -> "Obturador"
+        "samples" -> "Amostras"
         else -> name
     }
 }

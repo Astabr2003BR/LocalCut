@@ -20,7 +20,7 @@ import androidx.media3.common.video.HardwareBufferFrame
 import androidx.media3.common.video.SyncFenceWrapper
 import androidx.media3.effect.DefaultGlFrameProcessor
 import androidx.media3.effect.DefaultGlObjectsProvider
-import androidx.media3.effect.ndk.HardwareBufferJni
+import androidx.media3.effect.HardwareBufferJni
 import com.google.common.util.concurrent.ListeningExecutorService
 import com.google.common.util.concurrent.MoreExecutors
 import java.util.Collections

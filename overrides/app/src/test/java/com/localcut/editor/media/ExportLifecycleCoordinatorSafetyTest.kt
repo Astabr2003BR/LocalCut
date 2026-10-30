@@ -33,7 +33,7 @@ class ExportLifecycleCoordinatorSafetyTest {
     }
 
     @Test
-    fun throwingDiscardCannotPreventCancellationCleanup() {
+    fun throwingDiscardIsReportedAsCleanupFailureAndStillCleansTempFile() {
         val tempFile = File.createTempFile("localcut-cancel-test-", ".tmp")
         val events = mutableListOf<ExportEvent>()
         val destination = object : ExportDestination {
@@ -45,7 +45,9 @@ class ExportLifecycleCoordinatorSafetyTest {
         coordinator.started()
         coordinator.cancel()
 
-        assertTrue(events.last() is ExportEvent.Cancelled)
+        val event = events.last()
+        assertTrue(event is ExportEvent.Failed)
+        assertTrue((event as ExportEvent.Failed).message.contains("cleanup failed"))
         assertFalse(tempFile.exists())
         assertTrue(coordinator.isTerminal())
     }

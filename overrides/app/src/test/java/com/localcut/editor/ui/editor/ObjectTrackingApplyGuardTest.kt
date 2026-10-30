@@ -1,6 +1,8 @@
 package com.localcut.editor.ui.editor
 
 import com.localcut.editor.domain.model.Clip
+import com.localcut.editor.domain.model.TransformKeyframe
+import com.localcut.editor.domain.model.TransformValue
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -25,6 +27,25 @@ class ObjectTrackingApplyGuardTest {
         assertFalse(ObjectTrackingApplyGuard.canApply(captured, clip.copy(sourceOutUs = clip.sourceOutUs - 1L)))
         assertFalse(ObjectTrackingApplyGuard.canApply(captured, clip.copy(durationUs = clip.durationUs - 1L)))
         assertFalse(ObjectTrackingApplyGuard.canApply(captured, clip.copy(assetId = "asset-2")))
+    }
+
+    @Test
+    fun changedLegacyTransformKeyframesFailClosed() {
+        val clip = videoClip().copy(
+            keyframes = listOf(
+                TransformKeyframe(0L, TransformValue(x = 0.0)),
+                TransformKeyframe(500_000L, TransformValue(x = 100.0)),
+            ),
+        )
+        val captured = ObjectTrackingApplyGuard.capture(clip)
+        val edited = clip.copy(
+            keyframes = listOf(
+                TransformKeyframe(0L, TransformValue(x = 0.0)),
+                TransformKeyframe(500_000L, TransformValue(x = 180.0)),
+            ),
+        )
+
+        assertFalse(ObjectTrackingApplyGuard.canApply(captured, edited))
     }
 
     private fun videoClip() = Clip(

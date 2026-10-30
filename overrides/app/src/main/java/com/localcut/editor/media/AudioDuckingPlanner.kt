@@ -102,6 +102,9 @@ class AudioDuckingIndex(
                 )
             }
             .sortedBy { it.startUs }
+        require(intervals.zipWithNext().all { (left, right) -> left.effectEndUs <= right.effectEndUs }) {
+            "ducking sidechain effect end times must be monotonic after start ordering"
+        }
     }
 
     fun plan(targetClip: Clip): AudioDuckingEnvelope {

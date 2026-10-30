@@ -4,6 +4,8 @@ import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.TimeMap
+import com.localcut.editor.domain.model.TransformKeyframe
+import com.localcut.editor.domain.model.TransformValue
 import com.localcut.editor.termux.TermuxObjectTrackingAnalysis
 import com.localcut.editor.termux.TermuxObjectTrackingOptions
 import com.localcut.editor.termux.TermuxObjectTrackingSample
@@ -124,6 +126,34 @@ class ObjectTrackingActionCoordinatorTest {
 
         assertTrue(result.isFailure)
         assertEquals("OBJECT_TRACKING_REVERSE_UNSUPPORTED", result.exceptionOrNull()?.message)
+        assertEquals(0, gateway.calls)
+    }
+
+    @Test
+    fun legacyTransformKeyframesFailBeforeExpensiveTermuxJob() = runBlocking {
+        val clip = videoClip().copy(
+            keyframes = listOf(
+                TransformKeyframe(0L, TransformValue(x = 0.0)),
+                TransformKeyframe(500_000L, TransformValue(x = 100.0)),
+            ),
+        )
+        val gateway = FakeGateway { error("must not run") }
+        val coordinator = ObjectTrackingActionCoordinator(
+            analysisGateway = gateway,
+            currentClipProvider = { clip },
+        )
+
+        val result = coordinator.buildCommand(
+            asset = videoAsset(),
+            captured = ObjectTrackingApplyGuard.capture(clip),
+            roi = NormalizedMediaRoi(0.1, 0.2, 0.3, 0.4),
+            sourceGeometry = geometry(),
+            projectWidth = 1000,
+            projectHeight = 500,
+        )
+
+        assertTrue(result.isFailure)
+        assertEquals("OBJECT_TRACKING_LEGACY_KEYFRAMES_UNSUPPORTED", result.exceptionOrNull()?.message)
         assertEquals(0, gateway.calls)
     }
 

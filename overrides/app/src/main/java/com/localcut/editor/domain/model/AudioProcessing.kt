@@ -57,6 +57,7 @@ data class AudioProcessingSettings(
     val noiseGate: NoiseGateSettings? = null,
     val pan: Double = 0.0,
     val normalizationGainDb: Double = 0.0,
+    val pitchSemitones: Double = 0.0,
 ) {
     fun validationIssues(): List<String> = buildList {
         if (eqBands.size > 16) add("audio EQ supports at most 16 bands")
@@ -66,7 +67,12 @@ data class AudioProcessingSettings(
         noiseGate?.let { addAll(it.validationIssues()) }
         if (!pan.isFinite() || pan !in -1.0..1.0) add("audio pan must be finite and in -1..1")
         if (!normalizationGainDb.isFinite() || normalizationGainDb !in -48.0..48.0) add("normalization gain must be finite and in -48..48 dB")
+        if (!pitchSemitones.isFinite() || pitchSemitones !in -24.0..24.0) add("pitch semitones must be finite and in -24..24")
     }
+
+    fun hasSampleDsp(): Boolean =
+        eqBands.isNotEmpty() || compressor != null || limiter != null || noiseGate != null ||
+            pan != 0.0 || normalizationGainDb != 0.0
 }
 
 data class BeatMarker(

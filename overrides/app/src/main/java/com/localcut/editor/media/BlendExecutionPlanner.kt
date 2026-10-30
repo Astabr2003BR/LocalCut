@@ -3,7 +3,6 @@ package com.localcut.editor.media
 import com.localcut.editor.domain.model.BlendMode
 
 sealed interface BlendBackdropRef {
-    data object Transparent : BlendBackdropRef
     data class Input(val inputId: Int) : BlendBackdropRef
     data class Target(val target: BlendRenderTarget) : BlendBackdropRef
 }
@@ -22,16 +21,14 @@ data class BlendExecutionPlan(
 
 object BlendExecutionPlanner {
     fun plan(modesByInputId: List<BlendMode>): BlendExecutionPlan {
-        require(modesByInputId.isNotEmpty()) { "BLEND_INPUTS_EMPTY" }
-        val bottomInputId = modesByInputId.lastIndex
-        val sourceOrder = (bottomInputId downTo 0).toList()
-        val targets = BlendRenderTargetPlanner.targetsFor(sourceOrder.size)
-        var backdrop: BlendBackdropRef = BlendBackdropRef.Transparent
-        val steps = sourceOrder.mapIndexed { index, inputId ->
+        val passPlan = BlendPassPlanner.plan(modesByInputId)
+        val targets = BlendRenderTargetPlanner.targetsFor(passPlan.passes.size)
+        var backdrop: BlendBackdropRef = BlendBackdropRef.Input(passPlan.bottomInputId)
+        val steps = passPlan.passes.mapIndexed { index, pass ->
             val target = targets[index]
             BlendExecutionStep(
-                sourceInputId = inputId,
-                mode = modesByInputId[inputId],
+                sourceInputId = pass.sourceInputId,
+                mode = pass.mode,
                 backdrop = backdrop,
                 target = target,
             ).also {
@@ -39,7 +36,7 @@ object BlendExecutionPlanner {
             }
         }
         return BlendExecutionPlan(
-            bottomInputId = bottomInputId,
+            bottomInputId = passPlan.bottomInputId,
             steps = steps,
         )
     }

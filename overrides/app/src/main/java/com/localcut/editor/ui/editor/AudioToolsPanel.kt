@@ -106,6 +106,14 @@ fun AudioToolsPanel(
                     ) { value ->
                         onSetAudioProcessing(AudioToolsUiPolicy.setNormalizationGain(settings, value))
                     }
+                    AudioCommitSlider(
+                        label = "Pitch",
+                        initial = settings.pitchSemitones,
+                        range = -24f..24f,
+                        suffix = " st",
+                    ) { value ->
+                        onSetAudioProcessing(AudioToolsUiPolicy.setPitchSemitones(settings, value))
+                    }
 
                     Row(
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),

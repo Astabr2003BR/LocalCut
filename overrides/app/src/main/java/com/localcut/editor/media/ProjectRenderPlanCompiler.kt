@@ -72,6 +72,11 @@ object ProjectRenderPlanCompiler {
                 val duckingSourceTrack = duckingSettings?.let { settings ->
                     audibleAudioTracksById[settings.sourceTrackId]
                 }
+                val duckingIndex = if (duckingSettings != null && duckingSourceTrack != null) {
+                    AudioDuckingIndex(duckingSourceTrack, duckingSettings)
+                } else {
+                    null
+                }
                 buildSequence(
                     track = track,
                     totalDurationUs = durationUs,
@@ -79,8 +84,7 @@ object ProjectRenderPlanCompiler {
                     assets = assets,
                     resolver = resolver,
                     mode = mode,
-                    duckingSourceTrack = duckingSourceTrack,
-                    duckingSettings = duckingSettings,
+                    duckingIndex = duckingIndex,
                 )
             },
         )
@@ -147,8 +151,7 @@ object ProjectRenderPlanCompiler {
         laneIndex: Int = 0,
         mode: RenderMode,
         compositionGraph: CompositionGraph? = null,
-        duckingSourceTrack: Track? = null,
-        duckingSettings: AudioDuckingSettings? = null,
+        duckingIndex: AudioDuckingIndex? = null,
     ): RenderSequencePlan {
         val segments = mutableListOf<RenderSegment>()
         var cursorUs = 0L
@@ -180,10 +183,8 @@ object ProjectRenderPlanCompiler {
                     )
                 }
             }
-            val duckingEnvelope = if (
-                track.type == TrackType.AUDIO && duckingSourceTrack != null && duckingSettings != null
-            ) {
-                AudioDuckingPlanner.plan(clip, duckingSourceTrack, duckingSettings)
+            val duckingEnvelope = if (track.type == TrackType.AUDIO) {
+                duckingIndex?.plan(clip) ?: AudioDuckingEnvelope()
             } else {
                 AudioDuckingEnvelope()
             }

@@ -76,45 +76,93 @@ data class AudioDuckingEnvelope(
             .minOrNull()
 }
 
+class AudioDuckingIndex(
+    sourceTrack: Track,
+    private val settings: AudioDuckingSettings,
+) {
+    private data class SourceInterval(
+        val startUs: Long,
+        val endUs: Long,
+        val effectEndUs: Long,
+    )
+
+    private val intervals: List<SourceInterval>
+
+    init {
+        require(settings.sourceTrackId == sourceTrack.id) { "ducking source track does not match settings" }
+        val issues = settings.validationIssues()
+        require(issues.isEmpty()) { issues.first() }
+        intervals = sourceTrack.clips
+            .map { clip ->
+                val endUs = saturatingAdd(clip.startUs, clip.durationUs)
+                SourceInterval(
+                    startUs = clip.startUs,
+                    endUs = endUs,
+                    effectEndUs = saturatingAdd(endUs, settings.releaseUs),
+                )
+            }
+            .sortedBy { it.startUs }
+    }
+
+    fun plan(targetClip: Clip): AudioDuckingEnvelope {
+        if (intervals.isEmpty()) return AudioDuckingEnvelope()
+        val targetStartUs = targetClip.startUs
+        val targetEndUs = saturatingAdd(targetStartUs, targetClip.durationUs)
+        val firstCandidate = firstEffectEndingAfter(targetStartUs)
+        if (firstCandidate >= intervals.size) return AudioDuckingEnvelope()
+
+        val windows = mutableListOf<AudioDuckingWindow>()
+        var index = firstCandidate
+        while (index < intervals.size) {
+            val interval = intervals[index]
+            if (interval.startUs >= targetEndUs) break
+            if (interval.effectEndUs > targetStartUs) {
+                windows += AudioDuckingWindow(
+                    sourceStartUs = safeDifference(interval.startUs, targetStartUs),
+                    sourceEndUs = safeDifference(interval.endUs, targetStartUs),
+                    attackUs = settings.attackUs,
+                    releaseUs = settings.releaseUs,
+                    reductionDb = settings.reductionDb,
+                )
+            }
+            index++
+        }
+        return AudioDuckingEnvelope(windows)
+    }
+
+    private fun firstEffectEndingAfter(targetStartUs: Long): Int {
+        var low = 0
+        var high = intervals.size
+        while (low < high) {
+            val mid = low + (high - low) / 2
+            if (intervals[mid].effectEndUs > targetStartUs) {
+                high = mid
+            } else {
+                low = mid + 1
+            }
+        }
+        return low
+    }
+}
+
 object AudioDuckingPlanner {
     fun plan(
         targetClip: Clip,
         sourceTrack: Track,
         settings: AudioDuckingSettings,
-    ): AudioDuckingEnvelope {
-        require(settings.sourceTrackId == sourceTrack.id) { "ducking source track does not match settings" }
-        require(settings.validationIssues().isEmpty()) { settings.validationIssues().first() }
+    ): AudioDuckingEnvelope = AudioDuckingIndex(sourceTrack, settings).plan(targetClip)
+}
 
-        val targetStartUs = targetClip.startUs
-        val targetEndUs = saturatingAdd(targetStartUs, targetClip.durationUs)
-        val windows = sourceTrack.clips.mapNotNull { sourceClip ->
-            val sourceEndUs = saturatingAdd(sourceClip.startUs, sourceClip.durationUs)
-            val effectEndUs = saturatingAdd(sourceEndUs, settings.releaseUs)
-            val affectsTarget = sourceClip.startUs < targetEndUs && effectEndUs > targetStartUs
-            if (!affectsTarget) return@mapNotNull null
-
-            AudioDuckingWindow(
-                sourceStartUs = safeDifference(sourceClip.startUs, targetStartUs),
-                sourceEndUs = safeDifference(sourceEndUs, targetStartUs),
-                attackUs = settings.attackUs,
-                releaseUs = settings.releaseUs,
-                reductionDb = settings.reductionDb,
-            )
-        }
-        return AudioDuckingEnvelope(windows.sortedBy { it.sourceStartUs })
+private fun saturatingAdd(a: Long, b: Long): Long =
+    try {
+        Math.addExact(a, b)
+    } catch (_: ArithmeticException) {
+        Long.MAX_VALUE
     }
 
-    private fun saturatingAdd(a: Long, b: Long): Long =
-        try {
-            Math.addExact(a, b)
-        } catch (_: ArithmeticException) {
-            Long.MAX_VALUE
-        }
-
-    private fun safeDifference(a: Long, b: Long): Long =
-        try {
-            Math.subtractExact(a, b)
-        } catch (_: ArithmeticException) {
-            if (a >= b) Long.MAX_VALUE else Long.MIN_VALUE
-        }
-}
+private fun safeDifference(a: Long, b: Long): Long =
+    try {
+        Math.subtractExact(a, b)
+    } catch (_: ArithmeticException) {
+        if (a >= b) Long.MAX_VALUE else Long.MIN_VALUE
+    }

@@ -10,12 +10,13 @@ import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SetTrackDuckingCommandTest {
     @Test
-    fun applyAndInverseRestoreTrackDuckingExactly() {
-        val project = project()
+    fun historyUndoRedoRestoreTrackDuckingExactly() {
+        val history = HistoryManager(project())
         val settings = AudioDuckingSettings(
             sourceTrackId = "voice-track",
             reductionDb = -18.0,
@@ -23,11 +24,14 @@ class SetTrackDuckingCommandTest {
             releaseUs = 240_000L,
         )
 
-        val applied = SetTrackDuckingCommand("music-track", settings).apply(project)
+        history.execute(SetTrackDuckingCommand("music-track", settings))
+        assertEquals(settings, history.project.tracks.first { it.id == "music-track" }.ducking)
 
-        assertEquals(settings, applied.project.tracks.first { it.id == "music-track" }.ducking)
-        val restored = applied.inverse.apply(applied.project)
-        assertNull(restored.project.tracks.first { it.id == "music-track" }.ducking)
+        assertTrue(history.undo())
+        assertNull(history.project.tracks.first { it.id == "music-track" }.ducking)
+
+        assertTrue(history.redo())
+        assertEquals(settings, history.project.tracks.first { it.id == "music-track" }.ducking)
     }
 
     private fun project(): Project {

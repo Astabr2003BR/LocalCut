@@ -24,14 +24,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.localcut.editor.domain.model.AudioDuckingSettings
 import com.localcut.editor.domain.model.AudioProcessingSettings
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.TrackType
 
 @Composable
 fun AudioToolsPanel(
     project: Project,
     selectedClipId: String?,
     onSetAudioProcessing: (AudioProcessingSettings) -> Unit,
+    onSetTrackDucking: (String, AudioDuckingSettings?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val clip = selectedClipId?.let(project::findClip)
@@ -50,6 +53,10 @@ fun AudioToolsPanel(
         }
 
         val settings = clip.audioProcessing
+        val selectedTrack = project.tracks.firstOrNull { track -> track.clips.any { it.id == clip.id } }
+        val duckingCandidates = project.tracks
+            .filter { track -> track.type == TrackType.AUDIO && track.id != selectedTrack?.id }
+            .sortedWith(compareBy({ it.order }, { it.id }))
         var section by remember(clip.id) { mutableStateOf(AudioToolsPanelUiPolicy.defaultSection()) }
 
         Column(
@@ -113,6 +120,90 @@ fun AudioToolsPanel(
                         suffix = " st",
                     ) { value ->
                         onSetAudioProcessing(AudioToolsUiPolicy.setPitchSemitones(settings, value))
+                    }
+
+                    if (selectedTrack?.type == TrackType.AUDIO) {
+                        val ducking = selectedTrack.ducking
+                        Text("Auto Ducking", style = MaterialTheme.typography.labelLarge)
+                        if (duckingCandidates.isEmpty()) {
+                            Text(
+                                "Adicione outra faixa de áudio para usar como sidechain.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        } else {
+                            AudioToggle(
+                                label = "Ativar",
+                                checked = ducking != null,
+                                onCheckedChange = { enabled ->
+                                    onSetTrackDucking(
+                                        selectedTrack.id,
+                                        if (enabled) {
+                                            ducking ?: AudioDuckingSettings(sourceTrackId = duckingCandidates.first().id)
+                                        } else {
+                                            null
+                                        },
+                                    )
+                                },
+                            )
+                            ducking?.let { current ->
+                                Text("Fonte sidechain", style = MaterialTheme.typography.labelSmall)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    duckingCandidates.forEach { candidate ->
+                                        val label = "Áudio ${candidate.order + 1}"
+                                        if (candidate.id == current.sourceTrackId) {
+                                            FilledTonalButton(
+                                                onClick = {
+                                                    onSetTrackDucking(selectedTrack.id, current.copy(sourceTrackId = candidate.id))
+                                                },
+                                            ) { Text(label) }
+                                        } else {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    onSetTrackDucking(selectedTrack.id, current.copy(sourceTrackId = candidate.id))
+                                                },
+                                            ) { Text(label) }
+                                        }
+                                    }
+                                }
+                                AudioCommitSlider(
+                                    label = "Redução",
+                                    initial = current.reductionDb,
+                                    range = -48f..0f,
+                                    suffix = " dB",
+                                ) { value ->
+                                    onSetTrackDucking(selectedTrack.id, current.copy(reductionDb = value))
+                                }
+                                AudioCommitSlider(
+                                    label = "Attack",
+                                    initial = current.attackUs / 1_000.0,
+                                    range = 0f..5_000f,
+                                    suffix = " ms",
+                                ) { value ->
+                                    onSetTrackDucking(
+                                        selectedTrack.id,
+                                        current.copy(attackUs = (value * 1_000.0).toLong().coerceIn(0L, 5_000_000L)),
+                                    )
+                                }
+                                AudioCommitSlider(
+                                    label = "Release",
+                                    initial = current.releaseUs / 1_000.0,
+                                    range = 0f..10_000f,
+                                    suffix = " ms",
+                                ) { value ->
+                                    onSetTrackDucking(
+                                        selectedTrack.id,
+                                        current.copy(releaseUs = (value * 1_000.0).toLong().coerceIn(0L, 10_000_000L)),
+                                    )
+                                }
+                                Text(
+                                    "Mute/solo da faixa fonte suspende o ducking.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
                     }
 
                     Row(

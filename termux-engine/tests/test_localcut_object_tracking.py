@@ -12,6 +12,23 @@ from localcut_object_tracking import (
 )
 
 
+class _FakeCapture:
+    def __init__(self):
+        self.set_calls = []
+
+    def set(self, prop, value):
+        self.set_calls.append((prop, value))
+        return True
+
+
+class _FakeCv2Orientation:
+    CAP_PROP_ORIENTATION_AUTO = 49
+
+
+class _FakeFrame:
+    shape = (1920, 1080, 3)
+
+
 class ObjectTrackingCoreTest(unittest.TestCase):
     def test_roi_and_options_fail_closed_outside_mobile_bounds(self):
         roi = NormalizedTrackingRoi(0.1, 0.2, 0.3, 0.4)
@@ -83,6 +100,24 @@ class ObjectTrackingCoreTest(unittest.TestCase):
             OpenCvObjectPositionTracker.frame_budget(30.0, 4_000_000, 2_000_000, 300)
         with self.assertRaisesRegex(ValueError, "OBJECT_TRACKING_SOURCE_RANGE_TOO_SHORT"):
             OpenCvObjectPositionTracker.frame_budget(30.0, 0, 1_000, 300)
+
+    def test_orientation_is_explicit_and_frame_geometry_comes_from_decoded_pixels(self):
+        capture = _FakeCapture()
+        enabled = OpenCvObjectPositionTracker.enable_orientation_auto(capture, _FakeCv2Orientation)
+
+        self.assertTrue(enabled)
+        self.assertEqual([(49, 1.0)], capture.set_calls)
+        self.assertEqual(
+            (1080, 1920),
+            OpenCvObjectPositionTracker.decoded_frame_size(_FakeFrame()),
+        )
+
+    def test_decoded_frame_size_rejects_invalid_shape(self):
+        class BadFrame:
+            shape = (0, 1920, 3)
+
+        with self.assertRaisesRegex(ValueError, "OBJECT_TRACKING_FRAME_SIZE_INVALID"):
+            OpenCvObjectPositionTracker.decoded_frame_size(BadFrame())
 
 
 if __name__ == "__main__":

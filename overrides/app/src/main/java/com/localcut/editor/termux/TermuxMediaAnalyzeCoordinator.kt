@@ -162,7 +162,11 @@ class TermuxMediaObjectTrackingCoordinator(
         require(finished.analysisMode == "opencv-object-position-v1") {
             "TERMUX_OBJECT_TRACKING_ANALYSIS_MODE_INVALID"
         }
-        return finished.objectTracking ?: error("TERMUX_OBJECT_TRACKING_RESULT_MISSING")
+        val tracking = finished.objectTracking ?: error("TERMUX_OBJECT_TRACKING_RESULT_MISSING")
+        require(tracking.sourceInUs == options.sourceInUs && tracking.sourceOutUs == options.sourceOutUs) {
+            "TERMUX_OBJECT_TRACKING_SOURCE_RANGE_MISMATCH"
+        }
+        return tracking
     }
 }
 

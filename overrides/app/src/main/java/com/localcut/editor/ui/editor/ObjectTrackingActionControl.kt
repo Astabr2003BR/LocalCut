@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.mobile.AndroidObjectTrackingVideoMetadataReader
 import com.localcut.editor.session.EditorAction
@@ -72,7 +73,7 @@ fun ObjectTrackingActionControl(
 
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(androidx.compose.ui.unit.dp(6f)),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(
             "Marque o objeto no preview e execute o rastreamento.",
@@ -82,7 +83,7 @@ fun ObjectTrackingActionControl(
 
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(androidx.compose.ui.unit.dp(6f)),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             listOf(
                 TermuxTrackingQuality.FAST to "Rápido",
@@ -99,7 +100,7 @@ fun ObjectTrackingActionControl(
 
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(androidx.compose.ui.unit.dp(6f)),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             FilledTonalButton(
                 onClick = {

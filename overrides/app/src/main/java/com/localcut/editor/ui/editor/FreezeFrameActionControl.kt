@@ -38,9 +38,13 @@ fun FreezeFrameActionControl(
 
     val hasFreeze = clip.timeMap.freezeSegments.isNotEmpty()
     val presentationOffsetUs = preview.positionUs - clip.startUs
-    val playheadInsideClip = presentationOffsetUs >= 0L && presentationOffsetUs < clip.durationUs
-    val canCreateFreeze = !hasFreeze && !clip.timeMap.reverse &&
-        clip.timeMap.speedPoints.isEmpty() && playheadInsideClip
+    val canCreateFreeze = FreezeFrameActionPolicy.canCreate(
+        timeMap = clip.timeMap,
+        fadeInUs = clip.fadeInUs,
+        fadeOutUs = clip.fadeOutUs,
+        presentationOffsetUs = presentationOffsetUs,
+        clipDurationUs = clip.durationUs,
+    )
     var message by remember(clip.id) { mutableStateOf<String?>(null) }
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -79,6 +83,23 @@ fun FreezeFrameActionControl(
                             val localOffsetUs = currentPreview.positionUs - currentClip.startUs
                             val sourceRangeUs = currentClip.sourceOutUs - currentClip.sourceInUs
                             val result = runCatching {
+                                require(
+                                    FreezeFrameActionPolicy.canCreate(
+                                        timeMap = currentClip.timeMap,
+                                        fadeInUs = currentClip.fadeInUs,
+                                        fadeOutUs = currentClip.fadeOutUs,
+                                        presentationOffsetUs = localOffsetUs,
+                                        clipDurationUs = currentClip.durationUs,
+                                    ),
+                                ) {
+                                    FreezeFrameActionPolicy.unavailableReason(
+                                        timeMap = currentClip.timeMap,
+                                        fadeInUs = currentClip.fadeInUs,
+                                        fadeOutUs = currentClip.fadeOutUs,
+                                        presentationOffsetUs = localOffsetUs,
+                                        clipDurationUs = currentClip.durationUs,
+                                    )
+                                }
                                 val frozen = CreativeToolsUiPolicy.freezeCurrentFrame(
                                     source = currentClip.timeMap,
                                     presentationOffsetUs = localOffsetUs,
@@ -103,12 +124,13 @@ fun FreezeFrameActionControl(
 
         if (!hasFreeze && !canCreateFreeze) {
             Text(
-                when {
-                    clip.timeMap.reverse -> "Freeze não é combinado com Reverse lógico nesta versão."
-                    clip.timeMap.speedPoints.isNotEmpty() -> "Freeze com curva de velocidade ainda é bloqueado nesta versão."
-                    !playheadInsideClip -> "Posicione o playhead dentro do clipe para congelar o frame atual."
-                    else -> "Freeze indisponível para este clipe."
-                },
+                FreezeFrameActionPolicy.unavailableReason(
+                    timeMap = clip.timeMap,
+                    fadeInUs = clip.fadeInUs,
+                    fadeOutUs = clip.fadeOutUs,
+                    presentationOffsetUs = presentationOffsetUs,
+                    clipDurationUs = clip.durationUs,
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

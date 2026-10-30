@@ -88,6 +88,9 @@ class LocalCutApplication : Application(), Application.ActivityLifecycleCallback
     }
 
     override fun onActivityStopped(activity: Activity) {
+        if (activity is MainActivity) {
+            LocalCutProcessRuntime.get(this).flushAutosave()
+        }
         ProcessExitDiagnostics.mark(activity, "activity:stop:${activity.javaClass.simpleName}")
     }
 

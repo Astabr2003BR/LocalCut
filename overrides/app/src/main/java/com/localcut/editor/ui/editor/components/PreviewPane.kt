@@ -24,10 +24,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -40,6 +42,7 @@ import com.localcut.editor.media.Media3PreviewController
 import com.localcut.editor.media.PreviewPlayerViewPolicy
 import com.localcut.editor.media.PreviewResumePolicy
 import com.localcut.editor.media.PreviewState
+import com.localcut.editor.ui.editor.PreviewSelectionRect
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicReference
 
@@ -54,6 +57,10 @@ fun PreviewPane(
     onStepFrames: (Int) -> Unit,
     modifier: Modifier = Modifier,
     viewportHeight: Dp = 190.dp,
+    trackingSelectionEnabled: Boolean = false,
+    trackingSelection: PreviewSelectionRect? = null,
+    onTrackingSelectionChange: (PreviewSelectionRect?) -> Unit = {},
+    onTrackingViewportSizeChanged: (IntSize) -> Unit = {},
 ) {
     val hostView = LocalView.current
     val latestState = rememberUpdatedState(state)
@@ -168,6 +175,14 @@ fun PreviewPane(
                         )
                     }
                 }
+
+                ObjectTrackingPreviewOverlay(
+                    enabled = trackingSelectionEnabled && state.durationUs > 0L,
+                    selection = trackingSelection,
+                    onSelectionChange = onTrackingSelectionChange,
+                    onViewportSizeChanged = onTrackingViewportSizeChanged,
+                    modifier = Modifier.fillMaxSize(),
+                )
 
                 state.errorMessage?.let { message ->
                     Surface(

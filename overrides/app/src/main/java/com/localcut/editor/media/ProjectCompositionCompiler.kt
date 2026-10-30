@@ -83,7 +83,7 @@ class ProjectCompositionCompiler(
             )?.let(::add)
         }
         val builder = Composition.Builder(sequences)
-        if (Media3SequenceOpacityResolver.requiresCustomAlpha(visualInputLayers)) {
+        if (Media3CompositorSettingsPolicy.requiresCustomSettings(visualInputLayers)) {
             builder.setVideoCompositorSettings(KeyframeVideoCompositorSettings(visualInputLayers))
         }
         if (compositionVideoEffects.isNotEmpty()) {

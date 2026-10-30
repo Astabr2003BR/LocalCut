@@ -17,6 +17,47 @@ object ObjectTrackingPathPlanner {
     const val MAX_SAMPLES = 600
     const val MAX_OFFSET_US = 600_000_000L
 
+    fun planFromSourceGeometry(
+        samples: List<ObjectTrackingPositionSample>,
+        sourceWidthPx: Int,
+        sourceHeightPx: Int,
+        outputWidthPx: Int,
+        outputHeightPx: Int,
+        transformSpaceWidthPx: Double,
+        transformSpaceHeightPx: Double,
+        baseX: Double,
+        baseY: Double,
+        minConfidence: Double = 0.35,
+    ): List<PropertyAnimation> {
+        require(sourceWidthPx > 0 && sourceHeightPx > 0) { "OBJECT_TRACKING_SOURCE_SIZE_INVALID" }
+        require(outputWidthPx > 0 && outputHeightPx > 0) { "OBJECT_TRACKING_OUTPUT_SIZE_INVALID" }
+        require(transformSpaceWidthPx.isFinite() && transformSpaceWidthPx > 0.0) {
+            "OBJECT_TRACKING_TRANSFORM_SPACE_INVALID"
+        }
+        require(transformSpaceHeightPx.isFinite() && transformSpaceHeightPx > 0.0) {
+            "OBJECT_TRACKING_TRANSFORM_SPACE_INVALID"
+        }
+        val sourceAspect = sourceWidthPx.toDouble() / sourceHeightPx.toDouble()
+        val outputAspect = outputWidthPx.toDouble() / outputHeightPx.toDouble()
+        val fitScaleX: Double
+        val fitScaleY: Double
+        if (outputAspect > sourceAspect) {
+            fitScaleX = sourceAspect / outputAspect
+            fitScaleY = 1.0
+        } else {
+            fitScaleX = 1.0
+            fitScaleY = outputAspect / sourceAspect
+        }
+        return plan(
+            samples = samples,
+            renderWidthPx = transformSpaceWidthPx * fitScaleX,
+            renderHeightPx = transformSpaceHeightPx * fitScaleY,
+            baseX = baseX,
+            baseY = baseY,
+            minConfidence = minConfidence,
+        )
+    }
+
     fun plan(
         samples: List<ObjectTrackingPositionSample>,
         renderWidthPx: Double,

@@ -9,6 +9,7 @@ import android.content.Context
 import android.opengl.EGLDisplay
 import android.opengl.EGLSurface
 import androidx.annotation.RequiresApi
+import androidx.media3.common.Effect
 import androidx.media3.common.GlObjectsProvider
 import androidx.media3.common.VideoCompositorSettings
 import androidx.media3.common.VideoFrameProcessingException
@@ -21,6 +22,7 @@ import androidx.media3.common.video.SyncFenceWrapper
 import androidx.media3.effect.DefaultGlFrameProcessor
 import androidx.media3.effect.DefaultGlObjectsProvider
 import androidx.media3.effect.HardwareBufferJni
+import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.ListeningExecutorService
 import com.google.common.util.concurrent.MoreExecutors
 import java.util.Collections
@@ -246,12 +248,13 @@ internal class LocalCutBlendFrameProcessor private constructor(
         val original = asyncFrame.frame as? HardwareBufferFrame
             ?: throw IllegalArgumentException("BLEND_INPUT_MUST_USE_HARDWARE_BUFFER")
         val metadata = HashMap<String, Any>(original.metadata)
-        metadata[DefaultGlFrameProcessor.KEY_COMPOSITION_EFFECTS] = emptyList<Any>()
+        metadata[DefaultGlFrameProcessor.KEY_COMPOSITION_EFFECTS] = ImmutableList.of<Effect>()
         // Keep the real compositor settings in metadata. With one frame the official compositor
         // does not combine layers, and LocalCut needs these settings afterwards to resolve alpha
         // and blend at the exact composition timestamp.
         val proxy = original.buildUpon().setMetadata(metadata).build()
-        synchronized(originalByProxy) { originalByProxy[proxy] = original }
+        synchronized(originalByProxy) { originalByProxy[proxy] = original
+        }
         queuedOriginals.add(original)
 
         try {

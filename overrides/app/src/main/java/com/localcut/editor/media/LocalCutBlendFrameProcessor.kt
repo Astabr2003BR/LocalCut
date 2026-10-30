@@ -99,12 +99,10 @@ internal class LocalCutBlendFrameProcessor private constructor(
             blendRenderer = LocalCutHardwareBufferBlendRenderer(eglDisplay, hardwareBufferJni)
         }.get(INIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
 
-        val preFactory = DefaultGlFrameProcessor.Factory(
-            appContext,
-            glObjectsProvider,
-            hardwareBufferJni,
-            glExecutor,
-        )
+        val preFactory = DefaultGlFrameProcessor.Factory.Builder(appContext)
+            .setHardwareBufferJniWrapper(hardwareBufferJni)
+            .setGlObjectsProviderAndExecutorService(glObjectsProvider, glExecutor)
+            .build()
         preProcessor = preFactory.create(
             preWriter,
             listenerExecutor,
@@ -129,12 +127,10 @@ internal class LocalCutBlendFrameProcessor private constructor(
             },
         )
 
-        val postFactory = DefaultGlFrameProcessor.Factory(
-            appContext,
-            glObjectsProvider,
-            hardwareBufferJni,
-            glExecutor,
-        )
+        val postFactory = DefaultGlFrameProcessor.Factory.Builder(appContext)
+            .setHardwareBufferJniWrapper(hardwareBufferJni)
+            .setGlObjectsProviderAndExecutorService(glObjectsProvider, glExecutor)
+            .build()
         postProcessor = postFactory.create(
             output,
             listenerExecutor,

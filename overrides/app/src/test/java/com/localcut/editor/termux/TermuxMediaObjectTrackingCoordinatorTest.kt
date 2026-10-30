@@ -47,8 +47,35 @@ class TermuxMediaObjectTrackingCoordinatorTest {
         assertEquals(TermuxAnalyzeMediaMode.OBJECT_TRACKING, fake.lastInput?.mode)
         assertEquals(300_000L, fake.lastInput?.objectTrackingOptions?.sourceInUs)
         assertEquals(1_500_000L, fake.lastInput?.objectTrackingOptions?.sourceOutUs)
+        assertEquals(250_000L, result.sourceInUs)
+        assertEquals(1_500_000L, result.sourceOutUs)
         assertEquals(320, result.frameWidth)
         assertEquals(33_333L, result.samples.single().timeUs)
+    }
+
+    @Test
+    fun objectTrackingRejectsReturnedSourceRangeMismatch() = runBlocking {
+        val fake = FakeObjectTrackingClient(
+            responseSourceInUs = 400_000L,
+            responseSourceOutUs = 1_500_000L,
+        )
+        val coordinator = TermuxMediaObjectTrackingCoordinator(
+            client = fake,
+            sourceResolver = { asset ->
+                TermuxEngineMediaSource(asset.sizeBytes!!) { ByteArrayInputStream("abcde".toByteArray()) }
+            },
+        )
+        val result = coordinator.analyze(
+            videoAsset(),
+            TermuxObjectTrackingOptions(
+                roi = TermuxObjectTrackingRoi(0.1, 0.2, 0.3, 0.4),
+                sourceInUs = 250_000L,
+                sourceOutUs = 1_500_000L,
+            ),
+        )
+
+        assertTrue(result.isFailure)
+        assertEquals("TERMUX_OBJECT_TRACKING_SOURCE_RANGE_MISMATCH", result.exceptionOrNull()?.message)
     }
 
     @Test
@@ -84,7 +111,10 @@ class TermuxMediaObjectTrackingCoordinatorTest {
         fingerprint = "fp-1",
     )
 
-    private class FakeObjectTrackingClient : TermuxEngineJobClient {
+    private class FakeObjectTrackingClient(
+        private val responseSourceInUs: Long? = null,
+        private val responseSourceOutUs: Long? = null,
+    ) : TermuxEngineJobClient {
         var staged = false
         val idempotencyKeys = mutableListOf<String>()
         var lastInput: TermuxAnalyzeMediaInput? = null
@@ -111,11 +141,14 @@ class TermuxMediaObjectTrackingCoordinatorTest {
             source: TermuxEngineMediaSource,
         ): Result<TermuxEngineStageResult> {
             staged = true
+            val options = requireNotNull(lastInput?.objectTrackingOptions)
             val tracking = TermuxObjectTrackingAnalysis(
                 framesDecoded = 4,
                 frameWidth = 320,
                 frameHeight = 240,
                 frameRate = 30.0,
+                sourceInUs = responseSourceInUs ?: options.sourceInUs,
+                sourceOutUs = responseSourceOutUs ?: options.sourceOutUs,
                 samples = listOf(
                     TermuxObjectTrackingSample(
                         frameIndex = 1,

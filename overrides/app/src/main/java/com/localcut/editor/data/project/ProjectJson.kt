@@ -100,6 +100,7 @@ object ProjectJson {
         field("collisionPolicy", jsonString(t.collisionPolicy.name)); comma()
         field("muted", t.muted.toString()); comma(); field("hidden", t.hidden.toString()); comma(); field("locked", t.locked.toString()); comma()
         field("solo", t.solo.toString()); comma()
+        append("\"ducking\":"); appendAudioDucking(t.ducking); comma()
         append("\"clips\":[")
         t.clips.forEachIndexed { i, clip -> if (i > 0) comma(); appendClip(clip) }
         append("]}")
@@ -378,6 +379,16 @@ object ProjectJson {
         append('}')
     }
 
+    private fun StringBuilder.appendAudioDucking(settings: AudioDuckingSettings?) {
+        if (settings == null) { append("null"); return }
+        append('{')
+        field("sourceTrackId", jsonString(settings.sourceTrackId)); comma()
+        field("reductionDb", settings.reductionDb.toString()); comma()
+        field("attackUs", settings.attackUs.toString()); comma()
+        field("releaseUs", settings.releaseUs.toString())
+        append('}')
+    }
+
     private fun StringBuilder.appendCompressor(settings: CompressorSettings?) {
         if (settings == null) { append("null"); return }
         append('{')
@@ -485,6 +496,7 @@ object ProjectJson {
         locked = o.required("locked").asBoolean(),
         clips = o.required("clips").asArray().values.map { decodeClip(it.asObject(), sourceSchemaVersion) },
         solo = o.optional("solo")?.asBoolean() ?: false,
+        ducking = decodeAudioDucking(o.optional("ducking")),
     )
 
     private fun decodeClip(o: JObject, sourceSchemaVersion: Int): Clip = Clip(
@@ -648,6 +660,18 @@ object ProjectJson {
         normalizationGainDb = o.required("normalizationGainDb").asDouble(),
         pitchSemitones = o.optional("pitchSemitones")?.asDouble() ?: 0.0,
     )
+
+    private fun decodeAudioDucking(value: JValue?): AudioDuckingSettings? = when (value) {
+        null, JNull -> null
+        else -> value.asObject().let { o ->
+            AudioDuckingSettings(
+                sourceTrackId = o.required("sourceTrackId").asString(),
+                reductionDb = o.required("reductionDb").asDouble(),
+                attackUs = o.required("attackUs").asLong(),
+                releaseUs = o.required("releaseUs").asLong(),
+            )
+        }
+    }
 
     private fun decodeCompressor(value: JValue?): CompressorSettings? = when (value) {
         null, JNull -> null

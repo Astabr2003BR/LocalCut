@@ -41,6 +41,7 @@ internal object LocalCutBlendShaderContract {
         uniform sampler2D uBackdropSampler;
         uniform sampler2D uSourceSampler;
         uniform float uBlendMode;
+        uniform float uBackdropAlphaScale;
         uniform float uSourceAlphaScale;
         varying vec2 vTexSamplingCoord;
 
@@ -74,6 +75,7 @@ internal object LocalCutBlendShaderContract {
         void main() {
             vec4 backdrop = texture2D(uBackdropSampler, vTexSamplingCoord);
             vec4 source = texture2D(uSourceSampler, vTexSamplingCoord);
+            backdrop.a *= uBackdropAlphaScale;
             source.a *= uSourceAlphaScale;
 
             vec3 mixed = blendRgb(backdrop.rgb, source.rgb);
@@ -106,6 +108,7 @@ internal class LocalCutBlendGlProgram {
         source: GlTextureInfo,
         output: GlTextureInfo,
         mode: BlendMode,
+        backdropAlphaScale: Float,
         sourceAlphaScale: Float,
     ) {
         require(
@@ -114,7 +117,8 @@ internal class LocalCutBlendGlProgram {
                 backdrop.width == output.width &&
                 backdrop.height == output.height,
         ) { "BLEND_TEXTURE_SIZE_MISMATCH" }
-        val alpha = LocalCutBlendShaderContract.validateAlphaScale(sourceAlphaScale)
+        val backdropAlpha = LocalCutBlendShaderContract.validateAlphaScale(backdropAlphaScale)
+        val sourceAlpha = LocalCutBlendShaderContract.validateAlphaScale(sourceAlphaScale)
 
         GlUtil.focusFramebufferUsingCurrentContext(output.fboId, output.width, output.height)
         GLES20.glDisable(GLES20.GL_BLEND)
@@ -124,7 +128,8 @@ internal class LocalCutBlendGlProgram {
         glProgram.setSamplerTexIdUniform("uBackdropSampler", backdrop.texId, 0)
         glProgram.setSamplerTexIdUniform("uSourceSampler", source.texId, 1)
         glProgram.setFloatUniform("uBlendMode", LocalCutBlendShaderContract.modeCode(mode).toFloat())
-        glProgram.setFloatUniform("uSourceAlphaScale", alpha)
+        glProgram.setFloatUniform("uBackdropAlphaScale", backdropAlpha)
+        glProgram.setFloatUniform("uSourceAlphaScale", sourceAlpha)
         glProgram.bindAttributesAndUniforms()
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
         GlUtil.checkGlError()

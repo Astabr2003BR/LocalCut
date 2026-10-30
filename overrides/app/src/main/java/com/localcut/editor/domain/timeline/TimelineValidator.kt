@@ -35,6 +35,7 @@ enum class ProjectIssueCode {
     INVALID_COMPOSITION_GRAPH,
     INVALID_DESIGN_STATE,
     INVALID_AUDIO_PROCESSING,
+    INVALID_AUDIO_DUCKING,
 }
 
 data class ProjectIssue(val code: ProjectIssueCode, val subjectId: String? = null, val detail: String? = null)
@@ -60,7 +61,21 @@ object TimelineValidator {
         }
 
         val assets = project.assets.associateBy { it.id }
+        val tracksById = project.tracks.associateBy { it.id }
         project.tracks.forEach { track ->
+            track.ducking?.let { ducking ->
+                val detail = when {
+                    track.type != TrackType.AUDIO -> "ducking target must be an audio track"
+                    ducking.validationIssues().isNotEmpty() -> ducking.validationIssues().first()
+                    ducking.sourceTrackId == track.id -> "ducking source track must differ from target track"
+                    tracksById[ducking.sourceTrackId] == null -> "ducking source track is missing"
+                    tracksById.getValue(ducking.sourceTrackId).type != TrackType.AUDIO -> "ducking source must be an audio track"
+                    else -> null
+                }
+                if (detail != null) {
+                    issues += ProjectIssue(ProjectIssueCode.INVALID_AUDIO_DUCKING, track.id, detail)
+                }
+            }
             if (track.collisionPolicy == TrackCollisionPolicy.EXCLUSIVE) {
                 val sorted = track.clips.sortedBy { it.startUs }
                 sorted.zipWithNext().forEach { (a, b) ->

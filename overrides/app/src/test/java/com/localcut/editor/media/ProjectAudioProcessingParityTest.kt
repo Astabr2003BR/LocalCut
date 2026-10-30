@@ -36,6 +36,7 @@ class ProjectAudioProcessingParityTest {
             noiseGate = NoiseGateSettings(thresholdDb = -48.0, attackMs = 4.0, releaseMs = 180.0),
             pan = 0.35,
             normalizationGainDb = 2.0,
+            pitchSemitones = 7.0,
         )
         val asset = Asset(
             id = "video-1",

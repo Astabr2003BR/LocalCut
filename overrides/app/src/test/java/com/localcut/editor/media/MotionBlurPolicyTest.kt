@@ -1,6 +1,7 @@
 package com.localcut.editor.media
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -33,6 +34,16 @@ class MotionBlurPolicyTest {
     }
 
     @Test
+    fun seekOrLargeTimestampGapResetsTemporalHistory() {
+        assertFalse(MotionBlurPolicy.shouldResetHistory(null, 1_000_000L))
+        assertFalse(MotionBlurPolicy.shouldResetHistory(1_000_000L, 1_033_333L))
+        assertTrue(MotionBlurPolicy.shouldResetHistory(1_000_000L, 1_000_000L))
+        assertTrue(MotionBlurPolicy.shouldResetHistory(1_000_000L, 900_000L))
+        assertTrue(MotionBlurPolicy.shouldResetHistory(1_000_000L, 1_250_001L))
+        assertFalse(MotionBlurPolicy.shouldResetHistory(1_000_000L, 1_250_000L))
+    }
+
+    @Test
     fun invalidInputsFailClosed() {
         assertTrue(runCatching { MotionBlurPolicy.effectiveSamples(0, 1920, 1080, 4) }.isFailure)
         assertTrue(runCatching { MotionBlurPolicy.effectiveSamples(65, 1920, 1080, 4) }.isFailure)
@@ -44,5 +55,7 @@ class MotionBlurPolicyTest {
         assertTrue(runCatching { MotionBlurPolicy.weights(Double.NaN, 4) }.isFailure)
         assertTrue(runCatching { MotionBlurPolicy.weights(180.0, 0) }.isFailure)
         assertTrue(runCatching { MotionBlurPolicy.weights(180.0, 9) }.isFailure)
+        assertTrue(runCatching { MotionBlurPolicy.shouldResetHistory(-1L, 0L) }.isFailure)
+        assertTrue(runCatching { MotionBlurPolicy.shouldResetHistory(0L, -1L) }.isFailure)
     }
 }

@@ -37,7 +37,7 @@ internal class LocalCutIntermediateFrameWriter : FrameWriter {
     private val writerInfo = FrameWriter.Info { format, usage ->
         format.width > 0 &&
             format.height > 0 &&
-            usage and REQUIRED_USAGE == REQUIRED_USAGE
+            (usage == MEDIA3_OUTPUT_USAGE || usage == LOCALCUT_ALLOCATION_USAGE)
     }
 
     override fun getInfo(): FrameWriter.Info = writerInfo
@@ -52,7 +52,10 @@ internal class LocalCutIntermediateFrameWriter : FrameWriter {
                 "LOCALCUT_INTERMEDIATE_FRAME_RECONFIGURE_WHILE_BUSY"
             }
             configuredFormat = format
-            configuredUsage = usage
+            // Media3's GL producer requests only GPU_COLOR_OUTPUT. LocalCut consumes the same
+            // HardwareBuffer in the following blend pass, so sampling capability is an internal
+            // allocation requirement rather than a requirement on the upstream producer.
+            configuredUsage = usage or Frame.USAGE_GPU_SAMPLED_IMAGE
         }
     }
 
@@ -144,7 +147,9 @@ internal class LocalCutIntermediateFrameWriter : FrameWriter {
 
     private companion object {
         const val OUTPUT_TIMEOUT_MS = 5_000L
-        const val REQUIRED_USAGE = Frame.USAGE_GPU_COLOR_OUTPUT or Frame.USAGE_GPU_SAMPLED_IMAGE
+        const val MEDIA3_OUTPUT_USAGE = Frame.USAGE_GPU_COLOR_OUTPUT
+        const val LOCALCUT_ALLOCATION_USAGE =
+            Frame.USAGE_GPU_COLOR_OUTPUT or Frame.USAGE_GPU_SAMPLED_IMAGE
     }
 }
 

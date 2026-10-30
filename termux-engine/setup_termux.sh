@@ -19,13 +19,28 @@ for arg in "$@"; do
   esac
 done
 
-if command -v python >/dev/null 2>&1; then
-  PYTHON_BIN="$(command -v python)"
-elif command -v python3 >/dev/null 2>&1; then
+TERMUX_MODE=0
+if [ -n "${TERMUX_VERSION:-}" ] || [[ "${PREFIX:-}" == /data/data/com.termux/files/usr* ]]; then
+  TERMUX_MODE=1
+fi
+
+if command -v python3 >/dev/null 2>&1; then
   PYTHON_BIN="$(command -v python3)"
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_BIN="$(command -v python)"
 else
-  echo "ERRO: Python não encontrado." >&2
+  if [ "$TERMUX_MODE" -eq 1 ] || command -v pkg >/dev/null 2>&1; then
+    echo "ERRO: Python não encontrado. No Termux: pkg install -y python" >&2
+  else
+    echo "ERRO: Python não encontrado. Em Ubuntu/UserLAnd/Linux: apt update && apt install -y python3" >&2
+  fi
   exit 1
+fi
+
+if [ "$TERMUX_MODE" -eq 1 ]; then
+  ENVIRONMENT_LABEL="Termux"
+else
+  ENVIRONMENT_LABEL="Ubuntu/UserLAnd/Linux"
 fi
 
 mkdir -p "$STATE_DIR"
@@ -53,11 +68,6 @@ cd $QUOTED_ROOT
 exec $QUOTED_PYTHON termux-engine/localcut_automation.py "\$@"
 EOF
 chmod 700 "$AUTO_RECOVER_SCRIPT"
-
-TERMUX_MODE=0
-if [ -n "${TERMUX_VERSION:-}" ] || [[ "${PREFIX:-}" == /data/data/com.termux/files/usr* ]]; then
-  TERMUX_MODE=1
-fi
 
 if [ "$TERMUX_MODE" -eq 1 ]; then
   BOOT_DIR="$HOME/.termux/boot"
@@ -97,8 +107,12 @@ fi
 
 cat <<EOF
 LocalCut Agent Engine configurado.
+Ambiente: $ENVIRONMENT_LABEL
+Python: $PYTHON_BIN
 Launcher: $START_SCRIPT
 Recuperação automática: $AUTO_RECOVER_SCRIPT
 Boot script: ${BOOT_SCRIPT:-não aplicável}
 Automação externa: $([ "$ENABLE_EXTERNAL_AUTOMATION" -eq 1 ] && echo habilitada || echo preservada)
+Pareamento inicial/recuperação manual (se necessário):
+  cd "$REPO_ROOT" && "$PYTHON_BIN" termux-engine/localcut_supervisor.py --pair
 EOF

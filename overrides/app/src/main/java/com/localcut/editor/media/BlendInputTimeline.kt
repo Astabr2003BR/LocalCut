@@ -76,7 +76,7 @@ internal class BlendInputTimeline<T> {
         val primaryId = primaryInputId ?: return emptyList()
         val primary = sources.getValue(primaryId)
         val released = mutableListOf<BlendTimelineFrame<T>>()
-        primary.pollFirst()?.let(released::add)
+        primary.frames.pollFirst()?.let(released::add)
         released += pruneAllSecondary()
         return released
     }

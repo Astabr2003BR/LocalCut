@@ -99,7 +99,7 @@ object AudioToolsUiPolicy {
 
     fun setNoiseGateAttack(source: AudioProcessingSettings, attackMs: Double): AudioProcessingSettings {
         require(attackMs.isFinite() && attackMs in 0.1..1_000.0) { "noise gate attack must be in 0.1..1000 ms" }
-        return updateNoiseGate(source) { it.copy(attackMs = attackMs)) }
+        return updateNoiseGate(source) { it.copy(attackMs = attackMs) }
     }
 
     fun setNoiseGateRelease(source: AudioProcessingSettings, releaseMs: Double): AudioProcessingSettings {

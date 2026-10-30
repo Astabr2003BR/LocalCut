@@ -132,12 +132,16 @@ class Media3ExportController(
                         .build()
                 )
                 .build()
-            val transformer = Transformer.Builder(appContext)
+            val transformerBuilder = Transformer.Builder(appContext)
                 .setVideoMimeType(settings.videoMimeType)
                 .setAudioMimeType(MimeTypes.AUDIO_AAC)
                 .setEncoderFactory(encoderFactory)
                 .addListener(listener)
-                .build()
+            val transformer = LocalCutFrameProcessorIntegration.configureTransformerBuilder(
+                builder = transformerBuilder,
+                context = appContext,
+                project = project,
+            ).build()
             session.transformer = transformer
             session.progressRunnable = createProgressRunnable(session, transformer)
             transformer.start(composition, tempFile.absolutePath)

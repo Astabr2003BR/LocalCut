@@ -6,7 +6,7 @@ import org.junit.Test
 
 class BlendExecutionPlannerTest {
     @Test
-    fun threeInputsUseBottomThenScratchThenOutput() {
+    fun threeInputsStartFromTransparentSoBottomAlphaIsPreserved() {
         val plan = BlendExecutionPlanner.plan(
             listOf(BlendMode.OVERLAY, BlendMode.MULTIPLY, BlendMode.NORMAL),
         )
@@ -15,15 +15,21 @@ class BlendExecutionPlannerTest {
         assertEquals(
             listOf(
                 BlendExecutionStep(
+                    sourceInputId = 2,
+                    mode = BlendMode.NORMAL,
+                    backdrop = BlendBackdropRef.Transparent,
+                    target = BlendRenderTarget.SCRATCH_A,
+                ),
+                BlendExecutionStep(
                     sourceInputId = 1,
                     mode = BlendMode.MULTIPLY,
-                    backdrop = BlendBackdropRef.Input(2),
-                    target = BlendRenderTarget.SCRATCH_A,
+                    backdrop = BlendBackdropRef.Target(BlendRenderTarget.SCRATCH_A),
+                    target = BlendRenderTarget.SCRATCH_B,
                 ),
                 BlendExecutionStep(
                     sourceInputId = 0,
                     mode = BlendMode.OVERLAY,
-                    backdrop = BlendBackdropRef.Target(BlendRenderTarget.SCRATCH_A),
+                    backdrop = BlendBackdropRef.Target(BlendRenderTarget.SCRATCH_B),
                     target = BlendRenderTarget.OUTPUT,
                 ),
             ),
@@ -41,17 +47,37 @@ class BlendExecutionPlannerTest {
             listOf(
                 BlendRenderTarget.SCRATCH_A,
                 BlendRenderTarget.SCRATCH_B,
+                BlendRenderTarget.SCRATCH_A,
                 BlendRenderTarget.OUTPUT,
             ),
             plan.steps.map { it.target },
         )
         assertEquals(
             listOf(
-                BlendBackdropRef.Input(3),
+                BlendBackdropRef.Transparent,
                 BlendBackdropRef.Target(BlendRenderTarget.SCRATCH_A),
                 BlendBackdropRef.Target(BlendRenderTarget.SCRATCH_B),
+                BlendBackdropRef.Target(BlendRenderTarget.SCRATCH_A),
             ),
             plan.steps.map { it.backdrop },
+        )
+    }
+
+    @Test
+    fun singleInputStillRunsOneSourceOverTransparentPass() {
+        val plan = BlendExecutionPlanner.plan(listOf(BlendMode.MULTIPLY))
+
+        assertEquals(0, plan.bottomInputId)
+        assertEquals(
+            listOf(
+                BlendExecutionStep(
+                    sourceInputId = 0,
+                    mode = BlendMode.MULTIPLY,
+                    backdrop = BlendBackdropRef.Transparent,
+                    target = BlendRenderTarget.OUTPUT,
+                ),
+            ),
+            plan.steps,
         )
     }
 }

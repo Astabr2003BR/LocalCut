@@ -35,6 +35,10 @@ class EditorChromeUiPolicyTest {
             EditorToolId.AUDIO,
             EditorChromeUiPolicy.resolveActiveTool(EditorToolId.AUDIO, EditorSelectionKind.AUDIO),
         )
+        assertEquals(
+            EditorToolId.TRACKING,
+            EditorChromeUiPolicy.resolveActiveTool(EditorToolId.TRACKING, EditorSelectionKind.VIDEO),
+        )
     }
 
     @Test
@@ -45,10 +49,11 @@ class EditorChromeUiPolicyTest {
     }
 
     @Test
-    fun incompatibleOrNotYetLiveToolClosesInsteadOfOpeningAnotherPanel() {
+    fun incompatibleToolClosesInsteadOfOpeningAnotherPanel() {
         assertNull(EditorChromeUiPolicy.resolveActiveTool(EditorToolId.MASK, EditorSelectionKind.AUDIO))
         assertNull(EditorChromeUiPolicy.resolveActiveTool(EditorToolId.SPEED, EditorSelectionKind.IMAGE))
-        assertNull(EditorChromeUiPolicy.resolveActiveTool(EditorToolId.TRACKING, EditorSelectionKind.VIDEO))
+        assertNull(EditorChromeUiPolicy.resolveActiveTool(EditorToolId.TRACKING, EditorSelectionKind.IMAGE))
+        assertNull(EditorChromeUiPolicy.resolveActiveTool(EditorToolId.TRACKING, EditorSelectionKind.AUDIO))
     }
 
     @Test

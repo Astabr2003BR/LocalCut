@@ -1,0 +1,258 @@
+package com.localcut.editor.mobile
+
+import android.content.ContentValues
+import android.graphics.Bitmap
+import android.net.Uri
+import android.provider.MediaStore
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.localcut.editor.data.assets.AndroidAssetImporter
+import com.localcut.editor.data.assets.AssetUriResolver
+import com.localcut.editor.data.project.AtomicProjectStore
+import com.localcut.editor.domain.model.Project
+import com.localcut.editor.media.PreviewController
+import com.localcut.editor.media.PreviewState
+import com.localcut.editor.session.Cancellable
+import com.localcut.editor.session.DebouncedProjectSaver
+import com.localcut.editor.session.DelayScheduler
+import com.localcut.editor.session.ProjectPreviewLoader
+import com.localcut.editor.session.ProjectSession
+import com.localcut.editor.ui.editor.EditorViewModel
+import java.io.File
+import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class SharedMediaPersistenceSmokeTest {
+    @Test
+    fun sharedImageIsPersistedBeforeImportReturns() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val projectDir = context.cacheDir.toPath().resolve("persistence-smoke-${UUID.randomUUID()}")
+        val store = AtomicProjectStore(projectDir)
+        val scheduler = DelayScheduler { _, _ -> Cancellable { } }
+        val autosave = DebouncedProjectSaver(store, scheduler, 60_000L)
+        val previewController = NoOpPreviewController()
+        val session = ProjectSession(
+            initialProject = Project.create("Persistence smoke", 1080, 1920, 30),
+            preview = object : ProjectPreviewLoader {
+                override fun load(project: Project): Result<Unit> = Result.success(Unit)
+            },
+            autosave = autosave,
+            store = store,
+        )
+        val editorViewModel = EditorViewModel(session, previewController)
+        val coordinator = MediaIngestCoordinator(
+            importer = AndroidAssetImporter(context.contentResolver),
+            editorViewModel = editorViewModel,
+            sharedMediaStager = SharedMediaStager(context),
+            persistProject = autosave::flushNow,
+        )
+
+        val remoteDir = File(context.filesDir, "remote-media")
+        val beforePrivateFiles = remoteDir.listFiles().orEmpty().map { it.name }.toSet()
+        val sourceUri = createPngFixture()
+        try {
+            val result = runBlocking(Dispatchers.Main.immediate) {
+                coordinator.importSharedUris(listOf(sourceUri))
+            }
+            assertEquals(result.errors.joinToString(), 1, result.importedCount)
+            assertEquals(result.errors.joinToString(), 0, result.failedCount)
+            assertTrue("successful import must surface no persistence error: ${result.errors}", result.errors.isEmpty())
+            assertTrue(
+                "autosave must report success before import returns: ${autosave.lastResult?.exceptionOrNull()}",
+                autosave.lastResult?.isSuccess == true,
+            )
+
+            val importedAsset = session.state.project.assets.single()
+            val persisted = store.load().getOrThrow()
+            assertTrue(
+                "successful import must already be present in project.json before importSharedUris returns",
+                persisted.assets.any { it.id == importedAsset.id },
+            )
+            assertTrue(
+                "persisted project must retain the imported clip",
+                persisted.tracks.any { track -> track.clips.any { it.assetId == importedAsset.id } },
+            )
+            assertTrue(
+                "project.json must exist after a successful shared-media import",
+                projectDir.resolve("project.json").toFile().isFile,
+            )
+        } finally {
+            runCatching { context.contentResolver.delete(sourceUri, null, null) }
+            projectDir.toFile().deleteRecursively()
+            remoteDir.listFiles().orEmpty()
+                .filter { it.name !in beforePrivateFiles }
+                .forEach { runCatching { it.delete() } }
+        }
+    }
+
+    @Test
+    fun regularImageImportUsesLocalCutOwnedBackingAndSurvivesSourceDeletion() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val projectDir = context.cacheDir.toPath().resolve("regular-persistence-smoke-${UUID.randomUUID()}")
+        val store = AtomicProjectStore(projectDir)
+        val scheduler = DelayScheduler { _, _ -> Cancellable { } }
+        val autosave = DebouncedProjectSaver(store, scheduler, 60_000L)
+        val session = ProjectSession(
+            initialProject = Project.create("Regular persistence smoke", 1080, 1920, 30),
+            preview = object : ProjectPreviewLoader {
+                override fun load(project: Project): Result<Unit> = Result.success(Unit)
+            },
+            autosave = autosave,
+            store = store,
+        )
+        val editorViewModel = EditorViewModel(session, NoOpPreviewController())
+        val coordinator = MediaIngestCoordinator(
+            importer = AndroidAssetImporter(context.contentResolver),
+            editorViewModel = editorViewModel,
+            sharedMediaStager = SharedMediaStager(context),
+            persistProject = autosave::flushNow,
+        )
+
+        val remoteDir = File(context.filesDir, "remote-media")
+        val beforePrivateFiles = remoteDir.listFiles().orEmpty().map { it.name }.toSet()
+        val sourceUri = createPngFixture()
+        try {
+            val result = runBlocking(Dispatchers.Main.immediate) {
+                coordinator.importUris(listOf(sourceUri))
+            }
+            assertEquals(result.errors.joinToString(), 1, result.importedCount)
+            assertEquals(result.errors.joinToString(), 0, result.failedCount)
+            assertTrue(result.errors.joinToString(), result.errors.isEmpty())
+
+            val importedAsset = session.state.project.assets.single()
+            assertNotEquals(
+                "regular import must not keep a transient external source URI",
+                sourceUri.toString(),
+                importedAsset.uri,
+            )
+
+            val persisted = store.load().getOrThrow()
+            assertEquals(importedAsset.uri, persisted.assets.single { it.id == importedAsset.id }.uri)
+            assertEquals(1, context.contentResolver.delete(sourceUri, null, null))
+            assertTrue(
+                "regular imported asset must remain readable after the original source is deleted",
+                AssetUriResolver(context.contentResolver).resolve(importedAsset).isSuccess,
+            )
+        } finally {
+            runCatching { context.contentResolver.delete(sourceUri, null, null) }
+            projectDir.toFile().deleteRecursively()
+            remoteDir.listFiles().orEmpty()
+                .filter { it.name !in beforePrivateFiles }
+                .forEach { runCatching { it.delete() } }
+        }
+    }
+
+    @Test
+    fun overlayImportUsesLocalCutOwnedBackingAndSurvivesSourceDeletion() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val projectDir = context.cacheDir.toPath().resolve("overlay-persistence-smoke-${UUID.randomUUID()}")
+        val store = AtomicProjectStore(projectDir)
+        val scheduler = DelayScheduler { _, _ -> Cancellable { } }
+        val autosave = DebouncedProjectSaver(store, scheduler, 60_000L)
+        val session = ProjectSession(
+            initialProject = Project.create("Overlay persistence smoke", 1080, 1920, 30),
+            preview = object : ProjectPreviewLoader {
+                override fun load(project: Project): Result<Unit> = Result.success(Unit)
+            },
+            autosave = autosave,
+            store = store,
+        )
+        val coordinator = MediaIngestCoordinator(
+            importer = AndroidAssetImporter(context.contentResolver),
+            editorViewModel = EditorViewModel(session, NoOpPreviewController()),
+            sharedMediaStager = SharedMediaStager(context),
+            persistProject = autosave::flushNow,
+        )
+
+        val remoteDir = File(context.filesDir, "remote-media")
+        val beforePrivateFiles = remoteDir.listFiles().orEmpty().map { it.name }.toSet()
+        val primarySource = createPngFixture()
+        val overlaySource = createPngFixture()
+        try {
+            val primary = runBlocking(Dispatchers.Main.immediate) {
+                coordinator.importUris(listOf(primarySource))
+            }
+            assertEquals(primary.errors.joinToString(), 1, primary.importedCount)
+            assertEquals(primary.errors.joinToString(), 0, primary.failedCount)
+            assertTrue(primary.errors.joinToString(), primary.errors.isEmpty())
+
+            val beforeOverlayIds = session.state.project.assets.map { it.id }.toSet()
+            val overlay = runBlocking(Dispatchers.Main.immediate) {
+                coordinator.importOverlayUris(listOf(overlaySource), playheadUs = 0L)
+            }
+            assertEquals(overlay.errors.joinToString(), 1, overlay.importedCount)
+            assertEquals(overlay.errors.joinToString(), 0, overlay.failedCount)
+            assertTrue(overlay.errors.joinToString(), overlay.errors.isEmpty())
+
+            val overlayAsset = session.state.project.assets.single { it.id !in beforeOverlayIds }
+            assertNotEquals(
+                "overlay import must not keep a transient external source URI",
+                overlaySource.toString(),
+                overlayAsset.uri,
+            )
+            val persisted = store.load().getOrThrow()
+            assertEquals(overlayAsset.uri, persisted.assets.single { it.id == overlayAsset.id }.uri)
+            assertTrue(
+                "persisted project must contain the overlay clip",
+                persisted.tracks.any { track -> track.clips.any { it.assetId == overlayAsset.id } },
+            )
+            assertEquals(1, context.contentResolver.delete(overlaySource, null, null))
+            assertTrue(
+                "overlay asset must remain readable after the original source is deleted",
+                AssetUriResolver(context.contentResolver).resolve(overlayAsset).isSuccess,
+            )
+        } finally {
+            runCatching { context.contentResolver.delete(primarySource, null, null) }
+            runCatching { context.contentResolver.delete(overlaySource, null, null) }
+            projectDir.toFile().deleteRecursively()
+            remoteDir.listFiles().orEmpty()
+                .filter { it.name !in beforePrivateFiles }
+                .forEach { runCatching { it.delete() } }
+        }
+    }
+
+    private class NoOpPreviewController : PreviewController {
+        private val mutableState = MutableStateFlow(PreviewState())
+        override val state: StateFlow<PreviewState> = mutableState
+
+        override fun load(project: Project): Result<Unit> = Result.success(Unit)
+        override fun play() = Unit
+        override fun pause() = Unit
+        override fun seekToUs(positionUs: Long) = Unit
+        override fun stepFrames(deltaFrames: Int, fps: Int) = Unit
+        override fun setLoopRange(startUs: Long, endUs: Long?) = Unit
+        override fun release() = Unit
+    }
+
+    private fun createPngFixture(): Uri {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val resolver = context.contentResolver
+        val uri = requireNotNull(
+            resolver.insert(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, "localcut-persistence-${UUID.randomUUID()}.png")
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                },
+            ),
+        ) { "failed to create MediaStore fixture" }
+        resolver.openOutputStream(uri)?.use { output ->
+            val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
+            try {
+                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+            } finally {
+                bitmap.recycle()
+            }
+        } ?: error("failed to write MediaStore fixture")
+        return uri
+    }
+}

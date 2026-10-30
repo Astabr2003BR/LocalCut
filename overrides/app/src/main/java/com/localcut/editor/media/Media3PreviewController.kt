@@ -3,6 +3,8 @@ package com.localcut.editor.media
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.view.SurfaceView
+import android.view.TextureView
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -14,9 +16,11 @@ import androidx.media3.transformer.CompositionPlayer
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.ui.PlayerView
+import com.localcut.editor.bridge.agent.AndroidPlayerPreviewFramePort
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.timeline.TimelineMath
 import java.io.File
+import java.lang.ref.WeakReference
 
 @UnstableApi
 @OptIn(ExperimentalApi::class)
@@ -25,50 +29,192 @@ class Media3PreviewController(
     compositionCompiler: ProjectCompositionCompiler,
     runtimeProvider: PreviewRuntimeProvider = AndroidPreviewRuntimeProvider(context),
 ) : PreviewController {
-    private val player = CompositionPlayer.Builder(context).build()
-    private val engine = Media3PreviewEngine(player, compositionCompiler, runtimeProvider)
+    private val engine = Media3PreviewEngine(context, compositionCompiler, runtimeProvider)
     private val delegate = DefaultPreviewController(engine, AndroidPreviewTicker())
+    private val backgroundSession = PreviewBackgroundSession()
+    private var lastProject: Project? = null
+    @Volatile
+    private var boundViewRef: WeakReference<PlayerView>? = null
+    val bridgePreviewFramePort = AndroidPlayerPreviewFramePort(
+        positionUsProvider = { state.value.positionUs },
+    )
 
     override val state = delegate.state
-    override fun load(project: Project): Result<Unit> = delegate.load(project)
+    override fun load(project: Project): Result<Unit> = delegate.load(project).also { result ->
+        if (result.isSuccess) {
+            lastProject = project
+        }
+        scheduleBoundSurfaceRefreshAfterContentLoad(result.isSuccess)
+    }
 
-    fun loadRenderedFile(file: File, durationUs: Long, fps: Int): Result<Unit> =
-        delegate.loadResult(engine.loadRenderedFile(file, durationUs, fps))
+    fun loadRenderedFile(file: File, durationUs: Long, fps: Int): Result<Unit> {
+        val editorProject = lastProject
+        val editorPositionUs = state.value.positionUs
+        val result = delegate.loadResult(engine.loadRenderedFile(file, durationUs, fps))
+        if (result.isSuccess) {
+            scheduleBoundSurfaceRefreshAfterContentLoad(loadSucceeded = true)
+        } else if (editorProject != null) {
+            FinalPreviewRecovery.restore(
+                controller = this,
+                project = editorProject,
+                positionUs = editorPositionUs,
+                durationUs = TimelineMath.durationUs(editorProject),
+            )
+            bridgePreviewFramePort.requestRefresh()
+        }
+        return result
+    }
+
     override fun play() = delegate.play()
     override fun pause() = delegate.pause()
-    override fun seekToUs(positionUs: Long) = delegate.seekToUs(positionUs)
-    override fun stepFrames(deltaFrames: Int, fps: Int) = delegate.stepFrames(deltaFrames, fps)
+    override fun seekToUs(positionUs: Long) {
+        delegate.seekToUs(positionUs)
+        bridgePreviewFramePort.requestRefresh()
+    }
+    override fun stepFrames(deltaFrames: Int, fps: Int) {
+        delegate.stepFrames(deltaFrames, fps)
+        bridgePreviewFramePort.requestRefresh()
+    }
     override fun setLoopRange(startUs: Long, endUs: Long?) = delegate.setLoopRange(startUs, endUs)
     override fun release() = delegate.release()
 
+    /**
+     * Releases the Activity-owned Media3 player while the UI is backgrounded. The project model,
+     * history and Bridge runtime remain process-resident; only preview codecs/surfaces are dropped.
+     */
+    fun suspendForBackground(changingConfigurations: Boolean) {
+        if (!PreviewBackgroundMemoryPolicy.shouldSuspend(state.value.durationUs, changingConfigurations)) return
+        if (!backgroundSession.beginSuspend(state.value.positionUs)) return
+
+        delegate.suspendForBackground()
+        boundViewRef?.get()?.let { view ->
+            bridgePreviewFramePort.detach(view)
+            view.player = null
+        }
+        engine.releaseForBackground()
+    }
+
+    /** Recreates the preview player after background suspension and restores the previous position. */
+    fun resumeAfterBackground() {
+        val resumePositionUs = backgroundSession.takeResumePositionUs() ?: return
+        val project = lastProject
+        if (project == null) {
+            delegate.resumeAfterBackground()
+            return
+        }
+
+        val loaded = load(project)
+        if (loaded.isSuccess) {
+            seekToUs(resumePositionUs.coerceAtMost(state.value.durationUs))
+        }
+    }
+
     fun bindTo(view: PlayerView) {
-        view.player = player
+        boundViewRef = WeakReference(view)
+        assignPlayerIfNeeded(view)
         view.useController = false
+        bridgePreviewFramePort.attach(view)
+    }
+
+    fun refreshBoundView(view: PlayerView) {
+        val positionUs = state.value.positionUs
+        val player = engine.player
+        boundViewRef = WeakReference(view)
+        assignPlayerIfNeeded(view)
+        view.useController = false
+        bridgePreviewFramePort.attach(view)
+
+        val videoOutput = view.videoSurfaceView
+        val surfaceReady = when (videoOutput) {
+            is SurfaceView -> videoOutput.holder.surface.isValid
+            is TextureView -> videoOutput.isAvailable
+            else -> false
+        }
+        if (
+            PreviewSurfaceRecoveryPolicy.shouldRebindVideoOutput(
+                durationUs = state.value.durationUs,
+                hasBoundView = boundViewRef?.get() === view,
+                surfaceReady = surfaceReady,
+            )
+        ) {
+            runCatching {
+                when (videoOutput) {
+                    is SurfaceView -> player.setVideoSurfaceView(videoOutput)
+                    is TextureView -> player.setVideoTextureView(videoOutput)
+                }
+            }
+        }
+
+        delegate.seekToUs(positionUs)
+        bridgePreviewFramePort.requestRefresh()
     }
 
     fun unbindFrom(view: PlayerView) {
-        if (view.player === player) view.player = null
+        if (boundViewRef?.get() === view) {
+            boundViewRef = null
+        }
+        bridgePreviewFramePort.detach(view)
+        if (view.player === engine.currentPlayerOrNull()) view.player = null
+    }
+
+    private fun assignPlayerIfNeeded(view: PlayerView) {
+        val player = engine.player
+        if (
+            PreviewPlayerViewPolicy.shouldAssignPreviewPlayer(
+                alreadyBoundToPreviewPlayer = view.player === player,
+            )
+        ) {
+            view.player = player
+        }
+    }
+
+    private fun scheduleBoundSurfaceRefreshAfterContentLoad(loadSucceeded: Boolean) {
+        val view = boundViewRef?.get()
+        if (!PreviewPlayerViewPolicy.shouldRefreshAfterContentLoad(
+                loadSucceeded = loadSucceeded,
+                durationUs = state.value.durationUs,
+                hasBoundView = view != null,
+            )
+        ) {
+            if (loadSucceeded) bridgePreviewFramePort.requestRefresh()
+            return
+        }
+
+        checkNotNull(view).post {
+            if (boundViewRef?.get() !== view || state.value.durationUs <= 0L) return@post
+            refreshBoundView(view)
+        }
     }
 }
 
 @UnstableApi
 @OptIn(ExperimentalApi::class)
 private class Media3PreviewEngine(
-    private val player: CompositionPlayer,
+    context: Context,
     private val compiler: ProjectCompositionCompiler,
     private val runtimeProvider: PreviewRuntimeProvider,
 ) : PreviewEngine {
+    private val appContext = context.applicationContext
+    private var activePlayer: CompositionPlayer? = null
+    private var activeUsesCustomProcessor: Boolean = false
     private var errorCallback: (String) -> Unit = {}
 
+    val player: CompositionPlayer
+        get() = ensurePlayer()
+
     init {
-        player.addListener(object : Player.Listener {
-            override fun onPlayerError(error: PlaybackException) {
-                errorCallback(error.message ?: "Media3 playback error")
-            }
-        })
+        ensurePlayer()
+    }
+
+    fun currentPlayerOrNull(): CompositionPlayer? = activePlayer
+
+    fun releaseForBackground() {
+        activePlayer?.release()
+        activePlayer = null
     }
 
     override fun load(project: Project): Result<PreviewLoadResult> {
+        val player = ensurePlayer(project)
         val durationUs = TimelineMath.durationUs(project)
         if (durationUs == 0L) {
             player.pause()
@@ -79,6 +225,12 @@ private class Media3PreviewEngine(
             project = project,
             runtime = runtimeProvider.current(),
         ).outputSettings
+        val outputSize = RenderOutputSizeResolver.resolve(
+            projectWidth = project.width,
+            projectHeight = project.height,
+            mode = RenderMode.FAST_PREVIEW,
+            outputSettings = outputSettings,
+        )
         return compiler.compile(
             project = project,
             mode = RenderMode.FAST_PREVIEW,
@@ -86,7 +238,12 @@ private class Media3PreviewEngine(
         ).map { composition ->
             player.setComposition(composition)
             player.prepare()
-            PreviewLoadResult(durationUs, project.fps)
+            PreviewLoadResult(
+                durationUs = durationUs,
+                fps = project.fps,
+                outputWidth = outputSize.width,
+                outputHeight = outputSize.height,
+            )
         }
     }
 
@@ -94,6 +251,7 @@ private class Media3PreviewEngine(
         require(file.isFile && file.length() > 0L) { "Rendered preview file is missing or empty" }
         require(durationUs > 0L) { "Rendered preview duration must be > 0" }
         require(fps > 0) { "Rendered preview fps must be > 0" }
+        val player = ensurePlayer()
         val mediaItem = MediaItem.Builder().setUri(file.toURI().toString()).build()
         val edited = EditedMediaItem.Builder(mediaItem).setDurationUs(durationUs).build()
         val sequence = EditedMediaItemSequence.withAudioAndVideoFrom(listOf(edited))
@@ -102,12 +260,45 @@ private class Media3PreviewEngine(
         PreviewLoadResult(durationUs, fps)
     }
 
-    override fun play() = player.play()
-    override fun pause() = player.pause()
-    override fun seekToUs(positionUs: Long) = player.seekTo(positionUs.coerceAtLeast(0L) / 1_000L)
-    override fun currentPositionUs(): Long = player.currentPosition * 1_000L
-    override fun setErrorCallback(callback: (String) -> Unit) { errorCallback = callback }
-    override fun release() = player.release()
+    override fun play() = ensurePlayer().play()
+    override fun pause() {
+        activePlayer?.pause()
+    }
+    override fun seekToUs(positionUs: Long) = ensurePlayer().seekTo(positionUs.coerceAtLeast(0L) / 1_000L)
+    override fun currentPositionUs(): Long = (activePlayer?.currentPosition ?: 0L) * 1_000L
+    override fun setErrorCallback(callback: (String) -> Unit) {
+        errorCallback = callback
+    }
+    override fun release() = releaseForBackground()
+
+    private fun ensurePlayer(project: Project? = null): CompositionPlayer {
+        val requestedCustomProcessor = project?.let(LocalCutFrameProcessorIntegration::shouldUseCustomProcessor)
+        activePlayer?.let { current ->
+            if (requestedCustomProcessor == null || requestedCustomProcessor == activeUsesCustomProcessor) {
+                return current
+            }
+            current.release()
+            activePlayer = null
+        }
+
+        val builder = CompositionPlayer.Builder(appContext)
+        if (project == null) {
+            builder.setVideoGraphFactory(androidx.media3.effect.MultipleInputVideoGraph.Factory())
+            activeUsesCustomProcessor = false
+        } else {
+            LocalCutFrameProcessorIntegration.configurePreviewBuilder(builder, appContext, project)
+            activeUsesCustomProcessor = requestedCustomProcessor == true
+        }
+
+        return builder.build().also { created ->
+            created.addListener(object : Player.Listener {
+                override fun onPlayerError(error: PlaybackException) {
+                    errorCallback(error.message ?: "Media3 playback error")
+                }
+            })
+            activePlayer = created
+        }
+    }
 }
 
 private class AndroidPreviewTicker(

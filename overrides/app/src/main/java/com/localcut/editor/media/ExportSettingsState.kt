@@ -20,14 +20,25 @@ data class ExportSettingsState(
     }
 
     fun selectResolution(resolution: ExportResolution): ExportSettingsState =
-        copy(selectedResolution = resolution)
+        copy(
+            resolutionOptions = prioritize(resolutionOptions, resolution),
+            selectedResolution = resolution,
+        )
 
-    fun selectFps(fps: Int): ExportSettingsState = copy(selectedFps = fps)
+    fun selectFps(fps: Int): ExportSettingsState = copy(
+        fpsOptions = prioritize(fpsOptions, fps),
+        selectedFps = fps,
+    )
 
-    fun selectBitrate(bitrateBitsPerSecond: Int): ExportSettingsState =
-        copy(selectedBitrateBitsPerSecond = bitrateBitsPerSecond)
+    fun selectBitrate(bitrateBitsPerSecond: Int): ExportSettingsState = copy(
+        bitrateOptions = prioritize(bitrateOptions, bitrateBitsPerSecond),
+        selectedBitrateBitsPerSecond = bitrateBitsPerSecond,
+    )
 
-    fun selectCodec(codec: ExportVideoCodec): ExportSettingsState = copy(selectedCodec = codec)
+    fun selectCodec(codec: ExportVideoCodec): ExportSettingsState = copy(
+        codecOptions = prioritize(codecOptions, codec),
+        selectedCodec = codec,
+    )
 
     fun toProfile(): ExportProfile = ExportProfile(
         width = selectedResolution.width,
@@ -43,21 +54,40 @@ data class ExportSettingsState(
             capabilities: ExportCapabilities,
         ): ExportSettingsState {
             val default = ExportProfile.defaultFor(project)
-            val resolutions = ExportProfileOptions.resolutionsFor(project)
-            val fps = ExportProfileOptions.fpsFor(project)
-            val bitrates = ExportProfileOptions.bitrates()
-            val codecs = ExportProfileOptions.codecsFor(capabilities)
+            val selectedResolution = ExportResolution(default.width, default.height)
+            val selectedFps = default.fps
+            val selectedBitrate = default.videoBitrateBitsPerSecond
+            val selectedCodec = default.codec
 
             return ExportSettingsState(
-                resolutionOptions = resolutions,
-                fpsOptions = fps,
-                bitrateOptions = bitrates,
-                codecOptions = codecs,
-                selectedResolution = ExportResolution(default.width, default.height),
-                selectedFps = default.fps,
-                selectedBitrateBitsPerSecond = default.videoBitrateBitsPerSecond,
-                selectedCodec = default.codec,
+                resolutionOptions = prioritize(
+                    ExportProfileOptions.resolutionsFor(project),
+                    selectedResolution,
+                ),
+                fpsOptions = prioritize(
+                    ExportProfileOptions.fpsFor(project),
+                    selectedFps,
+                ),
+                bitrateOptions = prioritize(
+                    ExportProfileOptions.bitrates(),
+                    selectedBitrate,
+                ),
+                codecOptions = prioritize(
+                    ExportProfileOptions.codecsFor(capabilities),
+                    selectedCodec,
+                ),
+                selectedResolution = selectedResolution,
+                selectedFps = selectedFps,
+                selectedBitrateBitsPerSecond = selectedBitrate,
+                selectedCodec = selectedCodec,
             )
         }
+
+        private fun <T> prioritize(options: List<T>, selected: T): List<T> =
+            if (selected !in options || options.firstOrNull() == selected) {
+                options
+            } else {
+                listOf(selected) + options.filterNot { it == selected }
+            }
     }
 }

@@ -6,6 +6,6 @@ import org.junit.Test
 class BuildSanityTest {
     @Test
     fun projectSchemaVersionIsPinned() {
-        assertEquals(3, BuildContract.PROJECT_SCHEMA_VERSION)
+        assertEquals(7, BuildContract.PROJECT_SCHEMA_VERSION)
     }
 }

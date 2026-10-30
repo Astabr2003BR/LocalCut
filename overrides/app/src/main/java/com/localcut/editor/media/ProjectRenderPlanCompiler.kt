@@ -3,7 +3,6 @@ package com.localcut.editor.media
 import com.localcut.editor.domain.model.*
 import com.localcut.editor.domain.timeline.TimelineMath
 import com.localcut.editor.domain.timeline.TimelineValidator
-import kotlin.math.roundToInt
 
 object ProjectRenderPlanCompiler {
     fun compile(
@@ -39,23 +38,54 @@ object ProjectRenderPlanCompiler {
         val audibleAudioTracks = audioTracks.filter { track ->
             !track.muted && (!hasSoloAudio || track.solo)
         }
+        val audibleAudioTracksById = audibleAudioTracks.associateBy { it.id }
         val durationUs = TimelineMath.durationUs(project)
         val outputFps = outputSettings.fps ?: project.fps
-        val (width, height) = outputSize(project.width, project.height, mode, outputSettings)
+        val outputSize = RenderOutputSizeResolver.resolve(
+            projectWidth = project.width,
+            projectHeight = project.height,
+            mode = mode,
+            outputSettings = outputSettings,
+        )
         val assets = project.assets.associateBy { it.id }
         val visualLayers = visualTracks.flatMap { track ->
-            buildVisualLayers(track, durationUs, outputFps, assets, resolver)
+            buildVisualLayers(
+                track = track,
+                totalDurationUs = durationUs,
+                fps = outputFps,
+                assets = assets,
+                resolver = resolver,
+                mode = mode,
+                compositionGraph = project.compositionGraph,
+            )
         }
         RenderPlan(
-            width = width,
-            height = height,
+            width = outputSize.width,
+            height = outputSize.height,
             transformSpaceWidth = project.width,
             transformSpaceHeight = project.height,
             fps = outputFps,
             durationUs = durationUs,
             visualLayers = visualLayers,
             audioLayers = audibleAudioTracks.map { track ->
-                buildSequence(track, durationUs, outputFps, assets, resolver)
+                val duckingSettings = track.ducking
+                val duckingSourceTrack = duckingSettings?.let { settings ->
+                    audibleAudioTracksById[settings.sourceTrackId]
+                }
+                val duckingIndex = if (duckingSettings != null && duckingSourceTrack != null) {
+                    AudioDuckingIndex(duckingSourceTrack, duckingSettings)
+                } else {
+                    null
+                }
+                buildSequence(
+                    track = track,
+                    totalDurationUs = durationUs,
+                    fps = outputFps,
+                    assets = assets,
+                    resolver = resolver,
+                    mode = mode,
+                    duckingIndex = duckingIndex,
+                )
             },
         )
     }
@@ -66,9 +96,21 @@ object ProjectRenderPlanCompiler {
         fps: Int,
         assets: Map<String, Asset>,
         resolver: RenderAssetResolver,
+        mode: RenderMode,
+        compositionGraph: CompositionGraph,
     ): List<RenderSequencePlan> {
         if (track.collisionPolicy == TrackCollisionPolicy.EXCLUSIVE || track.clips.size <= 1) {
-            return listOf(buildSequence(track, totalDurationUs, fps, assets, resolver))
+            return listOf(
+                buildSequence(
+                    track = track,
+                    totalDurationUs = totalDurationUs,
+                    fps = fps,
+                    assets = assets,
+                    resolver = resolver,
+                    mode = mode,
+                    compositionGraph = compositionGraph,
+                ),
+            )
         }
 
         val lanes = mutableListOf<MutableList<Clip>>()
@@ -94,6 +136,8 @@ object ProjectRenderPlanCompiler {
                 assets,
                 resolver,
                 laneIndex = laneIndex,
+                mode = mode,
+                compositionGraph = compositionGraph,
             )
         }
     }
@@ -105,6 +149,9 @@ object ProjectRenderPlanCompiler {
         assets: Map<String, Asset>,
         resolver: RenderAssetResolver,
         laneIndex: Int = 0,
+        mode: RenderMode,
+        compositionGraph: CompositionGraph? = null,
+        duckingIndex: AudioDuckingIndex? = null,
     ): RenderSequencePlan {
         val segments = mutableListOf<RenderSegment>()
         var cursorUs = 0L
@@ -112,8 +159,34 @@ object ProjectRenderPlanCompiler {
             if (clip.startUs > cursorUs) segments += RenderSegment.Gap(clip.startUs - cursorUs)
             val asset = assets[clip.assetId]
                 ?: throw RenderPlanException(RenderPlanErrorCode.INVALID_PROJECT, "missing asset ${clip.assetId}", clip.assetId)
-            val uri = resolver.resolve(asset).getOrElse { cause ->
-                throw RenderPlanException(RenderPlanErrorCode.ASSET_UNAVAILABLE, "asset unavailable: ${asset.id}", asset.id, cause)
+            val resolvedUri = resolver.resolve(asset)
+            if (resolvedUri.isFailure) {
+                if (mode == RenderMode.FAST_PREVIEW) {
+                    segments += RenderSegment.Gap(clip.durationUs)
+                    cursorUs = Math.addExact(clip.startUs, clip.durationUs)
+                    continue
+                }
+                throw RenderPlanException(
+                    RenderPlanErrorCode.ASSET_UNAVAILABLE,
+                    "asset unavailable: ${asset.id}",
+                    asset.id,
+                    resolvedUri.exceptionOrNull(),
+                )
+            }
+            val uri = resolvedUri.getOrThrow()
+            val composition = compositionGraph?.let { graph ->
+                CompositionRenderResolver.resolve(graph, clip).getOrElse { cause ->
+                    throw RenderPlanException(
+                        RenderPlanErrorCode.INVALID_PROJECT,
+                        "composition render resolution failed for clip ${clip.id}: ${cause.message}",
+                        cause = cause,
+                    )
+                }
+            }
+            val duckingEnvelope = if (track.type == TrackType.AUDIO) {
+                duckingIndex?.plan(clip) ?: AudioDuckingEnvelope()
+            } else {
+                AudioDuckingEnvelope()
             }
             segments += RenderSegment.Media(
                 clipId = clip.id,
@@ -124,13 +197,21 @@ object ProjectRenderPlanCompiler {
                 durationUs = clip.durationUs,
                 sourceInUs = clip.sourceInUs,
                 sourceOutUs = clip.sourceOutUs,
-                transform = clip.transform,
-                opacity = clip.opacity,
+                transform = composition?.transform ?: clip.transform,
+                opacity = composition?.opacity ?: clip.opacity,
                 volume = clip.volume,
-                keyframes = clip.keyframes,
+                keyframes = composition?.keyframes ?: clip.keyframes,
+                propertyAnimations = clip.propertyAnimations,
                 imageFrameRate = if (asset.type == AssetType.IMAGE) fps else null,
                 fadeInUs = clip.fadeInUs,
                 fadeOutUs = clip.fadeOutUs,
+                compositing = clip.compositing,
+                effects = clip.effects,
+                timeMap = clip.timeMap,
+                audioProcessing = clip.audioProcessing,
+                duckingEnvelope = duckingEnvelope,
+                compositionContainer = composition?.container,
+                compositionContainerTimeline = composition?.containerTimeline,
             )
             cursorUs = Math.addExact(clip.startUs, clip.durationUs)
         }
@@ -144,23 +225,4 @@ object ProjectRenderPlanCompiler {
             laneIndex = laneIndex,
         )
     }
-
-    private fun outputSize(
-        projectWidth: Int,
-        projectHeight: Int,
-        mode: RenderMode,
-        outputSettings: RenderOutputSettings,
-    ): Pair<Int, Int> {
-        val width = outputSettings.width ?: projectWidth
-        val height = outputSettings.height ?: projectHeight
-        if (mode != RenderMode.FAST_PREVIEW) return width to height
-
-        val previewLongEdge = outputSettings.previewMaxLongEdge ?: FAST_PREVIEW_LONG_EDGE
-        val longEdge = maxOf(width, height)
-        if (longEdge <= previewLongEdge) return width to height
-        val scale = previewLongEdge.toDouble() / longEdge.toDouble()
-        return maxOf(1, (width * scale).roundToInt()) to maxOf(1, (height * scale).roundToInt())
-    }
-
-    private const val FAST_PREVIEW_LONG_EDGE = 720
 }

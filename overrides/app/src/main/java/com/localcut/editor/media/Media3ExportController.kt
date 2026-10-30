@@ -64,87 +64,96 @@ class Media3ExportController(
             return@callbackFlow
         }
 
-        lateinit var session: ActiveExport
-        val coordinator = ExportLifecycleCoordinator(tempFile, destination) { event -> trySend(event) }
-        session = ActiveExport(
-            coordinator = coordinator,
-            closeFlow = { close() },
-        )
-
-        val accepted = synchronized(lock) {
-            if (active != null) false else {
-                active = session
-                true
-            }
-        }
-        if (!accepted) {
-            tempFile.delete()
-            withContext(Dispatchers.IO) { destination.discard() }
-            trySend(ExportEvent.Failed("Another export is already running"))
-            close()
-            return@callbackFlow
-        }
-
-        coordinator.started()
-        val composition = withContext(Dispatchers.IO) {
-            compositionCompiler.compile(
-                project = project,
-                mode = RenderMode.EXPORT,
-                outputSettings = settings.outputSettings,
+        var registeredSession: ActiveExport? = null
+        try {
+            val coordinator = ExportLifecycleCoordinator(tempFile, destination) { event -> trySend(event) }
+            val session = ActiveExport(
+                coordinator = coordinator,
+                closeFlow = { close() },
             )
-        }.getOrElse { error ->
-            withContext(Dispatchers.IO) { coordinator.renderFailed(error) }
-            finishSession(session)
-            return@callbackFlow
-        }
+            registeredSession = session
 
-        withContext(Dispatchers.Main.immediate) {
-            if (!isActiveSession(session) || coordinator.isTerminal()) return@withContext
-            val listener = object : Transformer.Listener {
-                override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                    session.renderFinished = true
-                    stopProgress(session)
-                    cleanupExecutor.execute {
-                        coordinator.renderCompleted()
-                        finishSession(session)
-                    }
-                }
-
-                override fun onError(
-                    composition: Composition,
-                    exportResult: ExportResult,
-                    exportException: ExportException,
-                ) {
-                    session.renderFinished = true
-                    stopProgress(session)
-                    cleanupExecutor.execute {
-                        coordinator.renderFailed(exportException)
-                        finishSession(session)
-                    }
+            val accepted = synchronized(lock) {
+                if (active != null) false else {
+                    active = session
+                    true
                 }
             }
-            val encoderFactory = DefaultEncoderFactory.Builder(appContext)
-                .setEnableFallback(settings.enableEncoderFallback)
-                .setEnableFormatFallback(settings.enableFormatFallback)
-                .setRequestedVideoEncoderSettings(
-                    VideoEncoderSettings.Builder()
-                        .setBitrate(settings.requestedVideoBitrateBitsPerSecond)
-                        .build()
-                )
-                .build()
-            val transformer = Transformer.Builder(appContext)
-                .setVideoMimeType(settings.videoMimeType)
-                .setAudioMimeType(MimeTypes.AUDIO_AAC)
-                .setEncoderFactory(encoderFactory)
-                .addListener(listener)
-                .build()
-            session.transformer = transformer
-            session.progressRunnable = createProgressRunnable(session, transformer)
-            transformer.start(composition, tempFile.absolutePath)
-            mainHandler.post(session.progressRunnable!!)
-        }
+            if (!accepted) {
+                tempFile.delete()
+                withContext(Dispatchers.IO) { destination.discard() }
+                trySend(ExportEvent.Failed("Another export is already running"))
+                close()
+                return@callbackFlow
+            }
 
-        awaitClose { cancelSession(session) }
+            coordinator.started()
+            val composition = withContext(Dispatchers.IO) {
+                compositionCompiler.compile(
+                    project = project,
+                    mode = RenderMode.EXPORT,
+                    outputSettings = settings.outputSettings,
+                )
+            }.getOrElse { error ->
+                withContext(Dispatchers.IO) { coordinator.renderFailed(error) }
+                finishSession(session)
+                return@callbackFlow
+            }
+
+            withContext(Dispatchers.Main.immediate) {
+                if (!isActiveSession(session) || coordinator.isTerminal()) return@withContext
+                val listener = object : Transformer.Listener {
+                    override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                        session.renderFinished = true
+                        stopProgress(session)
+                        cleanupExecutor.execute {
+                            coordinator.renderCompleted()
+                            finishSession(session)
+                        }
+                    }
+
+                    override fun onError(
+                        composition: Composition,
+                        exportResult: ExportResult,
+                        exportException: ExportException,
+                    ) {
+                        session.renderFinished = true
+                        stopProgress(session)
+                        cleanupExecutor.execute {
+                            coordinator.renderFailed(exportException)
+                            finishSession(session)
+                        }
+                    }
+                }
+                val encoderFactory = DefaultEncoderFactory.Builder(appContext)
+                    .setEnableFallback(settings.enableEncoderFallback)
+                    .setEnableFormatFallback(settings.enableFormatFallback)
+                    .setRequestedVideoEncoderSettings(
+                        VideoEncoderSettings.Builder()
+                            .setBitrate(settings.requestedVideoBitrateBitsPerSecond)
+                            .build()
+                    )
+                    .build()
+                val transformerBuilder = Transformer.Builder(appContext)
+                    .setVideoMimeType(settings.videoMimeType)
+                    .setAudioMimeType(MimeTypes.AUDIO_AAC)
+                    .setEncoderFactory(encoderFactory)
+                    .addListener(listener)
+                val transformer = LocalCutFrameProcessorIntegration.configureTransformerBuilder(
+                    builder = transformerBuilder,
+                    context = appContext,
+                    project = project,
+                ).build()
+                session.transformer = transformer
+                session.progressRunnable = createProgressRunnable(session, transformer)
+                transformer.start(composition, tempFile.absolutePath)
+                mainHandler.post(session.progressRunnable!!)
+            }
+
+            awaitClose { cancelSession(session) }
+        } finally {
+            registeredSession?.let(::cancelSession)
+        }
     }
 
     override fun cancel() {
@@ -166,7 +175,17 @@ class Media3ExportController(
 
     private fun cancelSession(session: ActiveExport) {
         val cancellable = synchronized(lock) {
-            active === session && !session.renderFinished && !session.coordinator.isTerminal()
+            if (
+                active === session &&
+                !session.renderFinished &&
+                !session.coordinator.isTerminal() &&
+                !session.cancellationRequested
+            ) {
+                session.cancellationRequested = true
+                true
+            } else {
+                false
+            }
         }
         if (!cancellable) return
         mainHandler.post {
@@ -200,6 +219,7 @@ class Media3ExportController(
     ) {
         var transformer: Transformer? = null
         var progressRunnable: Runnable? = null
+        var cancellationRequested: Boolean = false
         @Volatile var renderFinished: Boolean = false
     }
 

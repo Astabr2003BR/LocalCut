@@ -1,6 +1,11 @@
 package com.localcut.editor.media
 
 import com.localcut.editor.domain.model.AssetType
+import com.localcut.editor.domain.model.AudioProcessingSettings
+import com.localcut.editor.domain.model.CompositingSettings
+import com.localcut.editor.domain.model.EffectInstance
+import com.localcut.editor.domain.model.PropertyAnimation
+import com.localcut.editor.domain.model.TimeMap
 import com.localcut.editor.domain.model.TransformKeyframe
 import com.localcut.editor.domain.model.TransformValue
 import com.localcut.editor.domain.model.TrackCollisionPolicy
@@ -56,6 +61,14 @@ sealed interface Media3BlueprintItem {
         val imageFrameRate: Int?,
         val fadeInUs: Long = 0L,
         val fadeOutUs: Long = 0L,
+        val compositing: CompositingSettings = CompositingSettings(),
+        val effects: List<EffectInstance> = emptyList(),
+        val timeMap: TimeMap = TimeMap(),
+        val audioProcessing: AudioProcessingSettings = AudioProcessingSettings(),
+        val duckingEnvelope: AudioDuckingEnvelope = AudioDuckingEnvelope(),
+        val propertyAnimations: List<PropertyAnimation> = emptyList(),
+        val compositionContainer: CompositionTransformContainer? = null,
+        val compositionContainerTimeline: CompositionTransformTimeline? = null,
     ) : Media3BlueprintItem
 }
 
@@ -101,6 +114,14 @@ object Media3CompositionBlueprintCompiler {
                         imageFrameRate = segment.imageFrameRate,
                         fadeInUs = segment.fadeInUs,
                         fadeOutUs = segment.fadeOutUs,
+                        compositing = segment.compositing,
+                        effects = segment.effects,
+                        timeMap = segment.timeMap,
+                        audioProcessing = segment.audioProcessing,
+                        duckingEnvelope = segment.duckingEnvelope,
+                        propertyAnimations = segment.propertyAnimations,
+                        compositionContainer = segment.compositionContainer,
+                        compositionContainerTimeline = segment.compositionContainerTimeline,
                     )
                 }
             },

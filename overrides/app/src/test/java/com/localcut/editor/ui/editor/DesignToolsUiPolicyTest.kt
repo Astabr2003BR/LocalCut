@@ -1,0 +1,218 @@
+package com.localcut.editor.ui.editor
+
+import com.localcut.editor.domain.model.DesignElement
+import com.localcut.editor.domain.model.GuideAxis
+import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.ShapeKind
+import com.localcut.editor.domain.model.ShapeSpec
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class DesignToolsUiPolicyTest {
+    @Test
+    fun mobileDesignSectionsExposeElementsCanvasAndComponentsInStableOrder() {
+        assertEquals(
+            listOf(
+                DesignToolsSection.ELEMENTS,
+                DesignToolsSection.CANVAS,
+                DesignToolsSection.COMPONENTS,
+            ),
+            DesignToolsUiPolicy.mobileSections(),
+        )
+    }
+
+    @Test
+    fun socialCanvasPresetsUseStableProfessionalDimensions() {
+        assertEquals(
+            listOf(
+                DesignCanvasPreset.VERTICAL_9_16,
+                DesignCanvasPreset.LANDSCAPE_16_9,
+                DesignCanvasPreset.SQUARE_1_1,
+                DesignCanvasPreset.PORTRAIT_4_5,
+            ),
+            DesignToolsUiPolicy.canvasPresets(),
+        )
+        assertEquals(1080 to 1920, DesignCanvasPreset.VERTICAL_9_16.width to DesignCanvasPreset.VERTICAL_9_16.height)
+        assertEquals(1920 to 1080, DesignCanvasPreset.LANDSCAPE_16_9.width to DesignCanvasPreset.LANDSCAPE_16_9.height)
+        assertEquals(1080 to 1080, DesignCanvasPreset.SQUARE_1_1.width to DesignCanvasPreset.SQUARE_1_1.height)
+        assertEquals(1080 to 1350, DesignCanvasPreset.PORTRAIT_4_5.width to DesignCanvasPreset.PORTRAIT_4_5.height)
+    }
+
+    @Test
+    fun canvasPresetMatchingUsesProjectDimensionsOnly() {
+        val project = Project.create("Canvas", 1080, 1350, 30)
+
+        assertTrue(DesignToolsUiPolicy.isCanvasPresetActive(project, DesignCanvasPreset.PORTRAIT_4_5))
+        assertTrue(!DesignToolsUiPolicy.isCanvasPresetActive(project, DesignCanvasPreset.VERTICAL_9_16))
+    }
+
+    @Test
+    fun createsTimedShapeAtPlayheadWithUniqueIdAndTopZIndex() {
+        val first = DesignToolsUiPolicy.newShape(
+            project = Project.create("Design", 1080, 1920, 30),
+            kind = ShapeKind.RECTANGLE,
+            playheadUs = 2_000_000L,
+        )
+        val project = Project.create("Design", 1080, 1920, 30).copy(designElements = listOf(first.copy(zIndex = 4)))
+
+        val second = DesignToolsUiPolicy.newShape(project, ShapeKind.ELLIPSE, 3_000_000L)
+
+        assertEquals("shape-2", second.id)
+        assertEquals(3_000_000L, second.startUs)
+        assertEquals(3_000_000L, second.durationUs)
+        assertEquals(5, second.zIndex)
+        assertEquals(ShapeKind.ELLIPSE, second.shape!!.kind)
+    }
+
+    @Test
+    fun duplicateElementPreservesStyleAndTimingButOffsetsAndRaisesCopy() {
+        val original = element("shape-1", 4).copy(
+            startUs = 500_000L,
+            durationUs = 2_500_000L,
+            opacity = 0.65,
+            transform = element("template", 0).transform.copy(x = 100.0, y = -80.0, scale = 1.4),
+            shape = ShapeSpec(
+                kind = ShapeKind.RECTANGLE,
+                fillArgb = 0xFFFF3B30.toInt(),
+                strokeArgb = 0xFF111111.toInt(),
+                strokeWidthPx = 8.0,
+                cornerRadiusPx = 30.0,
+            ),
+        )
+        val front = element("shape-2", 9)
+        val project = Project.create("Design", 1080, 1920, 30).copy(designElements = listOf(original, front))
+
+        val duplicate = DesignToolsUiPolicy.duplicateElement(project, original)
+
+        assertEquals("shape-3", duplicate.id)
+        assertNotEquals(original.id, duplicate.id)
+        assertEquals(original.startUs, duplicate.startUs)
+        assertEquals(original.durationUs, duplicate.durationUs)
+        assertEquals(original.shape, duplicate.shape)
+        assertEquals(original.opacity, duplicate.opacity, 0.0)
+        assertEquals(original.transform.scale, duplicate.transform.scale, 0.0)
+        assertEquals(original.transform.x + 24.0, duplicate.transform.x, 0.0)
+        assertEquals(original.transform.y + 24.0, duplicate.transform.y, 0.0)
+        assertEquals(10, duplicate.zIndex)
+        assertTrue(duplicate.validationIssues().isEmpty())
+    }
+
+    @Test
+    fun freeformPresetCreatesClosedPathAndCenterGuidesAreToggleable() {
+        val project = Project.create("Design", 1080, 1920, 30)
+        val path = DesignToolsUiPolicy.newShape(project, ShapeKind.PATH, 0L)
+        assertTrue(path.shape!!.path!!.closed)
+        assertEquals(3, path.shape!!.path!!.points.size)
+
+        val withGuides = DesignToolsUiPolicy.toggleCenterGuides(project.designCanvas)
+        assertEquals(setOf(GuideAxis.HORIZONTAL, GuideAxis.VERTICAL), withGuides.guides.map { it.axis }.toSet())
+        val withoutGuides = DesignToolsUiPolicy.toggleCenterGuides(withGuides)
+        assertTrue(withoutGuides.guides.isEmpty())
+    }
+
+    @Test
+    fun vectorStyleControlsPreserveElementAndClampRenderableGeometry() {
+        val source = element("shape", 7).copy(startUs = 250_000L, durationUs = 2_500_000L)
+
+        val filled = DesignToolsUiPolicy.setShapeFill(source, 0xFFFF3B30.toInt())
+        val outlined = DesignToolsUiPolicy.setShapeStrokeColor(filled, 0xFF111111.toInt())
+        val wide = DesignToolsUiPolicy.setShapeStrokeWidth(outlined, 999.0)
+        val rounded = DesignToolsUiPolicy.setShapeCornerRadius(wide, 999.0)
+
+        assertEquals(source.id, rounded.id)
+        assertEquals(source.startUs, rounded.startUs)
+        assertEquals(source.durationUs, rounded.durationUs)
+        assertEquals(source.transform, rounded.transform)
+        assertEquals(source.zIndex, rounded.zIndex)
+        assertEquals(0xFFFF3B30.toInt(), rounded.shape!!.fillArgb)
+        assertEquals(0xFF111111.toInt(), rounded.shape!!.strokeArgb)
+        assertEquals(200.0, rounded.shape!!.strokeWidthPx, 0.0)
+        assertEquals(300.0, rounded.shape!!.cornerRadiusPx, 0.0)
+        assertTrue(rounded.validationIssues().isEmpty())
+    }
+
+    @Test
+    fun fillAndStrokeCanBeRemovedWithoutChangingShapeKind() {
+        val source = element("shape", 0).copy(
+            shape = ShapeSpec(
+                kind = ShapeKind.RECTANGLE,
+                fillArgb = 0xFFFFFFFF.toInt(),
+                strokeArgb = 0xFF000000.toInt(),
+                strokeWidthPx = 12.0,
+            ),
+        )
+
+        val noFill = DesignToolsUiPolicy.setShapeFill(source, null)
+        val noStroke = DesignToolsUiPolicy.setShapeStrokeColor(noFill, null)
+
+        assertEquals(ShapeKind.RECTANGLE, noStroke.shape!!.kind)
+        assertNull(noStroke.shape!!.fillArgb)
+        assertNull(noStroke.shape!!.strokeArgb)
+        assertTrue(noStroke.validationIssues().isEmpty())
+    }
+
+    @Test
+    fun opacityControlClampsToRenderableRangeWithoutChangingTransform() {
+        val source = element("shape", 0).copy(opacity = 0.7)
+
+        val transparent = DesignToolsUiPolicy.setElementOpacity(source, -2.0)
+        val opaque = DesignToolsUiPolicy.setElementOpacity(source, 9.0)
+
+        assertEquals(0.0, transparent.opacity, 0.0)
+        assertEquals(1.0, opaque.opacity, 0.0)
+        assertEquals(source.transform, opaque.transform)
+        assertTrue(opaque.validationIssues().isEmpty())
+    }
+
+    @Test
+    fun canvasCenterAlignmentChangesOnlyRequestedAxis() {
+        val source = element("shape", 0).copy(
+            transform = element("template", 0).transform.copy(x = 280.0, y = -360.0),
+        )
+
+        val centeredX = DesignToolsUiPolicy.alignCenterX(source)
+        val centeredY = DesignToolsUiPolicy.alignCenterY(source)
+        val centered = DesignToolsUiPolicy.alignCenter(source)
+
+        assertEquals(0.0, centeredX.transform.x, 0.0)
+        assertEquals(source.transform.y, centeredX.transform.y, 0.0)
+        assertEquals(source.transform.x, centeredY.transform.x, 0.0)
+        assertEquals(0.0, centeredY.transform.y, 0.0)
+        assertEquals(0.0, centered.transform.x, 0.0)
+        assertEquals(0.0, centered.transform.y, 0.0)
+        assertEquals(source.shape, centered.shape)
+    }
+
+    @Test
+    fun arrangeFrontAndBackUseDeterministicExtremes() {
+        val back = element("back", 2)
+        val active = element("active", 5)
+        val front = element("front", 9)
+        val project = Project.create("Design", 1080, 1920, 30).copy(
+            designElements = listOf(back, active, front),
+        )
+
+        assertEquals(10, DesignToolsUiPolicy.bringToFront(project, active).zIndex)
+        assertEquals(1, DesignToolsUiPolicy.sendToBack(project, active).zIndex)
+    }
+
+    @Test
+    fun singleElementArrangeRemainsStable() {
+        val only = element("only", 0)
+        val project = Project.create("Design", 1080, 1920, 30).copy(designElements = listOf(only))
+
+        assertEquals(0, DesignToolsUiPolicy.bringToFront(project, only).zIndex)
+        assertEquals(0, DesignToolsUiPolicy.sendToBack(project, only).zIndex)
+    }
+
+    private fun element(id: String, z: Int): DesignElement = DesignElement(
+        id = id,
+        startUs = 0L,
+        durationUs = 1_000_000L,
+        shape = ShapeSpec(ShapeKind.RECTANGLE),
+        zIndex = z,
+    )
+}

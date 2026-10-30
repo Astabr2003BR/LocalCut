@@ -14,24 +14,49 @@ data class PreparedGeneratedVideo(
     val asset: Asset,
 )
 
+data class PreparedGeneratedAudio(
+    val uri: Uri,
+    val backingFile: File,
+    val asset: Asset,
+)
+
 class GeneratedMediaAssetInspector(
     private val importer: AndroidAssetImporter,
     private val sharedMediaStager: SharedMediaStager,
 ) {
     suspend fun inspect(backingFile: File): Result<PreparedGeneratedVideo> = runCatching {
         val exposed = sharedMediaStager.exposeOwnedFile(backingFile).getOrThrow()
-        val asset = withContext(Dispatchers.IO) {
-            importer.import(exposed.uri).getOrThrow()
-        }
+        val asset = importOwned(exposed)
         require(asset.type == AssetType.VIDEO) { "GENERATED_MEDIA_NOT_VIDEO" }
         require(asset.mimeType?.startsWith("video/") == true) { "GENERATED_MEDIA_MIME_INVALID" }
-        require(asset.sizeBytes?.takeIf { it > 0L } != null) { "GENERATED_MEDIA_SIZE_INVALID" }
-        require(asset.sizeBytes == exposed.backingFile.length()) { "GENERATED_MEDIA_SIZE_MISMATCH" }
-        require(asset.sourceDurationUs?.takeIf { it > 0L } != null) { "GENERATED_MEDIA_DURATION_INVALID" }
+        validateCommon(asset, exposed.backingFile)
         PreparedGeneratedVideo(
             uri = exposed.uri,
             backingFile = exposed.backingFile,
             asset = asset,
         )
+    }
+
+    suspend fun inspectAudio(backingFile: File): Result<PreparedGeneratedAudio> = runCatching {
+        val exposed = sharedMediaStager.exposeOwnedFile(backingFile).getOrThrow()
+        val asset = importOwned(exposed)
+        require(asset.type == AssetType.AUDIO) { "GENERATED_MEDIA_NOT_AUDIO" }
+        require(asset.mimeType?.startsWith("audio/") == true) { "GENERATED_MEDIA_AUDIO_MIME_INVALID" }
+        validateCommon(asset, exposed.backingFile)
+        PreparedGeneratedAudio(
+            uri = exposed.uri,
+            backingFile = exposed.backingFile,
+            asset = asset,
+        )
+    }
+
+    private suspend fun importOwned(exposed: StagedSharedMedia): Asset = withContext(Dispatchers.IO) {
+        importer.import(exposed.uri).getOrThrow()
+    }
+
+    private fun validateCommon(asset: Asset, backingFile: File) {
+        require(asset.sizeBytes?.takeIf { it > 0L } != null) { "GENERATED_MEDIA_SIZE_INVALID" }
+        require(asset.sizeBytes == backingFile.length()) { "GENERATED_MEDIA_SIZE_MISMATCH" }
+        require(asset.sourceDurationUs?.takeIf { it > 0L } != null) { "GENERATED_MEDIA_DURATION_INVALID" }
     }
 }

@@ -8,9 +8,16 @@ internal object GeneratedMediaRetentionPolicy {
     private val UUID_PATTERN =
         "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
     private val REVERSE_FILE_NAME = Regex("^reverse-$UUID_PATTERN-$UUID_PATTERN\\.mp4$")
+    private val AUDIO_FILE_NAME = Regex("^audio-$UUID_PATTERN-$UUID_PATTERN\\.m4a$")
 
     fun isGeneratedReverseName(fileName: String): Boolean =
         REVERSE_FILE_NAME.matches(fileName)
+
+    fun isGeneratedAudioName(fileName: String): Boolean =
+        AUDIO_FILE_NAME.matches(fileName)
+
+    fun isGeneratedMediaName(fileName: String): Boolean =
+        isGeneratedReverseName(fileName) || isGeneratedAudioName(fileName)
 
     fun referencedGeneratedFileNames(
         assetUris: Iterable<String>,
@@ -20,7 +27,7 @@ internal object GeneratedMediaRetentionPolicy {
         return buildSet {
             assetUris.forEach { rawUri ->
                 val fileName = referencedFileName(rawUri, providerAuthority) ?: return@forEach
-                if (isGeneratedReverseName(fileName)) add(fileName)
+                if (isGeneratedMediaName(fileName)) add(fileName)
             }
         }
     }
@@ -36,7 +43,7 @@ internal object GeneratedMediaRetentionPolicy {
     ): Boolean {
         require(gracePeriodMs > 0L) { "GENERATED_MEDIA_GRACE_PERIOD_INVALID" }
         if (canUndo || canRedo) return false
-        if (!isGeneratedReverseName(fileName)) return false
+        if (!isGeneratedMediaName(fileName)) return false
         if (fileName in protectedFileNames) return false
         if (lastModifiedMs <= 0L || nowMs < lastModifiedMs) return false
         val ageMs = nowMs - lastModifiedMs

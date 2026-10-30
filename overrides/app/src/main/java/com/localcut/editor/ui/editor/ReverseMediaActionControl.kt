@@ -124,6 +124,11 @@ fun ReverseMediaActionControl(
                 },
             )
         }
+
+        ExtractAudioActionControl(
+            modifier = Modifier.fillMaxWidth(),
+            engineState = engineState,
+        )
     }
 }
 

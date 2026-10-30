@@ -6,8 +6,10 @@ import com.localcut.editor.data.assets.AndroidAssetImporter
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.mobile.GeneratedMediaAssetInspector
+import com.localcut.editor.mobile.PreparedGeneratedAudio
 import com.localcut.editor.mobile.PreparedGeneratedVideo
 import com.localcut.editor.mobile.SharedMediaStager
+import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -52,6 +54,11 @@ class TermuxAgentEngineRuntime private constructor(context: Context) {
         sourceResolver = mediaSourceResolver,
         outputDirectory = generatedMediaDirectory,
     )
+    val mediaAudioExtractCoordinator = TermuxMediaAudioExtractCoordinator(
+        client = jobClient,
+        sourceResolver = mediaSourceResolver,
+        outputDirectory = generatedMediaDirectory,
+    )
     val generatedMediaAssetInspector = GeneratedMediaAssetInspector(
         importer = AndroidAssetImporter(appContext.contentResolver),
         sharedMediaStager = sharedMediaStager,
@@ -83,6 +90,28 @@ class TermuxAgentEngineRuntime private constructor(context: Context) {
         }
     }
 
+    suspend fun extractAudio(asset: Asset): Result<PreparedGeneratedAudio> = runCatching {
+        val expectedDurationUs = asset.sourceDurationUs?.takeIf { it in 1L..600_000_000L }
+            ?: error("TERMUX_EXTRACT_AUDIO_DURATION_UNAVAILABLE")
+        val download = mediaAudioExtractCoordinator.extract(asset).getOrThrow()
+        try {
+            require(download.media.mimeType == "audio/mp4") { "TERMUX_EXTRACT_AUDIO_PREPARED_TYPE_MISMATCH" }
+            val prepared = generatedMediaAssetInspector.inspectAudio(download.file).getOrThrow()
+            require(download.media.sizeBytes == prepared.asset.sizeBytes) {
+                "TERMUX_EXTRACT_AUDIO_PREPARED_SIZE_MISMATCH"
+            }
+            val actualDurationUs = prepared.asset.sourceDurationUs?.takeIf { it > 0L }
+                ?: error("TERMUX_EXTRACT_AUDIO_PREPARED_DURATION_INVALID")
+            require(abs(actualDurationUs - expectedDurationUs) <= AUDIO_DURATION_TOLERANCE_US) {
+                "TERMUX_EXTRACT_AUDIO_PREPARED_DURATION_MISMATCH"
+            }
+            prepared.copy(asset = prepared.asset.copy(sourceDurationUs = expectedDurationUs))
+        } catch (error: Throwable) {
+            download.file.delete()
+            throw error
+        }
+    }
+
     internal suspend fun collectGeneratedMediaOrphans(
         project: Project,
         canUndo: Boolean,
@@ -96,6 +125,8 @@ class TermuxAgentEngineRuntime private constructor(context: Context) {
     }
 
     companion object {
+        private const val AUDIO_DURATION_TOLERANCE_US = 250_000L
+
         @Volatile
         private var instance: TermuxAgentEngineRuntime? = null
 

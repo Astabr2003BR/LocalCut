@@ -175,7 +175,17 @@ class Media3ExportController(
 
     private fun cancelSession(session: ActiveExport) {
         val cancellable = synchronized(lock) {
-            active === session && !session.renderFinished && !session.coordinator.isTerminal()
+            if (
+                active === session &&
+                !session.renderFinished &&
+                !session.coordinator.isTerminal() &&
+                !session.cancellationRequested
+            ) {
+                session.cancellationRequested = true
+                true
+            } else {
+                false
+            }
         }
         if (!cancellable) return
         mainHandler.post {
@@ -209,6 +219,7 @@ class Media3ExportController(
     ) {
         var transformer: Transformer? = null
         var progressRunnable: Runnable? = null
+        var cancellationRequested: Boolean = false
         @Volatile var renderFinished: Boolean = false
     }
 

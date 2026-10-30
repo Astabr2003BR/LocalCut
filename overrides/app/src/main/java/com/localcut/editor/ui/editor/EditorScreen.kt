@@ -46,6 +46,7 @@ import com.localcut.editor.domain.history.DeleteBeatMarkerCommand
 import com.localcut.editor.domain.history.SetClipOpacityCommand
 import com.localcut.editor.domain.history.SetCompositionGraphCommand
 import com.localcut.editor.domain.history.SetProjectCanvasSizeCommand
+import com.localcut.editor.domain.history.SetTrackDuckingCommand
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.ClipTransition
 import com.localcut.editor.media.ExportCapabilities
@@ -518,6 +519,9 @@ private fun ProfessionalContextPanel(
                             project = session.project,
                             selectedClipId = session.selectedClipId,
                             onSetAudioProcessing = { viewModel.dispatch(EditorAction.SetSelectedAudioProcessing(it)) },
+                            onSetTrackDucking = { trackId, ducking ->
+                                viewModel.dispatch(EditorAction.Execute(SetTrackDuckingCommand(trackId, ducking)))
+                            },
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                         )
                     }

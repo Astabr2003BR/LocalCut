@@ -38,6 +38,7 @@ object ProjectRenderPlanCompiler {
         val audibleAudioTracks = audioTracks.filter { track ->
             !track.muted && (!hasSoloAudio || track.solo)
         }
+        val audibleAudioTracksById = audibleAudioTracks.associateBy { it.id }
         val durationUs = TimelineMath.durationUs(project)
         val outputFps = outputSettings.fps ?: project.fps
         val outputSize = RenderOutputSizeResolver.resolve(
@@ -67,7 +68,20 @@ object ProjectRenderPlanCompiler {
             durationUs = durationUs,
             visualLayers = visualLayers,
             audioLayers = audibleAudioTracks.map { track ->
-                buildSequence(track, durationUs, outputFps, assets, resolver, mode = mode)
+                val duckingSettings = track.ducking
+                val duckingSourceTrack = duckingSettings?.let { settings ->
+                    audibleAudioTracksById[settings.sourceTrackId]
+                }
+                buildSequence(
+                    track = track,
+                    totalDurationUs = durationUs,
+                    fps = outputFps,
+                    assets = assets,
+                    resolver = resolver,
+                    mode = mode,
+                    duckingSourceTrack = duckingSourceTrack,
+                    duckingSettings = duckingSettings,
+                )
             },
         )
     }
@@ -133,6 +147,8 @@ object ProjectRenderPlanCompiler {
         laneIndex: Int = 0,
         mode: RenderMode,
         compositionGraph: CompositionGraph? = null,
+        duckingSourceTrack: Track? = null,
+        duckingSettings: AudioDuckingSettings? = null,
     ): RenderSequencePlan {
         val segments = mutableListOf<RenderSegment>()
         var cursorUs = 0L
@@ -164,6 +180,13 @@ object ProjectRenderPlanCompiler {
                     )
                 }
             }
+            val duckingEnvelope = if (
+                track.type == TrackType.AUDIO && duckingSourceTrack != null && duckingSettings != null
+            ) {
+                AudioDuckingPlanner.plan(clip, duckingSourceTrack, duckingSettings)
+            } else {
+                AudioDuckingEnvelope()
+            }
             segments += RenderSegment.Media(
                 clipId = clip.id,
                 assetId = asset.id,
@@ -185,6 +208,7 @@ object ProjectRenderPlanCompiler {
                 effects = clip.effects,
                 timeMap = clip.timeMap,
                 audioProcessing = clip.audioProcessing,
+                duckingEnvelope = duckingEnvelope,
                 compositionContainer = composition?.container,
                 compositionContainerTimeline = composition?.containerTimeline,
             )

@@ -23,6 +23,9 @@ Fluxo implementado:
 - mudança do viewport invalida ROI antiga;
 - sair de Tracking desativa e limpa a seleção;
 - overlay desativado não inicia `detectDragGestures`.
+- ao abrir Tracking, o editor leva o playhead ao início do clipe;
+- `ObjectTrackingSelectionAnchorPolicy` só permite capturar ROI no frame-âncora do tracker, com tolerância máxima de um frame;
+- se o usuário sair da janela de âncora, a seleção é desativada e limpa, evitando usar uma ROI desenhada em outro frame sobre `sourceInUs`.
 
 ### Geometria e continuidade visual
 
@@ -66,6 +69,7 @@ Fluxo implementado:
 - `ObjectTrackingApplyGuardTest`
 - `ObjectTrackingActionCoordinatorTest`
 - `ObjectTrackingWorkflowCoordinatorTest`
+- `ObjectTrackingSelectionAnchorPolicyTest`
 - `ObjectTrackingPreviewSessionTest`
 - `EditorToolCatalogTest`
 - `EditorWorkspacePolicyTest`
@@ -77,6 +81,7 @@ Fluxo implementado:
 Object Tracking nesta versão não deve fingir suporte para:
 
 - imagem estática;
+- seed de ROI fora do primeiro frame do trecho rastreado;
 - Reverse ativo;
 - Freeze ativo;
 - legacy transform keyframes;
@@ -88,11 +93,13 @@ Todos esses casos devem falhar fechados/preservar o estado existente.
 
 ## Gate de verificação
 
-Build Android local continua indisponível neste ambiente por ausência de Gradle/Android SDK. O gate real é GitHub Actions no SHA deste checkpoint.
+Build Android local continua indisponível neste ambiente por ausência de Gradle/Android SDK. O gate real é GitHub Actions no último SHA de código do lote.
 
-Regra anti-loop: consultar o status deste SHA no máximo uma vez enquanto estiver pending/in_progress. Só um SHA novo recebe novo checkpoint de CI após correção concreta.
+Código do gate após correção da âncora: `858bc5d030073bcfb3ca6ac74929cbb8d0a194f8`.
+
+Regra anti-loop: consultar o status desse SHA no máximo uma vez enquanto estiver pending/in_progress. Só um SHA novo recebe novo checkpoint de CI após correção concreta.
 
 ## Próximo passo após gate verde
 
-- teste físico no Android/Poco X6 5G: selecionar vídeo -> Animar -> Tracking -> marcar ROI -> executar -> validar trajetória no preview/export -> undo/redo;
+- teste físico no Android/Poco X6 5G: selecionar vídeo -> Animar -> Tracking -> confirmar seek ao início -> marcar ROI -> executar -> validar trajetória no preview/export -> undo/redo;
 - depois continuar roadmap: compositor blend multi-texture real / motion blur / áudio avançado, sem reabrir Object Tracking salvo regressão concreta.

@@ -12,7 +12,7 @@ class TermuxObjectTrackingJobContractTest {
     private val testToken = buildString { repeat(43) { append('a') } }
 
     @Test
-    fun encoderKeepsObjectTrackingSeparateAndSerializesNormalizedRoi() {
+    fun encoderKeepsObjectTrackingSeparateAndSerializesNormalizedRoiAndSourceRange() {
         val encoded = TermuxEngineJobRequestEncoder.createAnalyzeMedia(
             requestId = "request_12345678",
             token = testToken,
@@ -26,6 +26,8 @@ class TermuxObjectTrackingJobContractTest {
                 mode = TermuxAnalyzeMediaMode.OBJECT_TRACKING,
                 objectTrackingOptions = TermuxObjectTrackingOptions(
                     roi = TermuxObjectTrackingRoi(0.1, 0.2, 0.3, 0.4),
+                    sourceInUs = 250_000L,
+                    sourceOutUs = 2_500_000L,
                     maxFrames = 240,
                     sampleEvery = 2,
                     maxCorners = 90,
@@ -35,6 +37,8 @@ class TermuxObjectTrackingJobContractTest {
 
         assertTrue(encoded.contains("\"mode\":\"OBJECT_TRACKING\""))
         assertTrue(encoded.contains("\"roi\":{\"x\":0.1,\"y\":0.2,\"width\":0.3,\"height\":0.4}"))
+        assertTrue(encoded.contains("\"sourceInUs\":250000"))
+        assertTrue(encoded.contains("\"sourceOutUs\":2500000"))
         assertTrue(encoded.contains("\"maxFrames\":240"))
         assertTrue(encoded.contains("\"sampleEvery\":2"))
         assertTrue(encoded.contains("\"maxCorners\":90"))
@@ -64,8 +68,15 @@ class TermuxObjectTrackingJobContractTest {
     }
 
     @Test
-    fun roiAndModeFailClosedBeforeNetwork() {
+    fun roiModeAndSourceRangeFailClosedBeforeNetwork() {
         assertTrue(runCatching { TermuxObjectTrackingRoi(0.9, 0.1, 0.2, 0.2) }.isFailure)
+        assertTrue(runCatching {
+            TermuxObjectTrackingOptions(
+                roi = TermuxObjectTrackingRoi(0.1, 0.1, 0.2, 0.2),
+                sourceInUs = 500_000L,
+                sourceOutUs = 500_000L,
+            )
+        }.isFailure)
         assertTrue(runCatching {
             TermuxAnalyzeMediaInput(
                 assetId = "asset",
@@ -75,6 +86,21 @@ class TermuxObjectTrackingJobContractTest {
                 sourceDurationUs = 1_000_000L,
                 mode = TermuxAnalyzeMediaMode.OBJECT_TRACKING,
                 objectTrackingOptions = null,
+            )
+        }.isFailure)
+        assertTrue(runCatching {
+            TermuxAnalyzeMediaInput(
+                assetId = "asset",
+                displayName = null,
+                mimeType = "video/mp4",
+                sizeBytes = 1L,
+                sourceDurationUs = 1_000_000L,
+                mode = TermuxAnalyzeMediaMode.OBJECT_TRACKING,
+                objectTrackingOptions = TermuxObjectTrackingOptions(
+                    roi = TermuxObjectTrackingRoi(0.1, 0.1, 0.2, 0.2),
+                    sourceInUs = 250_000L,
+                    sourceOutUs = 1_250_000L,
+                ),
             )
         }.isFailure)
     }

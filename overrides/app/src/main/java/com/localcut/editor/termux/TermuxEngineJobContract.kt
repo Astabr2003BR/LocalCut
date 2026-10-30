@@ -211,12 +211,18 @@ data class TermuxObjectTrackingAnalysis(
     val frameWidth: Int,
     val frameHeight: Int,
     val frameRate: Double,
+    val sourceInUs: Long,
+    val sourceOutUs: Long?,
     val samples: List<TermuxObjectTrackingSample>,
 ) {
     init {
         require(framesDecoded >= 1) { "TERMUX_OBJECT_TRACKING_FRAMES_INVALID" }
         require(frameWidth > 0 && frameHeight > 0) { "TERMUX_OBJECT_TRACKING_FRAME_SIZE_INVALID" }
         require(frameRate.isFinite() && frameRate > 0.0) { "TERMUX_OBJECT_TRACKING_FPS_INVALID" }
+        require(sourceInUs in 0L..600_000_000L) { "TERMUX_OBJECT_TRACKING_SOURCE_RANGE_INVALID" }
+        require(sourceOutUs == null || (sourceOutUs in 1L..600_000_000L && sourceOutUs > sourceInUs)) {
+            "TERMUX_OBJECT_TRACKING_SOURCE_RANGE_INVALID"
+        }
         require(samples.isNotEmpty()) { "TERMUX_OBJECT_TRACKING_SAMPLES_EMPTY" }
         require(samples.zipWithNext().all { (left, right) -> right.timeUs > left.timeUs }) {
             "TERMUX_OBJECT_TRACKING_SAMPLES_UNORDERED"

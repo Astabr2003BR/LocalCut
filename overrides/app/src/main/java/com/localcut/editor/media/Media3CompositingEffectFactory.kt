@@ -103,7 +103,7 @@ internal class LocalCutCompositingEffect(
 }
 
 @UnstableApi
-private class LocalCutCompositingShaderProgram(
+internal class LocalCutCompositingShaderProgram(
     private val settings: CompositingSettings,
     useHdr: Boolean,
 ) : BaseGlShaderProgram(
@@ -332,9 +332,11 @@ private class LocalCutCompositingShaderProgram(
                 }
 
                 float finalAlpha = chromaAlpha * maskAlpha;
-                gl_FragColor = vec4(outputRgb * finalAlpha, source.a * finalAlpha);
+                gl_FragColor = vec4(outputRgb, source.a * finalAlpha);
             }
         """.trimIndent()
+
+        internal fun fragmentShaderForTest(): String = FRAGMENT_SHADER
 
         private fun maskBounds(mask: MaskSpec?): FloatArray {
             if (mask == null || mask.points.size < 2) {

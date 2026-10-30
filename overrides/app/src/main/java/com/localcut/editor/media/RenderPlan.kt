@@ -75,6 +75,7 @@ sealed interface RenderSegment {
         val effects: List<EffectInstance> = emptyList(),
         val timeMap: TimeMap = TimeMap(),
         val audioProcessing: AudioProcessingSettings = AudioProcessingSettings(),
+        val duckingEnvelope: AudioDuckingEnvelope = AudioDuckingEnvelope(),
         val propertyAnimations: List<PropertyAnimation> = emptyList(),
         val compositionContainer: CompositionTransformContainer? = null,
         val compositionContainerTimeline: CompositionTransformTimeline? = null,

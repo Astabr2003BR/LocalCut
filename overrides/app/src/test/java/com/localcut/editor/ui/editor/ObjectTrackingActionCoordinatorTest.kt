@@ -16,7 +16,7 @@ import org.junit.Test
 
 class ObjectTrackingActionCoordinatorTest {
     @Test
-    fun successUsesRoiTrimQualityAndRechecksCurrentClipAfterAnalysis() = runBlocking {
+    fun successUsesRoiGeometryTrimQualityAndRechecksCurrentClipAfterAnalysis() = runBlocking {
         val asset = videoAsset()
         var currentClip = videoClip()
         val gateway = FakeGateway { options ->
@@ -32,6 +32,7 @@ class ObjectTrackingActionCoordinatorTest {
             asset = asset,
             captured = captured,
             roi = NormalizedMediaRoi(0.1, 0.2, 0.3, 0.4),
+            sourceGeometry = geometry(),
             projectWidth = 1000,
             projectHeight = 500,
             quality = TermuxTrackingQuality.FAST,
@@ -67,12 +68,38 @@ class ObjectTrackingActionCoordinatorTest {
             asset = asset,
             captured = captured,
             roi = NormalizedMediaRoi(0.1, 0.2, 0.3, 0.4),
+            sourceGeometry = geometry(),
             projectWidth = 1000,
             projectHeight = 500,
         )
 
         assertTrue(result.isFailure)
         assertEquals("OBJECT_TRACKING_RESULT_STALE", result.exceptionOrNull()?.message)
+        assertEquals(1, gateway.calls)
+    }
+
+    @Test
+    fun backendGeometryMismatchIsRejectedBeforeCommandCreation() = runBlocking {
+        val clip = videoClip()
+        val gateway = FakeGateway { options ->
+            trackingResult(options, frameWidth = 500, frameHeight = 1000)
+        }
+        val coordinator = ObjectTrackingActionCoordinator(
+            analysisGateway = gateway,
+            currentClipProvider = { clip },
+        )
+
+        val result = coordinator.buildCommand(
+            asset = videoAsset(),
+            captured = ObjectTrackingApplyGuard.capture(clip),
+            roi = NormalizedMediaRoi(0.1, 0.2, 0.3, 0.4),
+            sourceGeometry = geometry(),
+            projectWidth = 1000,
+            projectHeight = 500,
+        )
+
+        assertTrue(result.isFailure)
+        assertEquals("OBJECT_TRACKING_SOURCE_GEOMETRY_MISMATCH", result.exceptionOrNull()?.message)
         assertEquals(1, gateway.calls)
     }
 
@@ -90,6 +117,7 @@ class ObjectTrackingActionCoordinatorTest {
             asset = asset,
             captured = ObjectTrackingApplyGuard.capture(reverseClip),
             roi = NormalizedMediaRoi(0.1, 0.2, 0.3, 0.4),
+            sourceGeometry = geometry(),
             projectWidth = 1000,
             projectHeight = 500,
         )
@@ -112,6 +140,7 @@ class ObjectTrackingActionCoordinatorTest {
             asset = videoAsset().copy(id = "other-asset"),
             captured = ObjectTrackingApplyGuard.capture(clip),
             roi = NormalizedMediaRoi(0.1, 0.2, 0.3, 0.4),
+            sourceGeometry = geometry(),
             projectWidth = 1000,
             projectHeight = 500,
         )
@@ -139,6 +168,7 @@ class ObjectTrackingActionCoordinatorTest {
             asset = asset,
             captured = captured,
             roi = NormalizedMediaRoi(0.1, 0.2, 0.3, 0.4),
+            sourceGeometry = geometry(),
             projectWidth = 1000,
             projectHeight = 500,
         )
@@ -147,6 +177,8 @@ class ObjectTrackingActionCoordinatorTest {
         assertEquals("OBJECT_TRACKING_RESULT_STALE", result.exceptionOrNull()?.message)
         assertFalse(result.isSuccess)
     }
+
+    private fun geometry() = ObjectTrackingSourceGeometry(1000, 500)
 
     private fun trackingResult(
         options: TermuxObjectTrackingOptions,

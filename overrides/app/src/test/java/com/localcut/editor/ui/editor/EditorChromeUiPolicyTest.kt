@@ -57,7 +57,7 @@ class EditorChromeUiPolicyTest {
     }
 
     @Test
-    fun contextualToolsRouteToDedicatedPanels() {
+    fun contextualToolsRouteToDedicatedPanelsAndTrackingStaysRailOwned() {
         assertEquals(ContextPanelKind.EDIT, EditorChromeUiPolicy.panelFor(EditorToolId.EDIT))
         assertEquals(ContextPanelKind.AUDIO, EditorChromeUiPolicy.panelFor(EditorToolId.AUDIO))
         assertEquals(ContextPanelKind.EFFECTS, EditorChromeUiPolicy.panelFor(EditorToolId.EFFECTS))
@@ -66,10 +66,10 @@ class EditorChromeUiPolicyTest {
         assertEquals(ContextPanelKind.MASK, EditorChromeUiPolicy.panelFor(EditorToolId.MASK))
         assertEquals(ContextPanelKind.CHROMA, EditorChromeUiPolicy.panelFor(EditorToolId.CHROMA))
         assertEquals(ContextPanelKind.ANIMATION, EditorChromeUiPolicy.panelFor(EditorToolId.ANIMATION))
-        assertEquals(ContextPanelKind.TRACKING, EditorChromeUiPolicy.panelFor(EditorToolId.TRACKING))
         assertEquals(ContextPanelKind.LAYERS, EditorChromeUiPolicy.panelFor(EditorToolId.LAYERS))
         assertEquals(ContextPanelKind.DESIGN, EditorChromeUiPolicy.panelFor(EditorToolId.DESIGN))
         assertEquals(ContextPanelKind.CANVAS, EditorChromeUiPolicy.panelFor(EditorToolId.CANVAS))
+        assertNull(EditorChromeUiPolicy.panelFor(EditorToolId.TRACKING))
         assertNull(EditorChromeUiPolicy.panelFor(EditorToolId.MEDIA))
         assertNull(EditorChromeUiPolicy.panelFor(EditorToolId.TEXT))
         assertNull(EditorChromeUiPolicy.panelFor(EditorToolId.OVERLAY))

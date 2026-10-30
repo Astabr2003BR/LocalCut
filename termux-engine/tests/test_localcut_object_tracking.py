@@ -13,15 +13,23 @@ from localcut_object_tracking import (
 
 
 class _FakeCapture:
-    def __init__(self):
+    def __init__(self, orientation_meta=0.0, set_result=True):
         self.set_calls = []
+        self.orientation_meta = orientation_meta
+        self.set_result = set_result
 
     def set(self, prop, value):
         self.set_calls.append((prop, value))
-        return True
+        return self.set_result
+
+    def get(self, prop):
+        if prop == 48:
+            return self.orientation_meta
+        return 0.0
 
 
 class _FakeCv2Orientation:
+    CAP_PROP_ORIENTATION_META = 48
     CAP_PROP_ORIENTATION_AUTO = 49
 
 
@@ -102,15 +110,24 @@ class ObjectTrackingCoreTest(unittest.TestCase):
             OpenCvObjectPositionTracker.frame_budget(30.0, 0, 1_000, 300)
 
     def test_orientation_is_explicit_and_frame_geometry_comes_from_decoded_pixels(self):
-        capture = _FakeCapture()
-        enabled = OpenCvObjectPositionTracker.enable_orientation_auto(capture, _FakeCv2Orientation)
+        capture = _FakeCapture(orientation_meta=90.0)
+        rotation = OpenCvObjectPositionTracker.prepare_orientation(capture, _FakeCv2Orientation)
 
-        self.assertTrue(enabled)
+        self.assertEqual(90, rotation)
         self.assertEqual([(49, 1.0)], capture.set_calls)
         self.assertEqual(
             (1080, 1920),
             OpenCvObjectPositionTracker.decoded_frame_size(_FakeFrame()),
         )
+
+    def test_rotated_media_fails_closed_if_backend_cannot_enable_auto_orientation(self):
+        capture = _FakeCapture(orientation_meta=270.0, set_result=False)
+        with self.assertRaisesRegex(RuntimeError, "OBJECT_TRACKING_ORIENTATION_UNSUPPORTED"):
+            OpenCvObjectPositionTracker.prepare_orientation(capture, _FakeCv2Orientation)
+
+    def test_unrotated_media_does_not_require_orientation_auto_support(self):
+        capture = _FakeCapture(orientation_meta=0.0, set_result=False)
+        self.assertEqual(0, OpenCvObjectPositionTracker.prepare_orientation(capture, _FakeCv2Orientation))
 
     def test_decoded_frame_size_rejects_invalid_shape(self):
         class BadFrame:

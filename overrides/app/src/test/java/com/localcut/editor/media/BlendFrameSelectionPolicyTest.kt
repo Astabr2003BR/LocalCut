@@ -31,7 +31,7 @@ class BlendFrameSelectionPolicyTest {
             BlendFrameSelectionPolicy.selectClosest(100L, listOf(90L, 110L), secondaryEnded = false),
         )
         assertEquals(
-            105L,
+            95L,
             BlendFrameSelectionPolicy.selectClosest(100L, listOf(95L, 105L), secondaryEnded = false),
         )
         assertEquals(

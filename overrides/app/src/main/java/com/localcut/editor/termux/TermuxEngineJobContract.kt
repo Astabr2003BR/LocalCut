@@ -63,11 +63,17 @@ data class TermuxObjectTrackingRoi(
 
 data class TermuxObjectTrackingOptions(
     val roi: TermuxObjectTrackingRoi,
+    val sourceInUs: Long = 0L,
+    val sourceOutUs: Long? = null,
     val maxFrames: Int = 300,
     val sampleEvery: Int = 1,
     val maxCorners: Int = 100,
 ) {
     init {
+        require(sourceInUs in 0L..600_000_000L) { "TERMUX_OBJECT_TRACKING_SOURCE_RANGE_INVALID" }
+        require(sourceOutUs == null || (sourceOutUs in 1L..600_000_000L && sourceOutUs > sourceInUs)) {
+            "TERMUX_OBJECT_TRACKING_SOURCE_RANGE_INVALID"
+        }
         require(maxFrames in 2..600) { "TERMUX_OBJECT_TRACKING_MAX_FRAMES_INVALID" }
         require(sampleEvery in 1..30) { "TERMUX_OBJECT_TRACKING_SAMPLE_EVERY_INVALID" }
         require(maxCorners in 20..500) { "TERMUX_OBJECT_TRACKING_MAX_CORNERS_INVALID" }
@@ -106,8 +112,14 @@ data class TermuxAnalyzeMediaInput(
             }
             TermuxAnalyzeMediaMode.OBJECT_TRACKING -> {
                 require(mimeType.startsWith("video/")) { "TERMUX_OBJECT_TRACKING_REQUIRES_VIDEO" }
-                require(objectTrackingOptions != null) { "TERMUX_OBJECT_TRACKING_OPTIONS_REQUIRED" }
+                val options = requireNotNull(objectTrackingOptions) { "TERMUX_OBJECT_TRACKING_OPTIONS_REQUIRED" }
                 require(trackingOptions == null && reverseOptions == null) { "TERMUX_OBJECT_TRACKING_OPTIONS_MODE_INVALID" }
+                if (sourceDurationUs != null) {
+                    require(options.sourceInUs < sourceDurationUs) { "TERMUX_OBJECT_TRACKING_SOURCE_RANGE_INVALID" }
+                    require(options.sourceOutUs == null || options.sourceOutUs <= sourceDurationUs) {
+                        "TERMUX_OBJECT_TRACKING_SOURCE_RANGE_INVALID"
+                    }
+                }
             }
             TermuxAnalyzeMediaMode.REVERSE -> {
                 require(mimeType.startsWith("video/")) { "TERMUX_REVERSE_REQUIRES_VIDEO" }

@@ -74,7 +74,7 @@ class Media3CreativeSuiteBackendTest {
     }
 
     @Test
-    fun animatedOrUnsupportedMotionBlurEffectsAreNotReportedAsNative() {
+    fun staticMotionBlurIsNativeButAnimatedGenericEffectStillFailsClosed() {
         val motionBlur = EffectInstance("motion", "localcut.motion_blur")
         val animated = EffectInstance(
             "brightness",
@@ -87,7 +87,7 @@ class Media3CreativeSuiteBackendTest {
             ),
         )
 
-        assertFalse(Media3EffectStackFactory.canRender(motionBlur))
+        assertTrue(Media3EffectStackFactory.canRender(motionBlur))
         assertFalse(Media3EffectStackFactory.canRender(animated))
     }
 }

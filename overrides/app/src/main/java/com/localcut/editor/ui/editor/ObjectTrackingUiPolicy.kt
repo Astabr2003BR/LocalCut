@@ -6,10 +6,7 @@ import com.localcut.editor.domain.model.PropertyAnimation
 object ObjectTrackingUiPolicy {
     private val motionProperties = setOf("transform.x", "transform.y")
 
-    fun merge(
-        existing: List<PropertyAnimation>,
-        tracking: List<PropertyAnimation>,
-    ): List<PropertyAnimation> {
+    fun requireStartCompatible(existing: List<PropertyAnimation>) {
         require(!StabilizationApplyPolicy.hasAnyGeneratedStabilization(existing)) {
             "OBJECT_TRACKING_CONFLICTS_WITH_STABILIZATION"
         }
@@ -20,6 +17,13 @@ object ObjectTrackingUiPolicy {
         require(replacingGeneratedTracking || existing.none { it.propertyId in motionProperties }) {
             "OBJECT_TRACKING_CONFLICTS_WITH_POSITION_ANIMATION"
         }
+    }
+
+    fun merge(
+        existing: List<PropertyAnimation>,
+        tracking: List<PropertyAnimation>,
+    ): List<PropertyAnimation> {
+        requireStartCompatible(existing)
         require(tracking.map { it.propertyId }.toSet() == motionProperties && tracking.size == motionProperties.size) {
             "object tracking must contain exactly transform.x and transform.y"
         }

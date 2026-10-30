@@ -1,10 +1,20 @@
 package com.localcut.editor.media
 
+import androidx.media3.ui.AspectRatioFrameLayout
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PreviewPlayerViewPolicyTest {
+    @Test
+    fun playerViewUsesExplicitFitResizeMode() {
+        assertEquals(
+            AspectRatioFrameLayout.RESIZE_MODE_FIT,
+            PreviewPlayerViewPolicy.RESIZE_MODE,
+        )
+    }
+
     @Test
     fun playerViewEnablesComposeSurfaceRecoveryWorkaround() {
         assertTrue(PreviewPlayerViewPolicy.ENABLE_COMPOSE_SURFACE_SYNC_WORKAROUND)

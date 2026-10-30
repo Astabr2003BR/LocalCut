@@ -112,7 +112,9 @@ internal object TermuxEngineJobRequestEncoder {
         require(REQUEST_ID.matches(requestId)) { "TERMUX_ENGINE_REQUEST_ID_INVALID" }
         TermuxEngineTokenPolicy.normalize(token)
     }
+
     private fun validateJobId(jobId: String) = require(JOB_ID.matches(jobId)) { "TERMUX_ENGINE_JOB_ID_INVALID" }
+
     private fun StringBuilder.appendCommon(requestId: String, token: String, operation: String) {
         append("\"protocolVersion\":"); append(TermuxEngineProtocol.PROTOCOL_VERSION)
         append(",\"projectId\":"); append(jsonString(TermuxEngineProtocol.PROJECT_ID))
@@ -234,6 +236,9 @@ internal object TermuxEngineJobResponseParser {
     }
 
     private fun parseObjectTracking(root: JObject): TermuxObjectTrackingAnalysis {
+        val sourceOutUs = root.optional("sourceOutUs")?.let { value ->
+            if (value is JNull) null else value.asLong()
+        }
         val samples = root.required("samples").asArray().values.map { value ->
             val sample = value.asObject()
             TermuxObjectTrackingSample(
@@ -251,6 +256,8 @@ internal object TermuxEngineJobResponseParser {
             frameWidth = root.required("frameWidth").asInt(),
             frameHeight = root.required("frameHeight").asInt(),
             frameRate = root.required("frameRate").asDouble(),
+            sourceInUs = root.required("sourceInUs").asLong(),
+            sourceOutUs = sourceOutUs,
             samples = samples,
         )
     }

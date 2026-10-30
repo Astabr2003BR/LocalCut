@@ -127,6 +127,7 @@ fun PreviewPane(
                         factory = { context ->
                             PlayerView(context).also {
                                 it.useController = false
+                                it.resizeMode = PreviewPlayerViewPolicy.RESIZE_MODE
                                 it.setShutterBackgroundColor(android.graphics.Color.BLACK)
                                 it.setEnableComposeSurfaceSyncWorkaround(
                                     PreviewPlayerViewPolicy.ENABLE_COMPOSE_SURFACE_SYNC_WORKAROUND,
@@ -140,6 +141,7 @@ fun PreviewPane(
                         },
                         update = { playerView ->
                             playerViewRef.set(playerView)
+                            playerView.resizeMode = PreviewPlayerViewPolicy.RESIZE_MODE
                             controller.bindTo(playerView)
                         },
                         onRelease = { playerView ->

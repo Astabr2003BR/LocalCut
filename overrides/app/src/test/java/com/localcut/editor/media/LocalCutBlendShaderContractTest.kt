@@ -21,6 +21,10 @@ class LocalCutBlendShaderContractTest {
 
         assertTrue(shader.contains("uniform sampler2D uBackdropSampler;"))
         assertTrue(shader.contains("uniform sampler2D uSourceSampler;"))
+        assertTrue(shader.contains("uniform float uBackdropAlphaScale;"))
+        assertTrue(shader.contains("uniform float uSourceAlphaScale;"))
+        assertTrue(shader.contains("backdrop.a *= uBackdropAlphaScale;"))
+        assertTrue(shader.contains("source.a *= uSourceAlphaScale;"))
         assertTrue(shader.contains("float outputAlpha = source.a + backdrop.a * (1.0 - source.a);"))
         assertTrue(shader.contains("vec3 outputRgb = outputAlpha > 0.0 ? premultiplied / outputAlpha : vec3(0.0);"))
         assertFalse(shader.contains("glBlendFunc"))

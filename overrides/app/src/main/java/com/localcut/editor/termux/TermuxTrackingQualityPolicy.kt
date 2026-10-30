@@ -24,4 +24,21 @@ object TermuxTrackingQualityPolicy {
             maxCorners = 200,
         )
     }
+
+    fun objectTrackingOptions(
+        quality: TermuxTrackingQuality,
+        roi: TermuxObjectTrackingRoi,
+        sourceInUs: Long,
+        sourceOutUs: Long?,
+    ): TermuxObjectTrackingOptions {
+        val base = options(quality)
+        return TermuxObjectTrackingOptions(
+            roi = roi,
+            sourceInUs = sourceInUs,
+            sourceOutUs = sourceOutUs,
+            maxFrames = base.maxFrames,
+            sampleEvery = base.sampleEvery,
+            maxCorners = base.maxCorners,
+        )
+    }
 }

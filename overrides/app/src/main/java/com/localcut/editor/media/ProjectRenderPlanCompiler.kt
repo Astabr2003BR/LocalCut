@@ -3,6 +3,49 @@ package com.localcut.editor.media
 import com.localcut.editor.domain.model.*
 import com.localcut.editor.domain.timeline.TimelineMath
 import com.localcut.editor.domain.timeline.TimelineValidator
+import java.util.PriorityQueue
+
+internal object VisualOverlayLanePartitioner {
+    private data class ActiveLane(
+        val laneIndex: Int,
+        val endUs: Long,
+    )
+
+    fun partition(clips: List<Clip>): List<List<Clip>> {
+        if (clips.isEmpty()) return emptyList()
+
+        val lanes = mutableListOf<MutableList<Clip>>()
+        val activeLanes = PriorityQueue(
+            compareBy<ActiveLane> { it.endUs }.thenBy { it.laneIndex },
+        )
+        val availableLaneIndices = PriorityQueue<Int>()
+        val sortedClips = clips.sortedWith(compareBy<Clip> { it.startUs }.thenBy { it.id })
+
+        for (clip in sortedClips) {
+            while (activeLanes.isNotEmpty() && activeLanes.peek().endUs <= clip.startUs) {
+                availableLaneIndices.add(activeLanes.remove().laneIndex)
+            }
+
+            val laneIndex = if (availableLaneIndices.isNotEmpty()) {
+                availableLaneIndices.remove()
+            } else {
+                val newLaneIndex = lanes.size
+                lanes.add(mutableListOf())
+                newLaneIndex
+            }
+
+            lanes[laneIndex] += clip
+            activeLanes.add(
+                ActiveLane(
+                    laneIndex = laneIndex,
+                    endUs = Math.addExact(clip.startUs, clip.durationUs),
+                ),
+            )
+        }
+
+        return lanes
+    }
+}
 
 object ProjectRenderPlanCompiler {
     fun compile(
@@ -113,22 +156,7 @@ object ProjectRenderPlanCompiler {
             )
         }
 
-        val lanes = mutableListOf<MutableList<Clip>>()
-        val laneEnds = mutableListOf<Long>()
-        val sortedClips = track.clips.sortedWith(compareBy<Clip> { it.startUs }.thenBy { it.id })
-        for (clip in sortedClips) {
-            val laneIndex = laneEnds.indexOfFirst { laneEndUs -> laneEndUs <= clip.startUs }
-            val clipEndUs = Math.addExact(clip.startUs, clip.durationUs)
-            if (laneIndex >= 0) {
-                lanes[laneIndex] += clip
-                laneEnds[laneIndex] = clipEndUs
-            } else {
-                lanes += mutableListOf(clip)
-                laneEnds += clipEndUs
-            }
-        }
-
-        return lanes.mapIndexed { laneIndex, laneClips ->
+        return VisualOverlayLanePartitioner.partition(track.clips).mapIndexed { laneIndex, laneClips ->
             buildSequence(
                 track.copy(clips = laneClips),
                 totalDurationUs,

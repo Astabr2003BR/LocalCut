@@ -81,15 +81,17 @@ class TrackLockEnforcementTest {
 
     @Test
     fun unlockedTrackRemainsEditable() {
-        val source = lockedProject().copy(
-            tracks = lockedProject().tracks.map { track ->
-                if (track.id == "visual-1") track.copy(locked = false) else track
-            },
-        )
+        val source = lockedProject().let { project ->
+            project.copy(
+                tracks = project.tracks.map { track ->
+                    if (track.id == "visual-1") track.copy(locked = false) else track
+                },
+            )
+        }
 
-        val moved = TimelineOps.moveClip(source, "a", 500_000L)
+        val moved = TimelineOps.moveClip(source, "b", 4_000_000L)
 
-        assertEquals(500_000L, moved.findClip("a")!!.startUs)
+        assertEquals(4_000_000L, moved.findClip("b")!!.startUs)
     }
 
     private fun assertTrackLocked(block: () -> Unit) {

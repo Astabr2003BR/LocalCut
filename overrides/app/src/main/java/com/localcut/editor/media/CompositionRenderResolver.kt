@@ -44,7 +44,17 @@ data class CompositionTransformTimeline(
 
     fun containerAt(presentationTimeUs: Long): CompositionTransformContainer {
         require(presentationTimeUs >= 0L) { "presentation time must be non-negative" }
-        return entries.last { it.startUs <= presentationTimeUs }.container
+        var low = 0
+        var high = entries.lastIndex
+        while (low <= high) {
+            val mid = low + (high - low) / 2
+            if (entries[mid].startUs <= presentationTimeUs) {
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        return entries[high].container
     }
 }
 

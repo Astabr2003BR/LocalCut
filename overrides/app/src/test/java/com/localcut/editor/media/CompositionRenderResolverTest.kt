@@ -154,6 +154,30 @@ class CompositionRenderResolverTest {
         assertEquals(110.0, resolved.transform.x, 1e-9)
     }
 
+    @Test
+    fun transformTimelineSelectsBoundariesAcrossTenThousandEntries() {
+        val timeline = CompositionTransformTimeline(
+            entries = List(10_000) { index ->
+                TimedCompositionTransformContainer(
+                    startUs = index * 1_000L,
+                    container = CompositionTransformContainer(
+                        x = index.toDouble(),
+                        y = 0.0,
+                        scale = 1.0,
+                        rotationDeg = 0.0,
+                    ),
+                )
+            },
+        )
+
+        assertEquals(0.0, timeline.containerAt(0L).x, 0.0)
+        assertEquals(0.0, timeline.containerAt(999L).x, 0.0)
+        assertEquals(1.0, timeline.containerAt(1_000L).x, 0.0)
+        assertEquals(4_321.0, timeline.containerAt(4_321_999L).x, 0.0)
+        assertEquals(9_999.0, timeline.containerAt(9_999_000L).x, 0.0)
+        assertEquals(9_999.0, timeline.containerAt(Long.MAX_VALUE).x, 0.0)
+    }
+
     private fun cameraCutGraph() = CompositionGraph(
         nodes = listOf(
             CompositionNode(

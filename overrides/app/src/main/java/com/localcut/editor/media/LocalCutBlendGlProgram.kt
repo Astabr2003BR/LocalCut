@@ -125,6 +125,15 @@ internal class LocalCutBlendGlProgram {
         GlUtil.clearFocusedBuffers()
 
         glProgram.use()
+        // GlProgram.bindAttributesAndUniforms() binds active uniforms in driver-reported order.
+        // Some GLES drivers bind uSourceSampler before uBackdropSampler; if both samplers use
+        // different units, the later glActiveTexture() leaves the wrong unit active while the
+        // earlier sampler's texture is bound. Bind each texture explicitly to its declared unit
+        // immediately before GlProgram applies the sampler uniforms.
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, backdrop.texId)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE1)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, source.texId)
         glProgram.setSamplerTexIdUniform("uBackdropSampler", backdrop.texId, 0)
         glProgram.setSamplerTexIdUniform("uSourceSampler", source.texId, 1)
         glProgram.setFloatUniform("uBlendMode", LocalCutBlendShaderContract.modeCode(mode).toFloat())

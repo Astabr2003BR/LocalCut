@@ -36,9 +36,10 @@ class AtomicProjectStore(private val projectDir: Path) : ProjectStore {
                 )
             }
             Files.createDirectories(projectDir)
+            val currentIsValid = inspectSnapshotsBeforeSave()
             writeForced(temp, ProjectJson.encode(project).toByteArray(StandardCharsets.UTF_8))
 
-            if (Files.exists(current) && isValidCurrent(current)) {
+            if (currentIsValid) {
                 Files.copy(current, backup, StandardCopyOption.REPLACE_EXISTING)
                 forceFile(backup)
             }
@@ -137,19 +138,32 @@ class AtomicProjectStore(private val projectDir: Path) : ProjectStore {
         return Result.success(recovered)
     }
 
+    private fun inspectSnapshotsBeforeSave(): Boolean {
+        var currentIsValid = false
+        for (snapshot in listOf(current, temp, backup)) {
+            if (!Files.exists(snapshot)) continue
+            try {
+                readProject(snapshot)
+                if (snapshot == current) currentIsValid = true
+            } catch (error: UnsupportedProjectSchemaException) {
+                throw ProjectStoreException(
+                    ProjectStoreErrorCode.UNSUPPORTED_SCHEMA,
+                    "refusing to overwrite a project snapshot from a newer schema: ${error.schemaVersion}",
+                    error,
+                )
+            } catch (_: Throwable) {
+                if (snapshot == current) currentIsValid = false
+            }
+        }
+        return currentIsValid
+    }
+
     private fun readProject(path: Path): Project {
         val json = path.toFile()
             .inputStream()
             .bufferedReader(StandardCharsets.UTF_8)
             .use { reader -> reader.readText() }
         return ProjectJson.decode(json)
-    }
-
-    private fun isValidCurrent(path: Path): Boolean = try {
-        readProject(path)
-        true
-    } catch (_: Throwable) {
-        false
     }
 
     private fun writeForced(path: Path, bytes: ByteArray) {

@@ -78,6 +78,30 @@ fun main(){
             assertEquals(ProjectStoreErrorCode.UNSUPPORTED_SCHEMA,e.code)
         }finally{dir.toFile().deleteRecursively()}
     }
+    test("save refuses to overwrite any newer-schema recovery snapshot"){
+        for(snapshotName in listOf("project.json","project.json.tmp","project.json.bak")){
+            val dir=Files.createTempDirectory("localcut-store-downgrade-")
+            try{
+                val store=AtomicProjectStore(dir)
+                assertTrue(store.save(project("baseline-$snapshotName")).isSuccess)
+                val currentSchema="\"schemaVersion\":${BuildContract.PROJECT_SCHEMA_VERSION}"
+                val newer=ProjectJson.encode(project("newer-$snapshotName")).replace(currentSchema,"\"schemaVersion\":999")
+                val snapshot=dir.resolve(snapshotName)
+                Files.writeString(snapshot,newer)
+                val before=Files.readString(snapshot)
+
+                val result=store.save(project("downgrade-attempt-$snapshotName"))
+
+                assertTrue(result.isFailure,"save must fail for $snapshotName from newer schema")
+                val e=result.exceptionOrNull() as ProjectStoreException
+                assertEquals(ProjectStoreErrorCode.UNSUPPORTED_SCHEMA,e.code,"snapshot=$snapshotName")
+                assertEquals(before,Files.readString(snapshot),"newer snapshot must be preserved: $snapshotName")
+                if(snapshotName!="project.json.tmp"){
+                    assertTrue(!Files.exists(dir.resolve("project.json.tmp")),"save must fail before creating temp for $snapshotName")
+                }
+            }finally{dir.toFile().deleteRecursively()}
+        }
+    }
     test("save and recovery never mutate asset references"){
         val dir=Files.createTempDirectory("localcut-store-")
         try{

@@ -32,6 +32,27 @@ class PropertyAnimationEvaluatorTest {
     }
 
     @Test
+    fun binarySearchSelectsCorrectSegmentAcrossTenThousandKeyframes() {
+        val animation = PropertyAnimation(
+            propertyId = "scalar",
+            keyframes = List(10_000) { index ->
+                PropertyKeyframe(
+                    id = "k-$index",
+                    offsetUs = index * 1_000L,
+                    value = PropertyValue.Scalar(index.toDouble()),
+                    easingToNext = Easing(EasingKind.LINEAR),
+                )
+            },
+        )
+
+        assertEquals(0.0, scalar(PropertyAnimationEvaluator.valueAt(animation, 0L)), 0.0)
+        assertEquals(0.5, scalar(PropertyAnimationEvaluator.valueAt(animation, 500L)), 1e-9)
+        assertEquals(4_321.0, scalar(PropertyAnimationEvaluator.valueAt(animation, 4_321_000L)), 0.0)
+        assertEquals(4_321.5, scalar(PropertyAnimationEvaluator.valueAt(animation, 4_321_500L)), 1e-9)
+        assertEquals(9_999.0, scalar(PropertyAnimationEvaluator.valueAt(animation, Long.MAX_VALUE)), 0.0)
+    }
+
+    @Test
     fun cubicBezierUsesTimingCurveAndStillHitsEndpoints() {
         val animation = scalarAnimation(
             Easing(

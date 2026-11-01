@@ -18,16 +18,30 @@ import kotlin.math.sin
 
 object PropertyAnimationEvaluator {
     fun valueAt(animation: PropertyAnimation, offsetUs: Long): PropertyValue {
-        require(animation.validationIssues().isEmpty()) { "invalid property animation: ${animation.validationIssues().first()}" }
-        require(animation.keyframes.isNotEmpty()) { "property animation requires at least one keyframe" }
+        val issues = animation.validationIssues()
+        require(issues.isEmpty()) { "invalid property animation: ${issues.first()}" }
+        return valueAtValidated(animation, offsetUs)
+    }
+
+    internal fun valueAtValidated(animation: PropertyAnimation, offsetUs: Long): PropertyValue {
         val keyframes = animation.keyframes
+        require(keyframes.isNotEmpty()) { "property animation requires at least one keyframe" }
         if (keyframes.size == 1 || offsetUs <= keyframes.first().offsetUs) return keyframes.first().value
         if (offsetUs >= keyframes.last().offsetUs) return keyframes.last().value
 
-        val rightIndex = keyframes.indexOfFirst { it.offsetUs >= offsetUs }
-        val right = keyframes[rightIndex]
+        var low = 1
+        var high = keyframes.lastIndex
+        while (low < high) {
+            val mid = low + (high - low) / 2
+            if (keyframes[mid].offsetUs >= offsetUs) {
+                high = mid
+            } else {
+                low = mid + 1
+            }
+        }
+        val right = keyframes[low]
         if (right.offsetUs == offsetUs) return right.value
-        val left = keyframes[rightIndex - 1]
+        val left = keyframes[low - 1]
         require(sameValueType(left.value, right.value)) { "property animation keyframe types must match" }
 
         val spanUs = right.offsetUs - left.offsetUs

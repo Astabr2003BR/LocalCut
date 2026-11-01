@@ -35,6 +35,10 @@ object PropertyTransformRenderResolver {
         if (modern.isNotEmpty()) {
             val ids = modern.map { it.propertyId }
             require(ids.distinct().size == ids.size) { "duplicate transform property animation" }
+            modern.forEach { animation ->
+                val issues = animation.validationIssues()
+                require(issues.isEmpty()) { "invalid property animation: ${animation.propertyId}: ${issues.first()}" }
+            }
         }
 
         val legacyLocal = compositionContainer?.let { container ->
@@ -49,8 +53,7 @@ object PropertyTransformRenderResolver {
         fun scalar(propertyId: String, fallback: Double): Double {
             val animation = modern.firstOrNull { it.propertyId == propertyId } ?: return fallback
             if (animation.keyframes.isEmpty()) return fallback
-            require(animation.validationIssues().isEmpty()) { "invalid property animation: $propertyId" }
-            val value = PropertyAnimationEvaluator.valueAt(animation, localTimeUs)
+            val value = PropertyAnimationEvaluator.valueAtValidated(animation, localTimeUs)
             return (value as? PropertyValue.Scalar)?.value
                 ?: throw IllegalArgumentException("transform property animation must be scalar: $propertyId")
         }

@@ -17,6 +17,7 @@ fun TimelineOps.duplicateClip(
         throw TimelineEditException(TimelineErrorCode.CLIP_NOT_FOUND, "clip $clipId not found")
     }
     val track = project.tracks[trackIndex]
+    TrackEditGuard.requireUnlocked(track)
     val clipIndex = track.clips.indexOfFirst { it.id == clipId }
     val original = track.clips[clipIndex]
     val duplicateStartUs = checkedClipEnd(original)

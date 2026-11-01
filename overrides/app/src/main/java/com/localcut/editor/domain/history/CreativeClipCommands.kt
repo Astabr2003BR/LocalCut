@@ -10,6 +10,7 @@ import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.model.TimeMap
 import com.localcut.editor.domain.time.TimeMapEvaluator
 import com.localcut.editor.domain.timeline.TimelineValidator
+import com.localcut.editor.domain.timeline.TrackEditGuard
 
 data class SetClipEffectsCommand(
     val clipId: String,
@@ -84,12 +85,17 @@ data class SetClipAudioProcessingCommand(
 private data class RestoreCreativeClipCommand(
     val clip: Clip,
 ) : EditorCommand {
-    override fun apply(project: Project): CommandResult = replaceCreativeClip(project, clip.id) { clip }
+    override fun apply(project: Project): CommandResult = replaceCreativeClip(
+        project = project,
+        clipId = clip.id,
+        enforceTrackLock = false,
+    ) { clip }
 }
 
 private fun replaceCreativeClip(
     project: Project,
     clipId: String,
+    enforceTrackLock: Boolean = true,
     transform: (Clip) -> Clip,
 ): CommandResult {
     var previous: Clip? = null
@@ -98,6 +104,7 @@ private fun replaceCreativeClip(
         val index = track.clips.indexOfFirst { it.id == clipId }
         if (index < 0) return@map track
         require(!found) { "clip $clipId exists in more than one track" }
+        if (enforceTrackLock) TrackEditGuard.requireUnlocked(track)
         found = true
         val old = track.clips[index]
         val next = transform(old)

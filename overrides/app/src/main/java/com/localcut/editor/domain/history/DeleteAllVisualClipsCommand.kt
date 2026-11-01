@@ -4,16 +4,21 @@ import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.timeline.TimelineValidator
+import com.localcut.editor.domain.timeline.TrackEditGuard
 
 object DeleteAllVisualClipsCommand : EditorCommand {
     override fun apply(project: Project): CommandResult {
-        val removedClipIds = project.tracks
+        val visualTracksWithClips = project.tracks.filter { track ->
+            track.type == TrackType.VISUAL && track.clips.isNotEmpty()
+        }
+        require(visualTracksWithClips.isNotEmpty()) { "no visual clips" }
+        visualTracksWithClips.forEach(TrackEditGuard::requireUnlocked)
+
+        val removedClipIds = visualTracksWithClips
             .asSequence()
-            .filter { it.type == TrackType.VISUAL }
             .flatMap { it.clips.asSequence() }
             .map { it.id }
             .toSet()
-        require(removedClipIds.isNotEmpty()) { "no visual clips" }
 
         val remainingNodes = project.compositionGraph.nodes.filterNot { node ->
             node.kind == CompositionNodeKind.LAYER && node.clipId?.let { it in removedClipIds } == true

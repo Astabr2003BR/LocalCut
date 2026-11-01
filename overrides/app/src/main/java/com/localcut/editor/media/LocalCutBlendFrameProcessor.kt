@@ -101,9 +101,12 @@ internal class LocalCutBlendFrameProcessor private constructor(
             blendRenderer = LocalCutHardwareBufferBlendRenderer(eglDisplay, hardwareBufferJni)
         }.get(INIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
 
+        // Keep the Media3 pre/post processors on their own GL executors and EGL contexts.
+        // Sharing LocalCut's GL executor here lets independent contexts overwrite the thread's
+        // current context, which can make a valid program id resolve to the wrong program and fail
+        // later while binding uniforms. HardwareBuffer is the intended cross-context boundary.
         val preFactory = DefaultGlFrameProcessor.Factory.Builder(appContext)
             .setHardwareBufferJniWrapper(hardwareBufferJni)
-            .setGlObjectsProviderAndExecutorService(glObjectsProvider, glExecutor)
             .build()
         preProcessor = preFactory.create(
             preWriter,
@@ -131,7 +134,6 @@ internal class LocalCutBlendFrameProcessor private constructor(
 
         val postFactory = DefaultGlFrameProcessor.Factory.Builder(appContext)
             .setHardwareBufferJniWrapper(hardwareBufferJni)
-            .setGlObjectsProviderAndExecutorService(glObjectsProvider, glExecutor)
             .build()
         postProcessor = postFactory.create(
             output,

@@ -26,16 +26,16 @@ object TransformEffectFactory {
         compositionContainer: CompositionTransformContainer? = null,
         compositionContainerTimeline: CompositionTransformTimeline? = null,
     ): List<Effect> {
+        val transformResolver = PropertyTransformRenderResolver.compile(
+            transform = transform,
+            keyframes = keyframes,
+            propertyAnimations = propertyAnimations,
+            presentationStartUs = presentationStartUs,
+            compositionContainer = compositionContainer,
+            compositionContainerTimeline = compositionContainerTimeline,
+        )
         val matrixEffect = MatrixTransformation { presentationTimeUs ->
-            val value = PropertyTransformRenderResolver.valueAt(
-                transform = transform,
-                keyframes = keyframes,
-                propertyAnimations = propertyAnimations,
-                presentationTimeUs = presentationTimeUs,
-                presentationStartUs = presentationStartUs,
-                compositionContainer = compositionContainer,
-                compositionContainerTimeline = compositionContainerTimeline,
-            )
+            val value = transformResolver.valueAt(presentationTimeUs)
             val matrix = Matrix()
             // Domain coordinates are pixels with +Y down. Media3 matrix coordinates are normalized.
             val dx = (value.x / (transformSpaceWidth / 2.0)).toFloat()

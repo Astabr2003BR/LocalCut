@@ -14,23 +14,63 @@ object PropertyTransformRenderResolver {
     private const val OPACITY = "transform.opacity"
     private val supportedProperties = setOf(X, Y, SCALE, ROTATION, OPACITY)
 
-    fun valueAt(
+    class Compiled internal constructor(
+        private val transform: TransformValue,
+        private val keyframes: List<TransformKeyframe>,
+        private val modernByProperty: Map<String, PropertyAnimation>,
+        private val presentationStartUs: Long,
+        private val compositionContainer: CompositionTransformContainer?,
+        private val compositionContainerTimeline: CompositionTransformTimeline?,
+    ) {
+        fun valueAt(presentationTimeUs: Long): TransformValue {
+            val legacyWorld = KeyframeRenderResolver.valueAt(
+                transform = transform,
+                keyframes = keyframes,
+                presentationTimeUs = presentationTimeUs,
+                presentationStartUs = presentationStartUs,
+            )
+            if (modernByProperty.isEmpty() && compositionContainerTimeline == null) return legacyWorld
+
+            val legacyLocal = compositionContainer?.let { container ->
+                CompositionTransformMath.remove(container, legacyWorld)
+            } ?: legacyWorld
+            val localTimeUs = if (presentationTimeUs <= presentationStartUs) {
+                0L
+            } else {
+                presentationTimeUs - presentationStartUs
+            }
+
+            fun scalar(propertyId: String, fallback: Double): Double {
+                val animation = modernByProperty[propertyId] ?: return fallback
+                if (animation.keyframes.isEmpty()) return fallback
+                val value = PropertyAnimationEvaluator.valueAtValidated(animation, localTimeUs)
+                return (value as? PropertyValue.Scalar)?.value
+                    ?: throw IllegalArgumentException("transform property animation must be scalar: $propertyId")
+            }
+
+            val local = TransformValue(
+                x = scalar(X, legacyLocal.x),
+                y = scalar(Y, legacyLocal.y),
+                scale = scalar(SCALE, legacyLocal.scale),
+                rotationDeg = scalar(ROTATION, legacyLocal.rotationDeg),
+                opacity = scalar(OPACITY, legacyLocal.opacity),
+            )
+            val activeContainer = compositionContainerTimeline?.containerAt(presentationTimeUs)
+                ?: compositionContainer
+            return activeContainer?.let { container ->
+                CompositionTransformMath.apply(container, local)
+            } ?: local
+        }
+    }
+
+    fun compile(
         transform: TransformValue,
         keyframes: List<TransformKeyframe>,
         propertyAnimations: List<PropertyAnimation>,
-        presentationTimeUs: Long,
         presentationStartUs: Long,
         compositionContainer: CompositionTransformContainer? = null,
         compositionContainerTimeline: CompositionTransformTimeline? = null,
-    ): TransformValue {
-        val legacyWorld = KeyframeRenderResolver.valueAt(
-            transform = transform,
-            keyframes = keyframes,
-            presentationTimeUs = presentationTimeUs,
-            presentationStartUs = presentationStartUs,
-        )
-        if (propertyAnimations.isEmpty() && compositionContainerTimeline == null) return legacyWorld
-
+    ): Compiled {
         val modern = propertyAnimations.filter { it.propertyId in supportedProperties }
         if (modern.isNotEmpty()) {
             val ids = modern.map { it.propertyId }
@@ -40,35 +80,30 @@ object PropertyTransformRenderResolver {
                 require(issues.isEmpty()) { "invalid property animation: ${animation.propertyId}: ${issues.first()}" }
             }
         }
-
-        val legacyLocal = compositionContainer?.let { container ->
-            CompositionTransformMath.remove(container, legacyWorld)
-        } ?: legacyWorld
-        val localTimeUs = if (presentationTimeUs <= presentationStartUs) {
-            0L
-        } else {
-            presentationTimeUs - presentationStartUs
-        }
-
-        fun scalar(propertyId: String, fallback: Double): Double {
-            val animation = modern.firstOrNull { it.propertyId == propertyId } ?: return fallback
-            if (animation.keyframes.isEmpty()) return fallback
-            val value = PropertyAnimationEvaluator.valueAtValidated(animation, localTimeUs)
-            return (value as? PropertyValue.Scalar)?.value
-                ?: throw IllegalArgumentException("transform property animation must be scalar: $propertyId")
-        }
-
-        val local = TransformValue(
-            x = scalar(X, legacyLocal.x),
-            y = scalar(Y, legacyLocal.y),
-            scale = scalar(SCALE, legacyLocal.scale),
-            rotationDeg = scalar(ROTATION, legacyLocal.rotationDeg),
-            opacity = scalar(OPACITY, legacyLocal.opacity),
+        return Compiled(
+            transform = transform,
+            keyframes = keyframes,
+            modernByProperty = modern.associateBy { it.propertyId },
+            presentationStartUs = presentationStartUs,
+            compositionContainer = compositionContainer,
+            compositionContainerTimeline = compositionContainerTimeline,
         )
-        val activeContainer = compositionContainerTimeline?.containerAt(presentationTimeUs)
-            ?: compositionContainer
-        return activeContainer?.let { container ->
-            CompositionTransformMath.apply(container, local)
-        } ?: local
     }
+
+    fun valueAt(
+        transform: TransformValue,
+        keyframes: List<TransformKeyframe>,
+        propertyAnimations: List<PropertyAnimation>,
+        presentationTimeUs: Long,
+        presentationStartUs: Long,
+        compositionContainer: CompositionTransformContainer? = null,
+        compositionContainerTimeline: CompositionTransformTimeline? = null,
+    ): TransformValue = compile(
+        transform = transform,
+        keyframes = keyframes,
+        propertyAnimations = propertyAnimations,
+        presentationStartUs = presentationStartUs,
+        compositionContainer = compositionContainer,
+        compositionContainerTimeline = compositionContainerTimeline,
+    ).valueAt(presentationTimeUs)
 }

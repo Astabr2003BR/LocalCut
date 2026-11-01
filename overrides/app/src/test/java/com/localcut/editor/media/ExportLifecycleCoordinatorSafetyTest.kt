@@ -51,4 +51,20 @@ class ExportLifecycleCoordinatorSafetyTest {
         assertFalse(tempFile.exists())
         assertTrue(coordinator.isTerminal())
     }
+
+    @Test
+    fun preRenderDiscardCannotEscapeWhenDestinationProviderThrows() {
+        var discardAttempted = false
+        val destination = object : ExportDestination {
+            override fun commitFrom(tempFile: File): Result<Unit> = Result.success(Unit)
+            override fun discard(): Result<Unit> {
+                discardAttempted = true
+                error("provider discard crashed before render")
+            }
+        }
+
+        discardBeforeRenderSafely(destination)
+
+        assertTrue(discardAttempted)
+    }
 }

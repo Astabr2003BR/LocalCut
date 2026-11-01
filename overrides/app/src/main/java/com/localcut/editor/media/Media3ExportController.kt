@@ -21,6 +21,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
 
+internal fun discardBeforeRenderSafely(destination: ExportDestination) {
+    discardExportDestinationSafely(destination)
+}
+
 @UnstableApi
 class Media3ExportController(
     context: Context,
@@ -46,7 +50,7 @@ class Media3ExportController(
             requestedProfile = profile,
             capabilities = capabilitiesProvider.current(),
         ).getOrElse { error ->
-            withContext(Dispatchers.IO) { destination.discard() }
+            withContext(Dispatchers.IO) { discardBeforeRenderSafely(destination) }
             trySend(ExportEvent.Failed(error.message ?: "Invalid export settings", error))
             close()
             return@callbackFlow
@@ -58,7 +62,7 @@ class Media3ExportController(
                 File.createTempFile("localcut-export-", ".mp4.tmp", cacheDir)
             }
         } catch (error: Throwable) {
-            withContext(Dispatchers.IO) { destination.discard() }
+            withContext(Dispatchers.IO) { discardBeforeRenderSafely(destination) }
             trySend(ExportEvent.Failed("Unable to create export temporary file", error))
             close()
             return@callbackFlow
@@ -81,7 +85,7 @@ class Media3ExportController(
             }
             if (!accepted) {
                 tempFile.delete()
-                withContext(Dispatchers.IO) { destination.discard() }
+                withContext(Dispatchers.IO) { discardBeforeRenderSafely(destination) }
                 trySend(ExportEvent.Failed("Another export is already running"))
                 close()
                 return@callbackFlow

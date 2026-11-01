@@ -1,11 +1,11 @@
 package com.localcut.editor.domain.composition
 
+import com.localcut.editor.domain.model.CameraCut
 import com.localcut.editor.domain.model.CameraSettings
 import com.localcut.editor.domain.model.CompositionGraph
 import com.localcut.editor.domain.model.CompositionNode
 import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.LayerTransform3D
-import com.localcut.editor.domain.model.CameraCut
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -37,6 +37,41 @@ class LayerGraphTest {
         assertEquals(7.0, world.z, 1e-9)
         assertEquals(1.0, world.scale, 1e-9)
         assertEquals(0.4, world.opacity, 1e-9)
+    }
+
+    @Test
+    fun compiledResolverCachesWorldTransformsAcrossRepeatedProjection() {
+        val graph = CompositionGraph(
+            nodes = listOf(
+                CompositionNode(
+                    id = "parent",
+                    kind = CompositionNodeKind.NULL,
+                    transform = LayerTransform3D(x = 10.0, scale = 2.0),
+                ),
+                CompositionNode(
+                    id = "camera",
+                    kind = CompositionNodeKind.CAMERA,
+                    parentId = "parent",
+                    camera = CameraSettings(orthographic = true),
+                ),
+                CompositionNode(
+                    id = "layer",
+                    kind = CompositionNodeKind.LAYER,
+                    parentId = "parent",
+                    clipId = "clip-1",
+                    transform = LayerTransform3D(x = 5.0),
+                ),
+            ),
+        )
+        val resolver = CompositionGraphResolver(graph)
+
+        val first = resolver.project("layer", "camera")
+        val cachedAfterFirst = resolver.cachedWorldTransformCount
+        val second = resolver.project("layer", "camera")
+
+        assertEquals(first, second)
+        assertEquals(3, cachedAfterFirst)
+        assertEquals(cachedAfterFirst, resolver.cachedWorldTransformCount)
     }
 
     @Test

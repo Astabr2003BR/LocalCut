@@ -71,22 +71,63 @@ object LayerGraph {
     }
 }
 
-object WorldTransformResolver {
-    fun resolve(graph: CompositionGraph, nodeId: String): LayerTransform3D {
-        val nodes = graph.nodes.associateBy { it.id }
+class CompositionGraphResolver(
+    graph: CompositionGraph,
+) {
+    private val nodes = graph.nodes.associateBy { it.id }
+    private val worldTransformCache = mutableMapOf<String, LayerTransform3D>()
+
+    internal val cachedWorldTransformCount: Int
+        get() = worldTransformCache.size
+
+    fun node(nodeId: String): CompositionNode? = nodes[nodeId]
+
+    fun worldTransform(nodeId: String): LayerTransform3D {
         require(nodes[nodeId] != null) { "composition node not found: $nodeId" }
-        val stack = mutableSetOf<String>()
+        val resolving = mutableSetOf<String>()
 
         fun resolveNode(id: String): LayerTransform3D {
-            require(stack.add(id)) { "composition graph contains a parent cycle" }
-            val node = requireNotNull(nodes[id]) { "composition node not found: $id" }
-            val world = node.parentId?.let { parentId ->
-                compose(resolveNode(parentId), node.transform)
-            } ?: node.transform
-            stack.remove(id)
-            return world
+            worldTransformCache[id]?.let { return it }
+            require(resolving.add(id)) { "composition graph contains a parent cycle" }
+            return try {
+                val node = requireNotNull(nodes[id]) { "composition node not found: $id" }
+                val world = node.parentId?.let { parentId ->
+                    compose(resolveNode(parentId), node.transform)
+                } ?: node.transform
+                worldTransformCache[id] = world
+                world
+            } finally {
+                resolving.remove(id)
+            }
         }
         return resolveNode(nodeId)
+    }
+
+    fun project(nodeId: String, cameraNodeId: String): ProjectedPoint {
+        val cameraNode = requireNotNull(nodes[cameraNodeId]) { "camera node not found" }
+        require(cameraNode.kind == CompositionNodeKind.CAMERA) { "node is not a camera" }
+        val camera = cameraNode.camera ?: CameraSettings()
+        require(camera.validationIssues().isEmpty()) { "invalid camera settings" }
+        val world = worldTransform(nodeId)
+        val cameraWorld = worldTransform(cameraNodeId)
+        val translatedX = (world.x - cameraWorld.x) / cameraWorld.scale
+        val translatedY = (world.y - cameraWorld.y) / cameraWorld.scale
+        val inverseRotationRadians = -cameraWorld.rotationZDeg * PI / 180.0
+        val relativeX = translatedX * cos(inverseRotationRadians) - translatedY * sin(inverseRotationRadians)
+        val relativeY = translatedX * sin(inverseRotationRadians) + translatedY * cos(inverseRotationRadians)
+        val relativeZ = world.z - cameraWorld.z
+        val perspective = if (camera.orthographic) {
+            1.0
+        } else {
+            val denominator = camera.focalLength - relativeZ
+            require(denominator > 1e-6) { "layer is behind the camera projection plane" }
+            camera.focalLength / denominator
+        }
+        return ProjectedPoint(
+            x = relativeX * perspective,
+            y = relativeY * perspective,
+            scale = world.scale * perspective / cameraWorld.scale,
+        )
     }
 
     private fun compose(parent: LayerTransform3D, local: LayerTransform3D): LayerTransform3D {
@@ -108,6 +149,11 @@ object WorldTransformResolver {
     }
 }
 
+object WorldTransformResolver {
+    fun resolve(graph: CompositionGraph, nodeId: String): LayerTransform3D =
+        CompositionGraphResolver(graph).worldTransform(nodeId)
+}
+
 data class ProjectedPoint(
     val x: Double,
     val y: Double,
@@ -115,31 +161,6 @@ data class ProjectedPoint(
 )
 
 object CameraProjection {
-    fun project(graph: CompositionGraph, nodeId: String, cameraNodeId: String): ProjectedPoint {
-        val nodes = graph.nodes.associateBy { it.id }
-        val cameraNode: CompositionNode = requireNotNull(nodes[cameraNodeId]) { "camera node not found" }
-        require(cameraNode.kind == CompositionNodeKind.CAMERA) { "node is not a camera" }
-        val camera = cameraNode.camera ?: CameraSettings()
-        require(camera.validationIssues().isEmpty()) { "invalid camera settings" }
-        val world = WorldTransformResolver.resolve(graph, nodeId)
-        val cameraWorld = WorldTransformResolver.resolve(graph, cameraNodeId)
-        val translatedX = (world.x - cameraWorld.x) / cameraWorld.scale
-        val translatedY = (world.y - cameraWorld.y) / cameraWorld.scale
-        val inverseRotationRadians = -cameraWorld.rotationZDeg * PI / 180.0
-        val relativeX = translatedX * cos(inverseRotationRadians) - translatedY * sin(inverseRotationRadians)
-        val relativeY = translatedX * sin(inverseRotationRadians) + translatedY * cos(inverseRotationRadians)
-        val relativeZ = world.z - cameraWorld.z
-        val perspective = if (camera.orthographic) {
-            1.0
-        } else {
-            val denominator = camera.focalLength - relativeZ
-            require(denominator > 1e-6) { "layer is behind the camera projection plane" }
-            camera.focalLength / denominator
-        }
-        return ProjectedPoint(
-            x = relativeX * perspective,
-            y = relativeY * perspective,
-            scale = world.scale * perspective / cameraWorld.scale,
-        )
-    }
+    fun project(graph: CompositionGraph, nodeId: String, cameraNodeId: String): ProjectedPoint =
+        CompositionGraphResolver(graph).project(nodeId, cameraNodeId)
 }

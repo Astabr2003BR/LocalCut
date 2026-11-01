@@ -1,9 +1,9 @@
 package com.localcut.editor.media
 
-import com.localcut.editor.domain.composition.CameraProjection
-import com.localcut.editor.domain.composition.WorldTransformResolver
+import com.localcut.editor.domain.composition.CompositionGraphResolver
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.CompositionGraph
+import com.localcut.editor.domain.model.CompositionNode
 import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.LayerTransform3D
 import com.localcut.editor.domain.model.TransformKeyframe
@@ -105,7 +105,28 @@ internal data class ResolvedCompositionTransform(
  * at each presentation timestamp without physically splitting the clip or interpolating cameras.
  */
 internal object CompositionRenderResolver {
-    fun resolve(graph: CompositionGraph, clip: Clip): Result<ResolvedCompositionTransform> = runCatching {
+    class Context internal constructor(
+        val graph: CompositionGraph,
+    ) {
+        internal val graphResolver = CompositionGraphResolver(graph)
+        internal val layerNodesByClipId: Map<String, List<CompositionNode>> = graph.nodes
+            .asSequence()
+            .filter { node -> node.kind == CompositionNodeKind.LAYER && !node.clipId.isNullOrBlank() }
+            .groupBy { node -> requireNotNull(node.clipId) }
+        internal val staticCameraNodeId: String? = if (graph.cameraCuts.isEmpty()) {
+            graph.nodes.filter { it.kind == CompositionNodeKind.CAMERA }.singleOrNull()?.id
+        } else {
+            null
+        }
+    }
+
+    fun compile(graph: CompositionGraph): Context = Context(graph)
+
+    fun resolve(graph: CompositionGraph, clip: Clip): Result<ResolvedCompositionTransform> =
+        resolve(compile(graph), clip)
+
+    fun resolve(context: Context, clip: Clip): Result<ResolvedCompositionTransform> = runCatching {
+        val graph = context.graph
         if (graph.nodes.isEmpty()) {
             return@runCatching ResolvedCompositionTransform(
                 transform = clip.transform,
@@ -114,9 +135,7 @@ internal object CompositionRenderResolver {
             )
         }
 
-        val layerNodes = graph.nodes.filter { node ->
-            node.kind == CompositionNodeKind.LAYER && node.clipId == clip.id
-        }
+        val layerNodes = context.layerNodesByClipId[clip.id].orEmpty()
         if (layerNodes.isEmpty()) {
             return@runCatching ResolvedCompositionTransform(
                 transform = clip.transform,
@@ -126,7 +145,7 @@ internal object CompositionRenderResolver {
         }
         require(layerNodes.size == 1) { "clip ${clip.id} is referenced by multiple composition layers" }
         val layer = layerNodes.single()
-        if (!isEffectivelyVisible(graph, layer.id)) {
+        if (!isEffectivelyVisible(context, layer.id)) {
             return@runCatching ResolvedCompositionTransform(
                 transform = clip.transform,
                 keyframes = clip.keyframes,
@@ -134,14 +153,14 @@ internal object CompositionRenderResolver {
             )
         }
 
-        val world = WorldTransformResolver.resolve(graph, layer.id)
+        val world = context.graphResolver.worldTransform(layer.id)
         requirePlanar(world, "layer ${layer.id}")
-        val timeline = cameraContainerTimeline(graph, layer.id, world)
+        val timeline = cameraContainerTimeline(context, layer.id, world)
         val baselineContainer = timeline?.containerAt(clip.startUs) ?: containerFor(
-            graph = graph,
+            context = context,
             layerId = layer.id,
             world = world,
-            cameraNodeId = staticCameraNodeId(graph),
+            cameraNodeId = context.staticCameraNodeId,
         )
 
         ResolvedCompositionTransform(
@@ -156,36 +175,37 @@ internal object CompositionRenderResolver {
     }
 
     private fun cameraContainerTimeline(
-        graph: CompositionGraph,
+        context: Context,
         layerId: String,
         world: LayerTransform3D,
     ): CompositionTransformTimeline? {
-        if (graph.cameraCuts.isEmpty()) return null
-        require(graph.cameraCuts.all { it.startUs >= 0L }) { "camera cuts must use non-negative timestamps" }
-        require(graph.cameraCuts.zipWithNext().all { (left, right) -> right.startUs > left.startUs }) {
+        val cuts = context.graph.cameraCuts
+        if (cuts.isEmpty()) return null
+        require(cuts.all { it.startUs >= 0L }) { "camera cuts must use non-negative timestamps" }
+        require(cuts.zipWithNext().all { (left, right) -> right.startUs > left.startUs }) {
             "camera cuts must be strictly ordered"
         }
 
-        val cutAtZero = graph.cameraCuts.firstOrNull()?.takeIf { it.startUs == 0L }
+        val cutAtZero = cuts.firstOrNull()?.takeIf { it.startUs == 0L }
         val entries = buildList {
             add(
                 TimedCompositionTransformContainer(
                     startUs = 0L,
                     container = containerFor(
-                        graph = graph,
+                        context = context,
                         layerId = layerId,
                         world = world,
                         cameraNodeId = cutAtZero?.cameraNodeId,
                     ),
                 )
             )
-            graph.cameraCuts.forEach { cut ->
+            cuts.forEach { cut ->
                 if (cut.startUs == 0L) return@forEach
                 add(
                     TimedCompositionTransformContainer(
                         startUs = cut.startUs,
                         container = containerFor(
-                            graph = graph,
+                            context = context,
                             layerId = layerId,
                             world = world,
                             cameraNodeId = cut.cameraNodeId,
@@ -198,7 +218,7 @@ internal object CompositionRenderResolver {
     }
 
     private fun containerFor(
-        graph: CompositionGraph,
+        context: Context,
         layerId: String,
         world: LayerTransform3D,
         cameraNodeId: String?,
@@ -212,13 +232,13 @@ internal object CompositionRenderResolver {
             )
         }
 
-        val cameraNode = graph.nodes.firstOrNull { it.id == cameraNodeId }
+        val cameraNode = context.graphResolver.node(cameraNodeId)
         require(cameraNode?.kind == CompositionNodeKind.CAMERA) {
             "camera cut must reference a camera node: $cameraNodeId"
         }
-        val cameraWorld = WorldTransformResolver.resolve(graph, cameraNodeId)
+        val cameraWorld = context.graphResolver.worldTransform(cameraNodeId)
         requirePlanar(cameraWorld, "camera $cameraNodeId")
-        val projected = CameraProjection.project(graph, layerId, cameraNodeId)
+        val projected = context.graphResolver.project(layerId, cameraNodeId)
         return CompositionTransformContainer(
             x = projected.x,
             y = projected.y,
@@ -227,22 +247,17 @@ internal object CompositionRenderResolver {
         )
     }
 
-    private fun isEffectivelyVisible(graph: CompositionGraph, nodeId: String): Boolean {
-        val nodes = graph.nodes.associateBy { it.id }
+    private fun isEffectivelyVisible(context: Context, nodeId: String): Boolean {
         val visited = mutableSetOf<String>()
-        var current = nodes[nodeId] ?: return true
+        var current = context.graphResolver.node(nodeId) ?: return true
         while (true) {
             require(visited.add(current.id)) { "composition graph contains a parent cycle" }
             if (!current.visible) return false
             val parentId = current.parentId ?: return true
-            current = requireNotNull(nodes[parentId]) { "composition parent does not exist: $parentId" }
+            current = requireNotNull(context.graphResolver.node(parentId)) {
+                "composition parent does not exist: $parentId"
+            }
         }
-    }
-
-    private fun staticCameraNodeId(graph: CompositionGraph): String? {
-        if (graph.cameraCuts.isNotEmpty()) return null
-        val cameras = graph.nodes.filter { it.kind == CompositionNodeKind.CAMERA }
-        return cameras.singleOrNull()?.id
     }
 
     private fun requirePlanar(transform: LayerTransform3D, subject: String) {

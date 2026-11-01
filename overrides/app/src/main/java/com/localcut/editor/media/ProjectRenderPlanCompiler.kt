@@ -91,6 +91,7 @@ object ProjectRenderPlanCompiler {
             outputSettings = outputSettings,
         )
         val assets = project.assets.associateBy { it.id }
+        val compositionContext = CompositionRenderResolver.compile(project.compositionGraph)
         val visualLayers = visualTracks.flatMap { track ->
             buildVisualLayers(
                 track = track,
@@ -99,7 +100,7 @@ object ProjectRenderPlanCompiler {
                 assets = assets,
                 resolver = resolver,
                 mode = mode,
-                compositionGraph = project.compositionGraph,
+                compositionContext = compositionContext,
             )
         }
         RenderPlan(
@@ -140,7 +141,7 @@ object ProjectRenderPlanCompiler {
         assets: Map<String, Asset>,
         resolver: RenderAssetResolver,
         mode: RenderMode,
-        compositionGraph: CompositionGraph,
+        compositionContext: CompositionRenderResolver.Context,
     ): List<RenderSequencePlan> {
         if (track.collisionPolicy == TrackCollisionPolicy.EXCLUSIVE || track.clips.size <= 1) {
             return listOf(
@@ -151,7 +152,7 @@ object ProjectRenderPlanCompiler {
                     assets = assets,
                     resolver = resolver,
                     mode = mode,
-                    compositionGraph = compositionGraph,
+                    compositionContext = compositionContext,
                 ),
             )
         }
@@ -165,7 +166,7 @@ object ProjectRenderPlanCompiler {
                 resolver,
                 laneIndex = laneIndex,
                 mode = mode,
-                compositionGraph = compositionGraph,
+                compositionContext = compositionContext,
             )
         }
     }
@@ -178,7 +179,7 @@ object ProjectRenderPlanCompiler {
         resolver: RenderAssetResolver,
         laneIndex: Int = 0,
         mode: RenderMode,
-        compositionGraph: CompositionGraph? = null,
+        compositionContext: CompositionRenderResolver.Context? = null,
         duckingIndex: AudioDuckingIndex? = null,
     ): RenderSequencePlan {
         val segments = mutableListOf<RenderSegment>()
@@ -202,8 +203,8 @@ object ProjectRenderPlanCompiler {
                 )
             }
             val uri = resolvedUri.getOrThrow()
-            val composition = compositionGraph?.let { graph ->
-                CompositionRenderResolver.resolve(graph, clip).getOrElse { cause ->
+            val composition = compositionContext?.let { context ->
+                CompositionRenderResolver.resolve(context, clip).getOrElse { cause ->
                     throw RenderPlanException(
                         RenderPlanErrorCode.INVALID_PROJECT,
                         "composition render resolution failed for clip ${clip.id}: ${cause.message}",

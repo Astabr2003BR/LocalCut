@@ -17,4 +17,10 @@ class TimelineTrackLockUiPolicyTest {
         assertEquals("L", TimelineTrackLockUiPolicy.label(false))
         assertEquals("L✓", TimelineTrackLockUiPolicy.label(true))
     }
+
+    @Test
+    fun lockedTrackDisablesClipMutationGestures() {
+        assertTrue(TimelineTrackLockUiPolicy.allowsClipEdits(locked = false))
+        assertFalse(TimelineTrackLockUiPolicy.allowsClipEdits(locked = true))
+    }
 }

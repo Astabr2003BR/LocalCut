@@ -619,6 +619,7 @@ private fun TrackLane(
 ) {
     val density = LocalDensity.current
     val snapToleranceUs = TimelineSnapUiPolicy.toleranceUs(dpPerSecond)
+    val clipEditsEnabled = TimelineTrackLockUiPolicy.allowsClipEdits(track.locked)
     Box(
         modifier = Modifier
             .width(timelineWidth)
@@ -713,8 +714,9 @@ private fun TrackLane(
                     )
                     .clickable { onSelectClip(clip.id) }
                     .draggable(
-                        orientation = Orientation.Horizontal,
                         state = rememberDraggableState { delta -> bodyDragPx += delta },
+                        orientation = Orientation.Horizontal,
+                        enabled = clipEditsEnabled,
                         onDragStarted = { onSelectClip(clip.id) },
                         onDragStopped = {
                             val deltaDp = with(density) { bodyDragPx.toDp().value }
@@ -787,7 +789,7 @@ private fun TrackLane(
                         color = Color(0xFFF1F1F3),
                     )
                 }
-                if (selected) {
+                if (selected && clipEditsEnabled) {
                     TrimHandle(
                         modifier = Modifier.align(Alignment.CenterStart),
                         onActiveChanged = onExclusiveHandleActiveChanged,

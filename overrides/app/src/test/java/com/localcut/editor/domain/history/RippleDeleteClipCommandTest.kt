@@ -69,6 +69,17 @@ class RippleDeleteClipCommandTest {
         }
     }
 
+    @Test
+    fun rippleDeleteRejectsLockedTrack() {
+        val initial = sequentialProject()
+        val locked = initial.tracks.first().copy(locked = true)
+        val project = initial.copy(tracks = listOf(locked, initial.tracks[1]))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            RippleDeleteClipCommand("b").apply(project)
+        }
+    }
+
     private fun sequentialProject(): Project {
         val asset = Asset(
             id = "video",

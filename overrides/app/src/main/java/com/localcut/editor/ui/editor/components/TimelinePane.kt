@@ -414,6 +414,34 @@ fun TimelinePane(
             }
         }
 
+        Row(
+            modifier = Modifier.fillMaxWidth().height(24.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(52.dp)
+                    .fillMaxHeight()
+                    .background(Color(0xFF0D0D0F)),
+            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .horizontalScroll(
+                        state = horizontalScroll,
+                        enabled = TimelineGesturePolicy.isHorizontalScrollEnabled(exclusiveHandleActive),
+                    )
+                    .padding(start = 3.dp),
+            ) {
+                TimelineRuler(
+                    durationUs = durationUs,
+                    dpPerSecond = timelineZoom,
+                    playheadUs = playheadUs,
+                    width = timelineWidth,
+                )
+            }
+        }
+
         trackLayout.rows.forEach { rowGeometry ->
             val track = tracksById.getValue(rowGeometry.trackId)
             val addAction = if (track.locked) null else ({ onAddToTrack(track) })

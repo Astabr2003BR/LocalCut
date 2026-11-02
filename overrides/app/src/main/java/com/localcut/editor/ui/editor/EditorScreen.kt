@@ -47,6 +47,7 @@ import com.localcut.editor.domain.history.SetClipOpacityCommand
 import com.localcut.editor.domain.history.SetCompositionGraphCommand
 import com.localcut.editor.domain.history.SetProjectCanvasSizeCommand
 import com.localcut.editor.domain.history.SetTrackDuckingCommand
+import com.localcut.editor.domain.history.SetTrackLockedCommand
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.ClipTransition
 import com.localcut.editor.media.ExportCapabilities
@@ -741,6 +742,9 @@ private fun TimelineForProfessionalState(
         },
         onSetTrackSolo = { trackId, solo ->
             viewModel.dispatch(EditorAction.SetTrackSolo(trackId, solo))
+        },
+        onSetTrackLocked = { trackId, locked ->
+            viewModel.dispatch(EditorAction.Execute(SetTrackLockedCommand(trackId, locked)))
         },
         modifier = modifier,
     )

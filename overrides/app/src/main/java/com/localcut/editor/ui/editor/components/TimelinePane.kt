@@ -85,6 +85,7 @@ import com.localcut.editor.ui.editor.TimelineSnapUiPolicy
 import com.localcut.editor.ui.editor.TimelineThumbnailPolicy
 import com.localcut.editor.ui.editor.TimelineTouchTargetPolicy
 import com.localcut.editor.ui.editor.TimelineTrackGeometry
+import com.localcut.editor.ui.editor.TimelineTrackLockUiPolicy
 import com.localcut.editor.ui.editor.TimelineViewportPolicy
 import com.localcut.editor.ui.editor.TimelineZoomUiPolicy
 import java.util.concurrent.Executors
@@ -115,6 +116,7 @@ fun TimelinePane(
     dpPerSecond: Float = TimelineZoomUiPolicy.DEFAULT_DP_PER_SECOND,
     onSetTrackMuted: (String, Boolean) -> Unit = { _, _ -> },
     onSetTrackSolo: (String, Boolean) -> Unit = { _, _ -> },
+    onSetTrackLocked: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     val horizontalScroll = rememberScrollState()
     val verticalScroll = rememberScrollState()
@@ -424,6 +426,7 @@ fun TimelinePane(
                     onAdd = addAction,
                     onSetMuted = onSetTrackMuted,
                     onSetSolo = onSetTrackSolo,
+                    onSetLocked = onSetTrackLocked,
                 )
                 Box(
                     modifier = Modifier
@@ -467,6 +470,7 @@ private fun TrackHeader(
     onAdd: (() -> Unit)?,
     onSetMuted: (String, Boolean) -> Unit,
     onSetSolo: (String, Boolean) -> Unit,
+    onSetLocked: (String, Boolean) -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -499,6 +503,7 @@ private fun TrackHeader(
                             .padding(horizontal = 12.dp, vertical = 1.dp),
                     )
                 }
+                TrackLockToggle(track = track, onSetLocked = onSetLocked)
             }
         } else {
             Column(
@@ -527,6 +532,7 @@ private fun TrackHeader(
                                 .padding(start = 5.dp, end = 2.dp),
                         )
                     }
+                    TrackLockToggle(track = track, onSetLocked = onSetLocked)
                 }
                 Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     AudioTrackToggle(
@@ -545,6 +551,27 @@ private fun TrackHeader(
             }
         }
     }
+}
+
+@Composable
+private fun TrackLockToggle(
+    track: Track,
+    onSetLocked: (String, Boolean) -> Unit,
+) {
+    Text(
+        text = TimelineTrackLockUiPolicy.label(track.locked),
+        color = if (track.locked) AccentColor else Color(0xFF77777D),
+        fontWeight = if (track.locked) FontWeight.Bold else FontWeight.Normal,
+        style = MaterialTheme.typography.labelSmall,
+        modifier = Modifier
+            .clickable {
+                onSetLocked(
+                    track.id,
+                    TimelineTrackLockUiPolicy.nextLocked(track.locked),
+                )
+            }
+            .padding(horizontal = 3.dp, vertical = 1.dp),
+    )
 }
 
 @Composable

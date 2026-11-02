@@ -6,6 +6,7 @@ import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.timeline.TimelineValidator
+import com.localcut.editor.domain.timeline.TrackEditGuard
 
 data class RippleDeleteClipCommand(
     val clipId: String,
@@ -17,6 +18,7 @@ data class RippleDeleteClipCommand(
         require(originalTrack.collisionPolicy == TrackCollisionPolicy.EXCLUSIVE) {
             "ripple delete requires an exclusive track"
         }
+        TrackEditGuard.requireUnlocked(originalTrack)
         require(
             project.compositionGraph.nodes.none { node ->
                 node.kind == CompositionNodeKind.LAYER && node.clipId == clipId && node.locked

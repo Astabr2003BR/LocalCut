@@ -4,4 +4,6 @@ object TimelineTrackLockUiPolicy {
     fun nextLocked(currentLocked: Boolean): Boolean = !currentLocked
 
     fun label(locked: Boolean): String = if (locked) "L✓" else "L"
+
+    fun allowsClipEdits(locked: Boolean): Boolean = !locked
 }

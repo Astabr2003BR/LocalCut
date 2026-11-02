@@ -1,8 +1,11 @@
 package com.localcut.editor.media
 
+import com.localcut.editor.domain.model.TrackCollisionPolicy
+
 object Media3SequenceOpacityResolver {
     fun alphaAt(sequence: Media3SequenceBlueprint, presentationTimeUs: Long): Float {
-        if (presentationTimeUs < 0L) return 1f
+        val inactiveAlpha = inactiveAlpha(sequence)
+        if (presentationTimeUs < 0L) return inactiveAlpha
         var presentationStartUs = 0L
         sequence.items.forEach { item ->
             val endUs = try {
@@ -12,13 +15,16 @@ object Media3SequenceOpacityResolver {
             }
             if (presentationTimeUs >= presentationStartUs && presentationTimeUs < endUs) {
                 return when (item) {
-                    is Media3BlueprintItem.Gap -> 1f
+                    is Media3BlueprintItem.Gap -> inactiveAlpha
                     is Media3BlueprintItem.Media -> {
-                        val value = KeyframeRenderResolver.valueAt(
+                        val value = PropertyTransformRenderResolver.valueAt(
                             transform = item.transform,
                             keyframes = item.keyframes,
+                            propertyAnimations = item.propertyAnimations,
                             presentationTimeUs = presentationTimeUs,
                             presentationStartUs = presentationStartUs,
+                            compositionContainer = item.compositionContainer,
+                            compositionContainerTimeline = item.compositionContainerTimeline,
                         )
                         KeyframeRenderResolver.effectiveOpacity(item.opacity, value).toFloat()
                     }
@@ -26,17 +32,24 @@ object Media3SequenceOpacityResolver {
             }
             presentationStartUs = endUs
         }
-        return 1f
+        return inactiveAlpha
     }
 
     fun requiresCustomAlpha(sequences: List<Media3SequenceBlueprint>): Boolean =
         sequences.any { sequence ->
-            sequence.items.any { item ->
-                item is Media3BlueprintItem.Media && (
-                    item.opacity != 1.0 ||
-                        item.transform.opacity != 1.0 ||
-                        item.keyframes.any { it.value.opacity != 1.0 }
-                    )
-            }
+            sequence.sourceCollisionPolicy == TrackCollisionPolicy.OVERLAY ||
+                sequence.items.any { item ->
+                    item is Media3BlueprintItem.Media && (
+                        item.opacity != 1.0 ||
+                            item.transform.opacity != 1.0 ||
+                            item.keyframes.any { it.value.opacity != 1.0 } ||
+                            item.propertyAnimations.any { animation ->
+                                animation.propertyId == "transform.opacity" && animation.keyframes.isNotEmpty()
+                            }
+                        )
+                }
         }
+
+    private fun inactiveAlpha(sequence: Media3SequenceBlueprint): Float =
+        if (sequence.sourceCollisionPolicy == TrackCollisionPolicy.OVERLAY) 0f else 1f
 }

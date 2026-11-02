@@ -33,7 +33,7 @@ class ExportLifecycleCoordinatorSafetyTest {
     }
 
     @Test
-    fun throwingDiscardCannotPreventCancellationCleanup() {
+    fun throwingDiscardIsReportedAsCleanupFailureAndStillCleansTempFile() {
         val tempFile = File.createTempFile("localcut-cancel-test-", ".tmp")
         val events = mutableListOf<ExportEvent>()
         val destination = object : ExportDestination {
@@ -45,8 +45,26 @@ class ExportLifecycleCoordinatorSafetyTest {
         coordinator.started()
         coordinator.cancel()
 
-        assertTrue(events.last() is ExportEvent.Cancelled)
+        val event = events.last()
+        assertTrue(event is ExportEvent.Failed)
+        assertTrue((event as ExportEvent.Failed).message.contains("cleanup failed"))
         assertFalse(tempFile.exists())
         assertTrue(coordinator.isTerminal())
+    }
+
+    @Test
+    fun preRenderDiscardCannotEscapeWhenDestinationProviderThrows() {
+        var discardAttempted = false
+        val destination = object : ExportDestination {
+            override fun commitFrom(tempFile: File): Result<Unit> = Result.success(Unit)
+            override fun discard(): Result<Unit> {
+                discardAttempted = true
+                error("provider discard crashed before render")
+            }
+        }
+
+        discardBeforeRenderSafely(destination)
+
+        assertTrue(discardAttempted)
     }
 }

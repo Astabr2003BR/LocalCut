@@ -1,5 +1,6 @@
 package com.localcut.editor.domain.history
 
+import com.localcut.editor.domain.model.AudioDuckingSettings
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.timeline.TimelineEditException
@@ -50,6 +51,23 @@ data class SetTrackSoloCommand(
         val tracks = project.tracks.toMutableList().also { it[index] = old.copy(solo = solo) }
         val updated = validated(project.copy(tracks = tracks))
         return CommandResult(updated, SetTrackSoloCommand(trackId, old.solo))
+    }
+}
+
+data class SetTrackDuckingCommand(
+    val trackId: String,
+    val ducking: AudioDuckingSettings?,
+) : EditorCommand {
+    override fun apply(project: Project): CommandResult {
+        val index = project.tracks.indexOfFirst { it.id == trackId }
+        if (index < 0) throw TimelineEditException(TimelineErrorCode.TRACK_NOT_FOUND, "track $trackId not found")
+        val old = project.tracks[index]
+        if (old.type != TrackType.AUDIO) {
+            throw TimelineEditException(TimelineErrorCode.INVALID_PROJECT, "ducking is only supported for audio tracks")
+        }
+        val tracks = project.tracks.toMutableList().also { it[index] = old.copy(ducking = ducking) }
+        val updated = validated(project.copy(tracks = tracks))
+        return CommandResult(updated, SetTrackDuckingCommand(trackId, old.ducking))
     }
 }
 

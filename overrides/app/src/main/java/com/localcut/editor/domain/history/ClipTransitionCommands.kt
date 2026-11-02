@@ -3,6 +3,7 @@ package com.localcut.editor.domain.history
 import com.localcut.editor.domain.model.ClipTransition
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.timeline.TimelineValidator
+import com.localcut.editor.domain.timeline.TrackEditGuard
 
 data class AddClipTransitionCommand(
     val transition: ClipTransition,
@@ -11,6 +12,7 @@ data class AddClipTransitionCommand(
         require(project.transitions.none { it.id == transition.id }) {
             "clip transition ${transition.id} already exists"
         }
+        requireTransitionTracksUnlocked(project, transition)
         val edited = validateTransitionEdit(project.copy(transitions = project.transitions + transition))
         return CommandResult(
             project = edited,
@@ -26,6 +28,8 @@ data class UpdateClipTransitionCommand(
         val index = project.transitions.indexOfFirst { it.id == transition.id }
         require(index >= 0) { "clip transition ${transition.id} not found" }
         val previous = project.transitions[index]
+        requireTransitionTracksUnlocked(project, previous)
+        requireTransitionTracksUnlocked(project, transition)
         val transitions = project.transitions.toMutableList().also { it[index] = transition }
         val edited = validateTransitionEdit(project.copy(transitions = transitions))
         return CommandResult(
@@ -42,6 +46,7 @@ data class DeleteClipTransitionCommand(
         val index = project.transitions.indexOfFirst { it.id == transitionId }
         require(index >= 0) { "clip transition $transitionId not found" }
         val removed = project.transitions[index]
+        requireTransitionTracksUnlocked(project, removed)
         val transitions = project.transitions.toMutableList().also { it.removeAt(index) }
         val edited = validateTransitionEdit(project.copy(transitions = transitions))
         return CommandResult(
@@ -67,6 +72,11 @@ private data class RestoreClipTransitionCommand(
             inverse = DeleteClipTransitionCommand(transition.id),
         )
     }
+}
+
+private fun requireTransitionTracksUnlocked(project: Project, transition: ClipTransition) {
+    TrackEditGuard.requireClipTrackUnlocked(project, transition.fromClipId)
+    TrackEditGuard.requireClipTrackUnlocked(project, transition.toClipId)
 }
 
 private fun validateTransitionEdit(project: Project): Project {

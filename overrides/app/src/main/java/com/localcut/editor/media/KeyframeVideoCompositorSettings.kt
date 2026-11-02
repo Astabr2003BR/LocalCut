@@ -6,6 +6,7 @@ import androidx.media3.common.VideoCompositorSettings
 import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.StaticOverlaySettings
+import com.localcut.editor.domain.model.BlendMode
 
 @OptIn(UnstableApi::class)
 class KeyframeVideoCompositorSettings(
@@ -21,4 +22,12 @@ class KeyframeVideoCompositorSettings(
             .setAlphaScale(Media3SequenceOpacityResolver.alphaAt(sequence, presentationTimeUs))
             .build()
     }
+
+    fun blendModeAt(inputId: Int, presentationTimeUs: Long): BlendMode =
+        visualInputLayers.getOrNull(inputId)?.let { sequence ->
+            Media3SequenceBlendModeResolver.blendModeAt(sequence, presentationTimeUs)
+        } ?: BlendMode.NORMAL
+
+    fun requiresCustomBlend(): Boolean =
+        Media3SequenceBlendModeResolver.requiresCustomBlend(visualInputLayers)
 }

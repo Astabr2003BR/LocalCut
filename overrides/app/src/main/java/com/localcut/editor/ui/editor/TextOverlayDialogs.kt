@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.TextAnimationKind
 import com.localcut.editor.domain.model.TextHorizontalAlignment
 import com.localcut.editor.domain.model.TextOverlay
 
@@ -35,30 +36,45 @@ internal fun TextOverlayManagerDialog(
     val canCreate = TextOverlayEditorModel.forNew(project, playheadUs) != null
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Textos") },
+        title = { Text("Textos e legendas") },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                FilledTonalButton(
-                    onClick = {
-                        TextOverlayEditorModel.forNew(project, playheadUs)?.let(onEditRequested)
-                    },
-                    enabled = canCreate,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text("Novo texto")
+                    FilledTonalButton(
+                        onClick = {
+                            TextOverlayEditorModel.forNew(project, playheadUs)?.let(onEditRequested)
+                        },
+                        enabled = canCreate,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Novo texto", maxLines = 1)
+                    }
+                    FilledTonalButton(
+                        onClick = {
+                            TextOverlayEditorModel.forNewCaption(project, playheadUs)?.let(onEditRequested)
+                        },
+                        enabled = canCreate,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Nova legenda", maxLines = 1)
+                    }
                 }
                 if (!canCreate) {
                     Text(
-                        "Adicione uma mídia visual antes de criar texto.",
+                        "Adicione uma mídia visual antes de criar texto ou legenda.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 if (project.textOverlays.isEmpty()) {
                     Text(
-                        "Nenhum texto no projeto.",
+                        "Nenhum texto ou legenda no projeto.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -72,7 +88,10 @@ internal fun TextOverlayManagerDialog(
                             modifier = Modifier.fillMaxWidth().padding(10.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            Text(overlay.text, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                if (overlay.caption != null) "Legenda • ${overlay.text}" else overlay.text,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
                             Text(
                                 "${formatSeconds(overlay.startUs)} s → ${formatSeconds(overlay.startUs + overlay.durationUs)} s",
                                 style = MaterialTheme.typography.labelSmall,
@@ -110,17 +129,26 @@ internal fun TextOverlayEditorDialog(
     val saveOverlay = model.overlayForSave()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (model.isNew) "Novo texto" else "Editar texto") },
+        title = {
+            Text(
+                when {
+                    model.isNew && model.isCaption -> "Nova legenda"
+                    model.isNew -> "Novo texto"
+                    model.isCaption -> "Editar legenda"
+                    else -> "Editar texto"
+                },
+            )
+        },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 OutlinedTextField(
                     value = draft.text,
                     onValueChange = { onModelChange(model.withText(it)) },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Texto") },
+                    label = { Text(if (model.isCaption) "Legenda" else "Texto") },
                     minLines = 2,
                     maxLines = 4,
                 )
@@ -168,6 +196,76 @@ internal fun TextOverlayEditorDialog(
                     selected = colorOptionsSelected(draft.style.fillArgb),
                     optionLabel = { it.first },
                     onSelect = { onModelChange(model.withFillArgb(it.second)) },
+                )
+                TextEditorChoiceRow(
+                    label = "Espaçamento",
+                    options = listOf(-0.05, 0.0, 0.05, 0.10, 0.20),
+                    selected = nearestSpacingOption(draft.style.letterSpacingEm),
+                    optionLabel = { if (it == 0.0) "Normal" else "${if (it > 0) "+" else ""}${"%.2f".format(it)}" },
+                    onSelect = { onModelChange(model.withLetterSpacingEm(it)) },
+                )
+                TextEditorChoiceRow(
+                    label = "Fundo",
+                    options = listOf(false, true),
+                    selected = draft.style.background != null,
+                    optionLabel = { if (it) "ON" else "OFF" },
+                    onSelect = { onModelChange(model.withBackgroundEnabled(it)) },
+                )
+                TextEditorChoiceRow(
+                    label = "Sombra",
+                    options = listOf(false, true),
+                    selected = draft.style.shadows.isNotEmpty() || (draft.style.shadowArgb != null && draft.style.shadowRadiusPx > 0.0),
+                    optionLabel = { if (it) "ON" else "OFF" },
+                    onSelect = { onModelChange(model.withShadowEnabled(it)) },
+                )
+
+                TextAdvancedStyleControls(
+                    project = project,
+                    model = model,
+                    onModelChange = onModelChange,
+                )
+
+                Text("Animação", style = MaterialTheme.typography.labelLarge)
+                TextEditorChoiceRow(
+                    label = "Entrada",
+                    options = listOf(
+                        TextAnimationKind.NONE,
+                        TextAnimationKind.FADE,
+                        TextAnimationKind.SLIDE_UP,
+                        TextAnimationKind.POP,
+                        TextAnimationKind.TYPEWRITER,
+                    ),
+                    selected = draft.entrance.kind,
+                    optionLabel = ::animationLabel,
+                    onSelect = { onModelChange(model.withEntranceAnimation(it)) },
+                )
+                TextEditorChoiceRow(
+                    label = "Saída",
+                    options = listOf(
+                        TextAnimationKind.NONE,
+                        TextAnimationKind.FADE,
+                        TextAnimationKind.SLIDE_DOWN,
+                        TextAnimationKind.POP,
+                    ),
+                    selected = draft.exit.kind,
+                    optionLabel = ::animationLabel,
+                    onSelect = { onModelChange(model.withExitAnimation(it)) },
+                )
+                TextEditorChoiceRow(
+                    label = "Loop",
+                    options = listOf(
+                        TextAnimationKind.NONE,
+                        TextAnimationKind.BOUNCE,
+                        TextAnimationKind.WIGGLE,
+                        TextAnimationKind.POP,
+                    ),
+                    selected = draft.loop.kind,
+                    optionLabel = ::animationLabel,
+                    onSelect = { onModelChange(model.withLoopAnimation(it)) },
+                )
+                TextAdvancedAnimationControls(
+                    model = model,
+                    onModelChange = onModelChange,
                 )
             }
         },
@@ -218,6 +316,23 @@ private fun colorOptionsSelected(fillArgb: Int): Pair<String, Int> = when (fillA
     0xFF40A0FF.toInt() -> "Azul" to fillArgb
     0xFF000000.toInt() -> "Preto" to fillArgb
     else -> "Branco" to 0xFFFFFFFF.toInt()
+}
+
+private fun nearestSpacingOption(value: Double): Double =
+    listOf(-0.05, 0.0, 0.05, 0.10, 0.20).minBy { kotlin.math.abs(it - value) }
+
+private fun animationLabel(kind: TextAnimationKind): String = when (kind) {
+    TextAnimationKind.NONE -> "Nenhuma"
+    TextAnimationKind.FADE -> "Fade"
+    TextAnimationKind.SLIDE_UP -> "Subir"
+    TextAnimationKind.SLIDE_DOWN -> "Descer"
+    TextAnimationKind.SLIDE_LEFT -> "Esquerda"
+    TextAnimationKind.SLIDE_RIGHT -> "Direita"
+    TextAnimationKind.POP -> "Pop"
+    TextAnimationKind.SCALE -> "Scale"
+    TextAnimationKind.TYPEWRITER -> "Typewriter"
+    TextAnimationKind.BOUNCE -> "Bounce"
+    TextAnimationKind.WIGGLE -> "Wiggle"
 }
 
 private fun formatSeconds(timeUs: Long): String {

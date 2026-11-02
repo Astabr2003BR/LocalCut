@@ -1,6 +1,12 @@
 package com.localcut.editor.media
 
 import com.localcut.editor.domain.model.AssetType
+import com.localcut.editor.domain.model.Easing
+import com.localcut.editor.domain.model.EasingKind
+import com.localcut.editor.domain.model.PropertyAnimation
+import com.localcut.editor.domain.model.PropertyKeyframe
+import com.localcut.editor.domain.model.PropertyValue
+import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.model.TransformKeyframe
 import com.localcut.editor.domain.model.TransformValue
@@ -16,6 +22,7 @@ class Media3SequenceOpacityResolverTest {
         opacity: Double = 1.0,
         transform: TransformValue = TransformValue(),
         keyframes: List<TransformKeyframe> = emptyList(),
+        propertyAnimations: List<PropertyAnimation> = emptyList(),
     ) = Media3BlueprintItem.Media(
         clipId = clipId,
         assetId = "asset-$clipId",
@@ -30,6 +37,7 @@ class Media3SequenceOpacityResolverTest {
         opacity = opacity,
         volume = 1.0,
         keyframes = keyframes,
+        propertyAnimations = propertyAnimations,
         imageFrameRate = 30,
     )
 
@@ -58,13 +66,45 @@ class Media3SequenceOpacityResolverTest {
     }
 
     @Test
-    fun gapsAndTimesOutsideMediaUseNeutralAlpha() {
+    fun modernOpacityAnimationUsesClipLocalClockAndClipOpacity() {
+        val opacityAnimation = PropertyAnimation(
+            propertyId = "transform.opacity",
+            keyframes = listOf(
+                PropertyKeyframe(
+                    id = "opacity-start",
+                    offsetUs = 0L,
+                    value = PropertyValue.Scalar(1.0),
+                    easingToNext = Easing(EasingKind.LINEAR),
+                ),
+                PropertyKeyframe(
+                    id = "opacity-end",
+                    offsetUs = 1_000_000L,
+                    value = PropertyValue.Scalar(0.0),
+                    easingToNext = Easing(EasingKind.LINEAR),
+                ),
+            ),
+        )
+        val sequence = Media3SequenceBlueprint(
+            type = TrackType.VISUAL,
+            items = listOf(
+                media("first"),
+                media("second", opacity = 0.8, propertyAnimations = listOf(opacityAnimation)),
+            ),
+        )
+
+        assertEquals(0.6f, Media3SequenceOpacityResolver.alphaAt(sequence, 1_250_000L), 0.0001f)
+        assertTrue(Media3SequenceOpacityResolver.requiresCustomAlpha(listOf(sequence)))
+    }
+
+    @Test
+    fun baseLayerGapsAndTimesOutsideMediaKeepNeutralAlpha() {
         val sequence = Media3SequenceBlueprint(
             type = TrackType.VISUAL,
             items = listOf(
                 Media3BlueprintItem.Gap(500_000L),
                 media("clip", opacity = 0.5),
             ),
+            sourceCollisionPolicy = TrackCollisionPolicy.EXCLUSIVE,
         )
         assertEquals(1.0f, Media3SequenceOpacityResolver.alphaAt(sequence, 250_000L), 0.0001f)
         assertEquals(0.5f, Media3SequenceOpacityResolver.alphaAt(sequence, 750_000L), 0.0001f)
@@ -72,7 +112,36 @@ class Media3SequenceOpacityResolverTest {
     }
 
     @Test
-    fun customCompositorIsOnlyRequiredWhenOpacityCanChangePixels() {
+    fun overlayLayerGapsAndTimesOutsideMediaAreTransparent() {
+        val sequence = Media3SequenceBlueprint(
+            type = TrackType.VISUAL,
+            items = listOf(
+                Media3BlueprintItem.Gap(500_000L),
+                media("overlay"),
+                Media3BlueprintItem.Gap(500_000L),
+            ),
+            sourceCollisionPolicy = TrackCollisionPolicy.OVERLAY,
+        )
+
+        assertEquals(0f, Media3SequenceOpacityResolver.alphaAt(sequence, 250_000L), 0.0001f)
+        assertEquals(1f, Media3SequenceOpacityResolver.alphaAt(sequence, 750_000L), 0.0001f)
+        assertEquals(0f, Media3SequenceOpacityResolver.alphaAt(sequence, 1_750_000L), 0.0001f)
+        assertEquals(0f, Media3SequenceOpacityResolver.alphaAt(sequence, 3_000_000L), 0.0001f)
+    }
+
+    @Test
+    fun overlaySequenceRequiresCustomCompositorEvenAtFullOpacity() {
+        val overlay = Media3SequenceBlueprint(
+            type = TrackType.VISUAL,
+            items = listOf(Media3BlueprintItem.Gap(500_000L), media("overlay")),
+            sourceCollisionPolicy = TrackCollisionPolicy.OVERLAY,
+        )
+
+        assertTrue(Media3SequenceOpacityResolver.requiresCustomAlpha(listOf(overlay)))
+    }
+
+    @Test
+    fun customCompositorIsRequiredWhenOpacityCanChangePixels() {
         val neutral = Media3SequenceBlueprint(TrackType.VISUAL, listOf(media("neutral")))
         val staticAlpha = Media3SequenceBlueprint(
             TrackType.VISUAL,

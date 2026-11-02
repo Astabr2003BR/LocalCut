@@ -74,6 +74,44 @@ class ProjectRenderPlanMultitrackTest {
     }
 
     @Test
+    fun overlayLanePartitionerReusesLowestAvailableLaneIndex() {
+        val clips = listOf(
+            Clip("a", "overlay", 0L, 10L, 0L, 10L),
+            Clip("b", "overlay", 0L, 5L, 0L, 5L),
+            Clip("c", "overlay", 5L, 4L, 0L, 4L),
+            Clip("d", "overlay", 9L, 1L, 0L, 1L),
+            Clip("e", "overlay", 10L, 1L, 0L, 1L),
+        )
+
+        val lanes = VisualOverlayLanePartitioner.partition(clips)
+
+        assertEquals(2, lanes.size)
+        assertEquals(listOf("a", "e"), lanes[0].map { it.id })
+        assertEquals(listOf("b", "c", "d"), lanes[1].map { it.id })
+    }
+
+    @Test
+    fun overlayLanePartitionerHandlesFiveThousandSimultaneousClipsDeterministically() {
+        val clips = List(5_000) { index ->
+            Clip(
+                id = "overlay-stress-$index",
+                assetId = "overlay",
+                startUs = 0L,
+                durationUs = 1_000_000L,
+                sourceInUs = 0L,
+                sourceOutUs = 1_000_000L,
+            )
+        }
+
+        val lanes = VisualOverlayLanePartitioner.partition(clips)
+
+        assertEquals(5_000, lanes.size)
+        assertEquals(5_000, lanes.sumOf { it.size })
+        assertTrue(lanes.all { it.size == 1 })
+        assertEquals(5_000, lanes.flatten().map { it.id }.toSet().size)
+    }
+
+    @Test
     fun multipleExclusiveAudioTracksCompileIntoOrderedMixingLayers() {
         val base = twoVisualTrackProject()
         val extraAudio = Track(

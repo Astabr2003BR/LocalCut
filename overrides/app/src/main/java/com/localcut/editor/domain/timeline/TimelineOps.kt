@@ -5,6 +5,7 @@ import com.localcut.editor.domain.model.*
 
 enum class TimelineErrorCode {
     TRACK_NOT_FOUND,
+    TRACK_LOCKED,
     CLIP_NOT_FOUND,
     DUPLICATE_ASSET_ID,
     DUPLICATE_CLIP_ID,
@@ -31,6 +32,7 @@ object TimelineOps {
         val trackIndex = project.tracks.indexOfFirst { it.id == trackId }
         if (trackIndex < 0) throw TimelineEditException(TimelineErrorCode.TRACK_NOT_FOUND, "track $trackId not found")
         val track = project.tracks[trackIndex]
+        TrackEditGuard.requireUnlocked(track)
         val tracks = project.tracks.toMutableList().also {
             it[trackIndex] = track.copy(clips = track.clips + clip)
         }
@@ -41,6 +43,7 @@ object TimelineOps {
         val trackIndex = project.tracks.indexOfFirst { it.id == trackId }
         if (trackIndex < 0) throw TimelineEditException(TimelineErrorCode.TRACK_NOT_FOUND, "track $trackId not found")
         val track = project.tracks[trackIndex]
+        TrackEditGuard.requireUnlocked(track)
         val clipIndex = track.clips.indexOfFirst { it.id == clipId && it.assetId == assetId }
         if (clipIndex < 0) throw TimelineEditException(TimelineErrorCode.CLIP_NOT_FOUND, "clip $clipId not found for asset $assetId")
         val otherReferences = project.tracks
@@ -59,8 +62,10 @@ object TimelineOps {
         if (project.findClip(clip.id) != null) throw TimelineEditException(TimelineErrorCode.DUPLICATE_CLIP_ID, "duplicate clip id ${clip.id}")
         val index = project.tracks.indexOfFirst { it.id == trackId }
         if (index < 0) throw TimelineEditException(TimelineErrorCode.TRACK_NOT_FOUND, "track $trackId not found")
+        val track = project.tracks[index]
+        TrackEditGuard.requireUnlocked(track)
         val tracks = project.tracks.toMutableList()
-        tracks[index] = tracks[index].copy(clips = tracks[index].clips + clip)
+        tracks[index] = track.copy(clips = track.clips + clip)
         return validated(project.copy(tracks = tracks))
     }
 
@@ -154,6 +159,8 @@ object TimelineOps {
         if (splitAtProjectUs <= original.startUs || splitAtProjectUs >= end) {
             throw TimelineEditException(TimelineErrorCode.SPLIT_OUTSIDE_CLIP, "split must be inside clip")
         }
+        val track = project.tracks[location.trackIndex]
+        TrackEditGuard.requireUnlocked(track)
         val firstDuration = splitAtProjectUs - original.startUs
         val secondDuration = original.durationUs - firstDuration
         val splitSourceUs = original.sourceInUs + firstDuration
@@ -174,7 +181,6 @@ object TimelineOps {
             fadeInUs = 0L,
             fadeOutUs = minOf(original.fadeOutUs, secondDuration),
         )
-        val track = project.tracks[location.trackIndex]
         val clips = track.clips.toMutableList().also {
             it[location.clipIndex] = first
             it.add(location.clipIndex + 1, second)
@@ -186,6 +192,7 @@ object TimelineOps {
     fun deleteClip(project: Project, clipId: String): Project {
         val location = locate(project, clipId)
         val track = project.tracks[location.trackIndex]
+        TrackEditGuard.requireUnlocked(track)
         val clips = track.clips.toMutableList().also { it.removeAt(location.clipIndex) }
         val tracks = project.tracks.toMutableList().also { it[location.trackIndex] = track.copy(clips = clips) }
         return validated(project.copy(tracks = tracks))
@@ -194,6 +201,7 @@ object TimelineOps {
     private fun updateClip(project: Project, clipId: String, update: (Clip) -> Clip): Project {
         val location = locate(project, clipId)
         val track = project.tracks[location.trackIndex]
+        TrackEditGuard.requireUnlocked(track)
         val clips = track.clips.toMutableList().also { it[location.clipIndex] = update(location.clip) }
         val tracks = project.tracks.toMutableList().also { it[location.trackIndex] = track.copy(clips = clips) }
         return validated(project.copy(tracks = tracks))

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "localcut-control",
+  "version": "0.1.0",
+  "description": "Direct authenticated control and QA of a paired LocalCut Android editor.",
+  "author": { "name": "Astabr2003BR" },
+  "repository": "https://github.com/Astabr2003BR/LocalCut",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "LocalCut",
+        "shortDescription": "Controle direto do LocalCut",
+        "longDescription": "Controla um LocalCut Android pareado pelo Bridge autenticado: lê projeto e timeline, captura prévia e executa edições com revisão segura.",
+        "developerName": "Astabr2003BR",
+        "category": "Productivity",
+        "capabilities": ["Interactive"],
+        "defaultPrompt": "Conecte ao meu LocalCut ativo, leia o estado atual e execute minhas edições diretamente, verificando revisão e prévia."
+      }
+    }
+  }
+}

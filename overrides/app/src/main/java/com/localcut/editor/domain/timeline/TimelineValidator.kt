@@ -1,7 +1,10 @@
 package com.localcut.editor.domain.timeline
 
 import com.localcut.editor.BuildContract
+import com.localcut.editor.domain.composition.LayerGraph
 import com.localcut.editor.domain.model.*
+import com.localcut.editor.domain.time.TimeMapEvaluator
+import com.localcut.editor.effects.EffectRegistry
 
 enum class ProjectIssueCode {
     UNSUPPORTED_SCHEMA,
@@ -28,6 +31,11 @@ enum class ProjectIssueCode {
     INVALID_AUDIO_FADE,
     INVALID_TRANSITION,
     INVALID_TEXT_OVERLAY,
+    INVALID_CREATIVE_STATE,
+    INVALID_COMPOSITION_GRAPH,
+    INVALID_DESIGN_STATE,
+    INVALID_AUDIO_PROCESSING,
+    INVALID_AUDIO_DUCKING,
 }
 
 data class ProjectIssue(val code: ProjectIssueCode, val subjectId: String? = null, val detail: String? = null)
@@ -48,9 +56,27 @@ object TimelineValidator {
         duplicateIds(project.textOverlays.map { it.id }).forEach {
             issues += ProjectIssue(ProjectIssueCode.DUPLICATE_TEXT_OVERLAY_ID, it)
         }
+        LayerGraph.validate(project.compositionGraph, allClips.map { it.id }.toSet()).firstOrNull()?.let { detail ->
+            issues += ProjectIssue(ProjectIssueCode.INVALID_COMPOSITION_GRAPH, project.id, detail)
+        }
 
         val assets = project.assets.associateBy { it.id }
+        val tracksById = project.tracks.associateBy { it.id }
         project.tracks.forEach { track ->
+            track.ducking?.let { ducking ->
+                val detail = when {
+                    track.type != TrackType.AUDIO -> "ducking target must be an audio track"
+                    ducking.validationIssues().isNotEmpty() -> ducking.validationIssues().first()
+                    ducking.sourceTrackId == track.id -> "ducking source track must differ from target track"
+                    tracksById[ducking.sourceTrackId] == null -> "ducking source track is missing"
+                    tracksById.getValue(ducking.sourceTrackId).type != TrackType.AUDIO -> "ducking source must be an audio track"
+                    track.clips.any { it.timeMap != TimeMap() } -> "ducking target does not support speed/time-map edits yet"
+                    else -> null
+                }
+                if (detail != null) {
+                    issues += ProjectIssue(ProjectIssueCode.INVALID_AUDIO_DUCKING, track.id, detail)
+                }
+            }
             if (track.collisionPolicy == TrackCollisionPolicy.EXCLUSIVE) {
                 val sorted = track.clips.sortedBy { it.startUs }
                 sorted.zipWithNext().forEach { (a, b) ->
@@ -79,8 +105,14 @@ object TimelineValidator {
                 if (clip.startUs < 0) issues += ProjectIssue(ProjectIssueCode.NEGATIVE_START, clip.id)
                 if (clip.sourceInUs < 0) issues += ProjectIssue(ProjectIssueCode.NEGATIVE_SOURCE_IN, clip.id)
                 if (clip.sourceOutUs <= clip.sourceInUs) issues += ProjectIssue(ProjectIssueCode.INVALID_SOURCE_RANGE, clip.id)
-                if (clip.sourceOutUs > clip.sourceInUs && clip.durationUs != clip.sourceOutUs - clip.sourceInUs) {
-                    issues += ProjectIssue(ProjectIssueCode.DURATION_SOURCE_MISMATCH, clip.id)
+                val sourceRangeUs = if (clip.sourceOutUs > clip.sourceInUs) clip.sourceOutUs - clip.sourceInUs else null
+                if (sourceRangeUs != null && clip.timeMap.validationIssues().isEmpty()) {
+                    val expectedDurationUs = runCatching {
+                        TimeMapEvaluator.presentationDurationUs(sourceRangeUs, clip.timeMap)
+                    }.getOrNull()
+                    if (expectedDurationUs != null && clip.durationUs != expectedDurationUs) {
+                        issues += ProjectIssue(ProjectIssueCode.DURATION_SOURCE_MISMATCH, clip.id)
+                    }
                 }
                 if (!validTransform(clip.transform)) issues += ProjectIssue(ProjectIssueCode.INVALID_TRANSFORM, clip.id)
                 if (!clip.opacity.isFinite() || clip.opacity !in 0.0..1.0) issues += ProjectIssue(ProjectIssueCode.INVALID_OPACITY, clip.id)
@@ -96,28 +128,143 @@ object TimelineValidator {
                 if (clip.keyframes.any { !validTransform(it.value) }) {
                     issues += ProjectIssue(ProjectIssueCode.INVALID_TRANSFORM, clip.id, "invalid keyframe transform")
                 }
+                creativeStateIssues(clip, sourceRangeUs).firstOrNull()?.let { detail ->
+                    issues += ProjectIssue(ProjectIssueCode.INVALID_CREATIVE_STATE, clip.id, detail)
+                }
+                clip.audioProcessing.validationIssues().firstOrNull()?.let { detail ->
+                    issues += ProjectIssue(ProjectIssueCode.INVALID_AUDIO_PROCESSING, clip.id, detail)
+                }
             }
         }
 
         validateTextOverlays(project, issues)
+        validateDesignState(project, allClips.map { it.id }.toSet(), issues)
+        BeatMarker.validationIssues(project.beatMarkers).firstOrNull()?.let { detail ->
+            issues += ProjectIssue(ProjectIssueCode.INVALID_AUDIO_PROCESSING, project.id, detail)
+        }
         validateTransitions(project, issues)
         return issues
     }
 
-    private fun validateTextOverlays(project: Project, issues: MutableList<ProjectIssue>) {
-        project.textOverlays.forEach { overlay ->
-            val validTiming = overlay.startUs >= 0L && overlay.durationUs > 0L &&
-                overlay.startUs <= Long.MAX_VALUE - overlay.durationUs
-            val validText = overlay.text.isNotBlank()
-            val validOpacity = overlay.opacity.isFinite() && overlay.opacity in 0.0..1.0
-            val validStyle = overlay.style.fontSizePx.isFinite() && overlay.style.fontSizePx > 0.0 &&
-                overlay.style.strokeWidthPx.isFinite() && overlay.style.strokeWidthPx >= 0.0 &&
-                overlay.style.shadowRadiusPx.isFinite() && overlay.style.shadowRadiusPx >= 0.0 &&
-                overlay.style.shadowOffsetX.isFinite() && overlay.style.shadowOffsetY.isFinite()
-            if (!validTiming || !validText || !validOpacity || !validStyle || !validTransform(overlay.transform)) {
-                issues += ProjectIssue(ProjectIssueCode.INVALID_TEXT_OVERLAY, overlay.id)
+    private fun creativeStateIssues(clip: Clip, sourceRangeUs: Long?): List<String> = buildList {
+        if (clip.propertyAnimations.map { it.propertyId }.distinct().size != clip.propertyAnimations.size) {
+            add("property animation propertyIds must be unique per clip")
+        }
+        clip.propertyAnimations.forEach { animation ->
+            addAll(animation.validationIssues())
+            if (animation.keyframes.any { it.offsetUs > clip.durationUs }) {
+                add("property animation keyframe offset must be within clip duration")
             }
         }
+        addAll(clip.compositing.validationIssues())
+        if (clip.effects.map { it.id }.distinct().size != clip.effects.size) {
+            add("effect ids must be unique per clip")
+        }
+        clip.effects.forEach { effect ->
+            addAll(EffectRegistry.validationIssues(effect))
+            if (effect.animations.any { animation -> animation.keyframes.any { it.offsetUs > clip.durationUs } }) {
+                add("effect animation keyframe offset must be within clip duration")
+            }
+        }
+        addAll(clip.timeMap.validationIssues())
+        if (clip.timeMap.speedPoints.any { it.offsetUs > clip.durationUs }) {
+            add("speed point offset must be within clip duration")
+        }
+        if (clip.timeMap.freezeSegments.any { freeze ->
+                freeze.startOffsetUs > clip.durationUs ||
+                    freeze.startOffsetUs > Long.MAX_VALUE - freeze.durationUs ||
+                    freeze.startOffsetUs + freeze.durationUs > clip.durationUs
+            }) {
+            add("freeze segment must be within clip duration")
+        }
+        if (sourceRangeUs != null && clip.timeMap.freezeSegments.any { it.sourceOffsetUs > sourceRangeUs }) {
+            add("freeze source offset must be within source range")
+        }
+    }
+
+    private fun validateTextOverlays(project: Project, issues: MutableList<ProjectIssue>) {
+        project.textOverlays.forEach { overlay ->
+            val details = buildList {
+                val validTiming = overlay.startUs >= 0L && overlay.durationUs > 0L &&
+                    overlay.startUs <= Long.MAX_VALUE - overlay.durationUs
+                if (!validTiming) add("text overlay timing is invalid")
+                if (overlay.text.isBlank()) add("text overlay text must not be blank")
+                if (!overlay.opacity.isFinite() || overlay.opacity !in 0.0..1.0) add("text overlay opacity is invalid")
+                if (!validTransform(overlay.transform)) add("text overlay transform is invalid")
+                addAll(overlay.style.validationIssues())
+                addAll(overlay.entrance.validationIssues())
+                addAll(overlay.exit.validationIssues())
+                addAll(overlay.loop.validationIssues())
+                if (overlay.perCharacterDelayUs < 0L) add("per-character delay must be non-negative")
+                overlay.caption?.let { addAll(it.validationIssues()) }
+            }
+            if (details.isNotEmpty()) {
+                issues += ProjectIssue(ProjectIssueCode.INVALID_TEXT_OVERLAY, overlay.id, details.first())
+            }
+        }
+    }
+
+    private fun validateDesignState(
+        project: Project,
+        knownClipIds: Set<String>,
+        issues: MutableList<ProjectIssue>,
+    ) {
+        val textOverlayIds = project.textOverlays.map { it.id }.toSet()
+        val elementIds = project.designElements.map { it.id }
+
+        duplicateIds(elementIds).forEach { id ->
+            issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, id, "duplicate design element id")
+        }
+        project.designElements.forEach { element ->
+            element.validationIssues().forEach { detail ->
+                issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, element.id, detail)
+            }
+            if (element.clipId != null && element.clipId !in knownClipIds) {
+                issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, element.id, "design element clip reference is missing")
+            }
+            if (element.textOverlayId != null && element.textOverlayId !in textOverlayIds) {
+                issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, element.id, "design element text reference is missing")
+            }
+        }
+
+        project.designCanvas.validationIssues().forEach { detail ->
+            issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, project.id, detail)
+        }
+        duplicateIds(project.designCanvas.guides.map { it.id }).forEach { id ->
+            issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, id, "duplicate guide id")
+        }
+
+        duplicateIds(project.reusableComponents.map { it.id }).forEach { id ->
+            issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, id, "duplicate reusable component id")
+        }
+        val knownElements = elementIds.toSet()
+        project.reusableComponents.forEach { component ->
+            component.validationIssues(knownElements).forEach { detail ->
+                issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, component.id, detail)
+            }
+        }
+
+        duplicateIds(project.designGroups.map { it.id }).forEach { id ->
+            issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, id, "duplicate design group id")
+        }
+        project.designGroups.forEach { group ->
+            group.validationIssues(knownElements).forEach { detail ->
+                issues += ProjectIssue(ProjectIssueCode.INVALID_DESIGN_STATE, group.id, detail)
+            }
+        }
+        project.designGroups
+            .flatMap { it.elementIds }
+            .groupingBy { it }
+            .eachCount()
+            .filterValues { it > 1 }
+            .keys
+            .forEach { elementId ->
+                issues += ProjectIssue(
+                    ProjectIssueCode.INVALID_DESIGN_STATE,
+                    elementId,
+                    "design element belongs to multiple groups",
+                )
+            }
     }
 
     private fun validateTransitions(project: Project, issues: MutableList<ProjectIssue>) {

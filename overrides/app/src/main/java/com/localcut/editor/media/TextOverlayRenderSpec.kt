@@ -1,6 +1,7 @@
 package com.localcut.editor.media
 
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.TextAnimationDescriptor
 import com.localcut.editor.domain.model.TextHorizontalAlignment
 import com.localcut.editor.domain.model.TextOverlay
 import com.localcut.editor.domain.model.TextStyle
@@ -19,12 +20,30 @@ data class TextOverlayRenderSpec(
     val rotationDegrees: Float,
     val opacity: Float,
     val zIndex: Int,
+    val entrance: TextAnimationDescriptor = TextAnimationDescriptor(),
+    val exit: TextAnimationDescriptor = TextAnimationDescriptor(),
+    val loop: TextAnimationDescriptor = TextAnimationDescriptor(),
+    val perCharacterDelayUs: Long = 0L,
 ) {
     fun isActiveAt(presentationTimeUs: Long): Boolean =
         presentationTimeUs >= startUs && presentationTimeUs < endUs
 
-    fun alphaAt(presentationTimeUs: Long): Float =
-        if (isActiveAt(presentationTimeUs)) opacity else 0f
+    fun motionAt(presentationTimeUs: Long): TextOverlayMotionState =
+        TextOverlayMotionEvaluator.evaluate(
+            text = text,
+            startUs = startUs,
+            endUs = endUs,
+            presentationTimeUs = presentationTimeUs,
+            baseOpacity = opacity,
+            baseAnchorX = backgroundAnchorX,
+            baseAnchorY = backgroundAnchorY,
+            entrance = entrance,
+            exit = exit,
+            loop = loop,
+            perCharacterDelayUs = perCharacterDelayUs,
+        )
+
+    fun alphaAt(presentationTimeUs: Long): Float = motionAt(presentationTimeUs).alpha
 }
 
 object TextOverlayRenderSpecCompiler {
@@ -65,6 +84,10 @@ object TextOverlayRenderSpecCompiler {
                     rotationDegrees = overlay.transform.rotationDeg.toFloat(),
                     opacity = overlay.opacity.toFloat(),
                     zIndex = overlay.zIndex,
+                    entrance = overlay.entrance,
+                    exit = overlay.exit,
+                    loop = overlay.loop,
+                    perCharacterDelayUs = overlay.perCharacterDelayUs,
                 )
             }
     }

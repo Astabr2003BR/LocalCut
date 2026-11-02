@@ -88,8 +88,17 @@ class ExportLifecycleCoordinator(
     @Synchronized
     fun cancel() {
         if (state != State.NEW && state != State.RENDERING) return
-        discardExportDestinationSafely(destination)
-        emit(ExportEvent.Cancelled)
+        val discardResult = runCatching { destination.discard().getOrThrow() }
+        if (discardResult.isSuccess) {
+            emit(ExportEvent.Cancelled)
+        } else {
+            emit(
+                ExportEvent.Failed(
+                    "Export cancelled, but destination cleanup failed",
+                    discardResult.exceptionOrNull(),
+                ),
+            )
+        }
         terminalCleanup()
     }
 

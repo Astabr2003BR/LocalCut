@@ -14,4 +14,5 @@ data class Track(
     val locked: Boolean = false,
     val clips: List<Clip> = emptyList(),
     val solo: Boolean = false,
+    val ducking: AudioDuckingSettings? = null,
 )

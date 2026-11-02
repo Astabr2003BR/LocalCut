@@ -19,15 +19,11 @@ class Media3MultitrackBlueprintTest {
     }
 
     @Test
-    fun layeredPlanIsAllowedForExportButBlockedForPreviewUntilCompositionPlayerIsReliable() {
+    fun layeredPlanIsAllowedForExportAndFastPreviewButFullPreviewRemainsConservative() {
         val plan = layeredPlan()
 
         assertTrue(Media3CompositionSupportPolicy.validate(plan, RenderMode.EXPORT).isSuccess)
-
-        val fastPreview = Media3CompositionSupportPolicy.validate(plan, RenderMode.FAST_PREVIEW)
-        assertTrue(fastPreview.isFailure)
-        val fastError = fastPreview.exceptionOrNull() as RenderPlanException
-        assertEquals(RenderPlanErrorCode.UNSUPPORTED_TRACK_LAYOUT, fastError.code)
+        assertTrue(Media3CompositionSupportPolicy.validate(plan, RenderMode.FAST_PREVIEW).isSuccess)
 
         val fullPreview = Media3CompositionSupportPolicy.validate(plan, RenderMode.FULL_PREVIEW)
         assertTrue(fullPreview.isFailure)

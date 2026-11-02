@@ -1,33 +1,54 @@
 package com.localcut.editor.session
 
-import com.localcut.editor.domain.history.AddTextOverlayCommand
 import com.localcut.editor.domain.history.AddClipTransitionCommand
-import com.localcut.editor.domain.history.DeleteTextOverlayCommand
+import com.localcut.editor.domain.history.AddDesignElementCommand
+import com.localcut.editor.domain.history.AddTextOverlayCommand
 import com.localcut.editor.domain.history.DeleteClipTransitionCommand
+import com.localcut.editor.domain.history.DeleteClipWithTransitionsCommand
+import com.localcut.editor.domain.history.DeleteDesignElementCommand
+import com.localcut.editor.domain.history.DeleteReusableComponentCommand
+import com.localcut.editor.domain.history.DeleteTextOverlayCommand
+import com.localcut.editor.domain.history.DuplicateClipCommand
 import com.localcut.editor.domain.history.EditorCommand
+import com.localcut.editor.domain.history.HistoryManager
 import com.localcut.editor.domain.history.InsertAssetClipCommand
 import com.localcut.editor.domain.history.InsertVisualOverlayAssetClipCommand
-import com.localcut.editor.domain.history.HistoryManager
 import com.localcut.editor.domain.history.MoveClipCommand
+import com.localcut.editor.domain.history.SetAudioFadesCommand
+import com.localcut.editor.domain.history.SetClipAudioProcessingCommand
+import com.localcut.editor.domain.history.SetClipCompositingCommand
+import com.localcut.editor.domain.history.SetClipEffectsCommand
+import com.localcut.editor.domain.history.SetClipPropertyAnimationsCommand
+import com.localcut.editor.domain.history.SetClipTimeMapCommand
+import com.localcut.editor.domain.history.SetDesignCanvasCommand
+import com.localcut.editor.domain.history.SetKeyframesCommand
+import com.localcut.editor.domain.history.SetTrackMutedCommand
+import com.localcut.editor.domain.history.SetTrackSoloCommand
+import com.localcut.editor.domain.history.SetTransformCommand
+import com.localcut.editor.domain.history.SetVolumeCommand
+import com.localcut.editor.domain.history.SplitCaptionCommand
+import com.localcut.editor.domain.history.SplitClipCommand
 import com.localcut.editor.domain.history.TrimClipCommand
 import com.localcut.editor.domain.history.TrimClipLeftEdgeCommand
 import com.localcut.editor.domain.history.TrimClipRightEdgeCommand
-import com.localcut.editor.domain.history.SplitClipCommand
-import com.localcut.editor.domain.history.SetTransformCommand
-import com.localcut.editor.domain.history.SetVolumeCommand
-import com.localcut.editor.domain.history.SetAudioFadesCommand
-import com.localcut.editor.domain.history.SetTrackMutedCommand
-import com.localcut.editor.domain.history.SetTrackSoloCommand
-import com.localcut.editor.domain.history.SetKeyframesCommand
-import com.localcut.editor.domain.history.DeleteClipWithTransitionsCommand
-import com.localcut.editor.domain.history.DuplicateClipCommand
-import com.localcut.editor.domain.history.UpdateTextOverlayCommand
 import com.localcut.editor.domain.history.UpdateClipTransitionCommand
+import com.localcut.editor.domain.history.UpdateDesignElementCommand
+import com.localcut.editor.domain.history.UpdateTextOverlayCommand
+import com.localcut.editor.domain.history.UpsertReusableComponentCommand
 import com.localcut.editor.domain.model.Asset
+import com.localcut.editor.domain.model.AudioProcessingSettings
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.ClipTransition
+import com.localcut.editor.domain.model.CompositionNodeKind
+import com.localcut.editor.domain.model.CompositingSettings
+import com.localcut.editor.domain.model.DesignCanvasSettings
+import com.localcut.editor.domain.model.DesignElement
+import com.localcut.editor.domain.model.EffectInstance
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.PropertyAnimation
+import com.localcut.editor.domain.model.ReusableComponent
 import com.localcut.editor.domain.model.TextOverlay
+import com.localcut.editor.domain.model.TimeMap
 import com.localcut.editor.domain.model.TransformKeyframe
 import com.localcut.editor.domain.model.TransformValue
 
@@ -41,6 +62,7 @@ data class SessionIssue(
 
 data class ProjectSessionState(
     val project: Project,
+    val revision: Long = 0L,
     val issues: List<SessionIssue> = emptyList(),
     val lastError: String? = null,
     val selectedClipId: String? = null,
@@ -59,6 +81,19 @@ sealed interface EditorAction {
     data class AddClipTransition(val transition: ClipTransition) : EditorAction
     data class UpdateClipTransition(val transition: ClipTransition) : EditorAction
     data class DeleteClipTransition(val transitionId: String) : EditorAction
+    data class AddDesignElement(val element: DesignElement) : EditorAction
+    data class UpdateDesignElement(val element: DesignElement) : EditorAction
+    data class DeleteDesignElement(val elementId: String) : EditorAction
+    data class SetDesignCanvas(val settings: DesignCanvasSettings) : EditorAction
+    data class UpsertReusableComponent(val component: ReusableComponent) : EditorAction
+    data class DeleteReusableComponent(val componentId: String) : EditorAction
+    data class SplitCaption(
+        val overlayId: String,
+        val leftDurationUs: Long,
+        val rightId: String,
+        val leftText: String,
+        val rightText: String,
+    ) : EditorAction
     data class SelectClip(val clipId: String?) : EditorAction
     data class SelectTrack(val trackId: String?) : EditorAction
     data class MoveSelected(val newStartUs: Long) : EditorAction
@@ -68,6 +103,11 @@ sealed interface EditorAction {
     data class SetTrackMuted(val trackId: String, val muted: Boolean) : EditorAction
     data class SetTrackSolo(val trackId: String, val solo: Boolean) : EditorAction
     data class SetSelectedKeyframes(val keyframes: List<TransformKeyframe>) : EditorAction
+    data class SetSelectedPropertyAnimations(val propertyAnimations: List<PropertyAnimation>) : EditorAction
+    data class SetSelectedEffects(val effects: List<EffectInstance>) : EditorAction
+    data class SetSelectedCompositing(val compositing: CompositingSettings) : EditorAction
+    data class SetSelectedTimeMap(val timeMap: TimeMap) : EditorAction
+    data class SetSelectedAudioProcessing(val audioProcessing: AudioProcessingSettings) : EditorAction
     data class TrimSelected(val newSourceInUs: Long, val newSourceOutUs: Long) : EditorAction
     data class TrimSelectedLeftEdge(val newProjectStartUs: Long) : EditorAction
     data class TrimSelectedRightEdge(val newProjectEndUs: Long) : EditorAction
@@ -83,14 +123,18 @@ class ProjectSession(
     private val preview: ProjectPreviewLoader,
     private val autosave: DebouncedProjectSaver,
     private val store: ProjectStore? = null,
-    historyLimit: Int = 100
+    historyLimit: Int = 100,
+    private val revisionClock: ProjectRevisionClock = InMemoryProjectRevisionClock(),
 ) {
     private val historyLimit = historyLimit
     private var history = HistoryManager(initialProject, historyLimit)
     private var restoreAttempted = false
     private var restoreResult: Result<Unit>? = null
 
-    var state: ProjectSessionState = ProjectSessionState(initialProject)
+    var state: ProjectSessionState = ProjectSessionState(
+        project = initialProject,
+        revision = revisionClock.current(initialProject.id),
+    )
         private set
 
     fun dispatch(action: EditorAction) {
@@ -120,27 +164,47 @@ class ProjectSession(
             is EditorAction.AddClipTransition -> execute(AddClipTransitionCommand(action.transition))
             is EditorAction.UpdateClipTransition -> execute(UpdateClipTransitionCommand(action.transition))
             is EditorAction.DeleteClipTransition -> execute(DeleteClipTransitionCommand(action.transitionId))
+            is EditorAction.AddDesignElement -> execute(AddDesignElementCommand(action.element))
+            is EditorAction.UpdateDesignElement -> execute(UpdateDesignElementCommand(action.element))
+            is EditorAction.DeleteDesignElement -> execute(DeleteDesignElementCommand(action.elementId))
+            is EditorAction.SetDesignCanvas -> execute(SetDesignCanvasCommand(action.settings))
+            is EditorAction.UpsertReusableComponent -> execute(UpsertReusableComponentCommand(action.component))
+            is EditorAction.DeleteReusableComponent -> execute(DeleteReusableComponentCommand(action.componentId))
+            is EditorAction.SplitCaption -> execute(
+                SplitCaptionCommand(
+                    overlayId = action.overlayId,
+                    leftDurationUs = action.leftDurationUs,
+                    rightId = action.rightId,
+                    leftText = action.leftText,
+                    rightText = action.rightText,
+                ),
+            )
             is EditorAction.SelectClip -> selectClip(action.clipId)
             is EditorAction.SelectTrack -> selectTrack(action.trackId)
-            is EditorAction.MoveSelected -> withSelected { execute(MoveClipCommand(it, action.newStartUs)) }
-            is EditorAction.SetSelectedTransform -> withSelected { execute(SetTransformCommand(it, action.transform)) }
-            is EditorAction.SetSelectedVolume -> withSelected { execute(SetVolumeCommand(it, action.volume)) }
-            is EditorAction.SetSelectedAudioFades -> withSelected { execute(SetAudioFadesCommand(it, action.fadeInUs, action.fadeOutUs)) }
+            is EditorAction.MoveSelected -> withSelectedEditable { execute(MoveClipCommand(it, action.newStartUs)) }
+            is EditorAction.SetSelectedTransform -> withSelectedEditable { execute(SetTransformCommand(it, action.transform)) }
+            is EditorAction.SetSelectedVolume -> withSelectedEditable { execute(SetVolumeCommand(it, action.volume)) }
+            is EditorAction.SetSelectedAudioFades -> withSelectedEditable { execute(SetAudioFadesCommand(it, action.fadeInUs, action.fadeOutUs)) }
             is EditorAction.SetTrackMuted -> execute(SetTrackMutedCommand(action.trackId, action.muted))
             is EditorAction.SetTrackSolo -> execute(SetTrackSoloCommand(action.trackId, action.solo))
-            is EditorAction.SetSelectedKeyframes -> withSelected { execute(SetKeyframesCommand(it, action.keyframes)) }
-            is EditorAction.TrimSelected -> withSelected { execute(TrimClipCommand(it, action.newSourceInUs, action.newSourceOutUs)) }
-            is EditorAction.TrimSelectedLeftEdge -> withSelected { execute(TrimClipLeftEdgeCommand(it, action.newProjectStartUs)) }
-            is EditorAction.TrimSelectedRightEdge -> withSelected { execute(TrimClipRightEdgeCommand(it, action.newProjectEndUs)) }
-            is EditorAction.SplitSelected -> withSelected { execute(SplitClipCommand(it, action.splitAtProjectUs)) }
-            EditorAction.DuplicateSelected -> withSelected { clipId ->
+            is EditorAction.SetSelectedKeyframes -> withSelectedEditable { execute(SetKeyframesCommand(it, action.keyframes)) }
+            is EditorAction.SetSelectedPropertyAnimations -> withSelectedEditable { execute(SetClipPropertyAnimationsCommand(it, action.propertyAnimations)) }
+            is EditorAction.SetSelectedEffects -> withSelectedEditable { execute(SetClipEffectsCommand(it, action.effects)) }
+            is EditorAction.SetSelectedCompositing -> withSelectedEditable { execute(SetClipCompositingCommand(it, action.compositing)) }
+            is EditorAction.SetSelectedTimeMap -> withSelectedEditable { execute(SetClipTimeMapCommand(it, action.timeMap)) }
+            is EditorAction.SetSelectedAudioProcessing -> withSelectedEditable { execute(SetClipAudioProcessingCommand(it, action.audioProcessing)) }
+            is EditorAction.TrimSelected -> withSelectedEditable { execute(TrimClipCommand(it, action.newSourceInUs, action.newSourceOutUs)) }
+            is EditorAction.TrimSelectedLeftEdge -> withSelectedEditable { execute(TrimClipLeftEdgeCommand(it, action.newProjectStartUs)) }
+            is EditorAction.TrimSelectedRightEdge -> withSelectedEditable { execute(TrimClipRightEdgeCommand(it, action.newProjectEndUs)) }
+            is EditorAction.SplitSelected -> withSelectedEditable { execute(SplitClipCommand(it, action.splitAtProjectUs)) }
+            EditorAction.DuplicateSelected -> withSelectedEditable { clipId ->
                 val duplicateClipId = nextDuplicateClipId(state.project, clipId)
                 execute(DuplicateClipCommand(clipId, duplicateClipId))
                 if (state.project.findClip(duplicateClipId) != null) {
                     state = state.copy(selectedClipId = duplicateClipId)
                 }
             }
-            EditorAction.DeleteSelected -> withSelected { clipId ->
+            EditorAction.DeleteSelected -> withSelectedEditable { clipId ->
                 execute(DeleteClipWithTransitionsCommand(clipId))
                 if (state.project.findClip(clipId) == null) state = state.copy(selectedClipId = null)
             }
@@ -165,7 +229,10 @@ class ProjectSession(
         }
         val project = loaded.getOrThrow()
         history = HistoryManager(project, historyLimit)
-        state = ProjectSessionState(project)
+        state = ProjectSessionState(
+            project = project,
+            revision = revisionClock.current(project.id),
+        )
         refreshPreview(project)
         return Result.success(Unit).also { restoreResult = it }
     }
@@ -247,14 +314,23 @@ class ProjectSession(
         }
     }
 
-    private inline fun withSelected(action: (String) -> Unit) {
+    private inline fun withSelectedEditable(action: (String) -> Unit) {
         val clipId = state.selectedClipId
         if (clipId == null) {
             state = state.copy(lastError = "no clip selected")
             return
         }
+        if (isClipLocked(state.project, clipId)) {
+            state = state.copy(lastError = "clip $clipId is locked")
+            return
+        }
         action(clipId)
     }
+
+    private fun isClipLocked(project: Project, clipId: String): Boolean =
+        project.compositionGraph.nodes.any { node ->
+            node.kind == CompositionNodeKind.LAYER && node.clipId == clipId && node.locked
+        }
 
     private fun commitEditedState() {
         val project = history.project
@@ -263,6 +339,7 @@ class ProjectSession(
             ?: state.selectedTrackId?.takeIf { selectedId -> project.tracks.any { it.id == selectedId } }
         state = state.copy(
             project = project,
+            revision = revisionClock.next(project.id),
             lastError = null,
             selectedClipId = selectedClip,
             selectedTrackId = selectedTrack,

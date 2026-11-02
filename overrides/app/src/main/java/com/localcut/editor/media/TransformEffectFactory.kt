@@ -6,6 +6,7 @@ import androidx.media3.common.Effect
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.Presentation
+import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.model.TransformKeyframe
 import com.localcut.editor.domain.model.TransformValue
 
@@ -21,14 +22,20 @@ object TransformEffectFactory {
         transformSpaceWidth: Int,
         transformSpaceHeight: Int,
         presentationStartUs: Long = 0L,
+        propertyAnimations: List<PropertyAnimation> = emptyList(),
+        compositionContainer: CompositionTransformContainer? = null,
+        compositionContainerTimeline: CompositionTransformTimeline? = null,
     ): List<Effect> {
+        val transformResolver = PropertyTransformRenderResolver.compile(
+            transform = transform,
+            keyframes = keyframes,
+            propertyAnimations = propertyAnimations,
+            presentationStartUs = presentationStartUs,
+            compositionContainer = compositionContainer,
+            compositionContainerTimeline = compositionContainerTimeline,
+        )
         val matrixEffect = MatrixTransformation { presentationTimeUs ->
-            val value = KeyframeRenderResolver.valueAt(
-                transform = transform,
-                keyframes = keyframes,
-                presentationTimeUs = presentationTimeUs,
-                presentationStartUs = presentationStartUs,
-            )
+            val value = transformResolver.valueAt(presentationTimeUs)
             val matrix = Matrix()
             // Domain coordinates are pixels with +Y down. Media3 matrix coordinates are normalized.
             val dx = (value.x / (transformSpaceWidth / 2.0)).toFloat()

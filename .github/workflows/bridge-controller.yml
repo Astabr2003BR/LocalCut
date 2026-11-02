@@ -1,0 +1,44 @@
+name: Bridge Controller CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'bridge/controller/**'
+      - '.github/workflows/bridge-controller.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'bridge/controller/**'
+      - '.github/workflows/bridge-controller.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: bridge/controller
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24.12.0'
+          cache: npm
+          cache-dependency-path: bridge/controller/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run controller tests
+        run: npm test
+
+      - name: Typecheck controller
+        run: npm run typecheck

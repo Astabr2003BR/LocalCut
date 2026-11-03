@@ -28,12 +28,19 @@ class BridgeAnimationCommandHandler(
             throw IllegalArgumentException(after.lastError ?: "animation plan was not applied")
         }
         val affectedProperties = plan.patches.sumOf { it.propertyAnimations.size }
+        val affectedEffects = plan.effectPatches.sumOf { it.effects.size }
+        val affectedClips = (
+            plan.patches.map { it.clipId } + plan.effectPatches.map { it.clipId }
+        ).distinct().size
+        val flatMouthEffectApplied = plan.effectPatches.any { patch ->
+            patch.effects.any { it.typeId == "localcut.character.mouth_warp" }
+        }
         return BridgeResultEnvelope(
             messageId = command.messageId,
             success = true,
             code = null,
             projectRevision = after.revision,
-            resultJson = "{\"applied\":true,\"affectedClips\":${plan.patches.size},\"affectedProperties\":$affectedProperties}",
+            resultJson = "{\"applied\":true,\"affectedClips\":$affectedClips,\"affectedProperties\":$affectedProperties,\"affectedEffects\":$affectedEffects,\"flatMouthEffectApplied\":$flatMouthEffectApplied}",
             retryable = false,
         )
     }

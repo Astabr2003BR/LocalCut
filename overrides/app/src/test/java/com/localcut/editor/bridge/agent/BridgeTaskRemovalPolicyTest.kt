@@ -6,32 +6,35 @@ import org.junit.Test
 
 class BridgeTaskRemovalPolicyTest {
     @Test
-    fun reconnectsWhenSessionAndAlwaysConnectedAreEnabled() {
-        assertTrue(
-            BridgeTaskRemovalPolicy.shouldPreserveConnection(
-                sessionEnabled = true,
-                alwaysConnected = true,
-            ),
+    fun preservesCurrentConnectionWithoutImmediateReconnectWhenEnabled() {
+        val decision = BridgeTaskRemovalPolicy.decide(
+            sessionEnabled = true,
+            alwaysConnected = true,
         )
+
+        assertTrue(decision.preserveConnection)
+        assertFalse(decision.reconnectImmediately)
     }
 
     @Test
-    fun doesNotReconnectWhenSessionIsDisabled() {
-        assertFalse(
-            BridgeTaskRemovalPolicy.shouldPreserveConnection(
-                sessionEnabled = false,
-                alwaysConnected = true,
-            ),
+    fun doesNotPreserveWhenSessionIsDisabled() {
+        val decision = BridgeTaskRemovalPolicy.decide(
+            sessionEnabled = false,
+            alwaysConnected = true,
         )
+
+        assertFalse(decision.preserveConnection)
+        assertFalse(decision.reconnectImmediately)
     }
 
     @Test
-    fun doesNotReconnectWhenAlwaysConnectedIsDisabled() {
-        assertFalse(
-            BridgeTaskRemovalPolicy.shouldPreserveConnection(
-                sessionEnabled = true,
-                alwaysConnected = false,
-            ),
+    fun doesNotPreserveWhenAlwaysConnectedIsDisabled() {
+        val decision = BridgeTaskRemovalPolicy.decide(
+            sessionEnabled = true,
+            alwaysConnected = false,
         )
+
+        assertFalse(decision.preserveConnection)
+        assertFalse(decision.reconnectImmediately)
     }
 }

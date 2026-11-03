@@ -113,7 +113,10 @@ class FlatMouthBridgeExportSmokeTest {
 
         assertTrue("Bridge TALK must succeed: ${result.code}", result.success)
         assertEquals(INITIAL_REVISION + 1L, result.projectRevision)
-        assertTrue("Bridge result must report flat-mouth use", result.resultJson.contains("flatMouthApplied\\\":true"))
+        assertTrue(
+            "Bridge result must report flat-mouth effect use",
+            result.resultJson.contains("\"flatMouthEffectApplied\":true"),
+        )
 
         val mutated = session.state.project
         val body = checkNotNull(mutated.findClip(BODY_CLIP_ID))

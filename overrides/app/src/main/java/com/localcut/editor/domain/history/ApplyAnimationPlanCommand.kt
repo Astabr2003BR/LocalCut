@@ -1,6 +1,7 @@
 package com.localcut.editor.domain.history
 
 import com.localcut.editor.domain.animation.CharacterAnimationPlan
+import com.localcut.editor.domain.model.EffectInstance
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.timeline.TimelineEditException
@@ -12,12 +13,16 @@ data class ApplyAnimationPlanCommand(
     val plan: CharacterAnimationPlan,
 ) : EditorCommand {
     override fun apply(project: Project): CommandResult {
-        val targets = locateTargets(project, plan.patches.map { it.clipId })
+        val targetIds = (plan.patches.map { it.clipId } + plan.effectPatches.map { it.clipId }).distinct()
+        val targets = locateTargets(project, targetIds)
         targets.values.forEach { target -> TrackEditGuard.requireUnlocked(project.tracks[target.trackIndex]) }
 
-        val previous = linkedMapOf<String, List<PropertyAnimation>>()
-        val after = linkedMapOf<String, List<PropertyAnimation>>()
+        val previousAnimations = linkedMapOf<String, List<PropertyAnimation>>()
+        val afterAnimations = linkedMapOf<String, List<PropertyAnimation>>()
+        val previousEffects = linkedMapOf<String, List<EffectInstance>>()
+        val afterEffects = linkedMapOf<String, List<EffectInstance>>()
         val patchByClip = plan.patches.associateBy { it.clipId }
+        val effectPatchByClip = plan.effectPatches.associateBy { it.clipId }
 
         val tracks = project.tracks.mapIndexed { trackIndex, track ->
             val affected = targets.filterValues { it.trackIndex == trackIndex }
@@ -25,21 +30,48 @@ data class ApplyAnimationPlanCommand(
             val clips = track.clips.toMutableList()
             affected.forEach { (clipId, target) ->
                 val clip = clips[target.clipIndex]
-                val patch = requireNotNull(patchByClip[clipId])
-                val ownedProperties = patch.propertyAnimations.map { it.propertyId }.toSet()
-                require(ownedProperties.size == patch.propertyAnimations.size) {
-                    "animation patch contains duplicate property ids: $clipId"
-                }
-                require(patch.propertyAnimations.all { animation ->
-                    animation.validationIssues().isEmpty() &&
-                        animation.keyframes.isNotEmpty() &&
-                        animation.keyframes.all { keyframe -> keyframe.offsetUs in 0L..clip.durationUs }
-                }) { "animation patch is invalid for clip $clipId" }
+                val patch = patchByClip[clipId]
+                val effectPatch = effectPatchByClip[clipId]
 
-                previous[clipId] = clip.propertyAnimations
-                val merged = mergePropertyAnimations(clip.propertyAnimations, patch.propertyAnimations)
-                after[clipId] = merged
-                clips[target.clipIndex] = clip.copy(propertyAnimations = merged)
+                previousAnimations[clipId] = clip.propertyAnimations
+                previousEffects[clipId] = clip.effects
+
+                val mergedAnimations = if (patch == null) {
+                    clip.propertyAnimations
+                } else {
+                    val ownedProperties = patch.propertyAnimations.map { it.propertyId }.toSet()
+                    require(ownedProperties.size == patch.propertyAnimations.size) {
+                        "animation patch contains duplicate property ids: $clipId"
+                    }
+                    require(patch.propertyAnimations.all { animation ->
+                        animation.validationIssues().isEmpty() &&
+                            animation.keyframes.isNotEmpty() &&
+                            animation.keyframes.all { keyframe -> keyframe.offsetUs in 0L..clip.durationUs }
+                    }) { "animation patch is invalid for clip $clipId" }
+                    mergePropertyAnimations(clip.propertyAnimations, patch.propertyAnimations)
+                }
+
+                val mergedEffects = if (effectPatch == null) {
+                    clip.effects
+                } else {
+                    require(effectPatch.effects.map { it.id }.distinct().size == effectPatch.effects.size) {
+                        "animation effect patch contains duplicate effect ids: $clipId"
+                    }
+                    require(effectPatch.effects.all { effect ->
+                        effect.validationIssues().isEmpty() && effect.animations.all { animation ->
+                            animation.keyframes.isNotEmpty() &&
+                                animation.keyframes.all { keyframe -> keyframe.offsetUs in 0L..clip.durationUs }
+                        }
+                    }) { "animation effect patch is invalid for clip $clipId" }
+                    mergeEffects(clip.effects, effectPatch.effects)
+                }
+
+                afterAnimations[clipId] = mergedAnimations
+                afterEffects[clipId] = mergedEffects
+                clips[target.clipIndex] = clip.copy(
+                    propertyAnimations = mergedAnimations,
+                    effects = mergedEffects,
+                )
             }
             track.copy(clips = clips)
         }
@@ -49,8 +81,10 @@ data class ApplyAnimationPlanCommand(
         return CommandResult(
             project = edited,
             inverse = RestoreAnimationSnapshotsCommand(
-                targetAnimations = previous,
-                inverseAnimations = after,
+                targetAnimations = previousAnimations,
+                inverseAnimations = afterAnimations,
+                targetEffects = previousEffects,
+                inverseEffects = afterEffects,
             ),
         )
     }
@@ -98,12 +132,37 @@ private fun mergeAnimationWindow(existing: PropertyAnimation, patch: PropertyAni
     }
 }
 
+private fun mergeEffects(
+    existingEffects: List<EffectInstance>,
+    patchEffects: List<EffectInstance>,
+): List<EffectInstance> {
+    require(existingEffects.map { it.id }.distinct().size == existingEffects.size) {
+        "existing effect ids must be unique"
+    }
+    val remaining = patchEffects.associateBy { it.id }.toMutableMap()
+    val merged = existingEffects.map { existing ->
+        val patch = remaining.remove(existing.id) ?: return@map existing
+        require(existing.typeId == patch.typeId) { "effect type cannot change for id ${existing.id}" }
+        existing.copy(
+            enabled = patch.enabled,
+            parameters = patch.parameters,
+            animations = mergePropertyAnimations(existing.animations, patch.animations),
+        )
+    }.toMutableList()
+    merged += remaining.values
+    require(merged.all { it.validationIssues().isEmpty() }) { "merged effect patch is invalid" }
+    return merged
+}
+
 private data class RestoreAnimationSnapshotsCommand(
     val targetAnimations: Map<String, List<PropertyAnimation>>,
     val inverseAnimations: Map<String, List<PropertyAnimation>>,
+    val targetEffects: Map<String, List<EffectInstance>>,
+    val inverseEffects: Map<String, List<EffectInstance>>,
 ) : EditorCommand {
     override fun apply(project: Project): CommandResult {
-        val targets = locateTargets(project, targetAnimations.keys)
+        val requested = (targetAnimations.keys + targetEffects.keys).distinct()
+        val targets = locateTargets(project, requested)
         val tracks = project.tracks.mapIndexed { trackIndex, track ->
             val affected = targets.filterValues { it.trackIndex == trackIndex }
             if (affected.isEmpty()) return@mapIndexed track
@@ -111,6 +170,7 @@ private data class RestoreAnimationSnapshotsCommand(
             affected.forEach { (clipId, target) ->
                 clips[target.clipIndex] = clips[target.clipIndex].copy(
                     propertyAnimations = requireNotNull(targetAnimations[clipId]),
+                    effects = requireNotNull(targetEffects[clipId]),
                 )
             }
             track.copy(clips = clips)
@@ -122,6 +182,8 @@ private data class RestoreAnimationSnapshotsCommand(
             inverse = RestoreAnimationSnapshotsCommand(
                 targetAnimations = inverseAnimations,
                 inverseAnimations = targetAnimations,
+                targetEffects = inverseEffects,
+                inverseEffects = targetEffects,
             ),
         )
     }

@@ -206,3 +206,27 @@ test("Android asset links publish the stable LocalCut signing certificate", asyn
     },
   }]);
 });
+
+test("controller exposes transient media upload as a one-time download", async t => {
+  const fx = await fixture();
+  t.after(() => fx.runtime.close());
+  const token = "A".repeat(43);
+  const bytes = Buffer.from("private-image-bytes");
+
+  const uploaded = await fetch(`${fx.baseUrl}/v1/mobile-media/${token}`, {
+    method: "POST",
+    headers: { "content-type": "image/png" },
+    body: bytes,
+  });
+  assert.equal(uploaded.status, 201);
+  const body = await uploaded.json() as { downloadPath: string };
+  assert.equal(body.downloadPath, `/v1/mobile-media/${token}`);
+
+  const downloaded = await fetch(`${fx.baseUrl}${body.downloadPath}`);
+  assert.equal(downloaded.status, 200);
+  assert.equal(downloaded.headers.get("content-type"), "image/png");
+  assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), bytes);
+
+  const consumed = await fetch(`${fx.baseUrl}${body.downloadPath}`);
+  assert.equal(consumed.status, 404);
+});

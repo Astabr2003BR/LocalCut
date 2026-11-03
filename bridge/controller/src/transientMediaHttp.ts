@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-const DEFAULT_TTL_MS = 5 * 60 * 1_000;
-const DEFAULT_MAX_BYTES = 20 * 1024 * 1024;
+export const DEFAULT_TRANSIENT_MEDIA_TTL_MS = 5 * 60 * 1_000;
+export const DEFAULT_TRANSIENT_MEDIA_MAX_BYTES = 20 * 1024 * 1024;
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const MEDIA_PATH_PREFIX = "/v1/mobile-media/";
 
@@ -17,15 +17,75 @@ export type TransientMediaHttpOptions = {
   maxBytes?: number;
 };
 
-export function createTransientMediaHttpHandler(options: TransientMediaHttpOptions = {}) {
+export type TransientMediaStageResult = {
+  downloadPath: string;
+  expiresAtEpochMs: number;
+};
+
+export type TransientMediaTakeResult = {
+  contentType: string;
+  bytes: Buffer;
+};
+
+export type TransientMediaStore = {
+  readonly maxBytes: number;
+  stage(token: string, contentType: string, bytes: Buffer | Uint8Array): TransientMediaStageResult;
+  take(token: string): TransientMediaTakeResult | null;
+};
+
+export function createTransientMediaStore(options: TransientMediaHttpOptions = {}): TransientMediaStore {
   const nowEpochMs = options.nowEpochMs ?? Date.now;
-  const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
-  const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
+  const ttlMs = options.ttlMs ?? DEFAULT_TRANSIENT_MEDIA_TTL_MS;
+  const maxBytes = options.maxBytes ?? DEFAULT_TRANSIENT_MEDIA_MAX_BYTES;
   const entries = new Map<string, TransientMediaEntry>();
 
   if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0) throw new Error("INVALID_TTL");
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw new Error("INVALID_MAX_BYTES");
 
+  return {
+    maxBytes,
+    stage(token, rawContentType, inputBytes) {
+      if (!TOKEN_PATTERN.test(token)) throw new Error("MEDIA_TOKEN_INVALID");
+      const contentType = normalizedContentType(rawContentType);
+      if (!isAllowedTransientMediaType(contentType)) throw new Error("MEDIA_TYPE_UNSUPPORTED");
+
+      const bytes = Buffer.from(inputBytes);
+      if (bytes.length === 0) throw new Error("MEDIA_BODY_EMPTY");
+      if (bytes.length > maxBytes) throw new Error("BODY_TOO_LARGE");
+
+      const now = nowEpochMs();
+      pruneExpired(entries, now);
+      if (entries.has(token)) throw new Error("MEDIA_TOKEN_ALREADY_USED");
+
+      const expiresAtEpochMs = now + ttlMs;
+      entries.set(token, { contentType, bytes, expiresAtEpochMs });
+      return {
+        downloadPath: `${MEDIA_PATH_PREFIX}${token}`,
+        expiresAtEpochMs,
+      };
+    },
+    take(token) {
+      if (!TOKEN_PATTERN.test(token)) return null;
+      const now = nowEpochMs();
+      pruneExpired(entries, now);
+      const entry = entries.get(token);
+      if (!entry || entry.expiresAtEpochMs <= now) {
+        entries.delete(token);
+        return null;
+      }
+      entries.delete(token);
+      return {
+        contentType: entry.contentType,
+        bytes: Buffer.from(entry.bytes),
+      };
+    },
+  };
+}
+
+export function createTransientMediaHttpHandler(
+  options: TransientMediaHttpOptions = {},
+  store: TransientMediaStore = createTransientMediaStore(options),
+) {
   return async function handleTransientMedia(
     req: IncomingMessage,
     res: ServerResponse,
@@ -38,47 +98,35 @@ export function createTransientMediaHttpHandler(options: TransientMediaHttpOptio
       return sendJson(res, 400, { code: "MEDIA_TOKEN_INVALID" });
     }
 
-    const now = nowEpochMs();
-    pruneExpired(entries, now);
-
     if (req.method === "POST") {
       const contentType = normalizedContentType(req.headers["content-type"]);
-      if (!isAllowedMediaType(contentType)) {
+      if (!isAllowedTransientMediaType(contentType)) {
         return sendJson(res, 415, { code: "MEDIA_TYPE_UNSUPPORTED" });
-      }
-      if (entries.has(token)) {
-        return sendJson(res, 409, { code: "MEDIA_TOKEN_ALREADY_USED" });
       }
 
       let bytes: Buffer;
       try {
-        bytes = await readRawBody(req, maxBytes);
+        bytes = await readRawBody(req, store.maxBytes);
+        const staged = store.stage(token, contentType, bytes);
+        return sendJson(res, 201, staged);
       } catch (error) {
-        if (error instanceof Error && error.message === "BODY_TOO_LARGE") {
-          return sendJson(res, 413, { code: "BODY_TOO_LARGE" });
+        const code = stableMediaError(error);
+        if (code === "BODY_TOO_LARGE") return sendJson(res, 413, { code });
+        if (code === "MEDIA_TOKEN_ALREADY_USED") return sendJson(res, 409, { code });
+        if (code === "MEDIA_TYPE_UNSUPPORTED") return sendJson(res, 415, { code });
+        if (code === "MEDIA_TOKEN_INVALID" || code === "MEDIA_BODY_EMPTY") {
+          return sendJson(res, 400, { code });
         }
         throw error;
       }
-      if (bytes.length === 0) {
-        return sendJson(res, 400, { code: "MEDIA_BODY_EMPTY" });
-      }
-
-      const expiresAtEpochMs = now + ttlMs;
-      entries.set(token, { contentType, bytes, expiresAtEpochMs });
-      return sendJson(res, 201, {
-        downloadPath: `${MEDIA_PATH_PREFIX}${token}`,
-        expiresAtEpochMs,
-      });
     }
 
     if (req.method === "GET") {
-      const entry = entries.get(token);
-      if (!entry || entry.expiresAtEpochMs <= now) {
-        entries.delete(token);
+      const entry = store.take(token);
+      if (!entry) {
         return sendJson(res, 404, { code: "MEDIA_NOT_FOUND" });
       }
 
-      entries.delete(token);
       res.writeHead(200, {
         "content-type": entry.contentType,
         "content-length": entry.bytes.length,
@@ -105,7 +153,7 @@ function normalizedContentType(value: string | string[] | undefined): string {
   return raw.split(";", 1)[0]?.trim().toLowerCase() ?? "";
 }
 
-function isAllowedMediaType(contentType: string): boolean {
+export function isAllowedTransientMediaType(contentType: string): boolean {
   return contentType.startsWith("image/") ||
     contentType.startsWith("audio/") ||
     contentType.startsWith("video/");
@@ -132,6 +180,11 @@ function pruneExpired(entries: Map<string, TransientMediaEntry>, nowEpochMs: num
   for (const [token, entry] of entries) {
     if (entry.expiresAtEpochMs <= nowEpochMs) entries.delete(token);
   }
+}
+
+function stableMediaError(error: unknown): string {
+  if (error instanceof Error && /^[A-Z0-9_]{3,64}$/.test(error.message)) return error.message;
+  return "INTERNAL_ERROR";
 }
 
 function sendJson(res: ServerResponse, status: number, value: unknown): true {

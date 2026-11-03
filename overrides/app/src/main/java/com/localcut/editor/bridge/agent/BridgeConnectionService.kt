@@ -74,12 +74,42 @@ class BridgeConnectionService : Service() {
             }
 
             ACTION_DISCONNECT -> {
-                if (coordinatorLifecycle.isInitialized) {
-                    coordinator.disconnectFromUser()
-                } else {
+                val explicitUserRequest = intent.getBooleanExtra(EXTRA_EXPLICIT_USER_DISCONNECT, false)
+                val decision = BridgeSessionPersistencePolicy.disconnectDecision(
+                    sessionEnabled = settings.sessionEnabled,
+                    explicitUserRequest = explicitUserRequest,
+                )
+
+                if (!decision.honorDisconnect) {
+                    ProcessExitDiagnostics.mark(this, "service:disconnect:ignored-stale")
+                    if (coordinatorLifecycle.isInitialized) {
+                        // A late/re-delivered disconnect must not tear down the currently owned socket.
+                        updateForegroundSafely("Agente ativo em segundo plano")
+                        return START_STICKY
+                    }
+                    if (settings.alwaysConnected) {
+                        // If the process/service was recreated before the stale intent arrived,
+                        // restore the desired session instead of converting it into a manual pause.
+                        if (!startAsForegroundSafely("Restaurando conexão…", startId)) {
+                            return START_NOT_STICKY
+                        }
+                        reconnectWithFreshCredential(startId, "Restaurando conexão…")
+                        return START_STICKY
+                    }
+                    stopSelf(startId)
+                    return START_NOT_STICKY
+                }
+
+                if (decision.disableSession) {
                     settings.markManualDisconnect()
                 }
-                ProcessExitDiagnostics.mark(this, "service:disconnect")
+                if (coordinatorLifecycle.isInitialized) {
+                    coordinator.disconnectFromUser()
+                }
+                ProcessExitDiagnostics.mark(
+                    this,
+                    "service:disconnect:accepted:explicit=$explicitUserRequest",
+                )
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf(startId)
                 START_NOT_STICKY
@@ -178,11 +208,14 @@ class BridgeConnectionService : Service() {
                 }
 
                 if (!fresh) {
-                    ProcessExitDiagnostics.mark(this@BridgeConnectionService, "service:credential-refresh:pairing-required")
-                    settings.sessionEnabled = false
-                    updateForegroundSafely("Pareamento necessário")
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelf(startId)
+                    ProcessExitDiagnostics.mark(
+                        this@BridgeConnectionService,
+                        "service:credential-refresh:pairing-required:session-preserved=${settings.sessionEnabled}",
+                    )
+                    // Credential loss is not a user request to disable the Bridge. Keep the desired
+                    // session/always-connected state intact so a later valid pairing can resume it.
+                    updateForegroundSafely("Pareamento necessário para retomar o agente")
+                    runCatching { notificationFactory.postReconnectFallback() }
                     return@launch
                 }
 
@@ -236,5 +269,6 @@ class BridgeConnectionService : Service() {
         const val ACTION_CONNECT = "com.localcut.editor.bridge.action.CONNECT"
         const val ACTION_DISCONNECT = "com.localcut.editor.bridge.action.DISCONNECT"
         const val ACTION_RECONNECT = "com.localcut.editor.bridge.action.RECONNECT"
+        const val EXTRA_EXPLICIT_USER_DISCONNECT = "com.localcut.editor.bridge.extra.EXPLICIT_USER_DISCONNECT"
     }
 }

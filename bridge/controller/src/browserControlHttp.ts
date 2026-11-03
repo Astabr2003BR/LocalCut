@@ -9,7 +9,10 @@ import {
   type BridgeResultEnvelope,
 } from "./protocol.ts";
 import type { DeviceSessionService } from "./session.ts";
-import { createTransientMediaHttpHandler } from "./transientMediaHttp.ts";
+import {
+  createTransientMediaHttpHandler,
+  type TransientMediaStore,
+} from "./transientMediaHttp.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const BINDING_COOKIE = "localcut_remote_binding";
@@ -24,13 +27,17 @@ export type BrowserControlHttpOptions = {
   publicBaseUrl: string;
   nowEpochMs?: () => number;
   randomToken?: () => string;
+  transientMediaStore?: TransientMediaStore;
 };
 
 export function createBrowserControlHttpHandler(options: BrowserControlHttpOptions) {
   const nowEpochMs = options.nowEpochMs ?? Date.now;
   const randomToken = options.randomToken ?? (() => randomBytes(24).toString("base64url"));
   const publicBaseUrl = options.publicBaseUrl.replace(/\/$/, "");
-  const transientMediaHandler = createTransientMediaHttpHandler({ nowEpochMs });
+  const transientMediaHandler = createTransientMediaHttpHandler(
+    { nowEpochMs },
+    options.transientMediaStore,
+  );
 
   return async function handleBrowserControl(
     req: IncomingMessage,
@@ -119,77 +126,60 @@ export function createBrowserControlHttpHandler(options: BrowserControlHttpOptio
       }
       const command = makeCommand({
         deviceId: session.deviceId,
-        projectId: "__active__",
+        projectId: "__localcut_active_project__",
         capability: "get_device_status",
-        expectedRevision: null,
         payload: {},
-        nowEpochMs: nowEpochMs(),
+        expectedRevision: null,
       });
       const result = await options.router.execute(options.controllerId, command);
       if (!result.success) {
-        json(res, 200, { contexts: [], error: result.code });
+        json(res, 502, result);
         return true;
       }
-      const context = activeContextFromResult(session.deviceId, result);
-      json(res, 200, { contexts: context ? [context] : [] });
+      json(res, 200, result);
       return true;
     }
 
     if (req.method === "POST" && url.pathname === "/remote/api/command") {
-      const sessionToken = cookie(req, SESSION_COOKIE);
-      if (!sessionToken) {
+      const session = verifyBrowserSession(req, options.browserSessions);
+      if (!session) {
         json(res, 401, { code: "REMOTE_SESSION_INVALID" });
         return true;
       }
-      let session;
-      try {
-        session = options.browserSessions.assertCsrf(
-          sessionToken,
-          headerValue(req.headers["x-localcut-csrf"]),
-        );
-      } catch (error) {
-        const code = errorCode(error);
-        json(res, code === "REMOTE_CSRF_INVALID" ? 403 : 401, { code });
+      const csrf = req.headers["x-csrf-token"];
+      if (typeof csrf !== "string" || csrf !== session.csrfToken) {
+        json(res, 403, { code: "REMOTE_CSRF_INVALID" });
         return true;
       }
-
       const body = await readJson(req);
-      const projectId = requiredBodyString(body, "projectId", 256);
-      const capabilityRaw = requiredBodyString(body, "capability", 128);
-      if (!isBridgeCapability(capabilityRaw)) {
+      const capabilityValue = requiredBodyString(body, "capability", 128);
+      if (!isBridgeCapability(capabilityValue)) {
         json(res, 400, { code: "CAPABILITY_NOT_ALLOWED" });
         return true;
       }
-      const payloadRaw = body.payload ?? {};
-      if (!isRecord(payloadRaw)) {
-        json(res, 400, { code: "INVALID_ARGUMENT" });
-        return true;
-      }
+      const projectId = requiredBodyString(body, "projectId", 256);
       const expectedRevisionRaw = body.expectedRevision;
-      const expectedRevision = expectedRevisionRaw == null
-        ? null
-        : typeof expectedRevisionRaw === "number" && Number.isSafeInteger(expectedRevisionRaw) && expectedRevisionRaw >= 0
-          ? expectedRevisionRaw
-          : undefined;
-      if (expectedRevision === undefined) {
+      const expectedRevision = expectedRevisionRaw === null || expectedRevisionRaw === undefined ? null :
+        Number.isSafeInteger(expectedRevisionRaw) && (expectedRevisionRaw as number) >= 0 ? expectedRevisionRaw as number :
+        NaN;
+      if (Number.isNaN(expectedRevision)) {
         json(res, 400, { code: "INVALID_ARGUMENT" });
         return true;
       }
-      if (revisionRequiredCapabilities.has(capabilityRaw) && expectedRevision === null) {
+      if (revisionRequiredCapabilities.has(capabilityValue) && expectedRevision === null) {
         json(res, 400, { code: "REVISION_REQUIRED" });
         return true;
       }
-
+      const payload = isRecord(body.payload) ? body.payload : {};
       const command = makeCommand({
         deviceId: session.deviceId,
         projectId,
-        capability: capabilityRaw,
+        capability: capabilityValue,
+        payload,
         expectedRevision,
-        payload: payloadRaw,
-        nowEpochMs: nowEpochMs(),
       });
       const result = await options.router.execute(options.controllerId, command);
-      json(res, 200, result);
+      json(res, result.success ? 200 : statusForBridgeResult(result), result);
       return true;
     }
 
@@ -201,37 +191,23 @@ function makeCommand(input: {
   deviceId: string;
   projectId: string;
   capability: BridgeCommandEnvelope["capability"];
-  expectedRevision: number | null;
   payload: Record<string, unknown>;
-  nowEpochMs: number;
+  expectedRevision: number | null;
 }): BridgeCommandEnvelope {
-  const messageId = randomUUID();
+  const now = Date.now();
   return {
     protocolVersion: 1,
-    messageId,
+    messageId: randomUUID(),
     kind: "command",
     deviceId: input.deviceId,
     projectId: input.projectId,
     expectedRevision: input.expectedRevision,
-    issuedAtEpochMs: input.nowEpochMs,
-    expiresAtEpochMs: input.nowEpochMs + COMMAND_TTL_MS,
-    nonce: randomUUID(),
+    issuedAtEpochMs: now,
+    expiresAtEpochMs: now + COMMAND_TTL_MS,
+    nonce: randomBytes(18).toString("base64url"),
     capability: input.capability,
     payload: input.payload,
   };
-}
-
-function activeContextFromResult(
-  fallbackDeviceId: string,
-  result: BridgeResultEnvelope,
-): { deviceId: string; projectId: string; projectRevision: number } | null {
-  if (!isRecord(result.result)) return null;
-  const deviceId = typeof result.result.deviceId === "string" ? result.result.deviceId : fallbackDeviceId;
-  const projectId = result.result.projectId;
-  const revision = result.result.projectRevision ?? result.projectRevision;
-  if (deviceId !== fallbackDeviceId || typeof projectId !== "string" || !projectId) return null;
-  if (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 0) return null;
-  return { deviceId, projectId, projectRevision: revision };
 }
 
 function authenticateDevice(
@@ -239,10 +215,9 @@ function authenticateDevice(
   sessions: DeviceSessionService,
   nowEpochMs: number,
 ) {
-  const authorization = req.headers.authorization;
-  if (!authorization?.startsWith("Bearer ")) return null;
-  const token = authorization.slice("Bearer ".length).trim();
-  return token ? sessions.authenticateAccess(token, nowEpochMs) : null;
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith("Bearer ")) return null;
+  return sessions.authenticateAccess(auth.slice("Bearer ".length), nowEpochMs);
 }
 
 function verifyBrowserSession(req: IncomingMessage, sessions: BrowserControlSessionService) {
@@ -255,65 +230,15 @@ function verifyBrowserSession(req: IncomingMessage, sessions: BrowserControlSess
   }
 }
 
-function cookie(req: IncomingMessage, name: string): string | null {
-  const raw = req.headers.cookie;
-  if (!raw) return null;
-  for (const part of raw.split(";")) {
-    const index = part.indexOf("=");
-    if (index <= 0) continue;
-    const key = part.slice(0, index).trim();
-    if (key !== name) continue;
-    const value = part.slice(index + 1).trim();
-    return value || null;
-  }
-  return null;
-}
-
-function setCookie(
-  res: ServerResponse,
-  name: string,
-  value: string,
-  maxAgeSeconds: number,
-  path = "/remote",
-): void {
-  appendSetCookie(
-    res,
-    `${name}=${value}; Path=${path}; Max-Age=${maxAgeSeconds}; HttpOnly; Secure; SameSite=Strict`,
-  );
-}
-
-function clearCookie(res: ServerResponse, name: string): void {
-  appendSetCookie(res, `${name}=; Path=/remote; Max-Age=0; HttpOnly; Secure; SameSite=Strict`);
-}
-
-function appendSetCookie(res: ServerResponse, value: string): void {
-  const current = res.getHeader("set-cookie");
-  if (!current) {
-    res.setHeader("set-cookie", value);
-  } else if (Array.isArray(current)) {
-    res.setHeader("set-cookie", [...current.map(String), value]);
-  } else {
-    res.setHeader("set-cookie", [String(current), value]);
-  }
-}
-
-function headerValue(value: string | string[] | undefined): string {
-  return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
-}
-
-function requiredQuery(url: URL, key: string, maxLength: number): string {
-  const value = url.searchParams.get(key);
-  if (!value || value.length > maxLength) throw new Error("INVALID_ARGUMENT");
-  return value;
-}
-
-function requiredBodyString(body: Record<string, unknown>, key: string, maxLength: number): string {
-  const value = body[key];
-  if (typeof value !== "string" || !value || value.length > maxLength) throw new Error("INVALID_ARGUMENT");
+function requiredQuery(url: URL, name: string, max: number): string {
+  const value = url.searchParams.get(name);
+  if (!value || value.length > max) throw new Error("INVALID_ARGUMENT");
   return value;
 }
 
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const contentLength = Number(req.headers["content-length"] ?? 0);
+  if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) throw new Error("BODY_TOO_LARGE");
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const chunk of req) {
@@ -322,10 +247,56 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
     if (total > MAX_BODY_BYTES) throw new Error("BODY_TOO_LARGE");
     chunks.push(buffer);
   }
-  if (!chunks.length) return {};
   const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
   if (!isRecord(parsed)) throw new Error("INVALID_ARGUMENT");
   return parsed;
+}
+
+function requiredBodyString(body: Record<string, unknown>, name: string, max: number): string {
+  const value = body[name];
+  if (typeof value !== "string" || value.length === 0 || value.length > max) throw new Error("INVALID_ARGUMENT");
+  return value;
+}
+
+function cookie(req: IncomingMessage, name: string): string | null {
+  const raw = req.headers.cookie ?? "";
+  for (const part of raw.split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key === name) return decodeURIComponent(rest.join("="));
+  }
+  return null;
+}
+
+function setCookie(res: ServerResponse, name: string, value: string, maxAgeSeconds: number, path = "/"): void {
+  res.setHeader("set-cookie", `${name}=${encodeURIComponent(value)}; Path=${path}; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAgeSeconds}`);
+}
+
+function clearCookie(res: ServerResponse, name: string): void {
+  res.setHeader("set-cookie", `${name}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);
+}
+
+function json(res: ServerResponse, status: number, value: unknown): true {
+  const body = JSON.stringify(value);
+  res.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+    "content-length": Buffer.byteLength(body),
+  });
+  res.end(body);
+  return true;
+}
+
+function html(res: ServerResponse, status: number, body: string): true {
+  res.writeHead(status, {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'",
+    "content-length": Buffer.byteLength(body),
+  });
+  res.end(body);
+  return true;
 }
 
 function redirect(res: ServerResponse, location: string): true {
@@ -333,48 +304,30 @@ function redirect(res: ServerResponse, location: string): true {
     location,
     "cache-control": "no-store",
     "content-length": "0",
-    "x-content-type-options": "nosniff",
   });
   res.end();
   return true;
 }
 
-function json(res: ServerResponse, status: number, value: unknown): void {
-  const body = JSON.stringify(value);
-  res.writeHead(status, {
-    "content-type": "application/json; charset=utf-8",
-    "content-length": Buffer.byteLength(body),
-    "cache-control": "no-store",
-    "x-content-type-options": "nosniff",
-  });
-  res.end(body);
-}
-
-function html(res: ServerResponse, status: number, body: string): void {
-  res.writeHead(status, {
-    "content-type": "text/html; charset=utf-8",
-    "content-length": Buffer.byteLength(body),
-    "cache-control": "no-store",
-    "x-content-type-options": "nosniff",
-    "content-security-policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
-  });
-  res.end(body);
-}
-
-export function unauthorizedPage(): string {
-  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LocalCut Remote Control</title><style>body{font-family:system-ui;background:#0b0b0d;color:#f5f5f5;margin:0;padding:24px}main{max-width:760px;margin:auto}button,a{font:inherit;padding:10px 14px;margin:6px 4px 6px 0;border-radius:8px}button{background:#18181c;color:#fff;border:1px solid #444;cursor:pointer}a{display:inline-block;background:#19caca;color:#071313;text-decoration:none}a[hidden],button[hidden]{display:none}.card{padding:16px;border:1px solid #333;border-radius:12px;margin:12px 0}pre{white-space:pre-wrap;word-break:break-word}</style></head><body><main><h1>LocalCut Remote Control</h1><div class="card"><p>Este navegador ainda não foi autorizado.</p><button id="authorize">Autorizar este navegador</button><br><a id="approval-link" hidden target="_blank" rel="noopener">Abrir LocalCut para aprovar</a><button id="complete-authorization" hidden>Concluir autorização</button><pre id="auth-result"></pre></div><script>let requestId=null;const result=document.getElementById('auth-result');const approval=document.getElementById('approval-link');const complete=document.getElementById('complete-authorization');document.getElementById('authorize').onclick=async()=>{try{const r=await fetch('/remote/api/authorize/start',{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.code||'AUTH_START_FAILED');requestId=j.requestId;approval.href=j.approvalUrl;approval.hidden=false;complete.hidden=false;result.textContent='Abra o link no celular e aprove no LocalCut. Depois conclua a autorização.'}catch(e){result.textContent=e instanceof Error?e.message:String(e)}};complete.onclick=async()=>{if(!requestId){result.textContent='AUTH_NOT_STARTED';return}try{const r=await fetch('/remote/api/authorize/status?requestId='+encodeURIComponent(requestId));const j=await r.json();if(r.status===202){result.textContent='Aguardando aprovação no LocalCut.';return}if(!r.ok)throw new Error(j.code||'AUTH_STATUS_FAILED');if(j.authorized===true){location.replace('/remote');return}result.textContent='Aguardando aprovação no LocalCut.'}catch(e){result.textContent=e instanceof Error?e.message:String(e)}};</script></main></body></html>`;
-}
-
-export function panelPage(csrfToken: string): string {
-  const csrf = JSON.stringify(csrfToken).replaceAll("<", "\\u003c");
-  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LocalCut Remote Control</title><style>body{font-family:system-ui;background:#0b0b0d;color:#f5f5f5;margin:0;padding:24px}main{max-width:760px;margin:auto}button,input,textarea,select{font:inherit;padding:10px;margin:4px 0;background:#18181c;color:#fff;border:1px solid #444;border-radius:8px}button{cursor:pointer}.card{padding:16px;border:1px solid #333;border-radius:12px;margin:12px 0}input,textarea{box-sizing:border-box;width:100%}pre{white-space:pre-wrap;word-break:break-word}</style></head><body><main><h1>LocalCut Remote Control</h1><div class="card"><button id="refresh">Atualizar projeto</button><button id="list-clips">Listar clipes</button><button id="undo">Desfazer</button><button id="redo">Refazer</button><pre id="state">Carregando…</pre></div><div class="card"><label>Posição do playhead (µs)</label><br><input id="position" inputmode="numeric" value="0"><button id="seek">Mover playhead</button></div><div class="card"><label for="generic-capability">Comando tipado</label><input id="generic-capability" value="list_clips" autocomplete="off"><label for="generic-payload">Payload JSON</label><textarea id="generic-payload" rows="5">{}</textarea><button id="generic-execute">Executar comando</button></div><pre id="result"></pre><script>const csrf=${csrf};let context=null;const output=document.getElementById('result');async function contexts(){const r=await fetch('/remote/api/contexts');const j=await r.json();context=j.contexts?.[0]??null;document.getElementById('state').textContent=JSON.stringify(j,null,2);return context}async function command(capability,payload,useCurrentRevision=false){if(!context)await contexts();if(!context)throw new Error('DEVICE_OFFLINE');const expectedRevision=useCurrentRevision?context.projectRevision:null;const r=await fetch('/remote/api/command',{method:'POST',headers:{'content-type':'application/json','x-localcut-csrf':csrf},body:JSON.stringify({projectId:context.projectId,capability,expectedRevision,payload})});const j=await r.json();output.textContent=JSON.stringify(j,null,2);if(j.projectRevision!=null&&context)context.projectRevision=j.projectRevision;return j}function showError(e){output.textContent=e instanceof Error?e.message:String(e)}document.getElementById('refresh').onclick=()=>contexts().catch(showError);document.getElementById('list-clips').onclick=()=>command('list_clips',{}).catch(showError);document.getElementById('undo').onclick=()=>command('undo',{},true).catch(showError);document.getElementById('redo').onclick=()=>command('redo',{},true).catch(showError);document.getElementById('seek').onclick=()=>command('seek',{positionUs:Number(document.getElementById('position').value)}).catch(showError);document.getElementById('generic-execute').onclick=()=>{try{const capability=document.getElementById('generic-capability').value.trim();const payload=JSON.parse(document.getElementById('generic-payload').value||'{}');if(!payload||typeof payload!=='object'||Array.isArray(payload))throw new Error('PAYLOAD_MUST_BE_OBJECT');command(capability,payload,true).catch(showError)}catch(e){showError(e)}};contexts().catch(showError);</script></main></body></html>`;
-}
-
 function errorCode(error: unknown): string {
-  if (error instanceof Error && /^[A-Z0-9_]{3,64}$/.test(error.message)) return error.message;
-  return "INVALID_ARGUMENT";
+  return error instanceof Error && /^[A-Z0-9_]{3,64}$/.test(error.message) ? error.message : "INTERNAL_ERROR";
+}
+
+function statusForBridgeResult(result: BridgeResultEnvelope): number {
+  if (result.code === "DEVICE_OFFLINE") return 503;
+  if (result.code === "REVISION_CONFLICT") return 409;
+  if (result.code === "AUTH_REQUIRED" || result.code === "PAIRING_REQUIRED") return 401;
+  return 400;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function unauthorizedPage(): string {
+  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>LocalCut</title></head><body><h1>LocalCut</h1><p>Autorize este navegador pelo app LocalCut para continuar.</p></body></html>`;
+}
+
+function panelPage(csrfToken: string): string {
+  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>LocalCut Remote</title><style>body{font-family:sans-serif;margin:24px;max-width:720px}button,input,textarea{font:inherit;margin:4px 0;padding:8px;width:100%;box-sizing:border-box}pre{white-space:pre-wrap;background:#111;color:#eee;padding:12px;min-height:160px}</style></head><body><h1>LocalCut Remote</h1><p>Controle autenticado do dispositivo pareado.</p><button id="contexts">Ler contexto ativo</button><input id="project" placeholder="projectId"><input id="revision" placeholder="expectedRevision"><input id="cap" placeholder="capability"><textarea id="payload" placeholder='{"key":"value"}'></textarea><button id="send">Executar</button><pre id="out"></pre><script>const csrf=${JSON.stringify(csrfToken)};const out=document.getElementById('out');document.getElementById('contexts').onclick=async()=>{const r=await fetch('/remote/api/contexts');out.textContent=await r.text()};document.getElementById('send').onclick=async()=>{let payload={};try{payload=JSON.parse(document.getElementById('payload').value||'{}')}catch{out.textContent='JSON inválido';return}const raw=document.getElementById('revision').value;const body={projectId:document.getElementById('project').value,capability:document.getElementById('cap').value,payload,expectedRevision:raw===''?null:Number(raw)};const r=await fetch('/remote/api/command',{method:'POST',headers:{'content-type':'application/json','x-csrf-token':csrf},body:JSON.stringify(body)});out.textContent=await r.text()}</script></body></html>`;
 }

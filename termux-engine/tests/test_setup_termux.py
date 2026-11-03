@@ -13,6 +13,8 @@ class SetupTermuxScriptTest(unittest.TestCase):
         self.assertIn("auto-recover", text)
         self.assertIn("--daemon", text)
         self.assertIn("--refresh-only", text)
+        self.assertIn("command -v termux-wake-lock", text)
+        self.assertIn('if [ "\\${1:-}" = "--daemon" ]', text)
         self.assertNotIn("pkill", text)
         self.assertNotIn("kill -9", text)
         self.assertNotIn("reset --hard", text)

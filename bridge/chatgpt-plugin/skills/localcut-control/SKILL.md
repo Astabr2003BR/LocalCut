@@ -14,6 +14,15 @@ Use the authenticated LocalCut MCP as the primary control path for a paired Andr
 3. If more than one context is returned, use a previously grounded device only when the conversation clearly identifies it. Otherwise report the ambiguity instead of guessing.
 4. If no context is active, report that the paired APK is offline or the agent connection is not active. Do not retry in a loop.
 
+## ChatGPT attachments
+
+- For an attached image, audio file, or video/clip that the user wants to import into LocalCut, call `stage_attachment` with the top-level ChatGPT file parameter.
+- Use the returned `handoffUrl` to open the existing Android `import_url` flow. Local confirmation remains mandatory before LocalCut downloads/imports the staged media.
+- Never expose, copy into chat, or persist the raw ChatGPT `download_url`. The one-time LocalCut relay URL is bounded, short-lived, and consumed after download.
+- After a successful Android import, rediscover/read the active project and verify the resulting timeline state before reporting success.
+- TXT and other text documents are not media imports. They may be read by the model, but only turn their contents into LocalCut `add_text` edits when the user explicitly requests that semantic conversion and the timing/layout intent is known.
+- Do not create public file links, weaken relay security, or bypass the Android confirmation dialog to make attachment import easier.
+
 ## Reads and writes
 
 - Read `get_project_state` before any project write that depends on current timeline state.

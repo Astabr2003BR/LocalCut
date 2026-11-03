@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import test from "node:test";
-import { createTransientMediaHttpHandler } from "../src/transientMediaHttp.ts";
+import {
+  createTransientMediaHttpHandler,
+  createTransientMediaStore,
+} from "../src/transientMediaHttp.ts";
 
 async function fixture() {
   let now = 1_000;
@@ -58,6 +61,39 @@ test("temporary media upload is private-by-token, no-store, and consumed after o
 
   const consumed = await fetch(`${fx.baseUrl}${uploadJson.downloadPath}`);
   assert.equal(consumed.status, 404);
+});
+
+test("direct staging shares the same one-time store used by the HTTP download route", async t => {
+  let now = 1_000;
+  const store = createTransientMediaStore({ nowEpochMs: () => now });
+  const handler = createTransientMediaHttpHandler({ nowEpochMs: () => now }, store);
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url ?? "/", "http://localcut.invalid");
+    if (await handler(req, res, url)) return;
+    res.writeHead(404).end();
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  t.after(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("missing test server address");
+
+  const id = token();
+  const staged = store.stage(id, "video/mp4", Buffer.from("clip"));
+  assert.equal(staged.downloadPath, `/v1/mobile-media/${id}`);
+  assert.equal(staged.expiresAtEpochMs, 301_000);
+
+  const first = await fetch(`http://127.0.0.1:${address.port}${staged.downloadPath}`);
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get("content-type"), "video/mp4");
+  assert.deepEqual(Buffer.from(await first.arrayBuffer()), Buffer.from("clip"));
+
+  const second = await fetch(`http://127.0.0.1:${address.port}${staged.downloadPath}`);
+  assert.equal(second.status, 404);
+
+  now = 999_999;
 });
 
 test("temporary media upload rejects malformed tokens, unsupported MIME, empty bodies, and oversize bodies", async t => {

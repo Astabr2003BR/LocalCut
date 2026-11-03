@@ -7,6 +7,7 @@ import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.PropertyValue
 import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
@@ -38,6 +39,36 @@ class BridgeAnimationCommandsTest {
         assertTrue(body.propertyAnimations.any { it.propertyId == "transform.x" })
         assertTrue(body.propertyAnimations.any { it.propertyId == "transform.y" })
         assertTrue(result.resultJson.contains("affectedClips"))
+    }
+
+    @Test
+    fun sequentialWalkStartsFromAnimatedPositionAndKeepsEarlierKeyframes() {
+        val fx = fixture()
+        val first = fx.executor.execute(
+            command(
+                BridgeCapability.ANIMATE_CHARACTER,
+                """{"action":"WALK","bodyClipId":"body","startOffsetUs":0,"durationUs":1000000,"direction":1,"distancePx":200}""",
+                expectedRevision = 5L,
+            ),
+        )
+        assertTrue(first.success)
+
+        val second = fx.executor.execute(
+            command(
+                BridgeCapability.ANIMATE_CHARACTER,
+                """{"action":"WALK","bodyClipId":"body","startOffsetUs":1500000,"durationUs":1000000,"direction":1,"distancePx":120}""",
+                expectedRevision = 6L,
+            ),
+        )
+        assertTrue(second.success)
+        assertEquals(7L, second.projectRevision)
+
+        val x = fx.session.state.project.findClip("body")!!.propertyAnimations.single { it.propertyId == "transform.x" }
+        val byTime = x.keyframes.associate { it.offsetUs to (it.value as PropertyValue.Scalar).value }
+        assertEquals(0.0, byTime.getValue(0L), 1e-9)
+        assertEquals(200.0, byTime.getValue(1_000_000L), 1e-9)
+        assertEquals(200.0, byTime.getValue(1_500_000L), 1e-9)
+        assertEquals(320.0, byTime.getValue(2_500_000L), 1e-9)
     }
 
     @Test
@@ -134,16 +165,20 @@ class BridgeAnimationCommandsTest {
         return Fixture(session, BridgeCommandExecutor(session, playback))
     }
 
-    private fun command(capability: BridgeCapability, payload: String) = BridgeCommandEnvelope(
+    private fun command(
+        capability: BridgeCapability,
+        payload: String,
+        expectedRevision: Long = 5L,
+    ) = BridgeCommandEnvelope(
         protocolVersion = 1,
-        messageId = "msg-${capability.wireName}",
+        messageId = "msg-${capability.wireName}-$expectedRevision",
         kind = "command",
         deviceId = "device-1",
         projectId = "project-1",
-        expectedRevision = 5L,
+        expectedRevision = expectedRevision,
         issuedAtEpochMs = 1_000L,
         expiresAtEpochMs = 31_000L,
-        nonce = "nonce-${capability.wireName}",
+        nonce = "nonce-${capability.wireName}-$expectedRevision",
         capability = capability,
         payloadJson = payload,
     )

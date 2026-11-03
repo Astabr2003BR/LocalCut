@@ -4,13 +4,27 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
+import com.localcut.editor.bridge.security.AndroidKeystoreBridgeCredentialStore
+import com.localcut.editor.bridge.security.AndroidKeystoreDeviceIdentityStore
 import com.localcut.editor.bridge.transport.BridgeConnectionCoordinator
+import com.localcut.editor.bridge.transport.BridgeEndpointConfig
+import com.localcut.editor.bridge.transport.OkHttpBridgePairingClient
 import com.localcut.editor.diagnostics.ProcessExitDiagnostics
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class BridgeConnectionService : Service() {
     private lateinit var settings: BridgeSettingsStore
     private lateinit var notificationFactory: BridgeNotificationFactory
     private lateinit var coordinatorLifecycle: BridgeCoordinatorLifecycle<BridgeConnectionCoordinator>
+    private var backgroundCredentialManager: BridgeBackgroundCredentialManager? = null
+    private val backgroundReconnectRunning = AtomicBoolean(false)
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val coordinator: BridgeConnectionCoordinator
         get() = coordinatorLifecycle.value
@@ -24,6 +38,13 @@ class BridgeConnectionService : Service() {
             factory = { BridgeServiceRuntime.createCoordinator(this, settings) },
             shutdownAction = { it.shutdown() },
         )
+        backgroundCredentialManager = BridgeEndpointConfig.resolve(settings.relayBaseUrl).getOrNull()?.let { endpoint ->
+            BridgeBackgroundCredentialManager(
+                credentialStore = AndroidKeystoreBridgeCredentialStore(applicationContext),
+                client = OkHttpBridgePairingClient(endpoint.httpsBaseUrl),
+                identityStore = AndroidKeystoreDeviceIdentityStore(),
+            )
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -75,17 +96,14 @@ class BridgeConnectionService : Service() {
 
             ACTION_RECONNECT -> {
                 if (!startAsForegroundSafely("Reconectando…", startId)) return START_NOT_STICKY
-                val result = coordinator.reconnectIfEnabled()
-                updateForegroundSafely(
-                    if (result.isSuccess) "Reconectando ao ChatGPT…" else "Toque no LocalCut para concluir a conexão",
-                )
+                reconnectWithFreshCredential(startId, "Reconectando ao ChatGPT…")
                 if (settings.sessionEnabled) START_STICKY else START_NOT_STICKY
             }
 
             else -> {
                 if (settings.sessionEnabled) {
                     if (!startAsForegroundSafely("Restaurando conexão…", startId)) return START_NOT_STICKY
-                    coordinator.reconnectIfEnabled()
+                    reconnectWithFreshCredential(startId, "Restaurando conexão…")
                     START_STICKY
                 } else {
                     ProcessExitDiagnostics.mark(this, "service:sticky-disabled")
@@ -123,6 +141,7 @@ class BridgeConnectionService : Service() {
             this,
             "service:destroy:init=${::coordinatorLifecycle.isInitialized && coordinatorLifecycle.isInitialized}",
         )
+        serviceScope.cancel()
         if (::coordinatorLifecycle.isInitialized) {
             coordinatorLifecycle.shutdownIfInitialized()
         }
@@ -130,6 +149,53 @@ class BridgeConnectionService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun reconnectWithFreshCredential(startId: Int, successStatus: String) {
+        if (!backgroundReconnectRunning.compareAndSet(false, true)) {
+            ProcessExitDiagnostics.mark(this, "service:reconnect:already-running")
+            return
+        }
+
+        serviceScope.launch {
+            try {
+                val credentialManager = backgroundCredentialManager
+                if (credentialManager == null) {
+                    ProcessExitDiagnostics.mark(this@BridgeConnectionService, "service:reconnect:endpoint-invalid")
+                    updateForegroundSafely("Abra o LocalCut para revisar o Relay")
+                    return@launch
+                }
+
+                val freshResult = withContext(Dispatchers.IO) {
+                    credentialManager.ensureFresh()
+                }
+                val fresh = freshResult.getOrElse { error ->
+                    ProcessExitDiagnostics.mark(
+                        this@BridgeConnectionService,
+                        "service:credential-refresh:failed=${error.message}",
+                    )
+                    updateForegroundSafely("Reconexão temporariamente indisponível")
+                    return@launch
+                }
+
+                if (!fresh) {
+                    ProcessExitDiagnostics.mark(this@BridgeConnectionService, "service:credential-refresh:pairing-required")
+                    settings.sessionEnabled = false
+                    updateForegroundSafely("Pareamento necessário")
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf(startId)
+                    return@launch
+                }
+
+                ProcessExitDiagnostics.mark(this@BridgeConnectionService, "service:credential-refresh:ready")
+                val result = coordinator.reconnectIfEnabled()
+                updateForegroundSafely(
+                    if (result.isSuccess) successStatus else "Toque no LocalCut para concluir a conexão",
+                )
+            } finally {
+                backgroundReconnectRunning.set(false)
+            }
+        }
+    }
 
     private fun startAsForegroundSafely(status: String, startId: Int): Boolean =
         BridgeForegroundServiceGuard.tryStart(

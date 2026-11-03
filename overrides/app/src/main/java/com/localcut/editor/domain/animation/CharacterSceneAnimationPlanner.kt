@@ -327,19 +327,40 @@ object CharacterSceneAnimationPlanner {
         val start = request.startOffsetUs
         val end = Math.addExact(start, request.durationUs)
         builder.scalar(PROP_SCALE, start, state.transform.scale, hold())
-        request.lipSyncCues.forEach { cue ->
-            val cueStart = Math.addExact(start, cue.offsetUs)
-            val cueEnd = Math.addExact(cueStart, cue.durationUs)
-            val attack = minOf(50_000L, maxOf(1L, cue.durationUs / 2L))
-            val peak = minOf(cueEnd, Math.addExact(cueStart, attack))
-            builder.scalar(PROP_SCALE, cueStart, state.transform.scale, smooth())
-            builder.scalar(
-                PROP_SCALE,
-                peak,
-                state.transform.scale * (1.0 + 0.18 * cue.openness * request.intensity),
-                smooth(),
-            )
-            builder.scalar(PROP_SCALE, cueEnd, state.transform.scale, hold())
+        if (request.lipSyncCues.isEmpty()) {
+            val pulseCount = (request.durationUs / 220_000L).toInt().coerceIn(1, 8)
+            repeat(pulseCount) { index ->
+                val openFraction = (index + 0.30) / pulseCount.toDouble()
+                val closeFraction = (index + 0.72) / pulseCount.toDouble()
+                val openAt = interpolateTime(start, end, openFraction.coerceIn(0.0, 1.0))
+                val closeAt = interpolateTime(start, end, closeFraction.coerceIn(0.0, 1.0))
+                if (openAt > start && openAt < end) {
+                    builder.scalar(
+                        PROP_SCALE,
+                        openAt,
+                        state.transform.scale * (1.0 + 0.12 * request.intensity),
+                        smooth(),
+                    )
+                }
+                if (closeAt > openAt && closeAt < end) {
+                    builder.scalar(PROP_SCALE, closeAt, state.transform.scale, smooth())
+                }
+            }
+        } else {
+            request.lipSyncCues.forEach { cue ->
+                val cueStart = Math.addExact(start, cue.offsetUs)
+                val cueEnd = Math.addExact(cueStart, cue.durationUs)
+                val attack = minOf(50_000L, maxOf(1L, cue.durationUs / 2L))
+                val peak = minOf(cueEnd, Math.addExact(cueStart, attack))
+                builder.scalar(PROP_SCALE, cueStart, state.transform.scale, smooth())
+                builder.scalar(
+                    PROP_SCALE,
+                    peak,
+                    state.transform.scale * (1.0 + 0.18 * cue.openness * request.intensity),
+                    smooth(),
+                )
+                builder.scalar(PROP_SCALE, cueEnd, state.transform.scale, hold())
+            }
         }
         builder.scalar(PROP_SCALE, end, state.transform.scale)
     }

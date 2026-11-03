@@ -2,6 +2,8 @@ package com.localcut.editor.domain.animation
 
 import com.localcut.editor.domain.model.Easing
 import com.localcut.editor.domain.model.EasingKind
+import com.localcut.editor.domain.model.EffectInstance
+import com.localcut.editor.domain.model.EffectParameter
 import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.domain.model.PropertyKeyframe
 import com.localcut.editor.domain.model.PropertyValue
@@ -12,6 +14,8 @@ private const val PROP_Y = "transform.y"
 private const val PROP_SCALE = "transform.scale"
 private const val PROP_ROTATION = "transform.rotationDeg"
 private const val PROP_OPACITY = "transform.opacity"
+private const val MOUTH_WARP_EFFECT_ID = "localcut-character-mouth-warp"
+private const val MOUTH_WARP_TYPE_ID = "localcut.character.mouth_warp"
 
 enum class CharacterAction {
     IDLE,
@@ -44,6 +48,13 @@ data class LipSyncCue(
     val openness: Double,
 )
 
+data class MouthRegion(
+    val centerX: Double,
+    val centerY: Double,
+    val radiusX: Double,
+    val radiusY: Double,
+)
+
 data class CharacterActionRequest(
     val action: CharacterAction,
     val rig: CharacterRigBinding,
@@ -55,6 +66,7 @@ data class CharacterActionRequest(
     val targetX: Double? = null,
     val targetY: Double? = null,
     val lipSyncCues: List<LipSyncCue> = emptyList(),
+    val mouthRegion: MouthRegion? = null,
 )
 
 enum class SceneAnimationKind {
@@ -86,16 +98,30 @@ data class ClipAnimationPatch(
     val propertyAnimations: List<PropertyAnimation>,
 )
 
+data class ClipEffectPatch(
+    val clipId: String,
+    val effects: List<EffectInstance>,
+)
+
 data class CharacterAnimationPlan(
     val patches: List<ClipAnimationPatch>,
+    val effectPatches: List<ClipEffectPatch> = emptyList(),
 ) {
     init {
+        require(patches.isNotEmpty() || effectPatches.isNotEmpty()) { "animation plan must not be empty" }
         require(patches.map { it.clipId }.distinct().size == patches.size) { "animation plan clip ids must be unique" }
+        require(effectPatches.map { it.clipId }.distinct().size == effectPatches.size) { "animation effect patch clip ids must be unique" }
         require(patches.all { it.clipId.isNotBlank() }) { "animation plan clip id must not be blank" }
+        require(effectPatches.all { it.clipId.isNotBlank() }) { "animation effect clip id must not be blank" }
         require(patches.all { it.propertyAnimations.isNotEmpty() }) { "animation plan patches must not be empty" }
+        require(effectPatches.all { it.effects.isNotEmpty() }) { "animation effect patches must not be empty" }
         require(patches.all { patch -> patch.propertyAnimations.all { it.validationIssues().isEmpty() } }) {
             "animation plan contains invalid property animation"
         }
+        require(effectPatches.all { patch ->
+            patch.effects.map { it.id }.distinct().size == patch.effects.size &&
+                patch.effects.all { it.validationIssues().isEmpty() }
+        }) { "animation plan contains invalid effect patch" }
     }
 }
 
@@ -119,8 +145,13 @@ object CharacterSceneAnimationPlanner {
             CharacterAction.TALK -> {
                 talkBody(plan.patch(body.clipId), body, start, end, request.intensity)
                 request.rig.headClipId?.let { id -> headTalk(plan.patch(id), requireClip(id, clips), start, end, request.intensity) }
-                request.rig.mouthClipId?.let { id ->
-                    mouth(plan.patch(id), requireClip(id, clips), request)
+                val mouthId = request.rig.mouthClipId
+                if (mouthId != null) {
+                    mouth(plan.patch(mouthId), requireClip(mouthId, clips), request)
+                } else {
+                    request.mouthRegion?.let { region ->
+                        plan.effect(body.clipId, flatMouthEffect(request, region))
+                    }
                 }
                 request.rig.eyesClipId?.let { id -> blink(plan.patch(id), requireClip(id, clips), start, end) }
             }
@@ -199,6 +230,7 @@ object CharacterSceneAnimationPlanner {
         require(request.distancePx.isFinite() && request.distancePx >= 0.0) { "animation distance must be finite and non-negative" }
         require(request.targetX == null || request.targetX.isFinite()) { "targetX must be finite" }
         require(request.targetY == null || request.targetY.isFinite()) { "targetY must be finite" }
+        request.mouthRegion?.let(::validateMouthRegion)
 
         val ids = listOfNotNull(
             request.rig.bodyClipId,
@@ -223,6 +255,13 @@ object CharacterSceneAnimationPlanner {
             require(!request.rig.heldObjectClipId.isNullOrBlank()) { "${request.action.name.lowercase()} requires held object clip" }
         }
         validateLipSync(request.lipSyncCues, request.durationUs)
+    }
+
+    private fun validateMouthRegion(region: MouthRegion) {
+        require(region.centerX.isFinite() && region.centerX in 0.0..1.0) { "mouth centerX must be in 0..1" }
+        require(region.centerY.isFinite() && region.centerY in 0.0..1.0) { "mouth centerY must be in 0..1" }
+        require(region.radiusX.isFinite() && region.radiusX in 0.01..0.50) { "mouth radiusX must be in 0.01..0.50" }
+        require(region.radiusY.isFinite() && region.radiusY in 0.005..0.30) { "mouth radiusY must be in 0.005..0.30" }
     }
 
     private fun validateSceneRequest(
@@ -363,6 +402,64 @@ object CharacterSceneAnimationPlanner {
             }
         }
         builder.scalar(PROP_SCALE, end, state.transform.scale)
+    }
+
+    private fun flatMouthEffect(request: CharacterActionRequest, region: MouthRegion): EffectInstance {
+        val animation = mouthOpennessAnimation(request)
+        return EffectInstance(
+            id = MOUTH_WARP_EFFECT_ID,
+            typeId = MOUTH_WARP_TYPE_ID,
+            parameters = mapOf(
+                "center" to EffectParameter.Point(region.centerX, region.centerY),
+                "radiusX" to EffectParameter.Number(region.radiusX),
+                "radiusY" to EffectParameter.Number(region.radiusY),
+                "openness" to EffectParameter.Number(0.0),
+            ),
+            animations = listOf(animation),
+        )
+    }
+
+    private fun mouthOpennessAnimation(request: CharacterActionRequest): PropertyAnimation {
+        val start = request.startOffsetUs
+        val end = Math.addExact(start, request.durationUs)
+        val frames = sortedMapOf<Long, ScalarFrame>()
+        fun scalar(offsetUs: Long, value: Double, easing: Easing = Easing(EasingKind.LINEAR)) {
+            frames[offsetUs] = ScalarFrame(value.coerceIn(0.0, 1.0), easing)
+        }
+        scalar(start, 0.0, hold())
+        if (request.lipSyncCues.isEmpty()) {
+            val pulseCount = (request.durationUs / 220_000L).toInt().coerceIn(1, 8)
+            repeat(pulseCount) { index ->
+                val openAt = interpolateTime(start, end, ((index + 0.30) / pulseCount.toDouble()).coerceIn(0.0, 1.0))
+                val closeAt = interpolateTime(start, end, ((index + 0.72) / pulseCount.toDouble()).coerceIn(0.0, 1.0))
+                if (openAt > start && openAt < end) scalar(openAt, 0.65 * request.intensity, smooth())
+                if (closeAt > openAt && closeAt < end) scalar(closeAt, 0.0, smooth())
+            }
+        } else {
+            request.lipSyncCues.forEach { cue ->
+                val cueStart = Math.addExact(start, cue.offsetUs)
+                val cueEnd = Math.addExact(cueStart, cue.durationUs)
+                val attack = minOf(50_000L, maxOf(1L, cue.durationUs / 2L))
+                val peak = minOf(cueEnd, Math.addExact(cueStart, attack))
+                scalar(cueStart, 0.0, smooth())
+                scalar(peak, cue.openness * request.intensity, smooth())
+                scalar(cueEnd, 0.0, hold())
+            }
+        }
+        scalar(end, 0.0)
+        return PropertyAnimation(
+            propertyId = "openness",
+            keyframes = frames.entries.mapIndexed { index, (offsetUs, frame) ->
+                PropertyKeyframe(
+                    id = "mouth-openness-$index-$offsetUs",
+                    offsetUs = offsetUs,
+                    value = PropertyValue.Scalar(frame.value),
+                    easingToNext = frame.easing,
+                )
+            },
+        ).also { animation ->
+            require(animation.validationIssues().isEmpty()) { "generated invalid mouth openness animation" }
+        }
     }
 
     private fun blink(builder: PatchBuilder, state: AnimationClipState, start: Long, end: Long) {
@@ -583,16 +680,28 @@ private class PlanBuilder(
     private val clips: Map<String, AnimationClipState>,
 ) {
     private val builders = linkedMapOf<String, PatchBuilder>()
+    private val effects = linkedMapOf<String, MutableList<EffectInstance>>()
 
     fun patch(clipId: String): PatchBuilder {
         require(clips.containsKey(clipId)) { "animation clip not found: $clipId" }
         return builders.getOrPut(clipId) { PatchBuilder(clipId) }
     }
 
+    fun effect(clipId: String, effect: EffectInstance) {
+        require(clips.containsKey(clipId)) { "animation clip not found: $clipId" }
+        require(effect.validationIssues().isEmpty()) { "animation effect must be valid" }
+        val target = effects.getOrPut(clipId) { mutableListOf() }
+        require(target.none { it.id == effect.id }) { "animation effect id must be unique for clip: $clipId" }
+        target += effect
+    }
+
     fun build(): CharacterAnimationPlan {
         val patches = builders.values.map(PatchBuilder::build).filter { it.propertyAnimations.isNotEmpty() }
-        require(patches.isNotEmpty()) { "animation plan must not be empty" }
-        return CharacterAnimationPlan(patches)
+        val effectPatches = effects.map { (clipId, clipEffects) ->
+            ClipEffectPatch(clipId = clipId, effects = clipEffects.toList())
+        }
+        require(patches.isNotEmpty() || effectPatches.isNotEmpty()) { "animation plan must not be empty" }
+        return CharacterAnimationPlan(patches = patches, effectPatches = effectPatches)
     }
 }
 

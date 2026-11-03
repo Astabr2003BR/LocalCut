@@ -97,26 +97,22 @@ class BridgeConnectionService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        val preserveConnection = BridgeTaskRemovalPolicy.shouldPreserveConnection(
+        val decision = BridgeTaskRemovalPolicy.decide(
             sessionEnabled = settings.sessionEnabled,
             alwaysConnected = settings.alwaysConnected,
         )
         ProcessExitDiagnostics.mark(
             this,
-            "service:task-removed:preserve=$preserveConnection",
+            "service:task-removed:preserve=${decision.preserveConnection}:reconnect=${decision.reconnectImmediately}",
         )
 
-        if (preserveConnection) {
-            // Keep the foreground-service state explicit while the editor task disappears.
-            // Stock Android may keep/restart a START_STICKY foreground service after task removal.
-            // Xiaomi/HyperOS can still apply an OEM package clean (e.g. SwipeUpClean), which the
-            // app cannot override; in that case the persisted session lets the next allowed start
-            // reconnect without a new pairing flow.
+        if (decision.preserveConnection) {
+            // Removing the editor task is not the same as killing this foreground service.
+            // Keep the currently owned WebSocket alive. Starting another connection from
+            // onTaskRemoved() races with the active socket and can report
+            // "bridge socket already active". If Android/OEM later kills this service/process,
+            // START_STICKY and BridgeColdStartRecovery handle the real reconnect path.
             updateForegroundSafely("Agente ativo em segundo plano")
-            if (coordinatorLifecycle.isInitialized) {
-                runCatching { coordinator.reconnectIfEnabled() }
-                    .onFailure { ProcessExitDiagnostics.mark(this, "service:task-removed:reconnect-failed") }
-            }
         }
 
         super.onTaskRemoved(rootIntent)

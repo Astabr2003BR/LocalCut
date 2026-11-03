@@ -137,6 +137,32 @@ class CharacterSceneAnimationPlannerTest {
     }
 
     @Test
+    fun talkWithoutLipCuesStillUsesLocalMouthOpenCloseFallback() {
+        val clips = mapOf(
+            "body" to target("body"),
+            "mouth" to target("mouth", scale = 1.0),
+        )
+        val plan = CharacterSceneAnimationPlanner.character(
+            CharacterActionRequest(
+                action = CharacterAction.TALK,
+                rig = CharacterRigBinding(bodyClipId = "body", mouthClipId = "mouth"),
+                startOffsetUs = 200_000L,
+                durationUs = 1_200_000L,
+                intensity = 0.8,
+            ),
+            clips,
+        )
+
+        val mouth = plan.patches.single { it.clipId == "mouth" }
+            .propertyAnimations.single { it.propertyId == "transform.scale" }
+        val scales = mouth.keyframes.map { (it.value as PropertyValue.Scalar).value }
+        assertTrue(mouth.keyframes.size >= 5)
+        assertEquals(1.0, scales.first(), 1e-9)
+        assertTrue(scales.max() > 1.0)
+        assertEquals(1.0, scales.last(), 1e-9)
+    }
+
+    @Test
     fun crouchStandPointEnterExitUseExpectedTransformFamilies() {
         val clips = mapOf("body" to target("body", x = 50.0, y = 80.0))
         val rig = CharacterRigBinding(bodyClipId = "body")

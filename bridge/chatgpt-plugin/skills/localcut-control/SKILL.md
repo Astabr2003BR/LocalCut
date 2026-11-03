@@ -36,8 +36,9 @@ Use the authenticated LocalCut MCP as the primary control path for a paired Andr
 
 - Read the current project/timeline first and use only real clip IDs. `animate_character` and `animate_scene` are revision-gated write tools and must receive the current `expectedRevision`.
 - `animate_character` requires `bodyClipId` and supports `IDLE`, `TALK`, `WALK`, `CROUCH`, `STAND`, `PICK_UP`, `PUT_DOWN`, `POINT`, `ENTER`, and `EXIT`.
-- Optional rig clip IDs may bind separate head, eyes, mouth, left/right arms, left/right legs, and a held object. Independent limb, eye, or mouth animation is only possible when those parts exist as separate LocalCut clips/layers; do not claim skeletal or facial articulation from one flat image.
-- For `TALK`, use grounded `lipSyncCues` when exact timing is available. When cues are omitted but a `mouthClipId` exists, LocalCut uses a local rhythmic mouth open/close fallback. Do not describe that fallback as phoneme-accurate lip sync or audio-derived synchronization.
+- Optional rig clip IDs may bind separate head, eyes, mouth, left/right arms, left/right legs, and a held object. A real `mouthClipId` takes precedence for TALK. Independent limb, eye, or skeletal articulation still requires those parts to exist as separate LocalCut clips/layers.
+- For a single flat image, TALK may instead use a grounded normalized `mouthRegion` (`centerX`, `centerY`, `radiusX`, `radiusY`, each inside the accepted normalized bounds). LocalCut applies the owned `localcut.character.mouth_warp` effect to the body clip only when no separate `mouthClipId` is used. Do not invent a mouth region when its location is not grounded.
+- For `TALK`, use grounded `lipSyncCues` when exact timing is available. Only describe cues as audio/waveform-derived when they were actually produced from audio waveform analysis; the pure waveform cue planner does not itself decode media. When cues are omitted, LocalCut may use its deterministic rhythmic fallback. Do not describe that fallback as phoneme-accurate or audio-derived lip sync.
 - `PICK_UP` and `PUT_DOWN` require `heldObjectClipId`. `targetX`/`targetY` may be supplied when the destination is grounded; otherwise use the planner defaults rather than inventing scene coordinates.
 - `animate_scene` supports `PAN_ZOOM`, `PARALLAX`, and `CROSSFADE`. `CROSSFADE` requires a distinct `incomingClipId`; `PARALLAX` may use grounded `secondaryClipIds`.
 - Animation writes merge into the requested time window and preserve existing keyframes outside that window. Sequential actions start from the already animated transform at the new action's start time.
@@ -49,9 +50,10 @@ Use the authenticated LocalCut MCP as the primary control path for a paired Andr
 - Treat a successful tool response as evidence for the specific action only; do not infer unrelated behavior.
 - Use `get_playhead` after seek/playhead tests.
 - Use `get_project_state`, `list_tracks`, `list_clips`, or `get_selected_clip` to verify timeline edits.
-- After character or scene animation, verify affected clips/property animations and use `get_preview_frame` when visual confirmation is material. Do not call lip sync visually verified unless the mouth layer and timing are actually observable in the captured preview.
+- After character or scene animation, verify affected clips/property animations and use `get_preview_frame` when visual confirmation is material. For flat-image TALK, verify that the body clip owns exactly the intended `localcut.character.mouth_warp` state and that unrelated effects remain intact. Do not call lip sync visually verified unless the mouth region/layer and timing are actually observable in the captured preview.
 - Use `get_preview_frame` when visual verification materially helps, including preview regressions, transform/keyframe checks, layout/content checks that the captured editor frame can show, and final QA.
 - For export, inspect `get_export_status`; do not report completion from job creation alone.
+- Emulator instrumentation is valid evidence for Android Bridge/preview/export regression coverage, but it is not evidence that a specific paired physical phone completed the same flow. Only claim physical-device E2E after that device is actually exercised and verified.
 
 ## Safety and integrity
 

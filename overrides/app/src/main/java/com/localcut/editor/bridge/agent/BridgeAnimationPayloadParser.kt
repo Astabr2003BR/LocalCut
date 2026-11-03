@@ -17,6 +17,7 @@ import com.localcut.editor.domain.animation.CharacterAnimationPlan
 import com.localcut.editor.domain.animation.CharacterRigBinding
 import com.localcut.editor.domain.animation.CharacterSceneAnimationPlanner
 import com.localcut.editor.domain.animation.LipSyncCue
+import com.localcut.editor.domain.animation.MouthRegion
 import com.localcut.editor.domain.animation.PropertyAnimationEvaluator
 import com.localcut.editor.domain.animation.SceneAnimationKind
 import com.localcut.editor.domain.animation.SceneAnimationRequest
@@ -30,6 +31,14 @@ object BridgeAnimationPayloadParser {
         val payload = parse(payloadJson)
         val action = enumValue<CharacterAction>(payload.requiredString("action"), "character action")
         val startOffsetUs = payload.requiredLong("startOffsetUs")
+        val mouthRegion = payload.optionalObject("mouthRegion")?.let { region ->
+            MouthRegion(
+                centerX = region.requiredDouble("centerX"),
+                centerY = region.requiredDouble("centerY"),
+                radiusX = region.requiredDouble("radiusX"),
+                radiusY = region.requiredDouble("radiusY"),
+            )
+        }
         val request = CharacterActionRequest(
             action = action,
             rig = CharacterRigBinding(
@@ -58,6 +67,7 @@ object BridgeAnimationPayloadParser {
                     openness = cue.requiredDouble("openness"),
                 )
             },
+            mouthRegion = mouthRegion,
         )
         return CharacterSceneAnimationPlanner.character(request, clipStates(project, startOffsetUs))
     }
@@ -140,6 +150,11 @@ object BridgeAnimationPayloadParser {
     private fun JObject.optionalDouble(key: String): Double? = when (val value = optional(key)) {
         null, JNull -> null
         else -> value.asDouble()
+    }
+
+    private fun JObject.optionalObject(key: String): JObject? = when (val value = optional(key)) {
+        null, JNull -> null
+        else -> value.asObject()
     }
 
     private fun JObject.optionalArray(key: String) = when (val value = optional(key)) {

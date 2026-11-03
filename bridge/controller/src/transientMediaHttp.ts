@@ -98,29 +98,6 @@ export function createTransientMediaHttpHandler(
       return sendJson(res, 400, { code: "MEDIA_TOKEN_INVALID" });
     }
 
-    if (req.method === "POST") {
-      const contentType = normalizedContentType(req.headers["content-type"]);
-      if (!isAllowedTransientMediaType(contentType)) {
-        return sendJson(res, 415, { code: "MEDIA_TYPE_UNSUPPORTED" });
-      }
-
-      let bytes: Buffer;
-      try {
-        bytes = await readRawBody(req, store.maxBytes);
-        const staged = store.stage(token, contentType, bytes);
-        return sendJson(res, 201, staged);
-      } catch (error) {
-        const code = stableMediaError(error);
-        if (code === "BODY_TOO_LARGE") return sendJson(res, 413, { code });
-        if (code === "MEDIA_TOKEN_ALREADY_USED") return sendJson(res, 409, { code });
-        if (code === "MEDIA_TYPE_UNSUPPORTED") return sendJson(res, 415, { code });
-        if (code === "MEDIA_TOKEN_INVALID" || code === "MEDIA_BODY_EMPTY") {
-          return sendJson(res, 400, { code });
-        }
-        throw error;
-      }
-    }
-
     if (req.method === "GET") {
       const entry = store.take(token);
       if (!entry) {
@@ -138,7 +115,7 @@ export function createTransientMediaHttpHandler(
     }
 
     res.writeHead(405, {
-      allow: "GET, POST",
+      allow: "GET",
       "cache-control": "no-store",
       "content-length": "0",
       "x-content-type-options": "nosniff",
@@ -159,32 +136,10 @@ export function isAllowedTransientMediaType(contentType: string): boolean {
     contentType.startsWith("video/");
 }
 
-async function readRawBody(req: IncomingMessage, maxBytes: number): Promise<Buffer> {
-  const contentLength = Number(req.headers["content-length"] ?? 0);
-  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
-    throw new Error("BODY_TOO_LARGE");
-  }
-
-  const chunks: Buffer[] = [];
-  let total = 0;
-  for await (const chunk of req) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    total += buffer.length;
-    if (total > maxBytes) throw new Error("BODY_TOO_LARGE");
-    chunks.push(buffer);
-  }
-  return Buffer.concat(chunks);
-}
-
 function pruneExpired(entries: Map<string, TransientMediaEntry>, nowEpochMs: number): void {
   for (const [token, entry] of entries) {
     if (entry.expiresAtEpochMs <= nowEpochMs) entries.delete(token);
   }
-}
-
-function stableMediaError(error: unknown): string {
-  if (error instanceof Error && /^[A-Z0-9_]{3,64}$/.test(error.message)) return error.message;
-  return "INTERNAL_ERROR";
 }
 
 function sendJson(res: ServerResponse, status: number, value: unknown): true {

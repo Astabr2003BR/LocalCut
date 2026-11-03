@@ -99,7 +99,7 @@ private fun locateTargets(project: Project, clipIds: Collection<String>): Map<St
             if (clip.id !in requested) return@forEachIndexed
             if (found.put(clip.id, AnimationClipLocation(trackIndex, clipIndex)) != null) {
                 throw TimelineEditException(
-                    TimelineErrorCode.INVALID_TIMELINE,
+                    TimelineErrorCode.INVALID_PROJECT,
                     "clip ${clip.id} exists in more than one track",
                 )
             }

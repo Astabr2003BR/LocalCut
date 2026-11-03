@@ -17,14 +17,19 @@ import com.localcut.editor.domain.animation.CharacterAnimationPlan
 import com.localcut.editor.domain.animation.CharacterRigBinding
 import com.localcut.editor.domain.animation.CharacterSceneAnimationPlanner
 import com.localcut.editor.domain.animation.LipSyncCue
+import com.localcut.editor.domain.animation.PropertyAnimationEvaluator
 import com.localcut.editor.domain.animation.SceneAnimationKind
 import com.localcut.editor.domain.animation.SceneAnimationRequest
+import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.Project
+import com.localcut.editor.domain.model.PropertyValue
+import com.localcut.editor.domain.model.TransformValue
 
 object BridgeAnimationPayloadParser {
     fun character(payloadJson: String, project: Project): CharacterAnimationPlan {
         val payload = parse(payloadJson)
         val action = enumValue<CharacterAction>(payload.requiredString("action"), "character action")
+        val startOffsetUs = payload.requiredLong("startOffsetUs")
         val request = CharacterActionRequest(
             action = action,
             rig = CharacterRigBinding(
@@ -38,7 +43,7 @@ object BridgeAnimationPayloadParser {
                 rightLegClipId = payload.optionalString("rightLegClipId"),
                 heldObjectClipId = payload.optionalString("heldObjectClipId"),
             ),
-            startOffsetUs = payload.requiredLong("startOffsetUs"),
+            startOffsetUs = startOffsetUs,
             durationUs = payload.requiredLong("durationUs"),
             intensity = payload.optionalDouble("intensity") ?: 1.0,
             direction = payload.optionalDouble("direction") ?: 1.0,
@@ -54,16 +59,17 @@ object BridgeAnimationPayloadParser {
                 )
             },
         )
-        return CharacterSceneAnimationPlanner.character(request, clipStates(project))
+        return CharacterSceneAnimationPlanner.character(request, clipStates(project, startOffsetUs))
     }
 
     fun scene(payloadJson: String, project: Project): CharacterAnimationPlan {
         val payload = parse(payloadJson)
         val kind = enumValue<SceneAnimationKind>(payload.requiredString("kind"), "scene animation kind")
+        val startOffsetUs = payload.requiredLong("startOffsetUs")
         val request = SceneAnimationRequest(
             kind = kind,
             primaryClipId = payload.requiredString("primaryClipId"),
-            startOffsetUs = payload.requiredLong("startOffsetUs"),
+            startOffsetUs = startOffsetUs,
             durationUs = payload.requiredLong("durationUs"),
             incomingClipId = payload.optionalString("incomingClipId"),
             secondaryClipIds = payload.optionalArray("secondaryClipIds").map { it.asString().also { id -> require(id.isNotBlank()) } },
@@ -71,10 +77,11 @@ object BridgeAnimationPayloadParser {
             panY = payload.optionalDouble("panY") ?: 0.0,
             zoomTo = payload.optionalDouble("zoomTo") ?: 1.0,
         )
-        return CharacterSceneAnimationPlanner.scene(request, clipStates(project))
+        return CharacterSceneAnimationPlanner.scene(request, clipStates(project, startOffsetUs))
     }
 
-    private fun clipStates(project: Project): Map<String, AnimationClipState> {
+    private fun clipStates(project: Project, atOffsetUs: Long): Map<String, AnimationClipState> {
+        require(atOffsetUs >= 0L) { "animation start must be non-negative" }
         val states = linkedMapOf<String, AnimationClipState>()
         project.tracks.forEach { track ->
             track.clips.forEach { clip ->
@@ -83,12 +90,29 @@ object BridgeAnimationPayloadParser {
                     AnimationClipState(
                         clipId = clip.id,
                         durationUs = clip.durationUs,
-                        transform = clip.transform,
+                        transform = effectiveTransform(clip, atOffsetUs),
                     ),
                 ) == null) { "clip ${clip.id} exists in more than one track" }
             }
         }
         return states
+    }
+
+    private fun effectiveTransform(clip: Clip, atOffsetUs: Long): TransformValue {
+        fun scalar(propertyId: String, fallback: Double): Double {
+            val animation = clip.propertyAnimations.firstOrNull { it.propertyId == propertyId } ?: return fallback
+            if (animation.keyframes.isEmpty() || atOffsetUs < animation.keyframes.first().offsetUs) return fallback
+            val value = PropertyAnimationEvaluator.valueAt(animation, atOffsetUs)
+            return (value as? PropertyValue.Scalar)?.value
+                ?: throw IllegalArgumentException("$propertyId animation must be scalar")
+        }
+        return TransformValue(
+            x = scalar("transform.x", clip.transform.x),
+            y = scalar("transform.y", clip.transform.y),
+            scale = scalar("transform.scale", clip.transform.scale),
+            rotationDeg = scalar("transform.rotationDeg", clip.transform.rotationDeg),
+            opacity = scalar("transform.opacity", clip.transform.opacity),
+        )
     }
 
     private fun parse(payloadJson: String): JObject = try {

@@ -74,6 +74,35 @@ class ApplyAnimationPlanCommandTest {
     }
 
     @Test
+    fun sequentialActionsPreserveExistingKeyframesOutsideNewActionWindow() {
+        val existingX = PropertyAnimation(
+            propertyId = "transform.x",
+            keyframes = listOf(
+                PropertyKeyframe("old-0", 0L, PropertyValue.Scalar(0.0)),
+                PropertyKeyframe("old-500", 500_000L, PropertyValue.Scalar(40.0)),
+                PropertyKeyframe("old-3000", 3_000_000L, PropertyValue.Scalar(300.0)),
+                PropertyKeyframe("old-4000", 4_000_000L, PropertyValue.Scalar(360.0)),
+            ),
+        )
+        val newAction = PropertyAnimation(
+            propertyId = "transform.x",
+            keyframes = listOf(
+                PropertyKeyframe("new-1000", 1_000_000L, PropertyValue.Scalar(100.0)),
+                PropertyKeyframe("new-2000", 2_000_000L, PropertyValue.Scalar(220.0)),
+            ),
+        )
+        val initial = project(bodyAnimations = listOf(existingX))
+
+        val result = ApplyAnimationPlanCommand(
+            CharacterAnimationPlan(listOf(ClipAnimationPatch("body", listOf(newAction)))),
+        ).apply(initial)
+
+        val merged = result.project.findClip("body")!!.propertyAnimations.single { it.propertyId == "transform.x" }
+        assertEquals(listOf(0L, 500_000L, 1_000_000L, 2_000_000L, 3_000_000L, 4_000_000L), merged.keyframes.map { it.offsetUs })
+        assertEquals(listOf("old-0", "old-500", "new-1000", "new-2000", "old-3000", "old-4000"), merged.keyframes.map { it.id })
+    }
+
+    @Test
     fun missingClipFailsBeforeAnyMutation() {
         val initial = project()
         val plan = CharacterAnimationPlan(

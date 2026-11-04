@@ -13,5 +13,5 @@ object TermuxRunCommandSpec {
     const val HOME_PATH = "/data/data/com.termux/files/home"
     const val AUTO_RECOVER_PATH = "/data/data/com.termux/files/home/.localcut-engine/auto-recover"
 
-    fun arguments(): Array<String> = arrayOf(AUTO_RECOVER_PATH, "--once")
+    fun arguments(): Array<String> = arrayOf(AUTO_RECOVER_PATH, "--daemon")
 }

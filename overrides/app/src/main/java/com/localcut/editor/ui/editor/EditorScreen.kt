@@ -47,6 +47,7 @@ import com.localcut.editor.domain.history.SetClipOpacityCommand
 import com.localcut.editor.domain.history.SetCompositionGraphCommand
 import com.localcut.editor.domain.history.SetProjectCanvasSizeCommand
 import com.localcut.editor.domain.history.SetTrackDuckingCommand
+import com.localcut.editor.domain.history.SetTrackLockedCommand
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.ClipTransition
 import com.localcut.editor.media.ExportCapabilities
@@ -236,6 +237,7 @@ fun EditorScreen(
                             session = session,
                             playheadUs = preview.positionUs,
                             viewModel = viewModel,
+                            onScrubActiveChanged = previewController::setScrubbingModeEnabled,
                             modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 3.dp),
                         )
                     }
@@ -259,6 +261,7 @@ fun EditorScreen(
                         session = session,
                         playheadUs = preview.positionUs,
                         viewModel = viewModel,
+                        onScrubActiveChanged = previewController::setScrubbingModeEnabled,
                         modifier = Modifier.fillMaxSize().padding(horizontal = 3.dp, vertical = 2.dp),
                     )
                 }
@@ -716,6 +719,7 @@ private fun TimelineForProfessionalState(
     session: ProjectSessionState,
     playheadUs: Long,
     viewModel: EditorViewModel,
+    onScrubActiveChanged: (Boolean) -> Unit,
     modifier: Modifier,
 ) {
     TimelinePane(
@@ -724,6 +728,7 @@ private fun TimelineForProfessionalState(
         playheadUs = playheadUs,
         onSelectClip = { viewModel.dispatch(EditorAction.SelectClip(it)) },
         onSeek = viewModel::seekToUs,
+        onScrubActiveChanged = onScrubActiveChanged,
         onMoveClip = { clipId, newStart ->
             viewModel.dispatch(EditorAction.SelectClip(clipId))
             viewModel.dispatch(EditorAction.MoveSelected(newStart))
@@ -741,6 +746,9 @@ private fun TimelineForProfessionalState(
         },
         onSetTrackSolo = { trackId, solo ->
             viewModel.dispatch(EditorAction.SetTrackSolo(trackId, solo))
+        },
+        onSetTrackLocked = { trackId, locked ->
+            viewModel.dispatch(EditorAction.Execute(SetTrackLockedCommand(trackId, locked)))
         },
         modifier = modifier,
     )

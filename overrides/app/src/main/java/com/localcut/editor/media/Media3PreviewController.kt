@@ -67,6 +67,12 @@ class Media3PreviewController(
 
     override fun play() = delegate.play()
     override fun pause() = delegate.pause()
+
+    /** Enables Media3 rapid-seek optimization only during a playhead drag. */
+    fun setScrubbingModeEnabled(enabled: Boolean) {
+        engine.setScrubbingModeEnabled(enabled)
+    }
+
     override fun seekToUs(positionUs: Long) {
         delegate.seekToUs(positionUs)
         bridgePreviewFramePort.requestRefresh()
@@ -197,6 +203,7 @@ private class Media3PreviewEngine(
     private val appContext = context.applicationContext
     private var activePlayer: CompositionPlayer? = null
     private var activeUsesCustomProcessor: Boolean = false
+    private var scrubbingModeEnabled: Boolean = false
     private var errorCallback: (String) -> Unit = {}
 
     val player: CompositionPlayer
@@ -208,7 +215,14 @@ private class Media3PreviewEngine(
 
     fun currentPlayerOrNull(): CompositionPlayer? = activePlayer
 
+    fun setScrubbingModeEnabled(enabled: Boolean) {
+        if (scrubbingModeEnabled == enabled) return
+        scrubbingModeEnabled = enabled
+        activePlayer?.setScrubbingModeEnabled(enabled)
+    }
+
     fun releaseForBackground() {
+        scrubbingModeEnabled = false
         activePlayer?.release()
         activePlayer = null
     }
@@ -291,6 +305,7 @@ private class Media3PreviewEngine(
         }
 
         return builder.build().also { created ->
+            if (scrubbingModeEnabled) created.setScrubbingModeEnabled(true)
             created.addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
                     errorCallback(error.message ?: "Media3 playback error")

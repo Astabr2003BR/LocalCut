@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
+import com.localcut.editor.bridge.agent.BridgeProcessConnectionStatus
 import com.localcut.editor.domain.timeline.TimelineMath
 import com.localcut.editor.media.AndroidExportCapabilitiesProvider
 import com.localcut.editor.media.ExportEvent
@@ -69,6 +70,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         runtime = LocalCutProcessRuntime.get(this)
+        BridgeProcessConnectionStatus.relay.attach(runtime.bridgeControl.connectionObserver)
         runtime.loadWarning?.let { warning ->
             Toast.makeText(this, warning, Toast.LENGTH_LONG).show()
         }

@@ -206,3 +206,22 @@ test("Android asset links publish the stable LocalCut signing certificate", asyn
     },
   }]);
 });
+
+test("controller rejects public transient media uploads", async t => {
+  const fx = await fixture();
+  t.after(() => fx.runtime.close());
+  const token = "A".repeat(43);
+
+  const uploaded = await fetch(`${fx.baseUrl}/v1/mobile-media/${token}`, {
+    method: "POST",
+    headers: { "content-type": "image/png" },
+    body: Buffer.from("private-image-bytes"),
+  });
+
+  assert.equal(uploaded.status, 405);
+  assert.equal(uploaded.headers.get("allow"), "GET");
+  assert.equal(uploaded.headers.get("cache-control"), "no-store");
+
+  const absent = await fetch(`${fx.baseUrl}/v1/mobile-media/${token}`);
+  assert.equal(absent.status, 404, "rejected upload must not create a relay entry");
+});

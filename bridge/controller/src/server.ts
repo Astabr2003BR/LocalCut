@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { WebSocketServer, type WebSocket } from "ws";
+import { createAttachmentStager } from "./attachmentTransport.ts";
 import { BrowserControlSessionService } from "./browserControl.ts";
 import { createBrowserControlHttpHandler } from "./browserControlHttp.ts";
 import { CommandRouter, DeviceRegistry } from "./commandRouter.ts";
@@ -14,6 +15,7 @@ import { PairingService } from "./pairing.ts";
 import { DeviceRecoveryTokenService, publicKeySha256 } from "./recovery.ts";
 import { DeviceSessionService, SqliteSessionStore, type DeviceSessionStore } from "./session.ts";
 import { SqliteBridgeStore, type BridgeStore } from "./store.ts";
+import { createTransientMediaStore } from "./transientMediaHttp.ts";
 
 const MAX_JSON_BODY_BYTES = 64 * 1024;
 const MAX_HANDOFF_QUERY_BYTES = 8 * 1024;
@@ -61,6 +63,8 @@ export function createControllerServer(options: ControllerServerOptions): Contro
   const publicBaseUrl = options.publicBaseUrl ?? DEFAULT_PUBLIC_BASE_URL;
   const registry = options.registry ?? new DeviceRegistry();
   const router = options.router ?? new CommandRouter(options.store, registry);
+  const transientMediaStore = createTransientMediaStore({ nowEpochMs });
+  const stageAttachment = createAttachmentStager({ publicBaseUrl, transientMediaStore });
   const mobileClaimNonces = new Map<string, number>();
   const recoveryNonces = new Map<string, number>();
   const recoveryTokens = new DeviceRecoveryTokenService(options.controllerApiToken);
@@ -87,6 +91,7 @@ export function createControllerServer(options: ControllerServerOptions): Contro
     controllerId: options.controllerId,
     publicBaseUrl,
     nowEpochMs,
+    transientMediaStore,
     ...(options.remoteRandomToken ? { randomToken: options.remoteRandomToken } : {}),
   });
   const wss = new WebSocketServer({ noServer: true, clientTracking: false });
@@ -94,6 +99,9 @@ export function createControllerServer(options: ControllerServerOptions): Contro
     router,
     options.controllerId,
     {
+      stageAttachment(file) {
+        return stageAttachment(file);
+      },
       claimPairing(code) {
         const claimed = options.pairing.claim(code, options.controllerId, nowEpochMs());
         return {

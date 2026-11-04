@@ -120,6 +120,11 @@ class DefaultPreviewController(
 
     override fun seekToUs(positionUs: Long) {
         val target = transport.seekToUs(positionUs)
+        if (transport.state.durationUs <= 0L) {
+            clearPendingSeek()
+            publishTransportState()
+            return
+        }
         beginPendingSeek(target)
         engine.seekToUs(target)
         publishTransportState()
@@ -136,6 +141,11 @@ class DefaultPreviewController(
         )
         transport.pause()
         transport.seekToUs(target)
+        if (transport.state.durationUs <= 0L) {
+            clearPendingSeek()
+            publishTransportState()
+            return
+        }
         beginPendingSeek(target)
         engine.seekToUs(target)
         publishTransportState()

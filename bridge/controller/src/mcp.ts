@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
+import type { OpenAIFileParam } from "./attachmentTransport.ts";
 import type { CommandRouter, DeviceRegistry } from "./commandRouter.ts";
 import {
   bridgeCapabilities,
@@ -37,6 +38,7 @@ type DeviceIdSource = Pick<DeviceRegistry, "listDeviceIds">;
 export interface ControllerAdminActions {
   claimPairing(code: string): Promise<unknown> | unknown;
   revokeDevice(deviceId: string): Promise<unknown> | unknown;
+  stageAttachment(file: OpenAIFileParam): Promise<unknown> | unknown;
 }
 
 export function controllerToolNames(): string[] {
@@ -44,7 +46,7 @@ export function controllerToolNames(): string[] {
 }
 
 export function controllerManagementToolNames(): string[] {
-  return ["claim_pairing", "discover_active_contexts", "revoke_device"];
+  return ["claim_pairing", "discover_active_contexts", "revoke_device", "stage_attachment"];
 }
 
 export function securityScopesForCapability(capability: BridgeCapability): [string] {
@@ -62,6 +64,33 @@ export function buildToolInputSchema(capability: BridgeCapability) {
     ...routingFields,
     expectedRevision: z.number().int().nonnegative().optional(),
   }).strict();
+}
+
+export function buildAttachmentInputSchema() {
+  const httpsUrl = z.string().url().refine(value => {
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:" && !url.username && !url.password;
+    } catch {
+      return false;
+    }
+  }, "HTTPS URL required");
+
+  return z.object({
+    file: z.object({
+      download_url: httpsUrl,
+      file_id: z.string().min(1).max(512),
+      mime_type: z.string().min(1).max(255).optional(),
+      file_name: z.string().min(1).max(512).optional(),
+    }).strict(),
+  }).strict();
+}
+
+export function attachmentToolMeta(scopes: readonly string[]): Record<string, unknown> {
+  return {
+    ...oauthToolMeta(scopes),
+    "openai/fileParams": ["file"],
+  };
 }
 
 export async function discoverActiveContexts(
@@ -177,6 +206,26 @@ export function createLocalCutMcpServer(
   }
 
   if (admin) {
+    const attachmentSchema = buildAttachmentInputSchema();
+    server.registerTool(
+      "stage_attachment",
+      {
+        title: "LocalCut: stage ChatGPT attachment",
+        description: "Receive one ChatGPT image/audio/video attachment, copy it into LocalCut's bounded one-time relay, and return a safe Android import_url handoff. The Android app still requires local confirmation before importing.",
+        inputSchema: attachmentSchema,
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+        _meta: attachmentToolMeta(["localcut:write"]),
+      },
+      async input => {
+        const parsed = attachmentSchema.parse(input);
+        try {
+          return toolResult(await admin.stageAttachment(parsed.file), false);
+        } catch (error) {
+          return toolResult({ code: safeAdminError(error) }, true);
+        }
+      },
+    );
+
     const claimSchema = z.object({ code: z.string().regex(/^\d{6}$/) }).strict();
     server.registerTool(
       "claim_pairing",

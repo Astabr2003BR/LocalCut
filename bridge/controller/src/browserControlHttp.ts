@@ -9,6 +9,10 @@ import {
   type BridgeResultEnvelope,
 } from "./protocol.ts";
 import type { DeviceSessionService } from "./session.ts";
+import {
+  createTransientMediaHttpHandler,
+  type TransientMediaStore,
+} from "./transientMediaHttp.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const BINDING_COOKIE = "localcut_remote_binding";
@@ -23,18 +27,25 @@ export type BrowserControlHttpOptions = {
   publicBaseUrl: string;
   nowEpochMs?: () => number;
   randomToken?: () => string;
+  transientMediaStore?: TransientMediaStore;
 };
 
 export function createBrowserControlHttpHandler(options: BrowserControlHttpOptions) {
   const nowEpochMs = options.nowEpochMs ?? Date.now;
   const randomToken = options.randomToken ?? (() => randomBytes(24).toString("base64url"));
   const publicBaseUrl = options.publicBaseUrl.replace(/\/$/, "");
+  const transientMediaHandler = createTransientMediaHttpHandler(
+    { nowEpochMs },
+    options.transientMediaStore,
+  );
 
   return async function handleBrowserControl(
     req: IncomingMessage,
     res: ServerResponse,
     url: URL,
   ): Promise<boolean> {
+    if (await transientMediaHandler(req, res, url)) return true;
+
     if (req.method === "GET" && url.pathname === "/remote/approve-device") {
       const requestId = requiredQuery(url, "requestId", 256);
       const deepLink = new URL("localcut://remote/approve");

@@ -81,7 +81,8 @@ class BridgeConnectionServiceSmokeTest {
 
         context.startService(
             Intent(context, BridgeConnectionService::class.java)
-                .setAction(BridgeConnectionService.ACTION_DISCONNECT),
+                .setAction(BridgeConnectionService.ACTION_DISCONNECT)
+                .putExtra(BridgeConnectionService.EXTRA_EXPLICIT_USER_DISCONNECT, true),
         )
 
         waitUntil { !settings.sessionEnabled }

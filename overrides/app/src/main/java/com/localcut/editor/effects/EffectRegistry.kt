@@ -92,6 +92,16 @@ object EffectRegistry {
                 EffectParameterSpec("center", EffectParameterType.POINT, EffectParameter.Point(0.5, 0.5)),
             ),
         ),
+        EffectDefinition(
+            "localcut.character.mouth_warp",
+            EffectCategory.DISTORTION,
+            listOf(
+                EffectParameterSpec("center", EffectParameterType.POINT, EffectParameter.Point(0.5, 0.65)),
+                numberSpec("radiusX", 0.10, 0.01, 0.50),
+                numberSpec("radiusY", 0.05, 0.005, 0.30),
+                numberSpec("openness", 0.0, 0.0, 1.0),
+            ),
+        ),
         EffectDefinition("localcut.flip.horizontal", EffectCategory.DISTORTION, emptyList()),
         EffectDefinition("localcut.flip.vertical", EffectCategory.DISTORTION, emptyList()),
         EffectDefinition(
@@ -133,6 +143,12 @@ object EffectRegistry {
                         addAll(parameterIssues(animation.propertyId, animated, spec))
                     }
                 }
+            }
+        }
+        if (effect.typeId == "localcut.character.mouth_warp") {
+            val center = effect.parameters["center"] as? EffectParameter.Point
+            if (center != null && (center.x !in 0.0..1.0 || center.y !in 0.0..1.0)) {
+                add("parameter center is outside allowed range")
             }
         }
     }

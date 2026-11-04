@@ -237,6 +237,7 @@ fun EditorScreen(
                             session = session,
                             playheadUs = preview.positionUs,
                             viewModel = viewModel,
+                            onScrubActiveChanged = previewController::setScrubbingModeEnabled,
                             modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 3.dp),
                         )
                     }
@@ -260,6 +261,7 @@ fun EditorScreen(
                         session = session,
                         playheadUs = preview.positionUs,
                         viewModel = viewModel,
+                        onScrubActiveChanged = previewController::setScrubbingModeEnabled,
                         modifier = Modifier.fillMaxSize().padding(horizontal = 3.dp, vertical = 2.dp),
                     )
                 }
@@ -717,6 +719,7 @@ private fun TimelineForProfessionalState(
     session: ProjectSessionState,
     playheadUs: Long,
     viewModel: EditorViewModel,
+    onScrubActiveChanged: (Boolean) -> Unit,
     modifier: Modifier,
 ) {
     TimelinePane(
@@ -725,6 +728,7 @@ private fun TimelineForProfessionalState(
         playheadUs = playheadUs,
         onSelectClip = { viewModel.dispatch(EditorAction.SelectClip(it)) },
         onSeek = viewModel::seekToUs,
+        onScrubActiveChanged = onScrubActiveChanged,
         onMoveClip = { clipId, newStart ->
             viewModel.dispatch(EditorAction.SelectClip(clipId))
             viewModel.dispatch(EditorAction.MoveSelected(newStart))

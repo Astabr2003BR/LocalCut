@@ -117,6 +117,7 @@ fun TimelinePane(
     onSetTrackMuted: (String, Boolean) -> Unit = { _, _ -> },
     onSetTrackSolo: (String, Boolean) -> Unit = { _, _ -> },
     onSetTrackLocked: (String, Boolean) -> Unit = { _, _ -> },
+    onScrubActiveChanged: (Boolean) -> Unit = {},
 ) {
     val horizontalScroll = rememberScrollState()
     val verticalScroll = rememberScrollState()
@@ -151,6 +152,10 @@ fun TimelinePane(
     val scope = rememberCoroutineScope()
     val runtime = remember(context) { LocalCutProcessRuntime.get(context) }
     val currentPlayheadUs by rememberUpdatedState(playheadUs)
+    val latestScrubActiveHandler by rememberUpdatedState(onScrubActiveChanged)
+    DisposableEffect(Unit) {
+        onDispose { latestScrubActiveHandler(false) }
+    }
     var snapEnabled by remember(project.id) { mutableStateOf(true) }
     var exclusiveHandleActive by remember(project.id) { mutableStateOf(false) }
     val snapClipEdges = if (snapEnabled) {
@@ -481,6 +486,7 @@ fun TimelinePane(
                         onSelectClip = onSelectClip,
                         onMoveClip = onMoveClip,
                         onSeek = onSeek,
+                        onScrubActiveChanged = onScrubActiveChanged,
                         onTrimLeft = onTrimLeft,
                         onTrimRight = onTrimRight,
                         onAdd = addAction,
@@ -640,6 +646,7 @@ private fun TrackLane(
     onSelectClip: (String?) -> Unit,
     onMoveClip: (String, Long) -> Unit,
     onSeek: (Long) -> Unit,
+    onScrubActiveChanged: (Boolean) -> Unit,
     onTrimLeft: (String, Long) -> Unit,
     onTrimRight: (String, Long) -> Unit,
     onAdd: (() -> Unit)?,
@@ -882,7 +889,10 @@ private fun TrackLane(
             dpPerSecond = dpPerSecond,
             onSelectClip = onSelectClip,
             onSeek = onSeek,
-            onActiveChanged = onExclusiveHandleActiveChanged,
+            onActiveChanged = { active ->
+                onExclusiveHandleActiveChanged(active)
+                onScrubActiveChanged(active)
+            },
         )
     }
 }

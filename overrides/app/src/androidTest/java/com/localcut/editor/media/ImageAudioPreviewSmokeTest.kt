@@ -101,6 +101,62 @@ class ImageAudioPreviewSmokeTest {
         }
     }
 
+
+    @Test
+    fun rapidBackAndForthScrubbingKeepsImageAudioPreviewUsable() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val directory = File(context.filesDir, "remote-media").apply { mkdirs() }
+        val imageFile = createPng(File(directory, "scrub-image-${System.nanoTime()}.png"), Color.BLUE)
+        val audioFile = createMonoPcmWav(File(directory, "scrub-audio-${System.nanoTime()}.wav"), DURATION_US)
+        val imageAsset = asset(context.packageName, "scrub-still", imageFile, AssetType.IMAGE, "image/png", null)
+        val audioAsset = asset(context.packageName, "scrub-sound", audioFile, AssetType.AUDIO, "audio/wav", DURATION_US)
+        val seed = Project.create("image-audio-scrub", WIDTH, HEIGHT, 30)
+        val visualTrack = seed.tracks.first { it.type == TrackType.VISUAL }.copy(
+            clips = listOf(clip("scrub-still-clip", imageAsset.id, DURATION_US)),
+        )
+        val audioTrack = seed.tracks.first { it.type == TrackType.AUDIO }.copy(
+            clips = listOf(clip("scrub-sound-clip", audioAsset.id, DURATION_US)),
+        )
+        val project = seed.copy(
+            assets = listOf(imageAsset, audioAsset),
+            tracks = listOf(visualTrack, audioTrack),
+        )
+
+        var controller: Media3PreviewController? = null
+        try {
+            instrumentation.runOnMainSync {
+                val created = Media3PreviewController(
+                    context,
+                    ProjectCompositionCompiler(AssetUriResolver(context.contentResolver)),
+                )
+                controller = created
+                assertTrue("scrub project must load", created.load(project).isSuccess)
+                created.setScrubbingModeEnabled(true)
+                repeat(60) { step ->
+                    created.seekToUs(if (step % 2 == 0) 800_000L else 120_000L)
+                }
+                created.setScrubbingModeEnabled(false)
+                created.seekToUs(300_000L)
+                created.play()
+            }
+            // Observe asynchronous decoder / video graph failures after seek commands settle.
+            runBlocking { kotlinx.coroutines.delay(1_500L) }
+            val settled = checkNotNull(controller).state.value
+            assertNull("rapid scrubbing must not fail video frames", settled.errorMessage)
+            assertTrue("preview must remain loaded after scrubbing", settled.durationUs == DURATION_US)
+        } finally {
+            controller?.let { active ->
+                instrumentation.runOnMainSync {
+                    active.setScrubbingModeEnabled(false)
+                    active.release()
+                }
+            }
+            imageFile.delete()
+            audioFile.delete()
+        }
+    }
+
     private fun clip(id: String, assetId: String, durationUs: Long): Clip = Clip(
         id = id,
         assetId = assetId,

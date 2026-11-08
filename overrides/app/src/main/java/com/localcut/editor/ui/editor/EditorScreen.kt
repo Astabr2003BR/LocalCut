@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
 import com.localcut.editor.domain.history.AddBeatMarkerCommand
+import com.localcut.editor.domain.history.RippleDeleteClipCommand
 import com.localcut.editor.domain.history.ApplyDetectedBeatMarkersCommand
 import com.localcut.editor.domain.history.DeleteBeatMarkerCommand
 import com.localcut.editor.domain.history.SetClipOpacityCommand
@@ -666,6 +667,10 @@ private fun ProfessionalClipQuickActions(
     val transitionCandidate = FadeTransitionUiPolicy.createOrUpdate(session.project, clip.id, 500_000L)
     val existingFade = FadeTransitionUiPolicy.existingFade(session.project, clip.id)
     var showTransitionDialog by remember(clip.id) { mutableStateOf(false) }
+    var rippleConfirmation by remember(clip.id) { mutableStateOf(false) }
+    var rippleRevision by remember(clip.id) { mutableStateOf<Long?>(null) }
+    var rippleMessage by remember(clip.id) { mutableStateOf<String?>(null) }
+    val ripplePreview = RippleDeleteUiPolicy.preview(session.project, clip.id)
 
     if (showTransitionDialog && transitionCandidate != null) {
         ProfessionalFadeTransitionDialog(
@@ -686,6 +691,46 @@ private fun ProfessionalClipQuickActions(
                 }
             },
             onDismiss = { showTransitionDialog = false },
+        )
+    }
+
+    if (rippleConfirmation && ripplePreview != null) {
+        AlertDialog(
+            onDismissRequest = { rippleConfirmation = false },
+            title = { Text("Excluir e fechar espaço?") },
+            text = {
+                Text(
+                    "O clipe selecionado será excluído e " +
+                        "${ripplePreview.followingClipCount} clipe(s) posterior(es) desta faixa " +
+                        "serão deslocados para a esquerda. Outras faixas não serão movidas. " +
+                        "Você poderá usar Desfazer.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val current = viewModel.sessionState.value
+                        val valid = rippleRevision?.let { revision ->
+                            RippleDeleteUiPolicy.matchesCurrent(current, revision, ripplePreview)
+                        } == true
+                        if (!valid) {
+                            rippleMessage = "A seleção ou a timeline mudou. Tente novamente."
+                        } else {
+                            viewModel.dispatch(EditorAction.Execute(RippleDeleteClipCommand(clip.id)))
+                            val after = viewModel.sessionState.value
+                            rippleMessage = if (after.revision > current.revision) {
+                                "Espaço fechado. Use Desfazer para reverter."
+                            } else {
+                                after.lastError ?: "Não foi possível fechar o espaço."
+                            }
+                        }
+                        rippleConfirmation = false
+                    },
+                ) { Text("Excluir e fechar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { rippleConfirmation = false }) { Text("Cancelar") }
+            },
         )
     }
 
@@ -711,6 +756,24 @@ private fun ProfessionalClipQuickActions(
             onClick = { viewModel.dispatch(EditorAction.DeleteSelected) },
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
         ) { Text("Excluir") }
+        OutlinedButton(
+            onClick = {
+                rippleRevision = session.revision
+                rippleMessage = null
+                rippleConfirmation = true
+            },
+            enabled = ripplePreview != null,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+        ) { Text("Excluir + fechar") }
+    }
+    rippleMessage?.let { message ->
+        Text(
+            message,
+            color = if (message.startsWith("Espaço fechado.")) EditorAccent
+                else MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        )
     }
 }
 

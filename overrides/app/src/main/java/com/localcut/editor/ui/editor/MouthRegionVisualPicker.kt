@@ -50,6 +50,7 @@ fun MouthRegionVisualPicker(
     asset: Asset,
     region: MouthRegion,
     enabled: Boolean,
+    onSourceDimensionsChanged: (Int, Int) -> Unit,
     onRegionChanged: (MouthRegion) -> Unit,
 ) {
     val context = LocalContext.current.applicationContext
@@ -74,6 +75,10 @@ fun MouthRegionVisualPicker(
 
     val currentRegion by rememberUpdatedState(region)
     val latestOnChange by rememberUpdatedState(onRegionChanged)
+    val latestOnSize by rememberUpdatedState(onSourceDimensionsChanged)
+    LaunchedEffect(asset.id, asset.fingerprint, bitmap.width, bitmap.height) {
+        latestOnSize(bitmap.width, bitmap.height)
+    }
     fun placeAt(position: Offset, width: Float, height: Float) {
         if (!enabled || width <= 0f || height <= 0f) return
         val fit = MouthRegionPlacementPolicy.fit(

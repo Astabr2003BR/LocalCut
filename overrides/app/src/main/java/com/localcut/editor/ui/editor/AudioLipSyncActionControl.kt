@@ -54,6 +54,12 @@ fun AudioLipSyncActionControl(modifier: Modifier = Modifier) {
     val imageClip = session.selectedClipId?.let(project::findClip) ?: return
     val imageAsset = project.assets.firstOrNull { it.id == imageClip.assetId } ?: return
     if (imageAsset.type != AssetType.IMAGE) return
+    val visualPlacementSupported = MouthRegionRenderProjectionPolicy.supportsSourcePreview(
+        project, imageClip,
+    )
+    var sourceSize by remember(imageClip.id, imageAsset.fingerprint) {
+        mutableStateOf<Pair<Int, Int>?>(null)
+    }
     val voiceClips = project.tracks.filter { it.type == TrackType.AUDIO }.flatMap { it.clips }
         .filter { clip -> project.assets.any { it.id == clip.assetId && it.type == AssetType.AUDIO } }
 
@@ -143,19 +149,34 @@ fun AudioLipSyncActionControl(modifier: Modifier = Modifier) {
                         ) { Text((if (voiceId == clip.id) "✓ " else "") + name) }
                     }
                 }
-                Text("Marque a boca tocando ou arrastando na imagem original:")
-                MouthRegionVisualPicker(
-                    asset = imageAsset,
-                    region = MouthRegionPlacementPolicy.fromUiValues(centerX, centerY, radiusX, radiusY),
-                    enabled = !working,
-                    onRegionChanged = { selected ->
-                        centerX = selected.centerX.toFloat()
-                        centerY = selected.centerY.toFloat()
-                        radiusX = selected.radiusX.toFloat()
-                        radiusY = selected.radiusY.toFloat()
-                        regionApproved = false
-                    },
-                )
+                if (visualPlacementSupported) {
+                    Text("Marque a boca tocando ou arrastando na imagem original:")
+                    MouthRegionVisualPicker(
+                        asset = imageAsset,
+                        region = MouthRegionPlacementPolicy.fromUiValues(centerX, centerY, radiusX, radiusY),
+                        enabled = !working,
+                        onSourceDimensionsChanged = { width, height ->
+                            if (sourceSize != (width to height)) {
+                                sourceSize = width to height
+                                regionApproved = false
+                            }
+                        },
+                        onRegionChanged = { selected ->
+                            centerX = selected.centerX.toFloat()
+                            centerY = selected.centerY.toFloat()
+                            radiusX = selected.radiusX.toFloat()
+                            radiusY = selected.radiusY.toFloat()
+                            regionApproved = false
+                        },
+                    )
+                } else {
+                    Text(
+                        "Esta imagem tem transformação, recorte ou animação. " +
+                            "A marcação visual não pode garantir alinhamento; " +
+                            "use os valores da região no quadro final.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 Text("Ajuste fino (posição e tamanho em porcentagem):")
                 Text("Horizontal: " + (centerX * 100).toInt() + "%")
                 Slider(
@@ -243,7 +264,18 @@ fun AudioLipSyncActionControl(modifier: Modifier = Modifier) {
                             message = "Analisando áudio…"
                             sequence += 1L
                             val operation = sequence
-                            val chosenRegion = MouthRegionPlacementPolicy.fromUiValues(centerX, centerY, radiusX, radiusY)
+                            val localRegion = MouthRegionPlacementPolicy.fromUiValues(
+                                centerX, centerY, radiusX, radiusY,
+                            )
+                            val chosenRegion = if (visualPlacementSupported && sourceSize != null) {
+                                val (width, height) = checkNotNull(sourceSize)
+                                MouthRegionRenderProjectionPolicy.fromSourceToEffect(
+                                    localRegion, width, height, before.project.width, before.project.height,
+                                )
+                            } else {
+                                // Fallback sliders remain in final-frame coordinates.
+                                localRegion
+                            }
                             val key = WaveformCacheKey(
                                 slice.audioFingerprint, slice.audioSourceInUs,
                                 slice.audioSourceOutUs, slice.bucketCount,

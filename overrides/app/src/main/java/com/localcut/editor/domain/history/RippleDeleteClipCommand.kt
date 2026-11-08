@@ -38,6 +38,9 @@ data class RippleDeleteClipCommand(
                 }
             }
             .mapTo(hashSetOf()) { it.id }
+        require(project.compositionGraph.nodes.none { node ->
+            node.kind == CompositionNodeKind.LAYER && node.clipId in followingIds && node.locked
+        }) { "ripple delete cannot move locked following clip" }
 
         val deleted = DeleteClipWithTransitionsCommand(clipId).apply(project).project
         val deletedTrackIndex = deleted.tracks.indexOfFirst { it.id == originalTrack.id }

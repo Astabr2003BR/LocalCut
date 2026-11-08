@@ -28,7 +28,11 @@ object RippleDeleteUiPolicy {
         if (clip.startUs < 0L || clip.durationUs <= 0L) return null
         // The backend rejects overlaps too; hide a control known to be invalid.
         if (track.clips.any { it.id != clipId && it.startUs > clip.startUs && it.startUs < end }) return null
-        val following = track.clips.count { it.id != clipId && it.startUs >= end }
+        val followingIds = track.clips.filter { it.id != clipId && it.startUs >= end }.mapTo(hashSetOf()) { it.id }
+        if (project.compositionGraph.nodes.any { node ->
+            node.kind == CompositionNodeKind.LAYER && node.clipId in followingIds && node.locked
+        }) return null
+        val following = followingIds.size
         return RippleDeletePreview(
             clipId = clipId,
             trackId = track.id,

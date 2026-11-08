@@ -4,6 +4,9 @@ import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.ClipTransition
+import com.localcut.editor.domain.model.CompositionGraph
+import com.localcut.editor.domain.model.CompositionNode
+import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackCollisionPolicy
@@ -77,6 +80,19 @@ class RippleDeleteClipCommandTest {
 
         assertThrows(IllegalArgumentException::class.java) {
             RippleDeleteClipCommand("b").apply(project)
+        }
+    }
+
+    @Test
+    fun rippleDeleteRefusesToMoveLockedFollowingLayer() {
+        val initial = sequentialProject()
+        val locked = initial.copy(
+            compositionGraph = CompositionGraph(nodes = listOf(
+                CompositionNode(id = "layer-c", kind = CompositionNodeKind.LAYER, clipId = "c", locked = true),
+            )),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            RippleDeleteClipCommand("b").apply(locked)
         }
     }
 

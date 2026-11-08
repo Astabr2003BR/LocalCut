@@ -1,6 +1,9 @@
 package com.localcut.editor.ui.editor
 
 import com.localcut.editor.domain.model.Clip
+import com.localcut.editor.domain.model.CompositionGraph
+import com.localcut.editor.domain.model.CompositionNode
+import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
@@ -51,6 +54,16 @@ class RippleDeleteUiPolicyTest {
         })
         assertNull(RippleDeleteUiPolicy.preview(overlay, "b"))
         assertNull(RippleDeleteUiPolicy.preview(locked, "b"))
+    }
+
+    @Test
+    fun lockedFollowingLayerHidesDestructiveRippleAction() {
+        val project = project().copy(
+            compositionGraph = CompositionGraph(nodes = listOf(
+                CompositionNode(id = "locked-c", kind = CompositionNodeKind.LAYER, clipId = "c", locked = true),
+            )),
+        )
+        assertNull(RippleDeleteUiPolicy.preview(project, "b"))
     }
 
     @Test

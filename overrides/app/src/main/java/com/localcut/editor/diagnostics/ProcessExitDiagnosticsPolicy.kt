@@ -1,6 +1,7 @@
 package com.localcut.editor.diagnostics
 
 import android.app.ApplicationExitInfo
+import android.app.ActivityManager
 import java.util.Locale
 import kotlin.math.abs
 
@@ -19,6 +20,23 @@ object ProcessExitDiagnosticsPolicy {
         ApplicationExitInfo.REASON_DEPENDENCY_DIED,
         ApplicationExitInfo.REASON_OTHER -> true
         else -> false
+    }
+
+    /** Historical Android exits can survive multiple app launches and package updates. */
+    fun shouldReportExit(reason: Int, timestampMs: Long, lastAcknowledgedMs: Long): Boolean =
+        timestampMs > 0L && timestampMs > lastAcknowledgedMs && shouldSurface(reason)
+
+    fun shouldReportStoredCrash(timestampMs: Long, lastAcknowledgedMs: Long): Boolean =
+        timestampMs > 0L && timestampMs > lastAcknowledgedMs
+
+    /** A cached low-memory kill is an OS memory-pressure event, not evidence of an app leak. */
+    fun memoryExitInterpretation(reason: Int, importance: Int): String? {
+        if (reason != ApplicationExitInfo.REASON_LOW_MEMORY) return null
+        return if (importance >= ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED) {
+            "O Android encerrou um processo em segundo plano para liberar memória; isso isoladamente não comprova vazamento de memória. A opção de bateria sem restrição não impede esse encerramento."
+        } else {
+            "O Android encerrou o processo por pressão de memória; isso isoladamente não comprova vazamento de memória. Verifique se a edição em primeiro plano foi interrompida."
+        }
     }
 
     fun shouldAttachStoredCrash(

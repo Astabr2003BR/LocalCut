@@ -146,10 +146,7 @@ fun AudioLipSyncActionControl(modifier: Modifier = Modifier) {
                 Text("Marque a boca tocando ou arrastando na imagem original:")
                 MouthRegionVisualPicker(
                     asset = imageAsset,
-                    region = MouthRegion(
-                        centerX.toDouble(), centerY.toDouble(),
-                        radiusX.toDouble(), radiusY.toDouble(),
-                    ),
+                    region = MouthRegionPlacementPolicy.fromUiValues(centerX, centerY, radiusX, radiusY),
                     enabled = !working,
                     onRegionChanged = { selected ->
                         centerX = selected.centerX.toFloat()
@@ -163,15 +160,21 @@ fun AudioLipSyncActionControl(modifier: Modifier = Modifier) {
                 Text("Horizontal: " + (centerX * 100).toInt() + "%")
                 Slider(
                     value = centerX,
-                    onValueChange = { centerX = it; regionApproved = false },
-                    valueRange = radiusX..(1f - radiusX),
+                    onValueChange = {
+                        centerX = it.coerceIn(radiusX, 1f - radiusX)
+                        regionApproved = false
+                    },
+                    valueRange = 0f..1f,
                     enabled = !working,
                 )
                 Text("Vertical: " + (centerY * 100).toInt() + "%")
                 Slider(
                     value = centerY,
-                    onValueChange = { centerY = it; regionApproved = false },
-                    valueRange = radiusY..(1f - radiusY),
+                    onValueChange = {
+                        centerY = it.coerceIn(radiusY, 1f - radiusY)
+                        regionApproved = false
+                    },
+                    valueRange = 0f..1f,
                     enabled = !working,
                 )
                 Text("Raio horizontal: " + (radiusX * 100).toInt() + "%")
@@ -179,11 +182,9 @@ fun AudioLipSyncActionControl(modifier: Modifier = Modifier) {
                     value = radiusX,
                     onValueChange = { value ->
                         val adjusted = MouthRegionPlacementPolicy.withRadii(
-                            MouthRegion(
-                                centerX.toDouble(), centerY.toDouble(),
-                                radiusX.toDouble(), radiusY.toDouble(),
-                            ),
-                            value.toDouble(), radiusY.toDouble(),
+                            MouthRegionPlacementPolicy.fromUiValues(centerX, centerY, radiusX, radiusY),
+                            value.toDouble().coerceIn(0.01, 0.50),
+                            radiusY.toDouble().coerceIn(0.005, 0.30),
                         )
                         radiusX = adjusted.radiusX.toFloat()
                         centerX = adjusted.centerX.toFloat()
@@ -197,11 +198,9 @@ fun AudioLipSyncActionControl(modifier: Modifier = Modifier) {
                     value = radiusY,
                     onValueChange = { value ->
                         val adjusted = MouthRegionPlacementPolicy.withRadii(
-                            MouthRegion(
-                                centerX.toDouble(), centerY.toDouble(),
-                                radiusX.toDouble(), radiusY.toDouble(),
-                            ),
-                            radiusX.toDouble(), value.toDouble(),
+                            MouthRegionPlacementPolicy.fromUiValues(centerX, centerY, radiusX, radiusY),
+                            radiusX.toDouble().coerceIn(0.01, 0.50),
+                            value.toDouble().coerceIn(0.005, 0.30),
                         )
                         radiusY = adjusted.radiusY.toFloat()
                         centerY = adjusted.centerY.toFloat()
@@ -244,10 +243,7 @@ fun AudioLipSyncActionControl(modifier: Modifier = Modifier) {
                             message = "Analisando áudio…"
                             sequence += 1L
                             val operation = sequence
-                            val chosenRegion = MouthRegion(
-                                centerX.toDouble(), centerY.toDouble(),
-                                radiusX.toDouble(), radiusY.toDouble(),
-                            )
+                            val chosenRegion = MouthRegionPlacementPolicy.fromUiValues(centerX, centerY, radiusX, radiusY)
                             val key = WaveformCacheKey(
                                 slice.audioFingerprint, slice.audioSourceInUs,
                                 slice.audioSourceOutUs, slice.bucketCount,

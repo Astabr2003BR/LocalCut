@@ -82,6 +82,24 @@ class MouthRegionPlacementPolicyTest {
     }
 
     @Test
+    fun composeFloatEndpointsDoNotEscapeDoubleValidationBounds() {
+        val tiny = MouthRegionPlacementPolicy.fromUiValues(0f, 1f, 0.01f, 0.005f)
+        assertEquals(0.01, tiny.radiusX, 0.0)
+        assertEquals(0.005, tiny.radiusY, 0.0)
+        assertEquals(0.01, tiny.centerX, 0.0)
+        assertEquals(0.995, tiny.centerY, 0.0)
+
+        val maxed = MouthRegionPlacementPolicy.fromUiValues(0.9f, 0f, 0.50f, 0.30f)
+        assertEquals(0.5, maxed.radiusX, 0.0)
+        assertEquals(0.3, maxed.radiusY, 0.0)
+        assertEquals(0.5, maxed.centerX, 0.0)
+        assertEquals(0.3, maxed.centerY, 0.0)
+        assertThrows(IllegalArgumentException::class.java) {
+            MouthRegionPlacementPolicy.fromUiValues(Float.NaN, 0.5f, 0.1f, 0.1f)
+        }
+    }
+
+    @Test
     fun tinyAndMaximumAllowedRadiiRemainValid() {
         val fit = MouthRegionPlacementPolicy.fit(200, 200, 200.0, 200.0)
         val maxRegion = MouthRegion(0.5, 0.5, 0.5, 0.3)

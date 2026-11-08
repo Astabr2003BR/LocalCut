@@ -12,6 +12,26 @@ data class MouthImageFitRect(
 )
 
 object MouthRegionPlacementPolicy {
+    /**
+     * Convert Compose Float slider values without losing inclusive Double limits
+     * (e.g., 0.005f is slightly below 0.005 as Double).
+     */
+    fun fromUiValues(centerX: Float, centerY: Float, radiusX: Float, radiusY: Float): MouthRegion {
+        require(listOf(centerX, centerY, radiusX, radiusY).all(Float::isFinite)) {
+            "mouth controls must be finite"
+        }
+        require(radiusX in 0.00999f..0.50001f && radiusY in 0.00499f..0.30001f) {
+            "mouth radius outside slider bounds"
+        }
+        val rx = radiusX.toDouble().coerceIn(0.01, 0.50)
+        val ry = radiusY.toDouble().coerceIn(0.005, 0.30)
+        return MouthRegion(
+            centerX.toDouble().coerceIn(rx, 1.0 - rx),
+            centerY.toDouble().coerceIn(ry, 1.0 - ry),
+            rx, ry,
+        )
+    }
+
     fun fit(
         sourceWidthPx: Int,
         sourceHeightPx: Int,

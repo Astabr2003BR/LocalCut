@@ -9,6 +9,40 @@ import org.junit.Test
 
 class ProcessExitDiagnosticsPolicyTest {
     @Test
+    fun memoryExitIsReportedOnlyIfNewerThanPreviouslyAcknowledgedExit() {
+        val lowMemory = ApplicationExitInfo.REASON_LOW_MEMORY
+        assertTrue(ProcessExitDiagnosticsPolicy.shouldReportExit(lowMemory, 1_000L, 0L))
+        assertFalse(ProcessExitDiagnosticsPolicy.shouldReportExit(lowMemory, 1_000L, 1_000L))
+        assertFalse(ProcessExitDiagnosticsPolicy.shouldReportExit(lowMemory, 900L, 1_000L))
+        assertTrue(ProcessExitDiagnosticsPolicy.shouldReportExit(lowMemory, 1_001L, 1_000L))
+        assertFalse(ProcessExitDiagnosticsPolicy.shouldReportExit(lowMemory, 0L, 0L))
+    }
+
+    @Test
+    fun normalExitsAndPreviouslyShownStoredCrashesCannotReopenOldDialog() {
+        assertFalse(ProcessExitDiagnosticsPolicy.shouldReportExit(
+            ApplicationExitInfo.REASON_PACKAGE_UPDATED, 2_000L, 0L,
+        ))
+        assertFalse(ProcessExitDiagnosticsPolicy.shouldReportStoredCrash(2_000L, 2_000L))
+        assertTrue(ProcessExitDiagnosticsPolicy.shouldReportStoredCrash(2_001L, 2_000L))
+        assertFalse(ProcessExitDiagnosticsPolicy.shouldReportStoredCrash(0L, 0L))
+    }
+
+    @Test
+    fun cachedLowMemoryIsExplainedAsSystemPressureNotProofOfLeakOrTermuxFailure() {
+        val interpretation = ProcessExitDiagnosticsPolicy.memoryExitInterpretation(
+            ApplicationExitInfo.REASON_LOW_MEMORY,
+            400,
+        )
+        assertTrue(interpretation!!.contains("segundo plano"))
+        assertTrue(interpretation.contains("não comprova vazamento"))
+        assertFalse(interpretation.contains("Termux causou"))
+        assertNull(ProcessExitDiagnosticsPolicy.memoryExitInterpretation(
+            ApplicationExitInfo.REASON_CRASH, 400,
+        ))
+    }
+
+    @Test
     fun crashAnrAndMemoryDeathsAreSurfaced() {
         assertTrue(ProcessExitDiagnosticsPolicy.shouldSurface(ApplicationExitInfo.REASON_CRASH))
         assertTrue(ProcessExitDiagnosticsPolicy.shouldSurface(ApplicationExitInfo.REASON_CRASH_NATIVE))

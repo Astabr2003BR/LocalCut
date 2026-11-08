@@ -119,15 +119,32 @@ class DefaultPreviewController(
     }
 
     override fun seekToUs(positionUs: Long) {
+        val target = seekPosition(positionUs)
+        if (transport.state.durationUs <= 0L) return
+        beginPendingSeek(target)
+        engine.seekToUs(target)
+        publishTransportState()
+    }
+
+    /**
+     * An external handoff may seek while MainActivity is stopped and Media3 has been released.
+     * Update only the logical playhead. The resumed Activity reloads the composition before
+     * applying the seek to the physical player.
+     */
+    internal fun seekToUsWhileSuspended(positionUs: Long): Long {
+        val target = seekPosition(positionUs)
+        clearPendingSeek()
+        publishTransportState()
+        return target
+    }
+
+    private fun seekPosition(positionUs: Long): Long {
         val target = transport.seekToUs(positionUs)
         if (transport.state.durationUs <= 0L) {
             clearPendingSeek()
             publishTransportState()
-            return
         }
-        beginPendingSeek(target)
-        engine.seekToUs(target)
-        publishTransportState()
+        return target
     }
 
     override fun stepFrames(deltaFrames: Int, fps: Int) {

@@ -74,6 +74,11 @@ class Media3PreviewController(
     }
 
     override fun seekToUs(positionUs: Long) {
+        if (backgroundSession.isSuspended) {
+            val targetUs = delegate.seekToUsWhileSuspended(positionUs)
+            backgroundSession.updateSuspendedPositionUs(targetUs)
+            return
+        }
         delegate.seekToUs(positionUs)
         bridgePreviewFramePort.requestRefresh()
     }

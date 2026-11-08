@@ -137,7 +137,7 @@ fun MouthRegionVisualPicker(
     }
 }
 
-private fun loadPreviewBitmap(context: Context, asset: Asset): Bitmap {
+internal fun loadPreviewBitmap(context: Context, asset: Asset): Bitmap {
     // ImageDecoder supports orientation metadata and bounded decode on Android 9+.
     // Older Android versions preserve the numerical controls rather than risking a
     // misplaced oval on EXIF-rotated media.

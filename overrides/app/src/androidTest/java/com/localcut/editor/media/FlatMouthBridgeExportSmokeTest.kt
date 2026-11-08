@@ -25,6 +25,9 @@ import com.localcut.editor.audio.WaveformRepository
 import com.localcut.editor.domain.animation.AudioDrivenTalkPlanner
 import com.localcut.editor.domain.animation.LipSyncCue
 import com.localcut.editor.domain.animation.MouthRegion
+import com.localcut.editor.ui.editor.MouthRegionPlacementPolicy
+import com.localcut.editor.ui.editor.MouthRegionRenderProjectionPolicy
+import com.localcut.editor.ui.editor.loadPreviewBitmap
 import com.localcut.editor.domain.animation.WaveformLipSyncCueCoordinator
 import com.localcut.editor.domain.history.ApplyAnimationPlanCommand
 import com.localcut.editor.session.EditorAction
@@ -274,6 +277,52 @@ class FlatMouthBridgeExportSmokeTest {
             output.delete()
             imageFile.delete()
             audioFile.delete()
+        }
+    }
+
+    @Test
+    fun mouthPickerLoadsLocalPortraitMediaWithBoundedBitmapSize() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = File(context.filesDir, "remote-media").apply { mkdirs() }
+        val file = File(directory, "mouth-visual-picker-" + System.nanoTime() + ".png")
+        val original = Bitmap.createBitmap(900, 1600, Bitmap.Config.ARGB_8888)
+        try {
+            original.eraseColor(Color.rgb(200, 180, 160))
+            file.outputStream().use { stream ->
+                assertTrue("test image should be encoded", original.compress(Bitmap.CompressFormat.PNG, 100, stream))
+            }
+        } finally {
+            original.recycle()
+        }
+        try {
+            val bitmap = loadPreviewBitmap(context, imageAsset(context.packageName, file))
+            try {
+                assertTrue("preview decode should be bounded", maxOf(bitmap.width, bitmap.height) <= 1024)
+                assertTrue("decoded portrait geometry should be preserved", bitmap.height > bitmap.width)
+                val fit = MouthRegionPlacementPolicy.fit(bitmap.width, bitmap.height, 400.0, 240.0)
+                val sourceRegion = checkNotNull(
+                    MouthRegionPlacementPolicy.place(
+                        MouthRegion(0.5, 0.68, 0.14, 0.08),
+                        200.0,
+                        fit.topPx + fit.heightPx * 0.68,
+                        fit,
+                    ),
+                )
+                val effected = MouthRegionRenderProjectionPolicy.fromSourceToEffect(
+                    sourceRegion,
+                    bitmap.width,
+                    bitmap.height,
+                    1080,
+                    1920,
+                )
+                assertTrue("projected mouth must remain within the rendered frame",
+                    effected.centerX in effected.radiusX..(1.0 - effected.radiusX) &&
+                        effected.centerY in effected.radiusY..(1.0 - effected.radiusY))
+            } finally {
+                bitmap.recycle()
+            }
+        } finally {
+            file.delete()
         }
     }
 

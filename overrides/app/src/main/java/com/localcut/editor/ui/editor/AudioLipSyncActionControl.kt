@@ -69,6 +69,7 @@ fun AudioLipSyncActionControl(modifier: Modifier = Modifier) {
     var activeRequest by remember(imageClip.id) {
         mutableStateOf<WaveformLipSyncCueCoordinator.RequestHandle?>(null)
     }
+    val operationGate = remember(imageClip.id) { AudioLipSyncOperationGate() }
     val decoderExecutor = remember(imageClip.id) { Executors.newSingleThreadExecutor() }
     val plannerExecutor = remember(imageClip.id) { Executors.newSingleThreadExecutor() }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
@@ -85,12 +86,15 @@ fun AudioLipSyncActionControl(modifier: Modifier = Modifier) {
 
     DisposableEffect(imageClip.id) {
         onDispose {
+            // A result may already be queued on the main thread; invalidate it first.
+            operationGate.dispose()
             activeRequest?.cancel()
             decoderExecutor.shutdownNow()
             plannerExecutor.shutdownNow()
         }
     }
     fun closeDialog() {
+        operationGate.cancel()
         sequence += 1L
         activeRequest?.cancel()
         activeRequest = null
@@ -186,6 +190,7 @@ fun AudioLipSyncActionControl(modifier: Modifier = Modifier) {
                     }.fold(
                         onSuccess = { (slice, uri) ->
                             activeRequest?.cancel()
+                            val requestToken = operationGate.begin()
                             working = true
                             message = "Analisando áudio…"
                             sequence += 1L
@@ -200,7 +205,10 @@ fun AudioLipSyncActionControl(modifier: Modifier = Modifier) {
                             )
                             activeRequest = coordinator.request(key, uri, slice.durationUs) { decoded ->
                                 mainHandler.post {
-                                    if (!open || sequence != operation) return@post
+                                    // Cancellation/navigation/reselection invalidates already posted results.
+                                    if (!operationGate.isCurrent(requestToken) ||
+                                        !open || sequence != operation
+                                    ) return@post
                                     val applied = runCatching {
                                         val current = runtime.session.state
                                         AudioDrivenTalkPlanner.requireUnchanged(
@@ -218,6 +226,7 @@ fun AudioLipSyncActionControl(modifier: Modifier = Modifier) {
                                         }
                                         "TALK aplicado com " + cues.size + " trechos de voz. Use Desfazer se necessário."
                                     }
+                                    operationGate.cancel()
                                     working = false
                                     activeRequest = null
                                     applied.fold(

@@ -115,6 +115,10 @@ fun EditorBottomToolRail(
                 MotionPathActionControl(modifier = Modifier.fillMaxWidth())
             }
 
+            if (activeTool == EditorToolId.LIP_SYNC && selection == EditorSelectionKind.IMAGE) {
+                AudioLipSyncActionControl(modifier = Modifier.fillMaxWidth())
+            }
+
             if (activeTool == EditorToolId.TRACKING && selection == EditorSelectionKind.VIDEO) {
                 ObjectTrackingActionControl(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp))
             }
@@ -239,6 +243,7 @@ private fun toolGlyph(id: EditorToolId): String = when (id) {
     EditorToolId.CROP -> "⌑"
     EditorToolId.CHROMA -> "◆"
     EditorToolId.ANIMATION -> "◇"
+    EditorToolId.LIP_SYNC -> "♫"
     EditorToolId.LAYERS -> "▱"
     EditorToolId.DESIGN -> "+"
     EditorToolId.DRAW -> "✎"

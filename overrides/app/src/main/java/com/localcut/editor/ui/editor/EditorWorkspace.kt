@@ -29,6 +29,7 @@ object EditorWorkspacePolicy {
         ),
         EditorWorkspace.MOTION to listOf(
             EditorToolId.ANIMATION,
+            EditorToolId.LIP_SYNC,
             EditorToolId.TRACKING,
             EditorToolId.STABILIZE,
             EditorToolId.CAMERA,

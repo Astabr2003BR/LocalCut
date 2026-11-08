@@ -52,7 +52,8 @@ fun AudioLipSyncActionControl(modifier: Modifier = Modifier) {
     val session by runtime.editorViewModel.sessionState.collectAsState()
     val project = session.project
     val imageClip = session.selectedClipId?.let(project::findClip) ?: return
-    if (project.assets.firstOrNull { it.id == imageClip.assetId }?.type != AssetType.IMAGE) return
+    val imageAsset = project.assets.firstOrNull { it.id == imageClip.assetId } ?: return
+    if (imageAsset.type != AssetType.IMAGE) return
     val voiceClips = project.tracks.filter { it.type == TrackType.AUDIO }.flatMap { it.clips }
         .filter { clip -> project.assets.any { it.id == clip.assetId && it.type == AssetType.AUDIO } }
 
@@ -142,22 +143,70 @@ fun AudioLipSyncActionControl(modifier: Modifier = Modifier) {
                         ) { Text((if (voiceId == clip.id) "✓ " else "") + name) }
                     }
                 }
-                Text("Posição da boca na imagem (ajuste manual):")
+                Text("Marque a boca tocando ou arrastando na imagem original:")
+                MouthRegionVisualPicker(
+                    asset = imageAsset,
+                    region = MouthRegion(
+                        centerX.toDouble(), centerY.toDouble(),
+                        radiusX.toDouble(), radiusY.toDouble(),
+                    ),
+                    enabled = !working,
+                    onRegionChanged = { selected ->
+                        centerX = selected.centerX.toFloat()
+                        centerY = selected.centerY.toFloat()
+                        radiusX = selected.radiusX.toFloat()
+                        radiusY = selected.radiusY.toFloat()
+                        regionApproved = false
+                    },
+                )
+                Text("Ajuste fino (posição e tamanho em porcentagem):")
                 Text("Horizontal: " + (centerX * 100).toInt() + "%")
-                Slider(centerX, { centerX = it; regionApproved = false }, enabled = !working)
+                Slider(
+                    value = centerX,
+                    onValueChange = { centerX = it; regionApproved = false },
+                    valueRange = radiusX..(1f - radiusX),
+                    enabled = !working,
+                )
                 Text("Vertical: " + (centerY * 100).toInt() + "%")
-                Slider(centerY, { centerY = it; regionApproved = false }, enabled = !working)
+                Slider(
+                    value = centerY,
+                    onValueChange = { centerY = it; regionApproved = false },
+                    valueRange = radiusY..(1f - radiusY),
+                    enabled = !working,
+                )
                 Text("Raio horizontal: " + (radiusX * 100).toInt() + "%")
                 Slider(
                     value = radiusX,
-                    onValueChange = { radiusX = it; regionApproved = false },
+                    onValueChange = { value ->
+                        val adjusted = MouthRegionPlacementPolicy.withRadii(
+                            MouthRegion(
+                                centerX.toDouble(), centerY.toDouble(),
+                                radiusX.toDouble(), radiusY.toDouble(),
+                            ),
+                            value.toDouble(), radiusY.toDouble(),
+                        )
+                        radiusX = adjusted.radiusX.toFloat()
+                        centerX = adjusted.centerX.toFloat()
+                        regionApproved = false
+                    },
                     valueRange = 0.01f..0.50f,
                     enabled = !working,
                 )
                 Text("Raio vertical: " + (radiusY * 100).toInt() + "%")
                 Slider(
                     value = radiusY,
-                    onValueChange = { radiusY = it; regionApproved = false },
+                    onValueChange = { value ->
+                        val adjusted = MouthRegionPlacementPolicy.withRadii(
+                            MouthRegion(
+                                centerX.toDouble(), centerY.toDouble(),
+                                radiusX.toDouble(), radiusY.toDouble(),
+                            ),
+                            radiusX.toDouble(), value.toDouble(),
+                        )
+                        radiusY = adjusted.radiusY.toFloat()
+                        centerY = adjusted.centerY.toFloat()
+                        regionApproved = false
+                    },
                     valueRange = 0.005f..0.30f,
                     enabled = !working,
                 )

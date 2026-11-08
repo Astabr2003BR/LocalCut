@@ -108,6 +108,31 @@ class WaveformLipSyncCueCoordinatorTest {
     }
 
     @Test
+    fun cancellationBeforeDecodeStopsUnusedWaveformWork() {
+        val decode = ManualExecutor()
+        val plan = ManualExecutor()
+        var decoderCalls = 0
+        val coordinator = WaveformLipSyncCueCoordinator(
+            repository(decode) { _, _, _, _ ->
+                decoderCalls++
+                Result.success(speech)
+            },
+            plan,
+        )
+        var callbacks = 0
+
+        val handle = coordinator.request(key, "content://media/audio/1", 800_000L) {
+            callbacks++
+        }
+        handle.cancel()
+        decode.runAll()
+        plan.runAll()
+
+        assertEquals(0, decoderCalls)
+        assertEquals(0, callbacks)
+    }
+
+    @Test
     fun cancelledRequestDoesNotPreventOtherSubscriberFromCompleting() {
         val decode = ManualExecutor()
         val plan = ManualExecutor()

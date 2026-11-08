@@ -19,9 +19,20 @@ class WaveformLipSyncCueCoordinator(
     private val planningExecutor: Executor,
 ) {
     class RequestHandle internal constructor(private val cancelled: AtomicBoolean) {
+        private var subscription: WaveformRepository.Subscription? = null
+
         val isCancelled: Boolean get() = cancelled.get()
+
+        @Synchronized
+        internal fun attach(value: WaveformRepository.Subscription) {
+            if (cancelled.get()) value.cancel() else subscription = value
+        }
+
+        @Synchronized
         fun cancel() {
             cancelled.set(true)
+            subscription?.cancel()
+            subscription = null
         }
     }
 
@@ -79,7 +90,7 @@ class WaveformLipSyncCueCoordinator(
         }
 
         try {
-            waveformRepository.request(key, uri) { decoded ->
+            handle.attach(waveformRepository.requestCancellable(key, uri) { decoded ->
                 schedule {
                     decoded.fold(
                         onSuccess = { waveform ->
@@ -91,7 +102,7 @@ class WaveformLipSyncCueCoordinator(
                         onFailure = { Result.failure(it) },
                     )
                 }
-            }
+            })
         } catch (error: Throwable) {
             schedule { Result.failure(error) }
         }

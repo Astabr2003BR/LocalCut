@@ -18,6 +18,16 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.localcut.editor.bridge.agent.BridgeCommandExecutor
 import com.localcut.editor.bridge.agent.BridgePlaybackPort
+import com.localcut.editor.audio.AndroidWaveformDecoder
+import com.localcut.editor.audio.WaveformCache
+import com.localcut.editor.audio.WaveformCacheKey
+import com.localcut.editor.audio.WaveformRepository
+import com.localcut.editor.domain.animation.AudioDrivenTalkPlanner
+import com.localcut.editor.domain.animation.LipSyncCue
+import com.localcut.editor.domain.animation.MouthRegion
+import com.localcut.editor.domain.animation.WaveformLipSyncCueCoordinator
+import com.localcut.editor.domain.history.ApplyAnimationPlanCommand
+import com.localcut.editor.session.EditorAction
 import com.localcut.editor.bridge.protocol.BridgeCapability
 import com.localcut.editor.bridge.protocol.BridgeCommandEnvelope
 import com.localcut.editor.data.assets.AssetUriResolver
@@ -34,6 +44,9 @@ import com.localcut.editor.session.InMemoryProjectRevisionClock
 import com.localcut.editor.session.ProjectPreviewLoader
 import com.localcut.editor.session.ProjectSession
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.util.concurrent.Executors
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -160,6 +173,110 @@ class FlatMouthBridgeExportSmokeTest {
         }
     }
 
+
+    @Test
+    fun realLocalWavAnalysisAppliesTalkAndExportsMp4() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val directory = File(context.filesDir, "remote-media").apply { mkdirs() }
+        val imageFile = createFacePng(File(directory, "audio-mouth-face-" + System.nanoTime() + ".png"))
+        val audioFile = createVoiceWav(File(directory, "audio-mouth-voice-" + System.nanoTime() + ".wav"))
+        val faceAsset = imageAsset(context.packageName, imageFile)
+        val voiceAsset = Asset(
+            id = "voice-asset",
+            type = AssetType.AUDIO,
+            uri = FileProvider.getUriForFile(context, context.packageName + ".remote-media", audioFile).toString(),
+            sourceDurationUs = DURATION_US,
+            sizeBytes = audioFile.length(),
+            displayName = audioFile.name,
+            mimeType = "audio/wav",
+            fingerprint = "wav-" + audioFile.length(),
+        )
+        val seed = Project.create("audio-driven-talk-smoke", WIDTH, HEIGHT, 30)
+        val project = seed.copy(
+            id = PROJECT_ID,
+            assets = listOf(faceAsset, voiceAsset),
+            tracks = seed.tracks.map { track ->
+                when (track.type) {
+                    TrackType.VISUAL -> track.copy(clips = listOf(
+                        Clip(BODY_CLIP_ID, faceAsset.id, 0L, DURATION_US, 0L, DURATION_US),
+                    ))
+                    TrackType.AUDIO -> track.copy(clips = listOf(
+                        Clip("voice-clip", voiceAsset.id, 0L, DURATION_US, 0L, DURATION_US),
+                    ))
+                }
+            },
+        )
+        val session = projectSession(project)
+        session.dispatch(EditorAction.SelectClip(BODY_CLIP_ID))
+        val before = session.state
+        val slice = AudioDrivenTalkPlanner.prepare(before.project, BODY_CLIP_ID, "voice-clip")
+        val sourceUri = AssetUriResolver(context.contentResolver).resolve(voiceAsset).getOrThrow().toString()
+        val decodeExecutor = Executors.newSingleThreadExecutor()
+        val planningExecutor = Executors.newSingleThreadExecutor()
+        var preview: Media3PreviewController? = null
+        val output = File(context.cacheDir, "audio-driven-export-" + System.nanoTime() + ".mp4")
+        try {
+            val coordinator = WaveformLipSyncCueCoordinator(
+                WaveformRepository(WaveformCache(4096), AndroidWaveformDecoder(context.contentResolver), decodeExecutor),
+                planningExecutor,
+            )
+            val key = WaveformCacheKey(
+                slice.audioFingerprint, slice.audioSourceInUs, slice.audioSourceOutUs, slice.bucketCount,
+            )
+            val latch = CountDownLatch(1)
+            val received = AtomicReference<Result<List<LipSyncCue>>?>(null)
+            coordinator.request(key, sourceUri, slice.durationUs) { decoded ->
+                received.set(decoded)
+                latch.countDown()
+            }
+            assertTrue("real background audio analysis must finish", latch.await(25, TimeUnit.SECONDS))
+            val cues = requireNotNull(received.get()).getOrThrow()
+            assertTrue("synthesized speech pulses must produce lip cues", cues.isNotEmpty())
+            assertTrue("cues must remain bounded", cues.all {
+                it.offsetUs >= 0L && it.durationUs > 0L && it.offsetUs + it.durationUs <= slice.durationUs
+            })
+
+            AudioDrivenTalkPlanner.requireUnchanged(before, INITIAL_REVISION, PROJECT_ID, slice)
+            val planned = AudioDrivenTalkPlanner.plan(
+                project, slice, MouthRegion(0.5, 0.68, 0.14, 0.08), cues,
+            )
+            session.dispatch(EditorAction.Execute(ApplyAnimationPlanCommand(planned)))
+            assertEquals("single atomic edit", INITIAL_REVISION + 1L, session.state.revision)
+            val edited = session.state.project
+            val mouth = checkNotNull(edited.findClip(BODY_CLIP_ID)).effects.single {
+                it.typeId == "localcut.character.mouth_warp"
+            }
+            assertTrue("mouth openness must use actual waveform cues",
+                mouth.animations.single().keyframes.size >= 4)
+
+            instrumentation.runOnMainSync {
+                val controller = Media3PreviewController(
+                    context, ProjectCompositionCompiler(AssetUriResolver(context.contentResolver)),
+                )
+                preview = controller
+                assertTrue("audio-derived TALK preview must load", controller.load(edited).isSuccess)
+                controller.play()
+            }
+            val activePreview = checkNotNull(preview)
+            val settled = runBlocking {
+                withTimeout(20_000L) {
+                    activePreview.state.first { it.errorMessage != null || it.positionUs >= 250_000L }
+                }
+            }
+            assertNull("preview must have no video processing error", settled.errorMessage)
+            export(edited, output, instrumentation, context)
+            assertTrue("real audio-driven TALK export must produce MP4", output.isFile && output.length() > 0L)
+        } finally {
+            preview?.let { controller -> instrumentation.runOnMainSync { controller.release() } }
+            decodeExecutor.shutdownNow()
+            planningExecutor.shutdownNow()
+            output.delete()
+            imageFile.delete()
+            audioFile.delete()
+        }
+    }
+
     private fun projectSession(project: Project): ProjectSession = ProjectSession(
         initialProject = project,
         preview = object : ProjectPreviewLoader {
@@ -231,6 +348,38 @@ class FlatMouthBridgeExportSmokeTest {
         mimeType = "image/png",
         fingerprint = "face-${file.length()}",
     )
+
+
+    private fun createVoiceWav(file: File): File {
+        val sampleRate = 44_100
+        val samples = (DURATION_US * sampleRate / 1_000_000L).toInt()
+        val audioBytes = samples * 2
+        val bytes = ByteBuffer.allocate(44 + audioBytes).order(ByteOrder.LITTLE_ENDIAN)
+        bytes.put("RIFF".toByteArray(Charsets.US_ASCII))
+        bytes.putInt(36 + audioBytes)
+        bytes.put("WAVE".toByteArray(Charsets.US_ASCII))
+        bytes.put("fmt ".toByteArray(Charsets.US_ASCII))
+        bytes.putInt(16)
+        bytes.putShort(1.toShort())
+        bytes.putShort(1.toShort())
+        bytes.putInt(sampleRate)
+        bytes.putInt(sampleRate * 2)
+        bytes.putShort(2.toShort())
+        bytes.putShort(16.toShort())
+        bytes.put("data".toByteArray(Charsets.US_ASCII))
+        bytes.putInt(audioBytes)
+        repeat(samples) { sample ->
+            val time = sample.toDouble() / sampleRate
+            val amplitude: Short = when {
+                time in 0.12..0.31 -> 14_000
+                time in 0.54..0.78 -> 19_000
+                else -> 0
+            }.toShort()
+            bytes.putShort(amplitude)
+        }
+        file.writeBytes(bytes.array())
+        return file
+    }
 
     private fun createFacePng(file: File): File {
         val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)

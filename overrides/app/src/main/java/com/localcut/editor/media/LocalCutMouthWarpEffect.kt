@@ -16,6 +16,16 @@ import com.localcut.editor.effects.EffectRegistry
 import kotlin.math.max
 
 internal object LocalCutMouthWarpMath {
+    /**
+     * Mouth coordinates come from Android's top-left-origin image picker,
+     * while the GL texture coordinates in this effect use a bottom-left origin.
+     */
+    fun glCenter(sourceX: Double, sourceY: Double): Pair<Double, Double> {
+        require(sourceX.isFinite() && sourceY.isFinite())
+        require(sourceX in 0.0..1.0 && sourceY in 0.0..1.0)
+        return sourceX to (1.0 - sourceY)
+    }
+
     fun sampleUv(
         u: Double,
         v: Double,
@@ -161,7 +171,8 @@ private class LocalCutMouthWarpShaderProgram(
 
     private fun center(effect: EffectInstance): FloatArray {
         val value = effect.parameters["center"] as? EffectParameter.Point ?: EffectParameter.Point(0.5, 0.65)
-        return floatArrayOf(value.x.toFloat(), value.y.toFloat())
+        val (glX, glY) = LocalCutMouthWarpMath.glCenter(value.x, value.y)
+        return floatArrayOf(glX.toFloat(), glY.toFloat())
     }
 
     private fun radius(effect: EffectInstance): FloatArray = floatArrayOf(

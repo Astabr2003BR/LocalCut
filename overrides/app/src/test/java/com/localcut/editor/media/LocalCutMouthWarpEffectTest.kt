@@ -34,6 +34,15 @@ class LocalCutMouthWarpEffectTest {
     )
 
     @Test
+    fun topOriginMouthYMapsToGlBottomOrigin() {
+        val (x, y) = LocalCutMouthWarpMath.glCenter(0.51, 0.68)
+        assertEquals(0.51, x, 1e-9)
+        assertEquals(0.32, y, 1e-9)
+        assertEquals(0.5, LocalCutMouthWarpMath.glCenter(0.5, 0.5).second, 1e-9)
+        assertTrue(runCatching { LocalCutMouthWarpMath.glCenter(0.5, Double.NaN) }.isFailure)
+    }
+
+    @Test
     fun registryDefinesValidatedMouthWarpParametersAndNormalizedCenter() {
         val valid = animatedMouth()
         assertTrue(EffectRegistry.definition(valid.typeId) != null)

@@ -248,6 +248,31 @@ class MainActivity : ComponentActivity() {
             showError(it.message ?: "Link HTTPS inválido")
             return
         }
+        if (!recoveryAttempted) {
+            val blockedTrack = LockedMediaImportRecovery.blockedTrackForMediaLink(
+                runtime.session.state.project, url.toASCIIString(),
+            )
+            if (blockedTrack != null) {
+                AlertDialog.Builder(this)
+                    .setTitle("Faixa bloqueada")
+                    .setMessage(
+                        "A faixa $blockedTrack está bloqueada. " +
+                            "Desbloquear antes de baixar e importar esta mídia? " +
+                            "A mudança pode ser desfeita.",
+                    )
+                    .setNegativeButton("Cancelar", null)
+                    .setPositiveButton("Desbloquear e importar") { _, _ ->
+                        if (LockedMediaImportRecovery.unlock(runtime.session, blockedTrack)) {
+                            editorViewModel.refreshSnapshot()
+                            importFromLink(url.toASCIIString(), recoveryAttempted = true)
+                        } else {
+                            showError("Não foi possível desbloquear $blockedTrack")
+                        }
+                    }
+                    .show()
+                return
+            }
+        }
         remoteLinkImportRunning = true
         Toast.makeText(this, "Importando mídia do link…", Toast.LENGTH_SHORT).show()
         activityScope.launch {

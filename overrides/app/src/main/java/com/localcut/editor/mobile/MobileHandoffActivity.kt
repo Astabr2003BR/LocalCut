@@ -162,6 +162,35 @@ class MobileHandoffActivity : Activity() {
 
         val remoteMediaUrl = command.remoteMediaUrl
         if (remoteMediaUrl != null) {
+            val blockedTrack = if (!recoveryAttempted) {
+                LockedMediaImportRecovery.blockedTrackForMediaLink(
+                    runtime.session.state.project, remoteMediaUrl,
+                )
+            } else null
+            if (blockedTrack != null) {
+                AlertDialog.Builder(this)
+                    .setTitle("Faixa bloqueada")
+                    .setMessage(
+                        "A faixa $blockedTrack está bloqueada. " +
+                            "Desbloquear antes de baixar e importar esta mídia? " +
+                            "A alteração pode ser desfeita.",
+                    )
+                    .setNegativeButton("Cancelar") { _, _ ->
+                        returnAfterHandoff(command.returnTarget)
+                    }
+                    .setOnCancelListener { returnAfterHandoff(command.returnTarget) }
+                    .setPositiveButton("Desbloquear e importar") { _, _ ->
+                        if (LockedMediaImportRecovery.unlock(runtime.session, blockedTrack)) {
+                            runtime.editorViewModel.refreshSnapshot()
+                            execute(command, recoveryAttempted = true)
+                        } else {
+                            Toast.makeText(this, "Não foi possível desbloquear $blockedTrack", Toast.LENGTH_LONG).show()
+                            returnAfterHandoff(command.returnTarget)
+                        }
+                    }
+                    .show()
+                return
+            }
             runtime.processScope.launch {
                 val result = RemoteMediaImportExecutor(
                     context = applicationContext,

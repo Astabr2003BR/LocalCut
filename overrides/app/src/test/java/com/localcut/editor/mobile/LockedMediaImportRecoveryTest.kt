@@ -27,6 +27,53 @@ class LockedMediaImportRecoveryTest {
         ),
     )
 
+    @Test fun detectsLockedAudioBeforeDownloadingSignedMp3Url() {
+        assertEquals(
+            "audio-1",
+            LockedMediaImportRecovery.blockedTrackForMediaLink(
+                project(),
+                "https://cdn.example/user/voice.mp3?signature=abc&expires=123",
+            ),
+        )
+        assertNull(LockedMediaImportRecovery.blockedTrackForMediaLink(
+            project(audioLocked = false),
+            "https://cdn.example/voice.mp3",
+        ))
+    }
+
+    @Test fun detectsLockedVisualAndDoesNotConfuseKinds() {
+        assertEquals(
+            "visual-1",
+            LockedMediaImportRecovery.blockedTrackForMediaLink(
+                project(visualLocked = true),
+                "https://cdn.example/portrait.jpg",
+            ),
+        )
+        assertNull(LockedMediaImportRecovery.blockedTrackForMediaLink(
+            project(),
+            "https://cdn.example/portrait.jpg",
+        ))
+        assertEquals("audio-1", LockedMediaImportRecovery.blockedTrackForMediaLink(
+            project(visualLocked = true),
+            "https://cdn.example/audio.mp3",
+        ))
+    }
+
+    @Test fun rejectsUnsafeAndAmbiguousUrlsWithoutUnlockHint() {
+        val urls = listOf(
+            "http://cdn.example/voice.mp3",
+            "file:///sdcard/voice.mp3",
+            "sandbox:/mnt/data/voice.mp3",
+            "https://cdn.example/download?id=voice",
+            "https://cdn.example/voice.mp3.html",
+            "https://127.0.0.1/voice.mp3",
+        )
+        urls.forEach { url ->
+            assertNull("unexpected unlock hint for $url",
+                LockedMediaImportRecovery.blockedTrackForMediaLink(project(), url))
+        }
+    }
+
     @Test fun recognizesAudioLockOnlyWhenActive() {
         assertEquals(
             "audio-1",

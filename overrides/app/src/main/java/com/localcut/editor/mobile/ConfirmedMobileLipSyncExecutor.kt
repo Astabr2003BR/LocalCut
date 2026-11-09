@@ -12,8 +12,9 @@ import com.localcut.editor.audio.WaveformRepository
 import com.localcut.editor.data.assets.AssetUriResolver
 import com.localcut.editor.domain.animation.AudioDrivenTalkPlanner
 import com.localcut.editor.domain.animation.MouthRegion
+import com.localcut.editor.domain.animation.LocalTalkClipCoverage
 import com.localcut.editor.domain.animation.WaveformLipSyncCueCoordinator
-import com.localcut.editor.domain.history.ApplyAnimationPlanCommand
+import com.localcut.editor.domain.history.ApplyConfirmedTalkCommand
 import com.localcut.editor.session.EditorAction
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -53,19 +54,22 @@ class ConfirmedMobileLipSyncExecutor(
             runtime.session.dispatch(EditorAction.SelectClip(selected.imageClipId))
             val state = runtime.session.state
             require(state.selectedClipId == selected.imageClipId) { "Imagem não selecionada" }
-            val slice = AudioDrivenTalkPlanner.prepare(
+            val projected = LocalTalkClipCoverage.projectedProject(
                 state.project, selected.imageClipId, selected.audioClipId,
+            )
+            val slice = AudioDrivenTalkPlanner.prepare(
+                projected, selected.imageClipId, selected.audioClipId,
             )
             val asset = requireNotNull(state.project.assets.firstOrNull { it.id == slice.audioAssetId })
             val uri = resolver.resolve(asset).getOrThrow().toString()
             require(uri.isNotBlank()) { "Áudio não encontrado no aparelho" }
-            Triple(state, slice, uri)
+            Prepared(state, projected, slice, uri)
         }
         prepared.onFailure { error ->
             complete(Result.failure(error), callback)
             return
         }
-        val (state, slice, uri) = prepared.getOrThrow()
+        val (state, projected, slice, uri) = prepared.getOrThrow()
         val key = WaveformCacheKey(
             slice.audioFingerprint, slice.audioSourceInUs,
             slice.audioSourceOutUs, slice.bucketCount,
@@ -84,18 +88,30 @@ class ConfirmedMobileLipSyncExecutor(
                     if (finished.get()) return@post
                     val applied = runCatching {
                         val current = runtime.session.state
-                        AudioDrivenTalkPlanner.requireUnchanged(
-                            current, state.revision, state.project.id, slice,
+                        require(current.revision == state.revision &&
+                            current.project.id == state.project.id &&
+                            current.selectedClipId == slice.bodyClipId &&
+                            current.project == state.project
+                        ) { "O projeto mudou durante a análise; TALK cancelado" }
+                        val refreshedProjection = LocalTalkClipCoverage.projectedProject(
+                            current.project, slice.bodyClipId, slice.audioClipId,
                         )
+                        require(refreshedProjection == projected &&
+                            AudioDrivenTalkPlanner.prepare(
+                                refreshedProjection, slice.bodyClipId, slice.audioClipId,
+                            ) == slice
+                        ) { "Trecho da timeline mudou; TALK cancelado" }
                         val plan = AudioDrivenTalkPlanner.plan(
-                            current.project, slice, region, decoded.getOrThrow(),
+                            projected, slice, region, decoded.getOrThrow(),
                         )
-                        runtime.session.dispatch(EditorAction.Execute(ApplyAnimationPlanCommand(plan)))
+                        runtime.session.dispatch(EditorAction.Execute(ApplyConfirmedTalkCommand(
+                            slice.bodyClipId, slice.audioClipId, plan,
+                        )))
                         check(runtime.session.state.revision == state.revision + 1L) {
                             runtime.session.state.lastError ?: "Não foi possível aplicar TALK"
                         }
                         runtime.editorViewModel.refreshSnapshot()
-                        "TALK aplicado no trecho de ${slice.durationUs / 1_000_000.0} segundos; " +
+                        "TALK aplicado por ${slice.durationUs / 1_000_000.0} segundos; " +
                             "confira a boca na prévia. Desfazer disponível."
                     }
                     complete(applied, callback)
@@ -105,6 +121,13 @@ class ConfirmedMobileLipSyncExecutor(
             complete(Result.failure(error), callback)
         }
     }
+
+    private data class Prepared(
+        val state: com.localcut.editor.session.ProjectSessionState,
+        val projected: com.localcut.editor.domain.model.Project,
+        val slice: com.localcut.editor.domain.animation.AudioDrivenTalkSlice,
+        val uri: String,
+    )
 
     private fun complete(result: Result<String>, callback: (Result<String>) -> Unit) {
         if (!finished.compareAndSet(false, true)) return

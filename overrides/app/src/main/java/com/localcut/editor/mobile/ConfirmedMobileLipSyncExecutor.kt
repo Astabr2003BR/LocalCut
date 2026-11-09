@@ -15,6 +15,7 @@ import com.localcut.editor.domain.animation.MouthRegion
 import com.localcut.editor.domain.animation.LocalTalkClipCoverage
 import com.localcut.editor.domain.animation.WaveformLipSyncCueCoordinator
 import com.localcut.editor.domain.history.ApplyConfirmedTalkCommand
+import com.localcut.editor.domain.history.ApplyAnimationPlanCommand
 import com.localcut.editor.session.EditorAction
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -104,15 +105,21 @@ class ConfirmedMobileLipSyncExecutor(
                         val plan = AudioDrivenTalkPlanner.plan(
                             projected, slice, region, decoded.getOrThrow(),
                         )
-                        runtime.session.dispatch(EditorAction.Execute(ApplyConfirmedTalkCommand(
-                            slice.bodyClipId, slice.audioClipId, plan,
-                        )))
-                        check(runtime.session.state.revision == state.revision + 1L) {
-                            runtime.session.state.lastError ?: "Não foi possível aplicar TALK"
+                        val nextProject = ApplyAnimationPlanCommand(plan).apply(projected).project
+                        if (nextProject == current.project) {
+                            "TALK já estava configurado exatamente assim; nenhuma edição foi feita. " +
+                                "Confira a prévia e ajuste a região da boca se não houver movimento."
+                        } else {
+                            runtime.session.dispatch(EditorAction.Execute(ApplyConfirmedTalkCommand(
+                                slice.bodyClipId, slice.audioClipId, plan,
+                            )))
+                            check(runtime.session.state.revision == state.revision + 1L) {
+                                runtime.session.state.lastError ?: "Não foi possível aplicar TALK"
+                            }
+                            runtime.editorViewModel.refreshSnapshot()
+                            "TALK aplicado por ${slice.durationUs / 1_000_000.0} segundos; " +
+                                "confira a boca na prévia. Desfazer disponível."
                         }
-                        runtime.editorViewModel.refreshSnapshot()
-                        "TALK aplicado por ${slice.durationUs / 1_000_000.0} segundos; " +
-                            "confira a boca na prévia. Desfazer disponível."
                     }
                     complete(applied, callback)
                 }

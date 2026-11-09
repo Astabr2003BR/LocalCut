@@ -45,6 +45,54 @@ class LocalTalkClipCoverageTest {
         assertEquals(5_000_000L, original.findClip("body")?.durationUs)
     }
 
+    @Test fun recoversImportedFiveSecondVoiceWithKnownLongerSource() {
+        val base = project()
+        val short = base.copy(tracks = base.tracks.map { track ->
+            if (track.type != TrackType.AUDIO) track else track.copy(
+                clips = track.clips.map { it.copy(durationUs = 5_000_000L, sourceOutUs = 5_000_000L) },
+            )
+        })
+        val recovered = LocalTalkClipCoverage.projectedProject(short, "body", "voice")
+        assertEquals(13_000_000L, recovered.findClip("voice")?.durationUs)
+        assertEquals(13_000_000L, recovered.findClip("body")?.durationUs)
+        assertEquals(5_000_000L, short.findClip("voice")?.durationUs)
+        val slice = AudioDrivenTalkPlanner.prepare(recovered, "body", "voice")
+        assertEquals(13_000_000L, slice.durationUs)
+    }
+
+    @Test fun intentionallyTrimmedFourSecondVoiceIsNeverExtended() {
+        val base = project()
+        val trimmed = base.copy(tracks = base.tracks.map { track ->
+            if (track.type != TrackType.AUDIO) track else track.copy(
+                clips = track.clips.map { it.copy(durationUs = 4_000_000L, sourceOutUs = 4_000_000L) },
+            )
+        })
+        val recovered = LocalTalkClipCoverage.projectedProject(trimmed, "body", "voice")
+        assertEquals(4_000_000L, recovered.findClip("voice")?.durationUs)
+        assertEquals(5_000_000L, recovered.findClip("body")?.durationUs)
+    }
+
+    @Test fun voiceRecoveryRejectsLockedAudioTrackOrOverlappingVisualClip() {
+        val base = project()
+        val short = base.copy(tracks = base.tracks.map { track ->
+            if (track.type != TrackType.AUDIO) track else track.copy(
+                clips = track.clips.map { it.copy(durationUs = 5_000_000L, sourceOutUs = 5_000_000L) },
+                locked = true,
+            )
+        })
+        assertTrue(runCatching {
+            LocalTalkClipCoverage.projectedProject(short, "body", "voice")
+        }.isFailure)
+        val collision = project(extraVisual = true).copy(tracks = project(extraVisual = true).tracks.map { track ->
+            if (track.type != TrackType.AUDIO) track else track.copy(
+                clips = track.clips.map { it.copy(durationUs = 5_000_000L, sourceOutUs = 5_000_000L) },
+            )
+        })
+        assertTrue(runCatching {
+            LocalTalkClipCoverage.projectedProject(collision, "body", "voice")
+        }.isFailure)
+    }
+
     @Test fun neverOverwritesAnotherVisualClipOrBypassesTrackLock() {
         assertTrue(runCatching { LocalTalkClipCoverage.projectedProject(
             project(extraVisual = true), "body", "voice") }.isFailure)

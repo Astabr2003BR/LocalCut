@@ -94,6 +94,8 @@ object MobileHandoffParser {
                     description = "Aplicar lip-sync local à única imagem e voz elegíveis. " +
                         "Boca: X=${(x * 100).toInt()}%, Y=${(y * 100).toInt()}%. " +
                         "Somente o trecho onde imagem e áudio coincidem será animado. " +
+                        "O APK também poderá estender um áudio importado com duração padrão de 5s, " +
+                        "quando a origem for maior e não houver conflitos. " +
                         "A operação poderá ser desfeita.",
                     lipSyncRegion = region,
                 )

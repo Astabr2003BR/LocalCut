@@ -1,6 +1,7 @@
 package com.localcut.editor.mobile
 
 import com.localcut.editor.bridge.protocol.BridgeCapability
+import com.localcut.editor.domain.animation.MouthRegion
 import com.localcut.editor.data.project.jsonString
 import java.net.URI
 import java.net.URLDecoder
@@ -22,6 +23,7 @@ data class MobileHandoffCommand(
     val returnTarget: MobileHandoffReturnTarget = MobileHandoffReturnTarget.EDITOR,
     val mobilePairingCode: String? = null,
     val remoteMediaUrl: String? = null,
+    val lipSyncRegion: MouthRegion? = null,
     val deleteAllVisualClips: Boolean = false,
     val resolveSelectedClip: Boolean = false,
     val resolveVisualClipAtPositionUs: Long? = null,
@@ -75,6 +77,25 @@ object MobileHandoffParser {
                     payloadJson = "{}",
                     description = "Baixar e importar mídia remota no LocalCut",
                     remoteMediaUrl = mediaUri.toASCIIString(),
+                )
+            }
+            "lip_sync" -> {
+                val x = requiredDouble(params, "x", min = 0.01, max = 0.99)
+                val y = requiredDouble(params, "y", min = 0.005, max = 0.995)
+                val rx = requiredDouble(params, "radiusX", min = 0.01, max = 0.50)
+                val ry = requiredDouble(params, "radiusY", min = 0.005, max = 0.30)
+                val region = MouthRegion(x, y, rx, ry)
+                require(x >= rx && x <= 1.0 - rx && y >= ry && y <= 1.0 - ry) {
+                    "HANDOFF_LIP_SYNC_REGION_OUTSIDE_FRAME"
+                }
+                MobileHandoffCommand(
+                    capability = null,
+                    payloadJson = "{}",
+                    description = "Aplicar lip-sync local à única imagem e voz elegíveis. " +
+                        "Boca: X=${(x * 100).toInt()}%, Y=${(y * 100).toInt()}%. " +
+                        "Somente o trecho onde imagem e áudio coincidem será animado. " +
+                        "A operação poderá ser desfeita.",
+                    lipSyncRegion = region,
                 )
             }
             "seek" -> {

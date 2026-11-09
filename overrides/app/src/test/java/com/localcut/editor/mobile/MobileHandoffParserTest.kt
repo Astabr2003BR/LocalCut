@@ -8,6 +8,35 @@ import org.junit.Test
 
 class MobileHandoffParserTest {
     @Test
+    fun parsesConfirmedLocalLipSyncHandoff() {
+        val result = MobileHandoffParser.parse(
+            "https://localcut-bridge-v1.onrender.com/open?action=lip_sync&x=0.51&y=0.49&radiusX=0.07&radiusY=0.025&returnTo=chatgpt",
+        ).getOrThrow()
+        assertEquals(null, result.capability)
+        assertEquals(0.51, result.lipSyncRegion!!.centerX, 0.00001)
+        assertEquals(0.49, result.lipSyncRegion!!.centerY, 0.00001)
+        assertEquals(MobileHandoffReturnTarget.CHATGPT, result.returnTarget)
+        assertTrue(result.description.contains("Desfazer") || result.description.contains("desfeita"))
+    }
+
+    @Test
+    fun rejectsUnsafeOrMissingLipSyncGeometry() {
+        val malformed = listOf(
+            "action=lip_sync",
+            "action=lip_sync&x=NaN&y=0.49&radiusX=0.07&radiusY=0.025",
+            "action=lip_sync&x=1.0&y=0.49&radiusX=0.07&radiusY=0.025",
+            "action=lip_sync&x=0.01&y=0.49&radiusX=0.07&radiusY=0.025",
+            "action=lip_sync&x=0.51&y=0.49&radiusX=0.0&radiusY=0.025",
+            "action=lip_sync&x=0.51&y=0.001&radiusX=0.07&radiusY=0.025",
+            "action=lip_sync&x=0.51&y=0.49&radiusX=0.07&radiusY=0.4",
+        )
+        malformed.forEach { query ->
+            assertTrue("Invalid link accepted: $query",
+                MobileHandoffParser.parse("https://localcut-bridge-v1.onrender.com/open?$query").isFailure)
+        }
+    }
+
+    @Test
     fun parsesHttpsAddTextHandoffAndReturnsToChatGptByDefault() {
         val result = MobileHandoffParser.parse(
             "https://localcut-bridge-v1.onrender.com/open?action=add_text&id=t1&text=Oi%20mundo&startUs=5000000&durationUs=3000000",

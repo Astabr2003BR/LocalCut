@@ -145,6 +145,14 @@ class MobileHandoffActivity : Activity() {
         finish()
     }
 
+    private var lipSyncExecutor: ConfirmedMobileLipSyncExecutor? = null
+
+    override fun onDestroy() {
+        lipSyncExecutor?.close()
+        lipSyncExecutor = null
+        super.onDestroy()
+    }
+
     private fun execute(command: MobileHandoffCommand, recoveryAttempted: Boolean = false) {
         val runtime = LocalCutProcessRuntime.get(this)
         val pairingCode = command.mobilePairingCode
@@ -155,6 +163,30 @@ class MobileHandoffActivity : Activity() {
                     onFailure = { it.message ?: "Falha ao autorizar pareamento" },
                 )
                 Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                returnAfterHandoff(command.returnTarget)
+            }
+            return
+        }
+
+        val region = command.lipSyncRegion
+        if (region != null) {
+            if (lipSyncExecutor != null) {
+                Toast.makeText(this, "Análise de voz já iniciada", Toast.LENGTH_SHORT).show()
+                return
+            }
+            Toast.makeText(this, "Analisando fala e preparando TALK...", Toast.LENGTH_LONG).show()
+            val executor = ConfirmedMobileLipSyncExecutor(applicationContext, runtime)
+            lipSyncExecutor = executor
+            executor.start(region) { result ->
+                lipSyncExecutor = null
+                Toast.makeText(
+                    applicationContext,
+                    result.fold(
+                        onSuccess = { it },
+                        onFailure = { it.message ?: "Falha ao aplicar TALK" },
+                    ),
+                    Toast.LENGTH_LONG,
+                ).show()
                 returnAfterHandoff(command.returnTarget)
             }
             return

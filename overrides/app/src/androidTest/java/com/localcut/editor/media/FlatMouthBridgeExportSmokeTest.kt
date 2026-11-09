@@ -169,6 +169,26 @@ class FlatMouthBridgeExportSmokeTest {
 
             export(mutated, output, instrumentation, context)
             assertTrue("exported MP4 must exist and be non-empty", output.isFile && output.length() > 0L)
+            // Regression: a shader can compile, export, and report success while
+            // rendering no movement. Require pixel changes near the character's
+            // mouth during a known open cue, and an unchanged outside region.
+            val closed = extractFrame(output, 50_000L)
+            val speaking = extractFrame(output, 665_000L)
+            try {
+                assertEquals("frame width must be stable", closed.width, speaking.width)
+                assertEquals("frame height must be stable", closed.height, speaking.height)
+                val cx = speaking.width / 2
+                val cy = (speaking.height * 0.68f).toInt()
+                val mouthDelta = pixelRgbDelta(closed.getPixel(cx, cy), speaking.getPixel(cx, cy))
+                assertTrue("mouth pixels must visibly change when TALK opens; delta=$mouthDelta",
+                    mouthDelta >= 35)
+                val outsideDelta = pixelRgbDelta(closed.getPixel(8, 8), speaking.getPixel(8, 8))
+                assertTrue("unrelated pixels must stay stable; delta=$outsideDelta",
+                    outsideDelta <= 25)
+            } finally {
+                closed.recycle()
+                speaking.recycle()
+            }
         } finally {
             preview?.let { controller -> instrumentation.runOnMainSync { controller.release() } }
             output.delete()
@@ -325,6 +345,22 @@ class FlatMouthBridgeExportSmokeTest {
             file.delete()
         }
     }
+
+    private fun extractFrame(file: File, timeUs: Long): Bitmap {
+        val retriever = android.media.MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(file.absolutePath)
+            retriever.getFrameAtTime(timeUs, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
+                ?: error("Unable to decode TALK frame at $timeUs")
+        } finally {
+            retriever.release()
+        }
+    }
+
+    private fun pixelRgbDelta(a: Int, b: Int): Int =
+        kotlin.math.abs(Color.red(a) - Color.red(b)) +
+            kotlin.math.abs(Color.green(a) - Color.green(b)) +
+            kotlin.math.abs(Color.blue(a) - Color.blue(b))
 
     private fun projectSession(project: Project): ProjectSession = ProjectSession(
         initialProject = project,

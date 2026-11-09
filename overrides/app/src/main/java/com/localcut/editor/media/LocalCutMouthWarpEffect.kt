@@ -42,6 +42,38 @@ internal object LocalCutMouthWarpMath {
         }
         return sampleU.coerceIn(0.001, 0.999) to sampleV.coerceIn(0.001, 0.999)
     }
+
+    /**
+     * CPU reference for the visible inner-mouth mask used by the GL shader.
+     * A closed mouth is completely transparent; the effect never edits source assets.
+     * Used by unit tests, not by the rendering hot path.
+     */
+    fun openingMask(
+        u: Double,
+        v: Double,
+        centerX: Double,
+        centerY: Double,
+        radiusX: Double,
+        radiusY: Double,
+        openness: Double,
+    ): Double {
+        require(listOf(u, v, centerX, centerY, radiusX, radiusY, openness).all { it.isFinite() })
+        require(radiusX > 0.0 && radiusY > 0.0)
+        val strength = openness.coerceIn(0.0, 1.0)
+        if (strength <= 0.001) return 0.0
+        val innerWidth = radiusX * 0.78
+        val innerHeight = radiusY * (0.045 + 0.77 * strength)
+        val dx = (u - centerX) / innerWidth
+        val dy = (v - centerY) / innerHeight
+        val r2 = dx * dx + dy * dy
+        val blend = (1.0 - smoothStep(0.75, 1.0, r2))
+        return blend * smoothStep(0.02, 0.22, strength)
+    }
+
+    private fun smoothStep(edge0: Double, edge1: Double, x: Double): Double {
+        val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0.0, 1.0)
+        return t * t * (3.0 - 2.0 * t)
+    }
 }
 
 @UnstableApi
@@ -176,18 +208,60 @@ private class LocalCutMouthWarpShaderProgram(
 
             void main() {
                 vec2 uv = vTexSamplingCoord;
+                vec4 original = texture2D(uTexSampler, clampUv(uv));
+                float strength = clamp(uOpenness, 0.0, 1.0);
+
+                // Exactly preserve the original portrait during silence. Also
+                // avoid unneeded GPU work for every pixel outside the mouth ROI.
+                if (strength <= 0.001) {
+                    gl_FragColor = original;
+                    return;
+                }
                 vec2 safeRadius = max(uRadius, vec2(0.0001));
                 vec2 delta = uv - uCenter;
                 vec2 normalized = delta / safeRadius;
                 float distanceSquared = dot(normalized, normalized);
-                vec2 sampleUv = uv;
-                if (uOpenness > 0.0 && distanceSquared < 1.0) {
-                    float edge = 1.0 - distanceSquared;
-                    float influence = edge * edge;
-                    float stretch = 1.0 + 0.45 * clamp(uOpenness, 0.0, 1.0) * influence;
-                    sampleUv.y = uCenter.y + delta.y / stretch;
+                if (distanceSquared >= 1.0) {
+                    gl_FragColor = original;
+                    return;
                 }
-                gl_FragColor = texture2D(uTexSampler, clampUv(sampleUv));
+
+                // Keep the original local deformation at the lip boundary.
+                float edge = 1.0 - distanceSquared;
+                float influence = edge * edge;
+                float stretch = 1.0 + 0.45 * strength * influence;
+                vec2 sampleUv = vec2(uv.x, uCenter.y + delta.y / stretch);
+                vec4 warped = texture2D(uTexSampler, clampUv(sampleUv));
+
+                // Pure UV stretching cannot open a mouth drawn as a closed line.
+                // Synthesize a small, soft-edged oral cavity from the approved
+                // mouth region. It widens/deepens with voice energy and vanishes
+                // completely when quiet. All pixels outside ROI are untouched.
+                vec2 mouthRadius = safeRadius * vec2(0.78, 0.045 + 0.77 * strength);
+                vec2 mouthUv = delta / max(mouthRadius, vec2(0.0001));
+                float mouthR2 = dot(mouthUv, mouthUv);
+                float cavityMask =
+                    (1.0 - smoothstep(0.75, 1.0, mouthR2)) *
+                    smoothstep(0.02, 0.22, strength);
+                vec3 cavityColor = mix(
+                    vec3(0.12, 0.035, 0.052),
+                    warped.rgb * vec3(0.28, 0.14, 0.16),
+                    0.22
+                );
+
+                // Subtle top-teeth highlight at wider openings; only inside the
+                // cavity, never a hard white rectangle on the face.
+                float upperTeeth =
+                    smoothstep(0.45, 0.85, strength) *
+                    (1.0 - smoothstep(-0.55, -0.10, mouthUv.y)) *
+                    (1.0 - smoothstep(0.40, 0.85, abs(mouthUv.x))) *
+                    0.78;
+                cavityColor = mix(cavityColor, vec3(0.90, 0.79, 0.72), upperTeeth);
+
+                gl_FragColor = vec4(
+                    mix(warped.rgb, cavityColor, cavityMask),
+                    warped.a
+                );
             }
         """.trimIndent()
     }

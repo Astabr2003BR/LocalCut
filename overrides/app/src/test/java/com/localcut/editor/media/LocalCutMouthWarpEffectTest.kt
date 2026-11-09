@@ -123,6 +123,37 @@ class LocalCutMouthWarpEffectTest {
     }
 
     @Test
+    fun visibleMouthMaskIsClosedAtSilenceAndOpensInsideUserMarkedRegion() {
+        val cx = 0.51
+        val cy = 0.49
+        val rx = 0.07
+        val ry = 0.025
+        fun mask(x: Double, y: Double, openness: Double) =
+            LocalCutMouthWarpMath.openingMask(x, y, cx, cy, rx, ry, openness)
+
+        assertEquals(0.0, mask(cx, cy, 0.0), 0.0)
+        assertEquals(0.0, mask(cx, cy, -1.0), 0.0)
+        assertTrue("Strong speech must create visible mouth interior",
+            mask(cx, cy, 1.0) > 0.95)
+        assertTrue("Quiet speech must not render a full-sized cavity",
+            mask(cx, cy, 0.10) < mask(cx, cy, 0.65))
+        assertEquals(0.0, mask(cx + rx, cy, 1.0), 0.0)
+        assertEquals(0.0, mask(cx, cy + ry, 1.0), 0.0)
+        assertEquals(0.0, mask(0.12, 0.12, 1.0), 0.0)
+        assertEquals(0.0, mask(cx, cy, 0.0), 0.0)
+    }
+
+    @Test
+    fun mouthMaskRejectsInvalidOrNonFiniteGeometry() {
+        assertTrue(runCatching { LocalCutMouthWarpMath.openingMask(
+            Double.NaN, 0.5, 0.5, 0.5, 0.07, 0.025, 0.5) }.isFailure)
+        assertTrue(runCatching { LocalCutMouthWarpMath.openingMask(
+            0.5, 0.5, 0.5, 0.5, 0.0, 0.025, 0.5) }.isFailure)
+        assertTrue(runCatching { LocalCutMouthWarpMath.openingMask(
+            0.5, 0.5, 0.5, 0.5, 0.07, 0.025, Double.POSITIVE_INFINITY) }.isFailure)
+    }
+
+    @Test
     fun animatedOpennessEvaluatesAtPresentationTime() {
         val effect = animatedMouth()
         val atPeak = EffectRegistry.evaluate(effect, 500_000L)

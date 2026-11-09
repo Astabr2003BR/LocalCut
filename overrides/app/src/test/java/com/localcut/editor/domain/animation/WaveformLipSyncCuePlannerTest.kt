@@ -27,6 +27,25 @@ class WaveformLipSyncCuePlannerTest {
     }
 
     @Test
+    fun uninterruptedSpeechIsSplitIntoVisibleMouthPulses() {
+        // 50 ms buckets; this simulates two seconds of continuous speech with
+        // changing intensity and a quiet baseline at beginning/end.
+        val samples = listOf(0.01f) +
+            List(40) { i -> if (i % 4 < 2) 0.65f else 0.80f } +
+            listOf(0.01f)
+        val durationUs = 2_100_000L
+        val cues = WaveformLipSyncCuePlanner.plan(
+            WaveformData(samples), durationUs,
+        )
+        assertTrue("continuous voice must not freeze mouth open", cues.size >= 5)
+        assertTrue("each cue must end in a visible close/open cycle",
+            cues.all { it.durationUs <= 300_000L })
+        assertTrue("cues must remain ordered/non-overlapping",
+            cues.zipWithNext().all { (a, b) -> a.offsetUs + a.durationUs <= b.offsetUs })
+        assertTrue(cues.all { it.offsetUs + it.durationUs <= durationUs })
+    }
+
+    @Test
     fun silenceAndFlatNoiseReturnNoCues() {
         assertTrue(
             WaveformLipSyncCuePlanner.plan(

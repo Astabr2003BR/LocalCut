@@ -73,10 +73,18 @@ object WaveformLipSyncCuePlanner {
         }
 
         active.drop(1).forEach { bucket ->
-            if (bucket.index == runEndIndex + 1) {
+            val contiguous = bucket.index == runEndIndex + 1
+            val wouldExceedDuration = bucketBoundary(
+                bucket.index + 1, peaks.size, actionDurationUs,
+            ) - bucketBoundary(runStartIndex, peaks.size, actionDurationUs) > MAX_CONTINUOUS_CUE_US
+            if (contiguous && !wouldExceedDuration) {
                 runEndIndex = bucket.index
                 runOpenness = max(runOpenness, bucket.openness)
             } else {
+                // Very long uninterrupted energy spans used to become a single
+                // cue, leaving the mouth frozen open for whole sentences. Split
+                // long spans into short, speech-driven pulses with full closure
+                // at boundaries while retaining the original silence gaps.
                 flushRun()
                 runStartIndex = bucket.index
                 runEndIndex = bucket.index
@@ -96,4 +104,5 @@ object WaveformLipSyncCuePlanner {
     private const val MIN_ABSOLUTE_NOISE_FLOOR = 0.02
     private const val MIN_MEANINGFUL_PEAK = 0.04
     private const val MIN_LOCAL_RANGE = 0.03
+    private const val MAX_CONTINUOUS_CUE_US = 300_000L
 }

@@ -193,7 +193,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             },
                             onImportAudioRequested = { audioImportLauncher.launch(arrayOf("audio/*")) },
-                            onImportLinkRequested = ::importFromLink,
+                            onImportLinkRequested = { rawUrl -> importFromLink(rawUrl) },
                             onImportOverlayRequested = {
                                 overlayImportLauncher.launch(
                                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)

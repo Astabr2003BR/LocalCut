@@ -37,6 +37,8 @@ import com.localcut.editor.media.Media3ExportController
 import com.localcut.editor.media.Media3PreviewController
 import com.localcut.editor.media.PreviewResumePolicy
 import com.localcut.editor.media.SafExportDestination
+import com.localcut.editor.mobile.RemoteMediaImportExecutor
+import com.localcut.editor.mobile.RemoteMediaUrlPolicy
 import com.localcut.editor.mobile.SharedMediaIntentParser
 import com.localcut.editor.ui.editor.BridgePanel
 import com.localcut.editor.ui.editor.EditorScreen
@@ -65,6 +67,7 @@ class MainActivity : ComponentActivity() {
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var lastFinalPreviewFile: File? = null
     private var pendingExportProfile: ExportProfile? = null
+    private var remoteLinkImportRunning = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -188,6 +191,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             },
                             onImportAudioRequested = { audioImportLauncher.launch(arrayOf("audio/*")) },
+                            onImportLinkRequested = ::importFromLink,
                             onImportOverlayRequested = {
                                 overlayImportLauncher.launch(
                                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
@@ -231,6 +235,39 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         consumeSharedMediaIntent(intent)
+    }
+
+    private fun importFromLink(rawUrl: String) {
+        if (remoteLinkImportRunning) {
+            showError("Já existe uma importação por link em andamento.")
+            return
+        }
+        val url = RemoteMediaUrlPolicy.parseAndValidate(rawUrl.trim()).getOrElse {
+            showError(it.message ?: "Link HTTPS inválido")
+            return
+        }
+        remoteLinkImportRunning = true
+        Toast.makeText(this, "Importando mídia do link…", Toast.LENGTH_SHORT).show()
+        activityScope.launch {
+            try {
+                val result = RemoteMediaImportExecutor(
+                    context = applicationContext,
+                    mediaIngestCoordinator = runtime.mediaIngestCoordinator,
+                ).importUrl(url.toASCIIString())
+                result.onSuccess { imported ->
+                    editorViewModel.refreshSnapshot()
+                    if (imported.importedCount == 1 && imported.failedCount == 0 && imported.errors.isEmpty()) {
+                        Toast.makeText(applicationContext, "Mídia importada no LocalCut", Toast.LENGTH_LONG).show()
+                    } else {
+                        showError(imported.errors.firstOrNull() ?: "Não foi possível importar a mídia")
+                    }
+                }.onFailure { error ->
+                    showError(error.message ?: "Falha ao importar mídia por link")
+                }
+            } finally {
+                remoteLinkImportRunning = false
+            }
+        }
     }
 
     private fun importUris(uris: List<Uri>, shared: Boolean = false) {

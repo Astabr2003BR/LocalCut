@@ -83,6 +83,7 @@ fun EditorScreen(
     exportCapabilities: ExportCapabilities,
     onImportRequested: () -> Unit,
     onImportAudioRequested: () -> Unit,
+    onImportLinkRequested: (String) -> Unit,
     onImportOverlayRequested: () -> Unit,
     onExportRequested: (ExportProfile) -> Unit,
     onCancelExport: () -> Unit,
@@ -102,6 +103,7 @@ fun EditorScreen(
     var loopEnabled by remember { mutableStateOf(false) }
     var showExportSettings by remember { mutableStateOf(false) }
     var showTextManager by remember { mutableStateOf(false) }
+    var showImportLink by remember { mutableStateOf(false) }
     var textEditor by remember { mutableStateOf<TextOverlayEditorModel?>(null) }
     var exportSettings by remember(
         session.project.width,
@@ -124,6 +126,16 @@ fun EditorScreen(
             onConfirm = {
                 showExportSettings = false
                 onExportRequested(exportSettings.toProfile())
+            },
+        )
+    }
+
+    if (showImportLink) {
+        RemoteMediaLinkImportDialog(
+            onDismiss = { showImportLink = false },
+            onConfirm = { url ->
+                showImportLink = false
+                onImportLinkRequested(url)
             },
         )
     }
@@ -190,6 +202,7 @@ fun EditorScreen(
                 loopEnabled = loopEnabled,
                 exportState = exportState,
                 onUndo = { viewModel.dispatch(EditorAction.Undo) },
+                onImportLink = { showImportLink = true },
                 onRedo = { viewModel.dispatch(EditorAction.Redo) },
                 onLoopChange = { enabled ->
                     loopEnabled = enabled
@@ -297,6 +310,7 @@ private fun ProfessionalEditorToolbar(
     loopEnabled: Boolean,
     exportState: ExportUiState,
     onUndo: () -> Unit,
+    onImportLink: () -> Unit,
     onRedo: () -> Unit,
     onLoopChange: (Boolean) -> Unit,
     onExportRequested: () -> Unit,
@@ -341,6 +355,11 @@ private fun ProfessionalEditorToolbar(
 
     @Composable
     fun EditActions() {
+        TextButton(
+            onClick = onImportLink,
+            enabled = !exportState.running,
+            contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+        ) { Text("Importar link", maxLines = 1, softWrap = false) }
         TextButton(
             onClick = onUndo,
             enabled = canUndo && !exportState.running,

@@ -264,6 +264,9 @@ class MainActivity : ComponentActivity() {
             action = action,
             mimeType = sourceIntent.type,
             uriStrings = sharedUriStrings(sourceIntent),
+            resolveUriMime = { uri ->
+                runCatching { contentResolver.getType(Uri.parse(uri)) }.getOrNull()
+            },
         )
         markSharedIntentConsumed(sourceIntent)
 

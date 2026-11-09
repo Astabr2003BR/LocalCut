@@ -28,6 +28,11 @@ class SharedMediaStager(
                 ?.trim()
                 ?.lowercase()
                 ?: throw IllegalArgumentException("SHARED_MEDIA_TYPE_UNAVAILABLE")
+            require(
+                mimeType.startsWith("image/") ||
+                    mimeType.startsWith("audio/") ||
+                    mimeType.startsWith("video/")
+            ) { "SHARED_MEDIA_TYPE_UNSUPPORTED" }
             val extension = extensionFor(mimeType)
             val directory = File(context.filesDir, "remote-media").apply { mkdirs() }
             require(directory.isDirectory) { "SHARED_MEDIA_STORAGE_UNAVAILABLE" }

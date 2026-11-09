@@ -45,7 +45,11 @@ class SharedMediaStager(
 
             resolver.openInputStream(source)?.use { input ->
                 partialFile.outputStream().buffered().use { output ->
-                    input.copyTo(output)
+                    SharedMediaCopyPolicy.copy(
+                        input = input,
+                        output = output,
+                        maximumBytes = SharedMediaCopyPolicy.limitForMime(mimeType),
+                    )
                 }
             } ?: throw IllegalArgumentException("SHARED_MEDIA_SOURCE_UNAVAILABLE")
 

@@ -1,6 +1,7 @@
 package com.localcut.editor
 
 import android.Manifest
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -37,6 +38,7 @@ import com.localcut.editor.media.Media3ExportController
 import com.localcut.editor.media.Media3PreviewController
 import com.localcut.editor.media.PreviewResumePolicy
 import com.localcut.editor.media.SafExportDestination
+import com.localcut.editor.mobile.LockedMediaImportRecovery
 import com.localcut.editor.mobile.RemoteMediaImportExecutor
 import com.localcut.editor.mobile.RemoteMediaUrlPolicy
 import com.localcut.editor.mobile.SharedMediaIntentParser
@@ -237,7 +239,7 @@ class MainActivity : ComponentActivity() {
         consumeSharedMediaIntent(intent)
     }
 
-    private fun importFromLink(rawUrl: String) {
+    private fun importFromLink(rawUrl: String, recoveryAttempted: Boolean = false) {
         if (remoteLinkImportRunning) {
             showError("Já existe uma importação por link em andamento.")
             return
@@ -262,7 +264,30 @@ class MainActivity : ComponentActivity() {
                         showError(imported.errors.firstOrNull() ?: "Não foi possível importar a mídia")
                     }
                 }.onFailure { error ->
-                    showError(error.message ?: "Falha ao importar mídia por link")
+                    val lockedTrackId = if (!recoveryAttempted) {
+                        LockedMediaImportRecovery.blockedTrackId(runtime.session.state.project, error)
+                    } else null
+                    if (lockedTrackId == null) {
+                        showError(error.message ?: "Falha ao importar mídia por link")
+                    } else if (!isFinishing && !isDestroyed) {
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("Faixa bloqueada")
+                            .setMessage(
+                                "A faixa $lockedTrackId está bloqueada. " +
+                                    "Deseja desbloqueá-la e tentar importar a mídia novamente? " +
+                                    "A alteração pode ser desfeita.",
+                            )
+                            .setNegativeButton("Cancelar", null)
+                            .setPositiveButton("Desbloquear e importar") { _, _ ->
+                                if (LockedMediaImportRecovery.unlock(runtime.session, lockedTrackId)) {
+                                    editorViewModel.refreshSnapshot()
+                                    importFromLink(url.toASCIIString(), recoveryAttempted = true)
+                                } else {
+                                    showError("Não foi possível desbloquear $lockedTrackId")
+                                }
+                            }
+                            .show()
+                    }
                 }
             } finally {
                 remoteLinkImportRunning = false

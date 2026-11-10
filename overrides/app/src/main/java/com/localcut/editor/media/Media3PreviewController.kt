@@ -313,7 +313,7 @@ private class Media3PreviewEngine(
             if (scrubbingModeEnabled) created.setScrubbingModeEnabled(true)
             created.addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
-                    errorCallback(error.message ?: "Media3 playback error")
+                    errorCallback(PreviewPlaybackErrorDiagnostics.describe(error.errorCode, error))
                 }
             })
             activePlayer = created

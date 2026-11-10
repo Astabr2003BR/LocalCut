@@ -56,6 +56,23 @@ class PortraitMotionPresetsTest {
         assertNull(PortraitMotionPresets.deserialize(encoded.replace("0.37", "0.99")))
     }
 
+    @Test fun corruptPersistedBlinkDoesNotCrashSettingsRecovery() {
+        val corrupt = EffectInstance(
+            id = "eye-corrupt", typeId = PortraitMotionPresets.TYPE_ID,
+            parameters = mapOf(
+                "leftEye" to EffectParameter.Point(Double.NaN, 0.36),
+                "rightEye" to EffectParameter.Point(0.63, 0.36),
+            ),
+        )
+        assertNull(PortraitMotionPresets.fromPersistedEffectOrNull(corrupt))
+        // A previously valid persisted effect still loads with unchanged geometry.
+        val valid = PortraitMotionPresets.upsert(
+            "clip-ok", listOf(talk), PortraitMotionSettings(leftX = 0.35, rightX = 0.65),
+        ).last()
+        assertEquals(0.35, PortraitMotionPresets.fromPersistedEffectOrNull(valid)?.leftX ?: -1.0, 0.0)
+        assertEquals(Double.NaN, (corrupt.parameters["leftEye"] as EffectParameter.Point).x, 0.0)
+    }
+
     @Test fun invalidGeometryAndDuplicateEffectsAreRejected() {
         assertTrue(runCatching {
             PortraitMotionPresets.upsert("clip", listOf(talk),

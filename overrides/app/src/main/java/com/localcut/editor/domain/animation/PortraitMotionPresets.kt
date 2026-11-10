@@ -91,6 +91,14 @@ object PortraitMotionPresets {
         ).also { it.validate() }
     }
 
+    /**
+     * Saved projects may contain unsupported or malformed animation settings.
+     * Keep the editor usable and let the user explicitly repair the effect.
+     * Never mutate the persisted clip while reading it.
+     */
+    fun fromPersistedEffectOrNull(effect: EffectInstance): PortraitMotionSettings? =
+        runCatching { fromEffect(effect) }.getOrNull()
+
     fun upsert(
         clipId: String,
         existing: List<EffectInstance>,

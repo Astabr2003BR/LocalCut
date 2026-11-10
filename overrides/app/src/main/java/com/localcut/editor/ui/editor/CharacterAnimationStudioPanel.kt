@@ -49,10 +49,15 @@ internal fun CharacterAnimationStudioPanel(
         (track.locked || track.hidden) && track.clips.any { it.id == clip.id }
     }
     val current = clip.effects.firstOrNull { it.typeId == PortraitMotionPresets.TYPE_ID }
-    var settings by remember(clip.id, current) {
-        mutableStateOf(PortraitMotionPresets.fromEffect(current))
+    val restored = remember(clip.id, current) {
+        current?.let(PortraitMotionPresets::fromPersistedEffectOrNull)
     }
-    var eyesVerified by remember(clip.id) { mutableStateOf(current != null) }
+    var settings by remember(clip.id, current) {
+        mutableStateOf(restored ?: PortraitMotionSettings())
+    }
+    var eyesVerified by remember(clip.id, current) {
+        mutableStateOf(restored != null)
+    }
     var showGeometry by remember(clip.id) { mutableStateOf(false) }
     var notice by remember(clip.id) { mutableStateOf<String?>(null) }
     val context = LocalContext.current
@@ -73,6 +78,15 @@ internal fun CharacterAnimationStudioPanel(
 
         Text("Movimento de boca", style = MaterialTheme.typography.labelLarge)
         AudioLipSyncActionControl(modifier = Modifier.fillMaxWidth())
+
+        if (current != null && restored == null) {
+            Text(
+                "A animação salva contém parâmetros inválidos. Ela não foi carregada neste painel. " +
+                    "Revise a posição dos olhos e aplique novamente, ou remova os movimentos.",
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
 
         Text("Animação do retrato", style = MaterialTheme.typography.labelLarge)
         Row(

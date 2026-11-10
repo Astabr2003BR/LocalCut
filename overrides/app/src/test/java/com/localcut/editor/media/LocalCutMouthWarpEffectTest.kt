@@ -149,7 +149,7 @@ class LocalCutMouthWarpEffectTest {
         assertEquals(0.0, mask(cx + rx * 0.70, cy, 1.0), 0.0)
         assertEquals(0.0, mask(cx, cy + ry * 0.60, 1.0), 0.0)
         assertTrue("Soft feathering must avoid a hard oval edge",
-            mask(cx + rx * 0.50, cy, 1.0) in 0.0..0.30)
+            mask(cx + rx * 0.60, cy, 1.0) in 0.0..0.15)
         assertEquals(0.0, mask(cx + rx, cy, 1.0), 0.0)
         assertEquals(0.0, mask(cx, cy + ry, 1.0), 0.0)
         assertEquals(0.0, mask(0.12, 0.12, 1.0), 0.0)

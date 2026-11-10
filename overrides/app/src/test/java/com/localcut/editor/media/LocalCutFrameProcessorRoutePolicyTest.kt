@@ -53,6 +53,42 @@ class LocalCutFrameProcessorRoutePolicyTest {
         )
     }
 
+
+    @Test
+    fun singlePortraitAndSeparateAudioNeverRequireMultiInputVideoGraph() {
+        val base = projectWith(CompositingSettings())
+        val audio = Track(
+            id = "audio-1", type = TrackType.AUDIO, order = 1,
+            clips = listOf(Clip(
+                id = "voice", assetId = "voice-asset", startUs = 0L,
+                durationUs = 1_000_000L, sourceInUs = 0L, sourceOutUs = 1_000_000L,
+            )),
+        )
+        assertFalse(LocalCutFrameProcessorRoutePolicy.requiresMultipleInputVideoGraph(base))
+        assertFalse(LocalCutFrameProcessorRoutePolicy.requiresMultipleInputVideoGraph(
+            base.copy(tracks = base.tracks + audio),
+        ))
+    }
+
+    @Test
+    fun twoVisibleVisualSequencesRequireMultiInputVideoGraph() {
+        val base = projectWith(CompositingSettings())
+        val secondVisual = base.tracks.single().copy(id = "visual-2", order = 2)
+        assertTrue(LocalCutFrameProcessorRoutePolicy.requiresMultipleInputVideoGraph(
+            base.copy(tracks = base.tracks + secondVisual),
+        ))
+    }
+
+    @Test
+    fun hiddenOrEmptyVisualTracksDoNotActivateExtraVideoInputs() {
+        val base = projectWith(CompositingSettings())
+        val hidden = base.tracks.single().copy(id = "visual-hidden", order = 2, hidden = true)
+        val empty = base.tracks.single().copy(id = "visual-empty", order = 3, clips = emptyList())
+        assertFalse(LocalCutFrameProcessorRoutePolicy.requiresMultipleInputVideoGraph(
+            base.copy(tracks = base.tracks + hidden + empty),
+        ))
+    }
+
     private fun projectWith(compositing: CompositingSettings): Project = Project.create(
         title = "route",
         width = 1280,

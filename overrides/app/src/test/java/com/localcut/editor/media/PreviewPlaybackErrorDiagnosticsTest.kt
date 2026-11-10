@@ -17,6 +17,26 @@ class PreviewPlaybackErrorDiagnosticsTest {
         assertFalse(output.contains("/data/user"))
     }
 
+
+    @Test fun revealsSafeMedia3OriginWithoutExposingMessagesOrPrivatePaths() {
+        val root = IllegalStateException("Bearer secret file:///private/path?token=abcdef")
+        root.stackTrace = arrayOf(
+            StackTraceElement("androidx.media3.common.util.Assertions", "checkState", "Assertions.java", 85),
+            StackTraceElement("androidx.media3.effect.DefaultVideoCompositor", "queueInputTexture", "DefaultVideoCompositor.java", 193),
+            StackTraceElement("com.example.Sensitive", "secretMethod", "Account.kt", 42),
+        )
+        val output = PreviewPlaybackErrorDiagnostics.describe(7001,
+            IllegalArgumentException("content://private/image", root))
+        assertTrue(output.contains("código 7001"))
+        assertTrue(output.contains("DefaultVideoCompositor.queueInputTexture"))
+        assertFalse(output.contains("Assertions.checkState"))
+        assertFalse(output.contains("secret"))
+        assertFalse(output.contains("Bearer"))
+        assertFalse(output.contains("content://"))
+        assertFalse(output.contains("/private"))
+        assertFalse(output.contains("token="))
+    }
+
     @Test fun limitsDeepCausesAndSupportsNoCause() {
         assertTrue(PreviewPlaybackErrorDiagnostics.describe(1000, RuntimeException())
             .contains("RuntimeException"))

@@ -8,7 +8,16 @@ import com.localcut.editor.domain.timeline.TimelineValidator
 
 /** Preview-only edit; does not mutate history until confirmed TALK is applied. */
 object LocalTalkClipCoverage {
-    fun projectedProject(project: Project, imageId: String, audioId: String): Project {
+    fun projectedProject(
+        project: Project,
+        imageId: String,
+        audioId: String,
+        verifiedAudioDurationUs: Long? = null,
+    ): Project {
+        require(verifiedAudioDurationUs == null ||
+            verifiedAudioDurationUs in 1L..AudioDrivenTalkPlanner.MAX_DURATION_US) {
+            "Duração verificada do áudio fora do limite"
+        }
         val imageTrack = project.tracks.singleOrNull { track ->
             track.type == TrackType.VISUAL && track.clips.any { it.id == imageId }
         } ?: throw IllegalArgumentException("Imagem visual não encontrada")
@@ -26,7 +35,13 @@ object LocalTalkClipCoverage {
         // A newly imported audio clip can default to five seconds even when its
         // local source contains a longer voice recording. Only the exact untrimmed
         // 0..5s source window qualifies for this confirmed recovery.
-        val sourceDuration = audioAsset.sourceDurationUs
+        // The original importer may have kept the 5-second default even though
+        // the private MP3 is longer. A duration measured locally from the same
+        // owned source can repair that metadata, but never reduce a known length.
+        val sourceDuration = maxOf(
+            audioAsset.sourceDurationUs ?: 0L,
+            verifiedAudioDurationUs ?: 0L,
+        ).takeIf { it > 0L }
         val recoverImportedVoice = sourceDuration != null &&
             sourceDuration > 5_000_000L &&
             sourceDuration <= AudioDrivenTalkPlanner.MAX_DURATION_US &&
@@ -75,7 +90,12 @@ object LocalTalkClipCoverage {
                 else -> track
             }
         }
-        val extended = project.copy(tracks = tracks)
+        val correctedAssets = if (
+            recoverImportedVoice && sourceDuration != audioAsset.sourceDurationUs
+        ) project.assets.map { asset ->
+            if (asset.id == audioAsset.id) asset.copy(sourceDurationUs = sourceDuration) else asset
+        } else project.assets
+        val extended = project.copy(assets = correctedAssets, tracks = tracks)
         val issues = TimelineValidator.validate(extended)
         require(issues.isEmpty()) {
             "Não foi possível estender a imagem sem conflito: ${issues.firstOrNull()}"

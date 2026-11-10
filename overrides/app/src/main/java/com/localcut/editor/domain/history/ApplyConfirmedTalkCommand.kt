@@ -10,9 +10,12 @@ data class ApplyConfirmedTalkCommand(
     val imageClipId: String,
     val audioClipId: String,
     val plan: CharacterAnimationPlan,
+    val verifiedAudioDurationUs: Long? = null,
 ) : EditorCommand {
     override fun apply(project: Project): CommandResult {
-        val extended = LocalTalkClipCoverage.projectedProject(project, imageClipId, audioClipId)
+        val extended = LocalTalkClipCoverage.projectedProject(
+            project, imageClipId, audioClipId, verifiedAudioDurationUs,
+        )
         val applied = ApplyAnimationPlanCommand(plan).apply(extended)
         require(applied.project != project) { "A operação TALK não mudou o projeto" }
         return CommandResult(

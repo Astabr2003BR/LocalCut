@@ -60,6 +60,57 @@ class LocalTalkClipCoverageTest {
         assertEquals(13_000_000L, slice.durationUs)
     }
 
+    @Test fun verifiedLocalMetadataRepairsFiveSecondDefaultAndRemainsUndoable() {
+        val base = project()
+        val short = base.copy(
+            assets = base.assets.map { asset ->
+                if (asset.id == "voice") asset.copy(sourceDurationUs = null) else asset
+            },
+            tracks = base.tracks.map { track ->
+                if (track.type != TrackType.AUDIO) track else track.copy(
+                    clips = track.clips.map {
+                        it.copy(durationUs = 5_000_000L, sourceOutUs = 5_000_000L)
+                    },
+                )
+            },
+        )
+        val corrected = LocalTalkClipCoverage.projectedProject(
+            short, "body", "voice", verifiedAudioDurationUs = 12_538_000L,
+        )
+        assertEquals(12_538_000L, corrected.findClip("body")?.durationUs)
+        assertEquals(12_538_000L, corrected.findClip("voice")?.durationUs)
+        assertEquals(12_538_000L, corrected.assets.single { it.id == "voice" }.sourceDurationUs)
+        assertEquals(null, short.assets.single { it.id == "voice" }.sourceDurationUs)
+
+        val slice = AudioDrivenTalkPlanner.prepare(corrected, "body", "voice")
+        val plan = AudioDrivenTalkPlanner.plan(
+            corrected, slice, MouthRegion(0.51, 0.49, 0.07, 0.025),
+            listOf(LipSyncCue(350_000L, 400_000L, 0.7)),
+        )
+        val history = HistoryManager(short)
+        history.execute(ApplyConfirmedTalkCommand(
+            "body", "voice", plan, verifiedAudioDurationUs = 12_538_000L,
+        ))
+        assertEquals(12_538_000L, history.project.findClip("voice")?.durationUs)
+        assertTrue(history.undo())
+        assertEquals(short, history.project)
+        assertTrue(history.redo())
+        assertEquals(12_538_000L, history.project.findClip("body")?.durationUs)
+    }
+
+    @Test fun invalidOrAmbiguousVerifiedDurationIsRejected() {
+        val base = project()
+        assertTrue(runCatching {
+            LocalTalkClipCoverage.projectedProject(base, "body", "voice", verifiedAudioDurationUs = -1L)
+        }.isFailure)
+        assertTrue(runCatching {
+            LocalTalkClipCoverage.projectedProject(
+                base, "body", "voice",
+                verifiedAudioDurationUs = AudioDrivenTalkPlanner.MAX_DURATION_US + 1L,
+            )
+        }.isFailure)
+    }
+
     @Test fun intentionallyTrimmedFourSecondVoiceIsNeverExtended() {
         val base = project()
         val trimmed = base.copy(tracks = base.tracks.map { track ->

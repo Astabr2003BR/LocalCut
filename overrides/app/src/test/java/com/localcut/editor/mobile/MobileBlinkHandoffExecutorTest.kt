@@ -75,6 +75,27 @@ class MobileBlinkHandoffExecutorTest {
         assertTrue(second.effects.any { it.typeId == "localcut.character.mouth_warp" })
     }
 
+    @Test fun customPresetValuesAreAppliedWithoutDuplicatingTalkOrAudio() {
+        val custom = MobileBlinkRegion(
+            0.37, 0.63, 0.36, 0.085, 0.042,
+            intervalSeconds = 2.7,
+            blinkStrength = 0.9,
+            swayStrength = 0.4,
+            breathStrength = 0.7,
+        )
+        val before = project()
+        val first = MobileBlinkHandoffExecutor.plan(before, "voice-clip", custom)
+        val applied = SetClipEffectsCommand(first.clipId, first.effects).apply(before).project
+        val blink = applied.findClip("portrait")!!.effects.single {
+            it.typeId == "localcut.character.eye_blink"
+        }
+        assertEquals(2.7, (blink.parameters["intervalSeconds"] as EffectParameter.Number).value, 0.0)
+        assertEquals(0.7, (blink.parameters["breathStrength"] as EffectParameter.Number).value, 0.0)
+        assertEquals(before.tracks.first { it.type == TrackType.AUDIO },
+            applied.tracks.first { it.type == TrackType.AUDIO })
+        assertEquals(first.effects, MobileBlinkHandoffExecutor.plan(applied, null, custom).effects)
+    }
+
     @Test fun neverGuessesWhichImageToEditOrBypassesTrackLock() {
         assertTrue(runCatching {
             MobileBlinkHandoffExecutor.plan(project(extraPortrait = true), null, eyes)

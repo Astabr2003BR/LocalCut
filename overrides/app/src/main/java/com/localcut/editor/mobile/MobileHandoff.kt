@@ -2,6 +2,9 @@ package com.localcut.editor.mobile
 
 import com.localcut.editor.bridge.protocol.BridgeCapability
 import com.localcut.editor.domain.animation.MouthRegion
+import com.localcut.editor.domain.animation.PortraitMotionPreset
+import com.localcut.editor.domain.animation.PortraitMotionPresets
+import com.localcut.editor.domain.animation.PortraitMotionSettings
 import com.localcut.editor.data.project.jsonString
 import java.net.URI
 import java.net.URLDecoder
@@ -23,16 +26,24 @@ data class MobileBlinkRegion(
     val y: Double,
     val radiusX: Double,
     val radiusY: Double,
+    val firstBlinkSeconds: Double = 1.4,
+    val intervalSeconds: Double = 3.2,
+    val durationSeconds: Double = 0.18,
+    val blinkStrength: Double = 1.0,
+    val swayStrength: Double = 0.0,
+    val breathStrength: Double = 0.0,
 ) {
+    fun settings() = PortraitMotionSettings(
+        leftX = leftX, rightX = rightX, eyeY = y,
+        radiusX = radiusX, radiusY = radiusY,
+        firstBlinkSeconds = firstBlinkSeconds,
+        intervalSeconds = intervalSeconds, durationSeconds = durationSeconds,
+        blinkStrength = blinkStrength, swayStrength = swayStrength,
+        breathStrength = breathStrength,
+    ).also { it.validate() }
+
     init {
-        require(listOf(leftX, rightX, y, radiusX, radiusY).all { it.isFinite() })
-        require(radiusX in 0.02..0.15 && radiusY in 0.01..0.09)
-        require(leftX in radiusX..(1.0 - radiusX) &&
-            rightX in radiusX..(1.0 - radiusX) &&
-            y in radiusY..(1.0 - radiusY))
-        require(rightX - leftX >= 2.25 * radiusX) {
-            "As regiões dos olhos não podem se sobrepor"
-        }
+        settings()
     }
 }
 
@@ -101,26 +112,56 @@ object MobileHandoffParser {
                 )
             }
             "blink" -> {
+                // A single, backward-compatible handoff accepts future
+                // variations as validated numeric data; no new native route
+                // or remotely supplied executable code is needed for presets.
+                val requestedPreset = params["preset"]?.let { value ->
+                    PortraitMotionPreset.entries.singleOrNull {
+                        it.name.equals(value, ignoreCase = true)
+                    } ?: throw IllegalArgumentException("HANDOFF_UNKNOWN_MOTION_PRESET")
+                }
+                val defaults = requestedPreset?.let {
+                    PortraitMotionPresets.preset(it)
+                } ?: PortraitMotionSettings()
+                fun number(name: String, min: Double, max: Double, fallback: Double) =
+                    if (params.containsKey(name)) requiredDouble(params, name, min, max)
+                    else fallback
                 val region = MobileBlinkRegion(
-                    leftX = params["leftX"]?.let { requiredDouble(params, "leftX", 0.01, 0.99) } ?: 0.37,
-                    rightX = params["rightX"]?.let { requiredDouble(params, "rightX", 0.01, 0.99) } ?: 0.63,
-                    y = params["y"]?.let { requiredDouble(params, "y", 0.01, 0.99) } ?: 0.36,
-                    radiusX = params["radiusX"]?.let {
-                        requiredDouble(params, "radiusX", 0.02, 0.15)
-                    } ?: 0.085,
-                    radiusY = params["radiusY"]?.let {
-                        requiredDouble(params, "radiusY", 0.01, 0.09)
-                    } ?: 0.042,
+                    leftX = number("leftX", 0.01, 0.99, defaults.leftX),
+                    rightX = number("rightX", 0.01, 0.99, defaults.rightX),
+                    y = number("y", 0.01, 0.99, defaults.eyeY),
+                    radiusX = number("radiusX", 0.02, 0.15, defaults.radiusX),
+                    radiusY = number("radiusY", 0.01, 0.09, defaults.radiusY),
+                    firstBlinkSeconds = number(
+                        "firstBlinkSeconds", 0.10, 3.0, defaults.firstBlinkSeconds,
+                    ),
+                    intervalSeconds = number(
+                        "intervalSeconds", 2.0, 6.0, defaults.intervalSeconds,
+                    ),
+                    durationSeconds = number(
+                        "durationSeconds", 0.10, 0.35, defaults.durationSeconds,
+                    ),
+                    blinkStrength = number(
+                        "blinkStrength", 0.0, 1.0, defaults.blinkStrength,
+                    ),
+                    swayStrength = number(
+                        "swayStrength", 0.0, 1.0, defaults.swayStrength,
+                    ),
+                    breathStrength = number(
+                        "breathStrength", 0.0, 1.0, defaults.breathStrength,
+                    ),
                 )
                 MobileHandoffCommand(
                     capability = null,
                     payloadJson = "{}",
-                    description = "Adicionar piscadas automáticas ao único retrato elegível, " +
-                        "mantendo os efeitos TALK e a voz. " +
-                        "Olhos em ${(region.leftX * 100).toInt()}% e " +
-                        "${(region.rightX * 100).toInt()}% da largura, " +
-                        "altura ${(region.y * 100).toInt()}%. " +
-                        "Pisque aproximadamente a cada 3,2 s. A operação pode ser desfeita.",
+                    description = "Configurar piscadas e movimento leve no retrato selecionado. " +
+                        "Olhos: ${(region.leftX * 100).toInt()}%, " +
+                        "${(region.rightX * 100).toInt()}% e altura " +
+                        "${(region.y * 100).toInt()}%. " +
+                        "Intervalo ${region.intervalSeconds}s, respiração " +
+                        "${(region.breathStrength * 100).toInt()}%, oscilação " +
+                        "${(region.swayStrength * 100).toInt()}%. " +
+                        "Preserva TALK, áudio e outros efeitos. Desfazer disponível.",
                     blinkRegion = region,
                 )
             }

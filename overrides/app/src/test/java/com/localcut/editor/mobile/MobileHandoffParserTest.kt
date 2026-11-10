@@ -40,6 +40,36 @@ class MobileHandoffParserTest {
     }
 
     @Test
+    fun portraitMotionHandoffAcceptsDataOnlyPresetsAndAdjustments() {
+        val natural = MobileHandoffParser.parse(
+            "https://localcut-bridge-v1.onrender.com/open?action=blink&preset=natural" +
+                "&intervalSeconds=2.8&breathStrength=0.60&swayStrength=0.30" +
+                "&returnTo=editor",
+        ).getOrThrow().blinkRegion!!.settings()
+        assertEquals(2.8, natural.intervalSeconds, 0.000001)
+        assertEquals(0.60, natural.breathStrength, 0.000001)
+        assertEquals(0.30, natural.swayStrength, 0.000001)
+        assertEquals(0.37, natural.leftX, 0.000001)
+        assertEquals(0.63, natural.rightX, 0.000001)
+    }
+
+    @Test
+    fun portraitMotionHandoffRejectsMalformedPresetsAndNumbers() {
+        val rejects = listOf(
+            "action=blink&preset=remoteScript",
+            "action=blink&breathStrength=NaN",
+            "action=blink&swayStrength=Infinity",
+            "action=blink&intervalSeconds=0.1",
+            "action=blink&blinkStrength=1.1",
+            "action=blink&durationSeconds=0.5",
+            "action=blink&leftX=0.49&rightX=0.50",
+        )
+        rejects.forEach {
+            assertTrue(it, MobileHandoffParser.parse("localcut://command?$it").isFailure)
+        }
+    }
+
+    @Test
     fun parsesConfirmedLocalLipSyncHandoff() {
         val result = MobileHandoffParser.parse(
             "https://localcut-bridge-v1.onrender.com/open?action=lip_sync&x=0.51&y=0.49&radiusX=0.07&radiusY=0.025&returnTo=chatgpt",

@@ -1,12 +1,11 @@
 package com.localcut.editor.mobile
 
+import com.localcut.editor.domain.animation.PortraitMotionPresets
 import com.localcut.editor.domain.history.SetClipEffectsCommand
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.EffectInstance
-import com.localcut.editor.domain.model.EffectParameter
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.TrackType
-import com.localcut.editor.effects.EffectRegistry
 import com.localcut.editor.session.EditorAction
 import com.localcut.editor.session.ProjectSession
 
@@ -15,8 +14,6 @@ import com.localcut.editor.session.ProjectSession
  * images, audio or other effects. The history command restores the old clip.
  */
 internal object MobileBlinkHandoffExecutor {
-    private const val TYPE = "localcut.character.eye_blink"
-
     data class Planned(val clipId: String, val effects: List<EffectInstance>)
 
     fun plan(project: Project, selectedClipId: String?, region: MobileBlinkRegion): Planned {
@@ -33,30 +30,9 @@ internal object MobileBlinkHandoffExecutor {
             assets[selected.assetId]?.type != AssetType.IMAGE) {
             "A imagem selecionada não é a imagem elegível"
         }
-        val existing = image.effects.filter { it.typeId == TYPE }
-        require(existing.size <= 1) { "Há efeitos de piscar duplicados no clipe" }
-        val preferredId = "localcut-eye-blink-${image.id}"
-        val id = existing.singleOrNull()?.id ?: preferredId
-        require(image.effects.none { it.id == id && it.typeId != TYPE }) {
-            "ID de efeito de piscar já utilizado por outro efeito"
-        }
-        val blink = EffectInstance(
-            id = id,
-            typeId = TYPE,
-            enabled = true,
-            parameters = mapOf(
-                "leftEye" to EffectParameter.Point(region.leftX, region.y),
-                "rightEye" to EffectParameter.Point(region.rightX, region.y),
-                "radiusX" to EffectParameter.Number(region.radiusX),
-                "radiusY" to EffectParameter.Number(region.radiusY),
-                "firstBlinkSeconds" to EffectParameter.Number(1.4),
-                "intervalSeconds" to EffectParameter.Number(3.2),
-                "durationSeconds" to EffectParameter.Number(0.18),
-            ),
+        val effects = PortraitMotionPresets.upsert(
+            image.id, image.effects, region.settings(),
         )
-        require(EffectRegistry.validationIssues(blink).isEmpty()) { "Parâmetros de piscar inválidos" }
-        val effects = if (existing.isEmpty()) image.effects + blink else
-            image.effects.map { if (it.typeId == TYPE) blink else it }
         return Planned(image.id, effects)
     }
 

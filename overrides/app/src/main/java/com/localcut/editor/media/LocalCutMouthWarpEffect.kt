@@ -71,13 +71,13 @@ internal object LocalCutMouthWarpMath {
         require(radiusX > 0.0 && radiusY > 0.0)
         val strength = openness.coerceIn(0.0, 1.0)
         if (strength <= 0.001) return 0.0
-        val innerWidth = radiusX * 0.78
-        val innerHeight = radiusY * (0.045 + 0.77 * strength)
+        val innerWidth = radiusX * 0.62
+        val innerHeight = radiusY * (0.04 + 0.42 * strength)
         val dx = (u - centerX) / innerWidth
         val dy = (v - centerY) / innerHeight
         val r2 = dx * dx + dy * dy
-        val blend = (1.0 - smoothStep(0.75, 1.0, r2))
-        return blend * smoothStep(0.02, 0.22, strength)
+        val blend = 1.0 - smoothStep(0.55, 1.0, r2)
+        return blend * smoothStep(0.12, 0.58, strength) * 0.74
     }
 
     private fun smoothStep(edge0: Double, edge1: Double, x: Double): Double {
@@ -244,30 +244,30 @@ private class LocalCutMouthWarpShaderProgram(
                 vec2 sampleUv = vec2(uv.x, uCenter.y + delta.y / stretch);
                 vec4 warped = texture2D(uTexSampler, clampUv(sampleUv));
 
-                // Pure UV stretching cannot open a mouth drawn as a closed line.
-                // Synthesize a small, soft-edged oral cavity from the approved
-                // mouth region. It widens/deepens with voice energy and vanishes
-                // completely when quiet. All pixels outside ROI are untouched.
-                vec2 mouthRadius = safeRadius * vec2(0.78, 0.045 + 0.77 * strength);
+                // A broad opaque oval looks artificial on a still portrait.
+                // Keep a shallow, feathered opening that retains the source lip
+                // line and skin detail. Only the mouth ROI is processed.
+                vec2 mouthRadius = safeRadius * vec2(0.62, 0.04 + 0.42 * strength);
                 vec2 mouthUv = delta / max(mouthRadius, vec2(0.0001));
                 float mouthR2 = dot(mouthUv, mouthUv);
                 float cavityMask =
-                    (1.0 - smoothstep(0.75, 1.0, mouthR2)) *
-                    smoothstep(0.02, 0.22, strength);
+                    (1.0 - smoothstep(0.55, 1.0, mouthR2)) *
+                    smoothstep(0.12, 0.58, strength) * 0.74;
                 vec3 cavityColor = mix(
-                    vec3(0.12, 0.035, 0.052),
-                    warped.rgb * vec3(0.28, 0.14, 0.16),
-                    0.22
+                    vec3(0.29, 0.125, 0.16),
+                    warped.rgb * vec3(0.40, 0.22, 0.24),
+                    0.38
                 );
 
-                // Subtle top-teeth highlight at wider openings; only inside the
-                // cavity, never a hard white rectangle on the face.
+                // GL Y points up. Put a very soft teeth highlight at the top
+                // of the opening, not underneath it. Avoid a bright flat bar.
                 float upperTeeth =
-                    smoothstep(0.45, 0.85, strength) *
-                    (1.0 - smoothstep(-0.55, -0.10, mouthUv.y)) *
-                    (1.0 - smoothstep(0.40, 0.85, abs(mouthUv.x))) *
-                    0.78;
-                cavityColor = mix(cavityColor, vec3(0.90, 0.79, 0.72), upperTeeth);
+                    smoothstep(0.68, 0.95, strength) *
+                    smoothstep(0.08, 0.35, mouthUv.y) *
+                    (1.0 - smoothstep(0.56, 0.84, mouthUv.y)) *
+                    (1.0 - smoothstep(0.45, 0.75, abs(mouthUv.x))) *
+                    0.24;
+                cavityColor = mix(cavityColor, vec3(0.79, 0.68, 0.63), upperTeeth);
 
                 gl_FragColor = vec4(
                     mix(warped.rgb, cavityColor, cavityMask),

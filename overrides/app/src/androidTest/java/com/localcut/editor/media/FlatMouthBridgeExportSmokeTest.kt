@@ -301,6 +301,13 @@ class FlatMouthBridgeExportSmokeTest {
                 val mouthDelta = pixelRgbDelta(closed.getPixel(cx, cy), speaking.getPixel(cx, cy))
                 assertTrue("mouth pixels must visibly change when TALK opens; delta=$mouthDelta",
                     mouthDelta >= 35)
+                // Anti-regression: the synthetic cavity should not turn the
+                // original flat lip into a completely black hole.
+                val openedPixel = speaking.getPixel(cx, cy)
+                val openedRgb = Color.red(openedPixel) + Color.green(openedPixel) +
+                    Color.blue(openedPixel)
+                assertTrue("speaking mouth must preserve non-black warm color; RGB sum=$openedRgb",
+                    openedRgb >= 55)
                 val outsideDelta = pixelRgbDelta(closed.getPixel(8, 8), speaking.getPixel(8, 8))
                 assertTrue("unrelated pixels must stay stable; delta=$outsideDelta",
                     outsideDelta <= 25)

@@ -142,10 +142,14 @@ class LocalCutMouthWarpEffectTest {
 
         assertEquals(0.0, mask(cx, cy, 0.0), 0.0)
         assertEquals(0.0, mask(cx, cy, -1.0), 0.0)
-        assertTrue("Strong speech must create visible mouth interior",
-            mask(cx, cy, 1.0) > 0.95)
+        assertTrue("Strong speech must create a visible but translucent mouth interior",
+            mask(cx, cy, 1.0) in 0.70..0.75)
         assertTrue("Quiet speech must not render a full-sized cavity",
             mask(cx, cy, 0.10) < mask(cx, cy, 0.65))
+        assertEquals(0.0, mask(cx + rx * 0.70, cy, 1.0), 0.0)
+        assertEquals(0.0, mask(cx, cy + ry * 0.60, 1.0), 0.0)
+        assertTrue("Soft feathering must avoid a hard oval edge",
+            mask(cx + rx * 0.50, cy, 1.0) in 0.0..0.30)
         assertEquals(0.0, mask(cx + rx, cy, 1.0), 0.0)
         assertEquals(0.0, mask(cx, cy + ry, 1.0), 0.0)
         assertEquals(0.0, mask(0.12, 0.12, 1.0), 0.0)

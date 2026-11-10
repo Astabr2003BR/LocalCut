@@ -608,6 +608,7 @@ private fun ProfessionalContextPanel(
                         project = session.project,
                         selectedClipId = session.selectedClipId,
                         onSetPropertyAnimations = { viewModel.dispatch(EditorAction.SetSelectedPropertyAnimations(it)) },
+                        onSetEffects = { viewModel.dispatch(EditorAction.SetSelectedEffects(it)) },
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
                 }

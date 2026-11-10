@@ -23,6 +23,24 @@ class LocalCutEyeBlinkEffectTest {
         ),
     )
 
+    @Test fun idleBodyOffsetsAreBoundedAndDefaultToZero() {
+        val still = EyeBlinkMath.idleOffsets(1_000_000L, 0.0, 0.0)
+        assertEquals(0.0, still[0].toDouble(), 0.0)
+        assertEquals(0.0, still[1].toDouble(), 0.0)
+        val moving = EyeBlinkMath.idleOffsets(1_000_000L, 1.0, 1.0)
+        assertTrue(kotlin.math.abs(moving[0]) in 0.001f..0.0081f)
+        assertTrue(kotlin.math.abs(moving[1]) in 0.001f..0.0101f)
+        assertTrue(runCatching {
+            EyeBlinkMath.idleOffsets(1_000L, Double.NaN, 0.3)
+        }.isFailure)
+        assertTrue(runCatching {
+            EyeBlinkMath.idleOffsets(1_000L, 0.3, 1.2)
+        }.isFailure)
+        assertEquals(
+            moving.toList(), EyeBlinkMath.idleOffsets(1_000_000L, 1.0, 1.0).toList(),
+        )
+    }
+
     @Test fun correctTopLeftToGlYAndPreserveX() {
         val v = EyeBlinkMath.glPoint(EffectParameter.Point(0.37, 0.36))
         assertEquals(0.37, v[0].toDouble(), 1e-5)

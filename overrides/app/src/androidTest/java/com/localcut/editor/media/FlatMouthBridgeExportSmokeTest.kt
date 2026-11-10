@@ -91,6 +91,9 @@ class FlatMouthBridgeExportSmokeTest {
                 "firstBlinkSeconds" to com.localcut.editor.domain.model.EffectParameter.Number(0.30),
                 "intervalSeconds" to com.localcut.editor.domain.model.EffectParameter.Number(3.20),
                 "durationSeconds" to com.localcut.editor.domain.model.EffectParameter.Number(0.18),
+                "blinkStrength" to com.localcut.editor.domain.model.EffectParameter.Number(1.0),
+                "swayStrength" to com.localcut.editor.domain.model.EffectParameter.Number(0.25),
+                "breathStrength" to com.localcut.editor.domain.model.EffectParameter.Number(0.40),
             ),
         )
         val mouth = com.localcut.editor.domain.model.EffectInstance(

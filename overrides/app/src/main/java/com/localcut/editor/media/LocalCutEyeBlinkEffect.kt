@@ -14,6 +14,8 @@ import com.localcut.editor.domain.model.EffectInstance
 import com.localcut.editor.domain.model.EffectParameter
 import com.localcut.editor.effects.EffectRegistry
 import kotlin.math.max
+import kotlin.math.PI
+import kotlin.math.sin
 
 /**
  * Top-left source image coordinates are converted once for the GL texture.
@@ -24,6 +26,25 @@ internal object EyeBlinkMath {
         require(point.x.isFinite() && point.y.isFinite() &&
             point.x in 0.0..1.0 && point.y in 0.0..1.0)
         return floatArrayOf(point.x.toFloat(), (1.0 - point.y).toFloat())
+    }
+
+    /**
+     * Safe, dimensionless movement values; the shader masks motion to the
+     * portrait's central lower portion to avoid distorting face and background.
+     * All preset variations are data, not executable code.
+     */
+    fun idleOffsets(
+        presentationTimeUs: Long,
+        swayStrength: Double,
+        breathStrength: Double,
+    ): FloatArray {
+        require(swayStrength.isFinite() && swayStrength in 0.0..1.0)
+        require(breathStrength.isFinite() && breathStrength in 0.0..1.0)
+        val seconds = max(0L, presentationTimeUs) / 1_000_000.0
+        return floatArrayOf(
+            (0.008 * swayStrength * sin(seconds * 2.0 * PI / 4.2)).toFloat(),
+            (0.010 * breathStrength * sin(seconds * 2.0 * PI / 3.3)).toFloat(),
+        )
     }
 
     fun closureAt(
@@ -90,6 +111,7 @@ private class EyeBlinkShaderProgram(
                 number("radiusX", 0.09).toFloat(), number("radiusY", 0.045).toFloat(),
             ))
             program.setFloatUniform("uClosure", 0f)
+            program.setFloatsUniform("uIdleOffsets", floatArrayOf(0f, 0f))
         } catch (error: GlUtil.GlException) {
             throw VideoFrameProcessingException(error)
         }
@@ -101,12 +123,19 @@ private class EyeBlinkShaderProgram(
         try {
             program.use()
             program.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
-            program.setFloatUniform("uClosure", EyeBlinkMath.closureAt(
-                presentationTimeUs,
-                number("firstBlinkSeconds", 1.40),
-                number("intervalSeconds", 3.20),
-                number("durationSeconds", 0.18),
+            program.setFloatUniform("uClosure", (
+                EyeBlinkMath.closureAt(
+                    presentationTimeUs,
+                    number("firstBlinkSeconds", 1.40),
+                    number("intervalSeconds", 3.20),
+                    number("durationSeconds", 0.18),
+                ) * number("blinkStrength", 1.0)
             ).toFloat())
+            program.setFloatsUniform("uIdleOffsets", EyeBlinkMath.idleOffsets(
+                presentationTimeUs,
+                number("swayStrength", 0.0),
+                number("breathStrength", 0.0),
+            ))
             program.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
         } catch (error: GlUtil.GlException) {
@@ -156,6 +185,7 @@ private class EyeBlinkShaderProgram(
             uniform vec2 uRightEye;
             uniform vec2 uRadius;
             uniform float uClosure;
+            uniform vec2 uIdleOffsets;
             varying vec2 vTexSamplingCoord;
 
             vec2 clampUv(vec2 uv) {
@@ -186,13 +216,20 @@ private class EyeBlinkShaderProgram(
 
             void main() {
                 vec2 uv = vTexSamplingCoord;
-                vec4 original = texture2D(uTexSampler, clampUv(uv));
+                // Localized, subpixel idle motion affects the lower part of
+                // the portrait only. Face and outer background remain still.
+                float horizontalBlend = smoothstep(0.04, 0.20, uv.x) *
+                    (1.0 - smoothstep(0.80, 0.96, uv.x));
+                float lowerBodyBlend = 1.0 - smoothstep(0.26, 0.63, uv.y);
+                vec2 sampleUv = clampUv(uv +
+                    uIdleOffsets * horizontalBlend * lowerBodyBlend);
+                vec4 original = texture2D(uTexSampler, sampleUv);
                 if (uClosure <= 0.001) {
                     gl_FragColor = original;
                     return;
                 }
-                vec4 withLeft = blinkOne(original, uv, uLeftEye);
-                gl_FragColor = blinkOne(withLeft, uv, uRightEye);
+                vec4 withLeft = blinkOne(original, sampleUv, uLeftEye);
+                gl_FragColor = blinkOne(withLeft, sampleUv, uRightEye);
             }
         """.trimIndent()
     }

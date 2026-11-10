@@ -113,6 +113,11 @@ object EffectRegistry {
                 numberSpec("firstBlinkSeconds", 1.4, 0.10, 3.0),
                 numberSpec("intervalSeconds", 3.2, 2.0, 6.0),
                 numberSpec("durationSeconds", 0.18, 0.10, 0.35),
+                // Values are data-only; existing projects keep the old
+                // zero-idle defaults until the user selects a motion preset.
+                numberSpec("blinkStrength", 1.0, 0.0, 1.0),
+                numberSpec("swayStrength", 0.0, 0.0, 1.0),
+                numberSpec("breathStrength", 0.0, 0.0, 1.0),
             ),
         ),
         EffectDefinition("localcut.flip.horizontal", EffectCategory.DISTORTION, emptyList()),

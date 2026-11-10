@@ -13,6 +13,7 @@ import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.TrackType
+import com.localcut.editor.mobile.AndroidAudioSourceDurationProbe
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -101,6 +102,33 @@ class ImageAudioPreviewSmokeTest {
         }
     }
 
+
+    @Test
+    fun localAudioDurationProbeReadsOwnedFileWithoutNetwork() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = File(context.filesDir, "remote-media").apply { mkdirs() }
+        val wav = createMonoPcmWav(
+            File(directory, "duration-probe-${System.nanoTime()}.wav"),
+            1_000_000L,
+        )
+        try {
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.remote-media",
+                wav,
+            ).toString()
+            val probe = AndroidAudioSourceDurationProbe(context)
+            val measured = probe.readDurationUs(uri)
+            assertTrue("owned 1s PCM WAV must report duration: $measured",
+                measured != null && measured in 900_000L..1_100_000L)
+            assertNull("network URIs must not be fetched",
+                probe.readDurationUs("https://example.com/private.mp3"))
+            assertNull("malformed file URI must not crash",
+                probe.readDurationUs("file:///does-not-exist/missing.wav"))
+        } finally {
+            wav.delete()
+        }
+    }
 
     @Test
     fun rapidBackAndForthScrubbingKeepsImageAudioPreviewUsable() {

@@ -66,6 +66,122 @@ import org.junit.runner.RunWith
 @OptIn(UnstableApi::class)
 class FlatMouthBridgeExportSmokeTest {
     @Test
+    fun eyeBlinkAndTalkProduceVisibleExportedFramesAndKeepAudio() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val directory = File(context.filesDir, "remote-media").apply { mkdirs() }
+        val image = createFacePng(File(directory, "eyes-${System.nanoTime()}.png"))
+        val audio = createVoiceWav(File(directory, "eyes-voice-${System.nanoTime()}.wav"))
+        val faceAsset = imageAsset(context.packageName, image)
+        val voiceAsset = Asset(
+            id = "eyes-voice-asset", type = AssetType.AUDIO,
+            uri = FileProvider.getUriForFile(context,
+                "${context.packageName}.remote-media", audio).toString(),
+            sourceDurationUs = DURATION_US, sizeBytes = audio.length(),
+            displayName = audio.name, mimeType = "audio/wav",
+            fingerprint = "eyes-wav-${audio.length()}",
+        )
+        val blink = com.localcut.editor.domain.model.EffectInstance(
+            id = "eye-blink", typeId = LocalCutEyeBlinkEffect.TYPE_ID,
+            parameters = mapOf(
+                "leftEye" to com.localcut.editor.domain.model.EffectParameter.Point(0.40, 0.42),
+                "rightEye" to com.localcut.editor.domain.model.EffectParameter.Point(0.60, 0.42),
+                "radiusX" to com.localcut.editor.domain.model.EffectParameter.Number(0.07),
+                "radiusY" to com.localcut.editor.domain.model.EffectParameter.Number(0.085),
+                "firstBlinkSeconds" to com.localcut.editor.domain.model.EffectParameter.Number(0.30),
+                "intervalSeconds" to com.localcut.editor.domain.model.EffectParameter.Number(3.20),
+                "durationSeconds" to com.localcut.editor.domain.model.EffectParameter.Number(0.18),
+            ),
+        )
+        val mouth = com.localcut.editor.domain.model.EffectInstance(
+            id = "talk-existing", typeId = LocalCutMouthWarpEffect.TYPE_ID,
+            parameters = mapOf(
+                "center" to com.localcut.editor.domain.model.EffectParameter.Point(0.50, 0.68),
+                "radiusX" to com.localcut.editor.domain.model.EffectParameter.Number(0.14),
+                "radiusY" to com.localcut.editor.domain.model.EffectParameter.Number(0.08),
+                "openness" to com.localcut.editor.domain.model.EffectParameter.Number(0.0),
+            ),
+            animations = listOf(com.localcut.editor.domain.model.PropertyAnimation(
+                propertyId = "openness", keyframes = listOf(
+                    com.localcut.editor.domain.model.PropertyKeyframe(
+                        "talk-start", 0L, com.localcut.editor.domain.model.PropertyValue.Scalar(0.0)),
+                    com.localcut.editor.domain.model.PropertyKeyframe(
+                        "talk-open", 600_000L, com.localcut.editor.domain.model.PropertyValue.Scalar(0.75)),
+                    com.localcut.editor.domain.model.PropertyKeyframe(
+                        "talk-close", DURATION_US, com.localcut.editor.domain.model.PropertyValue.Scalar(0.0)),
+                ),
+            )),
+        )
+        val seed = Project.create("blink-with-talk", WIDTH, HEIGHT, 30)
+        val project = seed.copy(
+            assets = listOf(faceAsset, voiceAsset),
+            tracks = seed.tracks.map { track ->
+                when (track.type) {
+                    TrackType.VISUAL -> track.copy(clips = listOf(Clip(
+                        BODY_CLIP_ID, faceAsset.id, 0L, DURATION_US, 0L, DURATION_US,
+                        effects = listOf(mouth, blink),
+                    )))
+                    TrackType.AUDIO -> track.copy(clips = listOf(Clip(
+                        "eyes-voice", voiceAsset.id, 0L, DURATION_US, 0L, DURATION_US,
+                    )))
+                }
+            },
+        )
+        val visualEffects = project.findClip(BODY_CLIP_ID)!!.effects
+        assertEquals(2, visualEffects.size)
+        assertEquals(LocalCutMouthWarpEffect.TYPE_ID, visualEffects[0].typeId)
+        assertEquals(LocalCutEyeBlinkEffect.TYPE_ID, visualEffects[1].typeId)
+        assertEquals("voice audio remains in the project", 1,
+            project.tracks.first { it.type == TrackType.AUDIO }.clips.size)
+        val output = File(context.cacheDir, "eyes-export-${System.nanoTime()}.mp4")
+        var preview: Media3PreviewController? = null
+        try {
+            instrumentation.runOnMainSync {
+                preview = Media3PreviewController(
+                    context, ProjectCompositionCompiler(AssetUriResolver(context.contentResolver)),
+                ).also {
+                    assertTrue("blink + TALK preview must load", it.load(project).isSuccess)
+                    it.play()
+                }
+            }
+            val state = runBlocking {
+                withTimeout(20_000L) {
+                    checkNotNull(preview).state.first {
+                        it.errorMessage != null || it.positionUs >= 500_000L
+                    }
+                }
+            }
+            assertNull("eye blink + TALK preview cannot crash", state.errorMessage)
+            export(project, output, instrumentation, context)
+            assertTrue("blink + TALK MP4 must be created", output.isFile && output.length() > 0L)
+            val eyesOpen = extractFrame(output, 80_000L)
+            val eyesShut = extractFrame(output, 390_000L)
+            try {
+                assertEquals(eyesOpen.width, eyesShut.width)
+                assertEquals(eyesOpen.height, eyesShut.height)
+                val x = (eyesOpen.width * 0.4f).toInt()
+                val y = (eyesOpen.height * 0.42f).toInt() + 6
+                val delta = pixelRgbDelta(eyesOpen.getPixel(x, y),
+                    eyesShut.getPixel(x, y))
+                assertTrue("blink must visibly hide iris: RGB delta=$delta", delta >= 80)
+                val backgroundDelta = pixelRgbDelta(
+                    eyesOpen.getPixel(8, 8), eyesShut.getPixel(8, 8),
+                )
+                assertTrue("blink must not alter the background: RGB delta=$backgroundDelta",
+                    backgroundDelta <= 25)
+            } finally {
+                eyesOpen.recycle()
+                eyesShut.recycle()
+            }
+        } finally {
+            preview?.let { p -> instrumentation.runOnMainSync { p.release() } }
+            output.delete()
+            image.delete()
+            audio.delete()
+        }
+    }
+
+    @Test
     fun bridgeFlatTalkReachesRealPreviewAndExport() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

@@ -8,6 +8,38 @@ import org.junit.Test
 
 class MobileHandoffParserTest {
     @Test
+    fun parsesBlinkHandoffWithPortraitDefaults() {
+        val command = MobileHandoffParser.parse(
+            "https://localcut-bridge-v1.onrender.com/open?action=blink&returnTo=editor",
+        ).getOrThrow()
+        assertNull(command.capability)
+        assertEquals(MobileHandoffReturnTarget.EDITOR, command.returnTarget)
+        val region = requireNotNull(command.blinkRegion)
+        assertEquals(0.37, region.leftX, 0.000001)
+        assertEquals(0.63, region.rightX, 0.000001)
+        assertEquals(0.36, region.y, 0.000001)
+        assertTrue(command.description.contains("Desfazer") ||
+            command.description.contains("desfeita"))
+    }
+
+    @Test
+    fun blinkHandoffRejectsOverlappingOrUnsafeEyes() {
+        val queries = listOf(
+            "action=blink&leftX=NaN",
+            "action=blink&rightX=1.0",
+            "action=blink&leftX=0.51&rightX=0.53",
+            "action=blink&radiusY=0.2",
+            "action=blink&radiusX=0",
+            "action=blink&y=0.001",
+        )
+        queries.forEach { query ->
+            assertTrue(query, MobileHandoffParser.parse(
+                "localcut://command?$query",
+            ).isFailure)
+        }
+    }
+
+    @Test
     fun parsesConfirmedLocalLipSyncHandoff() {
         val result = MobileHandoffParser.parse(
             "https://localcut-bridge-v1.onrender.com/open?action=lip_sync&x=0.51&y=0.49&radiusX=0.07&radiusY=0.025&returnTo=chatgpt",

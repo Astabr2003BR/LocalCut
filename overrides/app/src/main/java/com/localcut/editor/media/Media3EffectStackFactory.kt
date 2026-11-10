@@ -36,6 +36,7 @@ internal object Media3EffectStackFactory {
         "localcut.blur.gaussian",
         "localcut.motion_blur",
         LocalCutMouthWarpEffect.TYPE_ID,
+        LocalCutEyeBlinkEffect.TYPE_ID,
     ) + LocalCutStylizeEffect.SUPPORTED_TYPES + matrixEffectTypes
 
     fun canRender(effect: EffectInstance): Boolean {
@@ -50,7 +51,8 @@ internal object Media3EffectStackFactory {
         effects.forEach { effect ->
             if (!effect.enabled) return@forEach
             require(canRender(effect)) { "unsupported Media3 effect: ${effect.typeId}" }
-            val renderEffect = if (effect.typeId == LocalCutMouthWarpEffect.TYPE_ID) {
+            val renderEffect = if (effect.typeId == LocalCutMouthWarpEffect.TYPE_ID ||
+                effect.typeId == LocalCutEyeBlinkEffect.TYPE_ID) {
                 effect
             } else {
                 EffectRegistry.evaluate(effect, 0L)
@@ -116,6 +118,7 @@ internal object Media3EffectStackFactory {
             requestedSamples = number(effect, "samples").roundToInt(),
         )
         LocalCutMouthWarpEffect.TYPE_ID -> LocalCutMouthWarpEffect(effect)
+        LocalCutEyeBlinkEffect.TYPE_ID -> LocalCutEyeBlinkEffect(effect)
         "localcut.flip.horizontal" -> MatrixTransformation {
             Matrix().apply { postScale(-1f, 1f) }
         }

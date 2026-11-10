@@ -16,6 +16,26 @@ enum class MobileHandoffReturnTarget {
     EDITOR,
 }
 
+/** Eye locations are normalized to the original portrait, top-left origin. */
+data class MobileBlinkRegion(
+    val leftX: Double,
+    val rightX: Double,
+    val y: Double,
+    val radiusX: Double,
+    val radiusY: Double,
+) {
+    init {
+        require(listOf(leftX, rightX, y, radiusX, radiusY).all { it.isFinite() })
+        require(radiusX in 0.02..0.15 && radiusY in 0.01..0.09)
+        require(leftX in radiusX..(1.0 - radiusX) &&
+            rightX in radiusX..(1.0 - radiusX) &&
+            y in radiusY..(1.0 - radiusY))
+        require(rightX - leftX >= 2.25 * radiusX) {
+            "As regiões dos olhos não podem se sobrepor"
+        }
+    }
+}
+
 data class MobileHandoffCommand(
     val capability: BridgeCapability?,
     val payloadJson: String,
@@ -24,6 +44,7 @@ data class MobileHandoffCommand(
     val mobilePairingCode: String? = null,
     val remoteMediaUrl: String? = null,
     val lipSyncRegion: MouthRegion? = null,
+    val blinkRegion: MobileBlinkRegion? = null,
     val deleteAllVisualClips: Boolean = false,
     val resolveSelectedClip: Boolean = false,
     val resolveVisualClipAtPositionUs: Long? = null,
@@ -77,6 +98,30 @@ object MobileHandoffParser {
                     payloadJson = "{}",
                     description = "Baixar e importar mídia remota no LocalCut",
                     remoteMediaUrl = mediaUri.toASCIIString(),
+                )
+            }
+            "blink" -> {
+                val region = MobileBlinkRegion(
+                    leftX = params["leftX"]?.let { requiredDouble(params, "leftX", 0.01, 0.99) } ?: 0.37,
+                    rightX = params["rightX"]?.let { requiredDouble(params, "rightX", 0.01, 0.99) } ?: 0.63,
+                    y = params["y"]?.let { requiredDouble(params, "y", 0.01, 0.99) } ?: 0.36,
+                    radiusX = params["radiusX"]?.let {
+                        requiredDouble(params, "radiusX", 0.02, 0.15)
+                    } ?: 0.085,
+                    radiusY = params["radiusY"]?.let {
+                        requiredDouble(params, "radiusY", 0.01, 0.09)
+                    } ?: 0.042,
+                )
+                MobileHandoffCommand(
+                    capability = null,
+                    payloadJson = "{}",
+                    description = "Adicionar piscadas automáticas ao único retrato elegível, " +
+                        "mantendo os efeitos TALK e a voz. " +
+                        "Olhos em ${(region.leftX * 100).toInt()}% e " +
+                        "${(region.rightX * 100).toInt()}% da largura, " +
+                        "altura ${(region.y * 100).toInt()}%. " +
+                        "Pisque aproximadamente a cada 3,2 s. A operação pode ser desfeita.",
+                    blinkRegion = region,
                 )
             }
             "lip_sync" -> {

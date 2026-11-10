@@ -102,6 +102,19 @@ object EffectRegistry {
                 numberSpec("openness", 0.0, 0.0, 1.0),
             ),
         ),
+        EffectDefinition(
+            "localcut.character.eye_blink",
+            EffectCategory.DISTORTION,
+            listOf(
+                EffectParameterSpec("leftEye", EffectParameterType.POINT, EffectParameter.Point(0.37, 0.36)),
+                EffectParameterSpec("rightEye", EffectParameterType.POINT, EffectParameter.Point(0.63, 0.36)),
+                numberSpec("radiusX", 0.085, 0.02, 0.15),
+                numberSpec("radiusY", 0.042, 0.01, 0.09),
+                numberSpec("firstBlinkSeconds", 1.4, 0.10, 3.0),
+                numberSpec("intervalSeconds", 3.2, 2.0, 6.0),
+                numberSpec("durationSeconds", 0.18, 0.10, 0.35),
+            ),
+        ),
         EffectDefinition("localcut.flip.horizontal", EffectCategory.DISTORTION, emptyList()),
         EffectDefinition("localcut.flip.vertical", EffectCategory.DISTORTION, emptyList()),
         EffectDefinition(
@@ -149,6 +162,28 @@ object EffectRegistry {
             val center = effect.parameters["center"] as? EffectParameter.Point
             if (center != null && (center.x !in 0.0..1.0 || center.y !in 0.0..1.0)) {
                 add("parameter center is outside allowed range")
+            }
+        }
+        if (effect.typeId == "localcut.character.eye_blink") {
+            val left = effect.parameters["leftEye"] as? EffectParameter.Point
+                ?: EffectParameter.Point(0.37, 0.36)
+            val right = effect.parameters["rightEye"] as? EffectParameter.Point
+                ?: EffectParameter.Point(0.63, 0.36)
+            val radiusX = (effect.parameters["radiusX"] as? EffectParameter.Number)?.value ?: 0.085
+            val radiusY = (effect.parameters["radiusY"] as? EffectParameter.Number)?.value ?: 0.042
+            if (listOf(left.x, left.y, right.x, right.y, radiusX, radiusY).all { it.isFinite() }) {
+                if (left.x !in radiusX..(1.0 - radiusX) ||
+                    right.x !in radiusX..(1.0 - radiusX) ||
+                    left.y !in radiusY..(1.0 - radiusY) ||
+                    right.y !in radiusY..(1.0 - radiusY) ||
+                    right.x - left.x < radiusX * 2.25 ||
+                    kotlin.math.abs(left.y - right.y) > radiusY
+                ) {
+                    add("eye blink eye coordinates are outside face or overlap")
+                }
+            }
+            if (effect.animations.isNotEmpty()) {
+                add("eye blink cannot use keyed property animations")
             }
         }
     }

@@ -168,6 +168,22 @@ class MobileHandoffActivity : Activity() {
             return
         }
 
+        val blinkRegion = command.blinkRegion
+        if (blinkRegion != null) {
+            val result = MobileBlinkHandoffExecutor.execute(runtime.session, blinkRegion)
+            runtime.editorViewModel.refreshSnapshot()
+            Toast.makeText(
+                this,
+                result.fold(
+                    onSuccess = { it },
+                    onFailure = { it.message ?: "Falha ao aplicar piscadas" },
+                ),
+                Toast.LENGTH_LONG,
+            ).show()
+            returnAfterHandoff(command.returnTarget)
+            return
+        }
+
         val region = command.lipSyncRegion
         if (region != null) {
             if (lipSyncExecutor != null) {

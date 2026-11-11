@@ -185,6 +185,84 @@ class FlatMouthBridgeExportSmokeTest {
     }
 
     @Test
+    fun optInGazeMovesIrisWithoutDisturbingBackgroundInExport() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val directory = File(context.filesDir, "remote-media").apply { mkdirs() }
+        val image = createFacePng(File(directory, "gaze-" + System.nanoTime() + ".png"))
+        val audio = createVoiceWav(File(directory, "gaze-audio-" + System.nanoTime() + ".wav"))
+        val imageAsset = imageAsset(context.packageName, image)
+        val audioAsset = Asset(
+            id = "gaze-audio-asset", type = AssetType.AUDIO,
+            uri = FileProvider.getUriForFile(
+                context, context.packageName + ".remote-media", audio,
+            ).toString(),
+            sourceDurationUs = DURATION_US, sizeBytes = audio.length(),
+            displayName = audio.name, mimeType = "audio/wav",
+            fingerprint = "gaze-wav-" + audio.length(),
+        )
+        val settings = com.localcut.editor.domain.animation.PortraitMotionSettings(
+            leftX = 0.40, rightX = 0.60, eyeY = 0.42,
+            radiusX = 0.07, radiusY = 0.085,
+            gazeStrength = 1.0,
+            blinkStrength = 0.0,
+            swayStrength = 0.0, breathStrength = 0.0,
+            headMotionStrength = 0.0, hairMotionStrength = 0.0,
+        )
+        val fx = com.localcut.editor.domain.animation.PortraitMotionPresets.upsert(
+            "gaze-face", emptyList(), settings,
+        )
+        assertTrue(Media3EffectStackFactory.canRender(fx.single()))
+        val project = Project.create("gaze-export-smoke", WIDTH, HEIGHT, 30).let { seed ->
+            seed.copy(
+                assets = listOf(imageAsset, audioAsset),
+                tracks = seed.tracks.map { track ->
+                    when (track.type) {
+                        TrackType.VISUAL -> track.copy(clips = listOf(
+                            Clip("gaze-face", imageAsset.id, 0L, DURATION_US,
+                                0L, DURATION_US, effects = fx),
+                        ))
+                        TrackType.AUDIO -> track.copy(clips = listOf(
+                            Clip("gaze-audio", audioAsset.id, 0L, DURATION_US, 0L, DURATION_US),
+                        ))
+                    }
+                },
+            )
+        }
+        val output = File(context.cacheDir, "gaze-export-" + System.nanoTime() + ".mp4")
+        try {
+            export(project, output, instrumentation, context)
+            assertTrue("Gaze MP4 export failed", output.isFile && output.length() > 0L)
+            val early = extractFrame(output, 80_000L)
+            val late = extractFrame(output, 700_000L)
+            try {
+                val eyeX = (early.width * 0.40f).toInt()
+                val eyeY = (early.height * 0.42f).toInt()
+                var eyeDelta = 0L
+                for (y in (eyeY - 8)..(eyeY + 8)) {
+                    for (x in (eyeX - 12)..(eyeX + 12)) {
+                        eyeDelta += pixelRgbDelta(early.getPixel(x, y), late.getPixel(x, y))
+                    }
+                }
+                assertTrue("Opt-in iris movement not visible; delta=" + eyeDelta,
+                    eyeDelta >= 80L)
+                val backgroundDelta = pixelRgbDelta(
+                    early.getPixel(8, 8), late.getPixel(8, 8),
+                )
+                assertTrue("Iris movement must preserve background; delta=" + backgroundDelta,
+                    backgroundDelta <= 25)
+            } finally {
+                early.recycle()
+                late.recycle()
+            }
+        } finally {
+            output.delete()
+            image.delete()
+            audio.delete()
+        }
+    }
+
+    @Test
     fun optInNaturalBlinkAndHeadMotionKeepExportedSceneAndVoiceIntact() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

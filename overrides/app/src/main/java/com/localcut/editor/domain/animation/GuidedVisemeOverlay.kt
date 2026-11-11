@@ -50,32 +50,29 @@ object GuidedVisemeOverlay {
         }) { "O TALK contém animações de boca personalizadas; não serão sobrescritas" }
         val openness = original.animations.singleOrNull { it.propertyId == "openness" }
             ?: throw IllegalArgumentException("TALK não possui sincronização com o áudio")
-        val active = openness.keyframes.filter { frame ->
-            ((frame.value as? PropertyValue.Scalar)?.value ?: 0.0) > 0.01
-        }
-        require(active.isNotEmpty()) { "TALK não contém movimento de fala" }
-        val begin = (active.first().offsetUs - 40_000L).coerceAtLeast(0L)
-        val finish = (active.last().offsetUs + 65_000L).coerceAtMost(clipDurationUs)
-        require(finish > begin && finish - begin >= PortugueseVisemeGuide.MIN_DURATION_US) {
+        val windows = TalkSpeechWindows.detect(openness, clipDurationUs)
+        val activeDurationUs = windows.sumOf(TalkSpeechWindow::durationUs)
+        require(activeDurationUs >= PortugueseVisemeGuide.MIN_DURATION_US) {
             "Trecho falado muito curto para guiar visemas"
         }
-        val span = finish - begin
-        val cues = PortugueseVisemeGuide.plan(transcript, span)
-        val timeline = VisemeTimeline(cues, span)
-        val positions = sortedSetOf(0L, clipDurationUs, begin, finish)
+        val abstractCues = PortugueseVisemeGuide.plan(transcript, activeDurationUs)
+        val cues = TalkSpeechWindows.distribute(abstractCues, windows)
+        val timeline = VisemeTimeline(cues, clipDurationUs)
+        val positions = sortedSetOf(0L, clipDurationUs)
+        windows.forEach { window ->
+            positions.add(window.startUs)
+            positions.add(window.endUs)
+        }
         cues.forEach { cue ->
             val attack = minOf(40_000L, cue.durationUs / 3L)
             val release = minOf(50_000L, cue.durationUs / 3L)
-            positions.add(begin + cue.offsetUs)
-            positions.add(begin + cue.offsetUs + attack)
-            positions.add(begin + cue.endUs - release)
-            positions.add(begin + cue.endUs)
+            positions.add(cue.offsetUs)
+            positions.add(cue.offsetUs + attack)
+            positions.add(cue.endUs - release)
+            positions.add(cue.endUs)
         }
         val frames = positions.map { position ->
-            val pose = if (position in begin..finish) {
-                timeline.poseAt(position - begin)
-            } else VisemePose.REST
-            position to pose
+            position to timeline.poseAt(position)
         }
         val properties = listOf<Pair<String, (VisemePose) -> Double>>(
             "widthScale" to { it.widthScale },

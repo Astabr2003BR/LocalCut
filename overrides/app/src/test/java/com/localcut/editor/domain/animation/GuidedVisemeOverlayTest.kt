@@ -90,6 +90,77 @@ class GuidedVisemeOverlayTest {
         assertEquals(0.0, value(EffectRegistry.evaluate(result, 5_000_000L), "rounding"), 1e-9)
     }
 
+    @Test fun guidedSpeechRespectsLongSilenceBetweenTwoTalkingBursts() {
+        val base = talk()
+        val twoBursts = base.copy(animations = listOf(PropertyAnimation(
+            "openness", listOf(
+                PropertyKeyframe("s0", 0L, PropertyValue.Scalar(0.0)),
+                PropertyKeyframe("s1", 250_000L, PropertyValue.Scalar(0.8)),
+                PropertyKeyframe("s2", 950_000L, PropertyValue.Scalar(0.8)),
+                PropertyKeyframe("s3", 1_100_000L, PropertyValue.Scalar(0.0)),
+                PropertyKeyframe("s4", 2_300_000L, PropertyValue.Scalar(0.0)),
+                PropertyKeyframe("s5", 2_500_000L, PropertyValue.Scalar(0.7)),
+                PropertyKeyframe("s6", 3_300_000L, PropertyValue.Scalar(0.7)),
+                PropertyKeyframe("s7", 3_500_000L, PropertyValue.Scalar(0.0)),
+                PropertyKeyframe("s8", 5_000_000L, PropertyValue.Scalar(0.0)),
+            ),
+        )))
+        val windows = TalkSpeechWindows.detect(twoBursts.animations.single(), 5_000_000L)
+        assertEquals(listOf(
+            TalkSpeechWindow(0L, 1_100_000L),
+            TalkSpeechWindow(2_300_000L, 3_500_000L),
+        ), windows)
+        val source = listOf(twoBursts)
+        val guided = GuidedVisemeOverlay.apply(5_000_000L, source, "O A U M E")
+        assertEquals(source, GuidedVisemeOverlay.remove(guided))
+        val fx = guided.single()
+        val quiet = EffectRegistry.evaluate(fx, 1_700_000L)
+        assertEquals(1.0,
+            (quiet.parameters.getValue("widthScale") as EffectParameter.Number).value, 1e-9)
+        assertEquals(0.0,
+            (quiet.parameters.getValue("rounding") as EffectParameter.Number).value, 1e-9)
+        assertEquals(0.0,
+            (quiet.parameters.getValue("teethVisibility") as EffectParameter.Number).value, 1e-9)
+        assertEquals(3, fx.animations.size - twoBursts.animations.size)
+        assertTrue(EffectRegistry.validationIssues(fx).isEmpty())
+        for (at in listOf(0L, 950_000L, 1_700_000L, 2_500_000L, 4_500_000L)) {
+            val before = EffectRegistry.evaluate(twoBursts, at)
+            val after = EffectRegistry.evaluate(fx, at)
+            assertEquals(before.parameters.getValue("openness"),
+                after.parameters.getValue("openness"))
+        }
+    }
+
+    @Test fun speechWindowMappingSplitsCueAtPauseAndBoundsItsDuration() {
+        val windows = listOf(TalkSpeechWindow(0L, 800_000L),
+            TalkSpeechWindow(1_500_000L, 2_100_000L))
+        val cues = listOf(VisemeCue(0L, 1_400_000L, VisemeShape.O))
+        val output = TalkSpeechWindows.distribute(cues, windows)
+        assertEquals(listOf(
+            VisemeCue(0L, 800_000L, VisemeShape.O),
+            VisemeCue(1_500_000L, 600_000L, VisemeShape.O),
+        ), output)
+        val timeline = VisemeTimeline(output, 2_200_000L)
+        assertEquals(VisemePose.REST, timeline.poseAt(1_100_000L))
+        assertEquals(VisemePose.REST, timeline.poseAt(2_100_000L))
+    }
+
+    @Test fun tooManySpeechWindowsAreRejectedWithoutMutation() {
+        val keys = mutableListOf(PropertyKeyframe("begin", 0L, PropertyValue.Scalar(0.0)))
+        for (index in 0 until 34) {
+            val base = 250_000L * index
+            keys += PropertyKeyframe("peak" + index, base + 60_000L,
+                PropertyValue.Scalar(0.8))
+            keys += PropertyKeyframe("stop" + index, base + 80_000L,
+                PropertyValue.Scalar(0.0))
+            keys += PropertyKeyframe("pause" + index, base + 200_000L,
+                PropertyValue.Scalar(0.0))
+        }
+        assertTrue(runCatching {
+            TalkSpeechWindows.detect(PropertyAnimation("openness", keys), 9_000_000L)
+        }.isFailure)
+    }
+
     @Test fun malformedSpeechAndProjectsFailWithoutDataChanges() {
         val original = listOf(talk())
         assertTrue(runCatching { GuidedVisemeOverlay.apply(5_000_000L, original, "  !   ") }.isFailure)

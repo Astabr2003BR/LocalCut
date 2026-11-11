@@ -84,7 +84,7 @@ class PortraitMotionPresetsTest {
                 expressive.copy(gazeStrength = Double.NaN))
         }.isFailure)
         assertNull(PortraitMotionPresets.deserialize(
-            PortraitMotionPresets.serialize(expressive).replace("portrait-motion-v2", "portrait-motion-v0")))
+            PortraitMotionPresets.serialize(expressive).replace("portrait-motion-v3", "portrait-motion-v0")))
     }
 
     @Test fun corruptPersistedBlinkDoesNotCrashSettingsRecovery() {

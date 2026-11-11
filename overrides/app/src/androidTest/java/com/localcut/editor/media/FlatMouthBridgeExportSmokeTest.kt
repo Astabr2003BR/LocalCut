@@ -185,6 +185,102 @@ class FlatMouthBridgeExportSmokeTest {
     }
 
     @Test
+    fun visemeShapesRenderDistinctFramesPreservingBackgroundAndAudioTrack() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val directory = File(context.filesDir, "remote-media").apply { mkdirs() }
+        val image = createFacePng(File(directory, "viseme-" + System.nanoTime() + ".png"))
+        val audio = createVoiceWav(File(directory, "viseme-voice-" + System.nanoTime() + ".wav"))
+        val faceAsset = imageAsset(context.packageName, image)
+        val voiceAsset = Asset(
+            id = "viseme-voice-asset", type = AssetType.AUDIO,
+            uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", audio).toString(),
+            displayName = audio.name,
+            durationUs = DURATION_US,
+            fingerprint = "viseme-wav-" + audio.length(),
+        )
+        val seed = Project.create("viseme-visual-smoke", WIDTH, HEIGHT, 30)
+        val effects = com.localcut.editor.domain.animation.VisemeMouthDemo.apply(
+            BODY_CLIP_ID, DURATION_US, emptyList(), 0.5, 0.68, 0.14, 0.08,
+        )
+        val project = seed.copy(
+            assets = listOf(faceAsset, voiceAsset),
+            tracks = seed.tracks.map { track ->
+                when (track.type) {
+                    TrackType.VISUAL -> track.copy(clips = listOf(
+                        Clip(BODY_CLIP_ID, faceAsset.id, 0L, DURATION_US, 0L, DURATION_US,
+                            effects = effects),
+                    ))
+                    TrackType.AUDIO -> track.copy(clips = listOf(
+                        Clip("viseme-voice", voiceAsset.id, 0L, DURATION_US, 0L, DURATION_US),
+                    ))
+                }
+            },
+        )
+        assertEquals(1, project.tracks.first { it.type == TrackType.AUDIO }.clips.size)
+        assertTrue(Media3EffectStackFactory.canRender(effects.single()))
+        var preview: Media3PreviewController? = null
+        val output = File(context.cacheDir, "viseme-export-" + System.nanoTime() + ".mp4")
+        try {
+            instrumentation.runOnMainSync {
+                preview = Media3PreviewController(
+                    context, ProjectCompositionCompiler(AssetUriResolver(context.contentResolver)),
+                ).also { created ->
+                    assertTrue("viseme preview load failed", created.load(project).isSuccess)
+                    created.play()
+                }
+            }
+            val settled = runBlocking {
+                withTimeout(20_000L) {
+                    checkNotNull(preview).state.first {
+                        it.errorMessage != null || it.positionUs >= 250_000L
+                    }
+                }
+            }
+            assertNull("viseme preview must not report frame error", settled.errorMessage)
+            export(project, output, instrumentation, context)
+            assertTrue("viseme MP4 missing", output.isFile && output.length() > 0L)
+            val rest = extractFrame(output, 50_000L)
+            val a = extractFrame(output, 150_000L)
+            val o = extractFrame(output, 350_000L)
+            try {
+                assertEquals(rest.width, a.width)
+                assertEquals(rest.height, o.height)
+                val cx = a.width / 2
+                val cy = (a.height * 0.68f).toInt()
+                fun mouthDifference(first: Bitmap, second: Bitmap): Long {
+                    var total = 0L
+                    for (y in (cy - 10)..(cy + 10) step 2) {
+                        for (x in (cx - 20)..(cx + 20) step 2) {
+                            total += pixelRgbDelta(first.getPixel(x, y), second.getPixel(x, y))
+                        }
+                    }
+                    return total
+                }
+                val speechChange = mouthDifference(rest, a)
+                val shapeChange = mouthDifference(a, o)
+                assertTrue("viseme A must visibly open mouth; delta=" + speechChange,
+                    speechChange >= 250L)
+                assertTrue("viseme A and O must differ in exported pixels; delta=" + shapeChange,
+                    shapeChange >= 150L)
+                assertTrue("background must remain unaffected",
+                    pixelRgbDelta(rest.getPixel(8, 8), o.getPixel(8, 8)) <= 25)
+                assertTrue("eyes must remain unaffected",
+                    pixelRgbDelta(rest.getPixel(cx, a.height / 3), o.getPixel(cx, a.height / 3)) <= 25)
+            } finally {
+                rest.recycle()
+                a.recycle()
+                o.recycle()
+            }
+        } finally {
+            preview?.let { controller -> instrumentation.runOnMainSync { controller.release() } }
+            output.delete()
+            image.delete()
+            audio.delete()
+        }
+    }
+
+    @Test
     fun bridgeFlatTalkReachesRealPreviewAndExport() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

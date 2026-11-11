@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.localcut.editor.domain.animation.VisemeMouthDemo
 import com.localcut.editor.domain.animation.PortraitMotionPreset
 import com.localcut.editor.domain.animation.PortraitMotionPresets
 import com.localcut.editor.domain.animation.PortraitMotionSettings
@@ -59,6 +60,15 @@ internal fun CharacterAnimationStudioPanel(
         mutableStateOf(restored != null)
     }
     var showGeometry by remember(clip.id) { mutableStateOf(false) }
+    var mouthX by remember(clip.id) { mutableStateOf(0.51) }
+    var mouthY by remember(clip.id) { mutableStateOf(0.49) }
+    var mouthRadiusX by remember(clip.id) { mutableStateOf(0.07) }
+    var mouthRadiusY by remember(clip.id) { mutableStateOf(0.025) }
+    var mouthVerified by remember(clip.id) { mutableStateOf(false) }
+    val hasTalk = clip.effects.any { it.typeId == VisemeMouthDemo.TYPE_ID }
+    val hasVisemeDemo = clip.effects.any {
+        it.typeId == VisemeMouthDemo.TYPE_ID && it.id.startsWith(VisemeMouthDemo.ID_PREFIX)
+    }
     var notice by remember(clip.id) { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val storage = remember(context) {
@@ -78,6 +88,72 @@ internal fun CharacterAnimationStudioPanel(
 
         Text("Movimento de boca", style = MaterialTheme.typography.labelLarge)
         AudioLipSyncActionControl(modifier = Modifier.fillMaxWidth())
+
+        Text("Visemas 2D — demonstração visual", style = MaterialTheme.typography.labelLarge)
+        Text(
+            "Teste as formas de boca A, E/I, O, U, F/V, M/B/P, L e S/T. " +
+                "Este teste não identifica fonemas nem segue automaticamente o áudio. " +
+                "Um TALK existente nunca será substituído.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        MotionValueSlider("Boca: posição X", mouthX, 0.12f..0.88f, percent = true) {
+            mouthX = it; mouthVerified = false
+        }
+        MotionValueSlider("Boca: posição Y", mouthY, 0.12f..0.88f, percent = true) {
+            mouthY = it; mouthVerified = false
+        }
+        MotionValueSlider("Boca: largura", mouthRadiusX, 0.02f..0.20f, percent = true) {
+            mouthRadiusX = it; mouthVerified = false
+        }
+        MotionValueSlider("Boca: altura", mouthRadiusY, 0.01f..0.10f, percent = true) {
+            mouthRadiusY = it; mouthVerified = false
+        }
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Checkbox(
+                checked = mouthVerified,
+                onCheckedChange = { mouthVerified = it },
+                enabled = !locked && !hasTalk,
+            )
+            Text(
+                "Conferi a posição da boca no retrato.",
+                modifier = Modifier.padding(top = 12.dp),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            FilledTonalButton(
+                onClick = {
+                    runCatching {
+                        val updated = VisemeMouthDemo.apply(
+                            clip.id, clip.durationUs, clip.effects,
+                            mouthX, mouthY, mouthRadiusX, mouthRadiusY,
+                        )
+                        if (updated != clip.effects) {
+                            onSetEffects(updated)
+                            notice = "Visemas aplicados; reproduza e exporte para conferir."
+                        }
+                    }.onFailure { failure ->
+                        notice = "Visemas não aplicados: " + (failure.message ?: "entrada inválida")
+                    }
+                },
+                enabled = !locked && mouthVerified && !hasTalk &&
+                    clip.durationUs >= VisemeMouthDemo.MIN_DURATION_US,
+            ) { Text("Testar formatos de boca") }
+            OutlinedButton(
+                onClick = {
+                    onSetEffects(VisemeMouthDemo.remove(clip.effects))
+                    notice = "Demonstração removida; outros efeitos preservados."
+                },
+                enabled = !locked && hasVisemeDemo,
+            ) { Text("Remover teste") }
+        }
+        if (hasTalk && !hasVisemeDemo) {
+            Text("Este clipe já tem TALK. Use uma cópia do clipe para a demonstração.",
+                style = MaterialTheme.typography.bodySmall)
+        }
 
         if (current != null && restored == null) {
             Text(

@@ -92,8 +92,10 @@ internal class LocalCutMouthWarpEffect(
 ) : GlEffect {
     init {
         require(effect.typeId == TYPE_ID) { "unsupported mouth warp effect ${effect.typeId}" }
-        require(effect.animations.all { it.propertyId == "openness" }) {
-            "mouth warp only supports animated openness"
+        require(effect.animations.all {
+            it.propertyId in setOf("openness", "widthScale", "rounding", "teethVisibility")
+        }) {
+            "mouth warp only supports animated viseme parameters"
         }
         val issues = EffectRegistry.validationIssues(effect)
         require(issues.isEmpty()) { "invalid mouth warp ${effect.id}: ${issues.first()}" }
@@ -138,6 +140,9 @@ private class LocalCutMouthWarpShaderProgram(
             glProgram.setFloatsUniform("uCenter", center(evaluated))
             glProgram.setFloatsUniform("uRadius", radius(evaluated))
             glProgram.setFloatUniform("uOpenness", openness(evaluated).toFloat())
+            glProgram.setFloatUniform("uWidthScale", number(evaluated, "widthScale", 1.0).toFloat())
+            glProgram.setFloatUniform("uRounding", number(evaluated, "rounding", 0.0).toFloat())
+            glProgram.setFloatUniform("uTeethVisibility", number(evaluated, "teethVisibility", 0.0).toFloat())
         } catch (error: GlUtil.GlException) {
             throw VideoFrameProcessingException(error)
         }
@@ -153,6 +158,9 @@ private class LocalCutMouthWarpShaderProgram(
             glProgram.setFloatsUniform("uCenter", center(evaluated))
             glProgram.setFloatsUniform("uRadius", radius(evaluated))
             glProgram.setFloatUniform("uOpenness", openness(evaluated).toFloat())
+            glProgram.setFloatUniform("uWidthScale", number(evaluated, "widthScale", 1.0).toFloat())
+            glProgram.setFloatUniform("uRounding", number(evaluated, "rounding", 0.0).toFloat())
+            glProgram.setFloatUniform("uTeethVisibility", number(evaluated, "teethVisibility", 0.0).toFloat())
             glProgram.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
         } catch (error: GlUtil.GlException) {
@@ -211,6 +219,9 @@ private class LocalCutMouthWarpShaderProgram(
             uniform vec2 uCenter;
             uniform vec2 uRadius;
             uniform float uOpenness;
+            uniform float uWidthScale;
+            uniform float uRounding;
+            uniform float uTeethVisibility;
             varying vec2 vTexSamplingCoord;
 
             vec2 clampUv(vec2 uv) {
@@ -247,7 +258,12 @@ private class LocalCutMouthWarpShaderProgram(
                 // A broad opaque oval looks artificial on a still portrait.
                 // Keep a shallow, feathered opening that retains the source lip
                 // line and skin detail. Only the mouth ROI is processed.
-                vec2 mouthRadius = safeRadius * vec2(0.62, 0.04 + 0.42 * strength);
+                float rounded = clamp(uRounding, 0.0, 1.0);
+                float widthRatio = clamp(uWidthScale, 0.60, 1.30);
+                vec2 mouthRadius = safeRadius * vec2(
+                    0.62 * widthRatio * (1.0 - 0.12 * rounded),
+                    0.04 + 0.42 * strength * (1.0 + 0.22 * rounded)
+                );
                 vec2 mouthUv = delta / max(mouthRadius, vec2(0.0001));
                 float mouthR2 = dot(mouthUv, mouthUv);
                 float cavityMask =
@@ -266,7 +282,7 @@ private class LocalCutMouthWarpShaderProgram(
                     smoothstep(0.08, 0.35, mouthUv.y) *
                     (1.0 - smoothstep(0.56, 0.84, mouthUv.y)) *
                     (1.0 - smoothstep(0.45, 0.75, abs(mouthUv.x))) *
-                    0.24;
+                    (0.24 + 0.28 * clamp(uTeethVisibility, 0.0, 1.0));
                 cavityColor = mix(cavityColor, vec3(0.79, 0.68, 0.63), upperTeeth);
 
                 gl_FragColor = vec4(

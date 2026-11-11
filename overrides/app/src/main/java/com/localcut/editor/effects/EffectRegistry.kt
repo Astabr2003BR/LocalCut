@@ -100,6 +100,10 @@ object EffectRegistry {
                 numberSpec("radiusX", 0.10, 0.01, 0.50),
                 numberSpec("radiusY", 0.05, 0.005, 0.30),
                 numberSpec("openness", 0.0, 0.0, 1.0),
+                // Optional viseme controls. Omitted in legacy TALK projects.
+                numberSpec("widthScale", 1.0, 0.60, 1.30),
+                numberSpec("rounding", 0.0, 0.0, 1.0),
+                numberSpec("teethVisibility", 0.0, 0.0, 1.0),
             ),
         ),
         EffectDefinition(

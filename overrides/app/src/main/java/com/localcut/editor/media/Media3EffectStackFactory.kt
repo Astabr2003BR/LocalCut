@@ -44,7 +44,7 @@ internal object Media3EffectStackFactory {
         if (effect.typeId !in supportedTypeIds || EffectRegistry.validationIssues(effect).isNotEmpty()) return false
         if (effect.animations.isEmpty()) return true
         return effect.typeId == LocalCutMouthWarpEffect.TYPE_ID &&
-            effect.animations.all { it.propertyId == "openness" }
+            effect.animations.all { it.propertyId in setOf("openness", "widthScale", "rounding", "teethVisibility") }
     }
 
     fun create(effects: List<EffectInstance>): List<Effect> = buildList {

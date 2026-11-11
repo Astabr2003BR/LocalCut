@@ -79,6 +79,49 @@ class LocalCutMouthWarpEffectTest {
         assertFalse(Media3EffectStackFactory.canRender(animatedBrightness))
     }
 
+
+    @Test
+    fun visemeMouthParametersAreAnimatedAndBoundedWithoutBreakingLegacyTalk() {
+        val legacy = animatedMouth()
+        assertTrue(Media3EffectStackFactory.canRender(legacy))
+        val viseme = legacy.copy(
+            parameters = legacy.parameters + mapOf(
+                "widthScale" to EffectParameter.Number(1.0),
+                "rounding" to EffectParameter.Number(0.0),
+                "teethVisibility" to EffectParameter.Number(0.0),
+            ),
+            animations = legacy.animations + listOf(
+                PropertyAnimation("widthScale", listOf(
+                    PropertyKeyframe("w0", 0L, PropertyValue.Scalar(1.0)),
+                    PropertyKeyframe("w1", 500_000L, PropertyValue.Scalar(0.70)),
+                )),
+                PropertyAnimation("rounding", listOf(
+                    PropertyKeyframe("r0", 0L, PropertyValue.Scalar(0.0)),
+                    PropertyKeyframe("r1", 500_000L, PropertyValue.Scalar(0.90)),
+                )),
+                PropertyAnimation("teethVisibility", listOf(
+                    PropertyKeyframe("t0", 0L, PropertyValue.Scalar(0.0)),
+                    PropertyKeyframe("t1", 500_000L, PropertyValue.Scalar(0.70)),
+                )),
+            ),
+        )
+        assertTrue(EffectRegistry.validationIssues(viseme).isEmpty())
+        assertTrue(Media3EffectStackFactory.canRender(viseme))
+        val evaluated = EffectRegistry.evaluate(viseme, 500_000L)
+        assertEquals(0.70, (evaluated.parameters.getValue("widthScale") as EffectParameter.Number).value, 1e-9)
+        assertEquals(0.90, (evaluated.parameters.getValue("rounding") as EffectParameter.Number).value, 1e-9)
+        assertEquals(0.70, (evaluated.parameters.getValue("teethVisibility") as EffectParameter.Number).value, 1e-9)
+
+        val invalid = viseme.copy(parameters = viseme.parameters +
+            ("rounding" to EffectParameter.Number(1.2)))
+        assertTrue(EffectRegistry.validationIssues(invalid).isNotEmpty())
+        val unsupported = viseme.copy(animations = viseme.animations +
+            PropertyAnimation("radiusX", listOf(
+                PropertyKeyframe("bad", 0L, PropertyValue.Scalar(0.10)),
+            )))
+        assertFalse(Media3EffectStackFactory.canRender(unsupported))
+    }
+
     @Test
     fun mouthWarpMathIsIdentityWhenClosedAndOutsideEllipseAndAlwaysClamped() {
         val closed = LocalCutMouthWarpMath.sampleUv(

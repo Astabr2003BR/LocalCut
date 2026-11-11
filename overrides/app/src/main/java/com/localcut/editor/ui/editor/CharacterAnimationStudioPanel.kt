@@ -272,6 +272,9 @@ internal fun CharacterAnimationStudioPanel(
             MotionValueSlider(
                 "Assimetria suave dos olhos (%)", settings.blinkAsymmetry, 0f..1f, percent = true,
             ) { settings = settings.copy(blinkAsymmetry = it) }
+            MotionValueSlider(
+                "Movimento discreto do olhar (%)", settings.gazeStrength, 0f..1f, percent = true,
+            ) { settings = settings.copy(gazeStrength = it) }
             Text("Movimentos leves por regiões da imagem; não fazem uma cabeça 3D real.",
                 style = MaterialTheme.typography.bodySmall)
         }

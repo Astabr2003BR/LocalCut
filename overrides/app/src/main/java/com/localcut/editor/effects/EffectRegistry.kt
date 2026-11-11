@@ -126,6 +126,7 @@ object EffectRegistry {
                 numberSpec("hairMotionStrength", 0.0, 0.0, 1.0),
                 numberSpec("blinkVariation", 0.0, 0.0, 1.0),
                 numberSpec("blinkAsymmetry", 0.0, 0.0, 1.0),
+                numberSpec("gazeStrength", 0.0, 0.0, 1.0),
             ),
         ),
         EffectDefinition("localcut.flip.horizontal", EffectCategory.DISTORTION, emptyList()),

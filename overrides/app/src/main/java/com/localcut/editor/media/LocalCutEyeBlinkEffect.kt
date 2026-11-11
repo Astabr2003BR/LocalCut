@@ -47,6 +47,19 @@ internal object EyeBlinkMath {
         )
     }
 
+    /**
+     * Slow horizontal/vertical iris target, deterministic for preview and export.
+     * This is a pixel-art approximation; no pupil segmentation or AI.
+     */
+    fun gazeOffsets(timeUs: Long, strength: Double): FloatArray {
+        require(strength.isFinite() && strength in 0.0..1.0)
+        val seconds = max(0L, timeUs) / 1_000_000.0
+        return floatArrayOf(
+            (0.009 * strength * sin(seconds * 2.0 * PI / 2.8 + 0.23)).toFloat(),
+            (0.0035 * strength * sin(seconds * 2.0 * PI / 3.7 + 1.1)).toFloat(),
+        )
+    }
+
     /** Head and hair movement only sample a tightly feathered face ROI. */
     fun headOffsets(timeUs: Long, strength: Double): FloatArray {
         require(strength.isFinite() && strength in 0.0..1.0)
@@ -172,6 +185,7 @@ private class EyeBlinkShaderProgram(
             program.setFloatsUniform("uIdleOffsets", floatArrayOf(0f, 0f))
             program.setFloatsUniform("uHeadOffsets", floatArrayOf(0f, 0f))
             program.setFloatsUniform("uHairOffsets", floatArrayOf(0f, 0f))
+            program.setFloatsUniform("uGazeOffsets", floatArrayOf(0f, 0f))
         } catch (error: GlUtil.GlException) {
             throw VideoFrameProcessingException(error)
         }
@@ -210,6 +224,9 @@ private class EyeBlinkShaderProgram(
             ))
             program.setFloatsUniform("uHairOffsets", EyeBlinkMath.hairOffsets(
                 presentationTimeUs, number("hairMotionStrength", 0.0),
+            ))
+            program.setFloatsUniform("uGazeOffsets", EyeBlinkMath.gazeOffsets(
+                presentationTimeUs, number("gazeStrength", 0.0),
             ))
             program.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
@@ -264,10 +281,27 @@ private class EyeBlinkShaderProgram(
             uniform vec2 uIdleOffsets;
             uniform vec2 uHeadOffsets;
             uniform vec2 uHairOffsets;
+            uniform vec2 uGazeOffsets;
             varying vec2 vTexSamplingCoord;
 
             vec2 clampUv(vec2 uv) {
                 return clamp(uv, vec2(0.001), vec2(0.999));
+            }
+
+            // Eye-local, darkness-aware resampling affects the iris rather than
+            // dragging the entire eyelid or the background with the gaze.
+            vec4 gazeOne(vec4 original, vec2 uv, vec2 center) {
+                vec2 p = (uv - center) / max(uRadius, vec2(0.0001));
+                float centerMask = 1.0 - smoothstep(0.22, 0.76, length(p));
+                if (centerMask <= 0.001) return original;
+                vec3 moved = texture2D(
+                    uTexSampler, clampUv(uv - uGazeOffsets)
+                ).rgb;
+                vec3 weights = vec3(0.2126, 0.7152, 0.0722);
+                float sourceDark = 1.0 - smoothstep(0.30, 0.74, dot(original.rgb, weights));
+                float movedDark = 1.0 - smoothstep(0.30, 0.74, dot(moved, weights));
+                float factor = centerMask * max(sourceDark, movedDark) * 0.86;
+                return vec4(mix(original.rgb, moved, factor), original.a);
             }
 
             vec4 blinkOne(vec4 original, vec2 uv, vec2 center, float closure) {
@@ -317,11 +351,17 @@ private class EyeBlinkShaderProgram(
                     uHairOffsets * hairX * hairY
                 );
                 vec4 original = texture2D(uTexSampler, sampleUv);
+                // When strength=0, this preserves bit-identical legacy behavior.
+                vec4 withGaze = original;
+                if (length(uGazeOffsets) > 0.00001) {
+                    withGaze = gazeOne(withGaze, sampleUv, uLeftEye);
+                    withGaze = gazeOne(withGaze, sampleUv, uRightEye);
+                }
                 if (max(uLeftClosure, uRightClosure) <= 0.001) {
-                    gl_FragColor = original;
+                    gl_FragColor = withGaze;
                     return;
                 }
-                vec4 withLeft = blinkOne(original, sampleUv, uLeftEye, uLeftClosure);
+                vec4 withLeft = blinkOne(withGaze, sampleUv, uLeftEye, uLeftClosure);
                 gl_FragColor = blinkOne(withLeft, sampleUv, uRightEye, uRightClosure);
             }
         """.trimIndent()

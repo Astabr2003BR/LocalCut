@@ -60,12 +60,17 @@ class PortraitMotionPresetsTest {
         val old = PortraitMotionSettings()
         val legacy = "portrait-motion-v1|" + old.values().take(11).joinToString("|")
         assertEquals(old, PortraitMotionPresets.deserialize(legacy))
+        val oldV2 = old.copy(headMotionStrength = 0.4, hairMotionStrength = 0.2,
+            blinkVariation = 0.2, blinkAsymmetry = 0.1)
+        val encodedV2 = "portrait-motion-v2|" + oldV2.values().take(15).joinToString("|")
+        assertEquals(oldV2, PortraitMotionPresets.deserialize(encodedV2))
         val expressive = PortraitMotionPresets.preset(PortraitMotionPreset.EXPRESSIVE)
         val calm = PortraitMotionPresets.preset(PortraitMotionPreset.CALM)
         assertTrue(expressive.headMotionStrength > calm.headMotionStrength)
         assertTrue(expressive.hairMotionStrength > calm.hairMotionStrength)
         assertTrue(expressive.blinkVariation > calm.blinkVariation)
         assertTrue(expressive.blinkAsymmetry > calm.blinkAsymmetry)
+        assertTrue(expressive.gazeStrength > calm.gazeStrength)
         val upgraded = PortraitMotionPresets.upsert("face", listOf(talk), expressive)
         assertEquals(expressive, PortraitMotionPresets.fromEffect(upgraded.last()))
         assertEquals(expressive, PortraitMotionPresets.deserialize(
@@ -73,6 +78,10 @@ class PortraitMotionPresetsTest {
         assertTrue(runCatching {
             PortraitMotionPresets.upsert("bad", listOf(talk),
                 expressive.copy(headMotionStrength = Double.NaN))
+        }.isFailure)
+        assertTrue(runCatching {
+            PortraitMotionPresets.upsert("bad-gaze", listOf(talk),
+                expressive.copy(gazeStrength = Double.NaN))
         }.isFailure)
         assertNull(PortraitMotionPresets.deserialize(
             PortraitMotionPresets.serialize(expressive).replace("portrait-motion-v2", "portrait-motion-v0")))

@@ -25,6 +25,7 @@ data class PortraitMotionSettings(
     val hairMotionStrength: Double = 0.0,
     val blinkVariation: Double = 0.0,
     val blinkAsymmetry: Double = 0.0,
+    val gazeStrength: Double = 0.0,
 ) {
     fun validate() {
         require(values().all(Double::isFinite)) { "Configuração não finita" }
@@ -43,12 +44,13 @@ data class PortraitMotionSettings(
         require(hairMotionStrength in 0.0..1.0)
         require(blinkVariation in 0.0..1.0)
         require(blinkAsymmetry in 0.0..1.0)
+        require(gazeStrength in 0.0..1.0)
     }
 
     fun values(): List<Double> = listOf(
         leftX, rightX, eyeY, radiusX, radiusY, firstBlinkSeconds,
         intervalSeconds, durationSeconds, blinkStrength, swayStrength, breathStrength,
-        headMotionStrength, hairMotionStrength, blinkVariation, blinkAsymmetry,
+        headMotionStrength, hairMotionStrength, blinkVariation, blinkAsymmetry, gazeStrength,
     )
 }
 
@@ -60,8 +62,9 @@ enum class PortraitMotionPreset(val title: String) {
 
 object PortraitMotionPresets {
     const val TYPE_ID = "localcut.character.eye_blink"
-    private const val STORAGE_VERSION = "portrait-motion-v2"
+    private const val STORAGE_VERSION = "portrait-motion-v3"
     private const val LEGACY_VERSION = "portrait-motion-v1"
+    private const val PREVIOUS_VERSION = "portrait-motion-v2"
 
     fun preset(
         selection: PortraitMotionPreset,
@@ -71,19 +74,19 @@ object PortraitMotionPresets {
             intervalSeconds = 4.6, durationSeconds = 0.20, blinkStrength = 0.85,
             swayStrength = 0.12, breathStrength = 0.20,
             headMotionStrength = 0.12, hairMotionStrength = 0.10,
-            blinkVariation = 0.10, blinkAsymmetry = 0.10,
+            blinkVariation = 0.10, blinkAsymmetry = 0.10, gazeStrength = 0.10,
         )
         PortraitMotionPreset.NATURAL -> geometry.copy(
             intervalSeconds = 3.2, durationSeconds = 0.18, blinkStrength = 1.0,
             swayStrength = 0.28, breathStrength = 0.32,
             headMotionStrength = 0.30, hairMotionStrength = 0.30,
-            blinkVariation = 0.28, blinkAsymmetry = 0.22,
+            blinkVariation = 0.28, blinkAsymmetry = 0.22, gazeStrength = 0.27,
         )
         PortraitMotionPreset.EXPRESSIVE -> geometry.copy(
             intervalSeconds = 2.5, durationSeconds = 0.16, blinkStrength = 1.0,
             swayStrength = 0.52, breathStrength = 0.58,
             headMotionStrength = 0.50, hairMotionStrength = 0.58,
-            blinkVariation = 0.40, blinkAsymmetry = 0.30,
+            blinkVariation = 0.40, blinkAsymmetry = 0.30, gazeStrength = 0.43,
         )
     }
 
@@ -108,6 +111,7 @@ object PortraitMotionPresets {
             hairMotionStrength = number("hairMotionStrength", 0.0),
             blinkVariation = number("blinkVariation", 0.0),
             blinkAsymmetry = number("blinkAsymmetry", 0.0),
+            gazeStrength = number("gazeStrength", 0.0),
         ).also { it.validate() }
     }
 
@@ -151,6 +155,7 @@ object PortraitMotionPresets {
                 "hairMotionStrength" to EffectParameter.Number(settings.hairMotionStrength),
                 "blinkVariation" to EffectParameter.Number(settings.blinkVariation),
                 "blinkAsymmetry" to EffectParameter.Number(settings.blinkAsymmetry),
+                "gazeStrength" to EffectParameter.Number(settings.gazeStrength),
             ),
         )
         require(EffectRegistry.validationIssues(effect).isEmpty()) {
@@ -175,17 +180,20 @@ object PortraitMotionPresets {
         if (data.length > 512) return null
         val pieces = data.split('|')
         val isLegacy = pieces.size == 12 && pieces[0] == LEGACY_VERSION
-        val isNew = pieces.size == 16 && pieces[0] == STORAGE_VERSION
-        if (!isLegacy && !isNew) return null
+        val isPrevious = pieces.size == 16 && pieces[0] == PREVIOUS_VERSION
+        val isNew = pieces.size == 17 && pieces[0] == STORAGE_VERSION
+        if (!isLegacy && !isPrevious && !isNew) return null
         val values = pieces.drop(1).map { it.toDoubleOrNull() ?: return null }
         return runCatching {
+            val hasAdvanced = isPrevious || isNew
             PortraitMotionSettings(
                 values[0], values[1], values[2], values[3], values[4],
                 values[5], values[6], values[7], values[8], values[9], values[10],
-                headMotionStrength = if (isNew) values[11] else 0.0,
-                hairMotionStrength = if (isNew) values[12] else 0.0,
-                blinkVariation = if (isNew) values[13] else 0.0,
-                blinkAsymmetry = if (isNew) values[14] else 0.0,
+                headMotionStrength = if (hasAdvanced) values[11] else 0.0,
+                hairMotionStrength = if (hasAdvanced) values[12] else 0.0,
+                blinkVariation = if (hasAdvanced) values[13] else 0.0,
+                blinkAsymmetry = if (hasAdvanced) values[14] else 0.0,
+                gazeStrength = if (isNew) values[15] else 0.0,
             ).also { it.validate() }
         }.getOrNull()
     }

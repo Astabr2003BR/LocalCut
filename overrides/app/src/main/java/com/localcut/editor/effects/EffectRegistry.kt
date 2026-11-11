@@ -129,6 +129,20 @@ object EffectRegistry {
                 numberSpec("gazeStrength", 0.0, 0.0, 1.0),
             ),
         ),
+        EffectDefinition(
+            "localcut.character.brow_expression",
+            EffectCategory.DISTORTION,
+            listOf(
+                EffectParameterSpec("leftBrow", EffectParameterType.POINT,
+                    EffectParameter.Point(0.37, 0.29)),
+                EffectParameterSpec("rightBrow", EffectParameterType.POINT,
+                    EffectParameter.Point(0.63, 0.29)),
+                numberSpec("radiusX", 0.08, 0.02, 0.15),
+                numberSpec("radiusY", 0.04, 0.01, 0.09),
+                numberSpec("emotion", 0.0, 0.0, 3.0),
+                numberSpec("intensity", 0.0, 0.0, 1.0),
+            ),
+        ),
         EffectDefinition("localcut.flip.horizontal", EffectCategory.DISTORTION, emptyList()),
         EffectDefinition("localcut.flip.vertical", EffectCategory.DISTORTION, emptyList()),
         EffectDefinition(
@@ -176,6 +190,32 @@ object EffectRegistry {
             val center = effect.parameters["center"] as? EffectParameter.Point
             if (center != null && (center.x !in 0.0..1.0 || center.y !in 0.0..1.0)) {
                 add("parameter center is outside allowed range")
+            }
+        }
+        if (effect.typeId == "localcut.character.brow_expression") {
+            val left = effect.parameters["leftBrow"] as? EffectParameter.Point
+                ?: EffectParameter.Point(0.37, 0.29)
+            val right = effect.parameters["rightBrow"] as? EffectParameter.Point
+                ?: EffectParameter.Point(0.63, 0.29)
+            val radiusX = (effect.parameters["radiusX"] as? EffectParameter.Number)?.value ?: 0.08
+            val radiusY = (effect.parameters["radiusY"] as? EffectParameter.Number)?.value ?: 0.04
+            val emotion = (effect.parameters["emotion"] as? EffectParameter.Number)?.value ?: 0.0
+            if (listOf(left.x, left.y, right.x, right.y, radiusX, radiusY).all(Double::isFinite)) {
+                if (left.x !in radiusX..(1.0 - radiusX) ||
+                    right.x !in radiusX..(1.0 - radiusX) ||
+                    left.y !in radiusY..(1.0 - radiusY) ||
+                    right.y !in radiusY..(1.0 - radiusY) ||
+                    right.x - left.x < radiusX * 2.25 ||
+                    kotlin.math.abs(left.y - right.y) > 0.00001
+                ) {
+                    add("eyebrow positions are invalid or overlapping")
+                }
+            }
+            if (emotion !in listOf(0.0, 1.0, 2.0, 3.0)) {
+                add("expression preset must be an integer 0..3")
+            }
+            if (effect.animations.isNotEmpty()) {
+                add("brow expression does not yet support keyframe animations")
             }
         }
         if (effect.typeId == "localcut.character.eye_blink") {

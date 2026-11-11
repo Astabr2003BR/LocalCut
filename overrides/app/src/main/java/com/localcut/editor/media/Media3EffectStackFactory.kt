@@ -37,6 +37,7 @@ internal object Media3EffectStackFactory {
         "localcut.motion_blur",
         LocalCutMouthWarpEffect.TYPE_ID,
         LocalCutEyeBlinkEffect.TYPE_ID,
+        LocalCutBrowExpressionEffect.TYPE_ID,
     ) + LocalCutStylizeEffect.SUPPORTED_TYPES + matrixEffectTypes
 
     fun canRender(effect: EffectInstance): Boolean {
@@ -119,6 +120,7 @@ internal object Media3EffectStackFactory {
         )
         LocalCutMouthWarpEffect.TYPE_ID -> LocalCutMouthWarpEffect(effect)
         LocalCutEyeBlinkEffect.TYPE_ID -> LocalCutEyeBlinkEffect(effect)
+        LocalCutBrowExpressionEffect.TYPE_ID -> LocalCutBrowExpressionEffect(effect)
         "localcut.flip.horizontal" -> MatrixTransformation {
             Matrix().apply { postScale(-1f, 1f) }
         }

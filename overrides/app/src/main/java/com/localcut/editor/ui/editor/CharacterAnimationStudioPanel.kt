@@ -23,6 +23,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.localcut.editor.domain.animation.BrowEmotion
+import com.localcut.editor.domain.animation.BrowExpressionPresets
+import com.localcut.editor.domain.animation.BrowExpressionSettings
 import com.localcut.editor.domain.animation.GuidedVisemeOverlay
 import com.localcut.editor.domain.animation.VisemeMouthDemo
 import com.localcut.editor.domain.animation.PortraitMotionPreset
@@ -69,6 +72,16 @@ internal fun CharacterAnimationStudioPanel(
     var mouthRadiusY by remember(clip.id) { mutableStateOf(0.025) }
     var mouthVerified by remember(clip.id) { mutableStateOf(false) }
     var voiceTranscript by remember(clip.id) { mutableStateOf("") }
+    val browCurrent = clip.effects.firstOrNull { it.typeId == BrowExpressionPresets.TYPE_ID }
+    val savedBrows = remember(clip.id, browCurrent) {
+        BrowExpressionPresets.fromEffectOrNull(browCurrent)
+    }
+    var brows by remember(clip.id, browCurrent) {
+        mutableStateOf(savedBrows ?: BrowExpressionSettings())
+    }
+    var browsVerified by remember(clip.id, browCurrent) {
+        mutableStateOf(savedBrows != null)
+    }
     val hasTalk = clip.effects.any { it.typeId == VisemeMouthDemo.TYPE_ID }
     val hasGuidedVisemes = clip.effects.any(GuidedVisemeOverlay::hasGuidance)
     val hasVisemeDemo = clip.effects.any {
@@ -276,6 +289,93 @@ internal fun CharacterAnimationStudioPanel(
                 "Movimento discreto do olhar (%)", settings.gazeStrength, 0f..1f, percent = true,
             ) { settings = settings.copy(gazeStrength = it) }
             Text("Movimentos leves por regiões da imagem; não fazem uma cabeça 3D real.",
+                style = MaterialTheme.typography.bodySmall)
+        }
+
+        Text("Expressões 2D — sobrancelhas", style = MaterialTheme.typography.labelLarge)
+        Text(
+            "Escolha uma expressão e ajuste a posição das sobrancelhas na imagem. " +
+                "O efeito deforma apenas essa região e não detecta rostos automaticamente. " +
+                "Confira as duas sobrancelhas antes de aplicar.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            BrowEmotion.entries.forEach { emotion ->
+                FilledTonalButton(
+                    onClick = {
+                        brows = brows.copy(emotion = emotion)
+                        notice = "Expressão ${emotion.title} selecionada. Confira a posição."
+                    },
+                    enabled = !locked,
+                ) { Text(if (brows.emotion == emotion) "✓ ${emotion.title}" else emotion.title) }
+            }
+        }
+        MotionValueSlider(
+            "Intensidade da expressão (%)", brows.intensity, 0f..1f, percent = true,
+        ) { brows = brows.copy(intensity = it) }
+        MotionValueSlider(
+            "Sobrancelha esquerda X", brows.leftX, 0.16f..0.46f, percent = true,
+        ) { brows = brows.copy(leftX = it); browsVerified = false }
+        MotionValueSlider(
+            "Sobrancelha direita X", brows.rightX, 0.54f..0.84f, percent = true,
+        ) { brows = brows.copy(rightX = it); browsVerified = false }
+        MotionValueSlider(
+            "Altura das sobrancelhas Y", brows.browY, 0.12f..0.48f, percent = true,
+        ) { brows = brows.copy(browY = it); browsVerified = false }
+        MotionValueSlider(
+            "Largura da região das sobrancelhas", brows.radiusX, 0.02f..0.15f,
+            percent = true,
+        ) { brows = brows.copy(radiusX = it); browsVerified = false }
+        MotionValueSlider(
+            "Altura da região das sobrancelhas", brows.radiusY, 0.01f..0.09f,
+            percent = true,
+        ) { brows = brows.copy(radiusY = it); browsVerified = false }
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Checkbox(
+                checked = browsVerified,
+                onCheckedChange = { browsVerified = it },
+                enabled = !locked,
+            )
+            Text("Conferi a posição das sobrancelhas.",
+                modifier = Modifier.padding(top = 12.dp),
+                style = MaterialTheme.typography.bodySmall)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            FilledTonalButton(
+                onClick = {
+                    runCatching {
+                        val proposed = BrowExpressionPresets.upsert(
+                            clip.id, clip.effects, brows,
+                        )
+                        if (proposed == clip.effects) {
+                            notice = "Expressão já aplicada; nenhuma duplicata."
+                        } else {
+                            onSetEffects(proposed)
+                            notice = "Expressão aplicada. TALK e piscadas preservados."
+                        }
+                    }.onFailure { error ->
+                        notice = "Expressão não aplicada: " + (error.message ?: "valores inválidos")
+                    }
+                },
+                enabled = !locked && browsVerified,
+            ) { Text("Aplicar expressão") }
+            OutlinedButton(
+                onClick = {
+                    onSetEffects(BrowExpressionPresets.remove(clip.effects))
+                    notice = "Expressão removida. TALK e outros movimentos preservados."
+                },
+                enabled = !locked && browCurrent != null,
+            ) { Text("Remover expressão") }
+        }
+        if (browCurrent != null && savedBrows == null) {
+            Text("Expressão salva inválida; revise antes de alterar ou remova o efeito.",
+                color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall)
         }
 

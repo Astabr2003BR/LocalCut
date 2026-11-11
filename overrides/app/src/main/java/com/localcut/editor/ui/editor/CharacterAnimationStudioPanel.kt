@@ -12,6 +12,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.localcut.editor.domain.animation.GuidedVisemeOverlay
 import com.localcut.editor.domain.animation.VisemeMouthDemo
 import com.localcut.editor.domain.animation.PortraitMotionPreset
 import com.localcut.editor.domain.animation.PortraitMotionPresets
@@ -65,7 +67,9 @@ internal fun CharacterAnimationStudioPanel(
     var mouthRadiusX by remember(clip.id) { mutableStateOf(0.07) }
     var mouthRadiusY by remember(clip.id) { mutableStateOf(0.025) }
     var mouthVerified by remember(clip.id) { mutableStateOf(false) }
+    var voiceTranscript by remember(clip.id) { mutableStateOf("") }
     val hasTalk = clip.effects.any { it.typeId == VisemeMouthDemo.TYPE_ID }
+    val hasGuidedVisemes = clip.effects.any(GuidedVisemeOverlay::hasGuidance)
     val hasVisemeDemo = clip.effects.any {
         it.typeId == VisemeMouthDemo.TYPE_ID && it.id.startsWith(VisemeMouthDemo.ID_PREFIX)
     }
@@ -152,6 +156,61 @@ internal fun CharacterAnimationStudioPanel(
         }
         if (hasTalk && !hasVisemeDemo) {
             Text("Este clipe já tem TALK. Use uma cópia do clipe para a demonstração.",
+                style = MaterialTheme.typography.bodySmall)
+        }
+
+        Text("Articulação guiada pelo texto da voz", style = MaterialTheme.typography.labelLarge)
+        Text(
+            "Escreva exatamente a fala do áudio já sincronizado com TALK. " +
+                "Os formatos de boca serão distribuídos aproximadamente entre os momentos de voz, " +
+                "sem reconhecer o som. O áudio, as piscadas e a abertura original serão preservados.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedTextField(
+            value = voiceTranscript,
+            onValueChange = { if (it.length <= 160) voiceTranscript = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Texto falado (até 160 caracteres)") },
+            minLines = 2,
+            maxLines = 4,
+            enabled = !locked && hasTalk && !hasVisemeDemo,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            FilledTonalButton(
+                onClick = {
+                    runCatching {
+                        val updated = GuidedVisemeOverlay.apply(
+                            clip.durationUs, clip.effects, voiceTranscript,
+                        )
+                        if (updated == clip.effects) {
+                            notice = "Articulação já aplicada; nenhuma duplicata."
+                        } else {
+                            onSetEffects(updated)
+                            notice = "Formas labiais aplicadas à voz atual. Confira a prévia e exporte."
+                        }
+                    }.onFailure { failure ->
+                        notice = "Texto não aplicado: " + (failure.message ?: "dados inválidos")
+                    }
+                },
+                enabled = !locked && hasTalk && !hasVisemeDemo &&
+                    voiceTranscript.isNotBlank() && clip.durationUs > 0L,
+            ) { Text("Aplicar à fala existente") }
+            OutlinedButton(
+                onClick = {
+                    val updated = GuidedVisemeOverlay.remove(clip.effects)
+                    if (updated != clip.effects) {
+                        onSetEffects(updated)
+                        notice = "Formas guiadas removidas. TALK original preservado."
+                    }
+                },
+                enabled = !locked && hasGuidedVisemes,
+            ) { Text("Remover formas guiadas") }
+        }
+        if (!hasTalk) {
+            Text("Para sincronizar com a voz, primeiro aplique TALK ao clipe de imagem.",
                 style = MaterialTheme.typography.bodySmall)
         }
 

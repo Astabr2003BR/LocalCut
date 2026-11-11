@@ -185,6 +185,100 @@ class FlatMouthBridgeExportSmokeTest {
     }
 
     @Test
+    fun guidedTextChangesExportedArticulationWithoutReplacingVoiceOrBlink() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val directory = File(context.filesDir, "remote-media").apply { mkdirs() }
+        val image = createFacePng(File(directory, "guided-" + System.nanoTime() + ".png"))
+        val audio = createVoiceWav(File(directory, "guided-voice-" + System.nanoTime() + ".wav"))
+        val faceAsset = imageAsset(context.packageName, image)
+        val voiceAsset = Asset(
+            id = "guided-voice-asset", type = AssetType.AUDIO,
+            uri = FileProvider.getUriForFile(context,
+                context.packageName + ".remote-media", audio).toString(),
+            sourceDurationUs = DURATION_US, sizeBytes = audio.length(),
+            displayName = audio.name, mimeType = "audio/wav",
+            fingerprint = "guided-wav-" + audio.length(),
+        )
+        val talk = com.localcut.editor.domain.model.EffectInstance(
+            id = "existing-guided-talk", typeId = LocalCutMouthWarpEffect.TYPE_ID,
+            parameters = mapOf(
+                "center" to com.localcut.editor.domain.model.EffectParameter.Point(0.50, 0.68),
+                "radiusX" to com.localcut.editor.domain.model.EffectParameter.Number(0.14),
+                "radiusY" to com.localcut.editor.domain.model.EffectParameter.Number(0.08),
+                "openness" to com.localcut.editor.domain.model.EffectParameter.Number(0.0),
+            ),
+            animations = listOf(com.localcut.editor.domain.model.PropertyAnimation(
+                "openness", listOf(
+                    com.localcut.editor.domain.model.PropertyKeyframe(
+                        "silence", 0L, com.localcut.editor.domain.model.PropertyValue.Scalar(0.0)),
+                    com.localcut.editor.domain.model.PropertyKeyframe(
+                        "voice-start", 200_000L, com.localcut.editor.domain.model.PropertyValue.Scalar(0.8)),
+                    com.localcut.editor.domain.model.PropertyKeyframe(
+                        "voice-end", 800_000L, com.localcut.editor.domain.model.PropertyValue.Scalar(0.8)),
+                    com.localcut.editor.domain.model.PropertyKeyframe(
+                        "silence-again", DURATION_US,
+                        com.localcut.editor.domain.model.PropertyValue.Scalar(0.0)),
+                ),
+            )),
+        )
+        val blink = com.localcut.editor.domain.model.EffectInstance(
+            id = "existing-blink", typeId = LocalCutEyeBlinkEffect.TYPE_ID,
+        )
+        val withGuidance = com.localcut.editor.domain.animation.GuidedVisemeOverlay.apply(
+            DURATION_US, listOf(talk, blink), "aaaa oooo",
+        )
+        assertEquals(talk.animations.first(), withGuidance.first().animations.first())
+        assertEquals(blink, withGuidance.last())
+        assertTrue(Media3EffectStackFactory.canRender(withGuidance.first()))
+        val source = Project.create("guided-voice-export-smoke", WIDTH, HEIGHT, 30)
+        val project = source.copy(
+            assets = listOf(faceAsset, voiceAsset),
+            tracks = source.tracks.map { track ->
+                when (track.type) {
+                    TrackType.VISUAL -> track.copy(clips = listOf(
+                        Clip(BODY_CLIP_ID, faceAsset.id, 0L, DURATION_US, 0L, DURATION_US,
+                            effects = withGuidance),
+                    ))
+                    TrackType.AUDIO -> track.copy(clips = listOf(
+                        Clip("guided-voice", voiceAsset.id, 0L, DURATION_US, 0L, DURATION_US),
+                    ))
+                }
+            },
+        )
+        val output = File(context.cacheDir, "guided-export-" + System.nanoTime() + ".mp4")
+        try {
+            export(project, output, instrumentation, context)
+            assertTrue(output.isFile && output.length() > 0L)
+            val a = extractFrame(output, 340_000L)
+            val o = extractFrame(output, 690_000L)
+            try {
+                assertEquals(a.width, o.width)
+                assertEquals(a.height, o.height)
+                val cx = a.width / 2
+                val cy = (a.height * 0.68f).toInt()
+                var shapeDelta = 0L
+                for (y in (cy - 12)..(cy + 12) step 2) {
+                    for (x in (cx - 22)..(cx + 22) step 2) {
+                        shapeDelta += pixelRgbDelta(a.getPixel(x, y), o.getPixel(x, y))
+                    }
+                }
+                assertTrue("text-guided A and O must differ in MP4; delta=" + shapeDelta,
+                    shapeDelta >= 140L)
+                assertTrue("background must remain unchanged",
+                    pixelRgbDelta(a.getPixel(8, 8), o.getPixel(8, 8)) <= 25)
+            } finally {
+                a.recycle()
+                o.recycle()
+            }
+        } finally {
+            output.delete()
+            image.delete()
+            audio.delete()
+        }
+    }
+
+    @Test
     fun visemeShapesRenderDistinctFramesPreservingBackgroundAndAudioTrack() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

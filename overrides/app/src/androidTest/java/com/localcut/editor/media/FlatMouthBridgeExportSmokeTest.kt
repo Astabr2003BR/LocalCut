@@ -185,6 +185,88 @@ class FlatMouthBridgeExportSmokeTest {
     }
 
     @Test
+    fun optInNaturalBlinkAndHeadMotionKeepExportedSceneAndVoiceIntact() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val directory = File(context.filesDir, "remote-media").apply { mkdirs() }
+        val face = createFacePng(File(directory, "natural-face-" + System.nanoTime() + ".png"))
+        val audio = createVoiceWav(File(directory, "natural-voice-" + System.nanoTime() + ".wav"))
+        val asset = imageAsset(context.packageName, face)
+        val voice = Asset(
+            id = "natural-voice", type = AssetType.AUDIO,
+            uri = FileProvider.getUriForFile(context,
+                context.packageName + ".remote-media", audio).toString(),
+            sourceDurationUs = DURATION_US, sizeBytes = audio.length(),
+            displayName = audio.name, mimeType = "audio/wav",
+            fingerprint = "natural-wav-" + audio.length(),
+        )
+        val portrait = com.localcut.editor.domain.animation.PortraitMotionSettings(
+            leftX = 0.40, rightX = 0.60, eyeY = 0.42,
+            radiusX = 0.07, radiusY = 0.085,
+            firstBlinkSeconds = 0.20, intervalSeconds = 3.2,
+            durationSeconds = 0.18,
+            headMotionStrength = 0.9, hairMotionStrength = 0.85,
+            blinkVariation = 0.4, blinkAsymmetry = 0.25,
+        )
+        val effects = com.localcut.editor.domain.animation.PortraitMotionPresets.upsert(
+            "face", emptyList(), portrait,
+        )
+        assertEquals(1, effects.size)
+        assertTrue(Media3EffectStackFactory.canRender(effects.single()))
+        val seed = Project.create("natural-face-export-smoke", WIDTH, HEIGHT, 30)
+        val project = seed.copy(
+            assets = listOf(asset, voice),
+            tracks = seed.tracks.map { track ->
+                when (track.type) {
+                    TrackType.VISUAL -> track.copy(clips = listOf(
+                        Clip("face", asset.id, 0L, DURATION_US, 0L, DURATION_US,
+                            effects = effects),
+                    ))
+                    TrackType.AUDIO -> track.copy(clips = listOf(
+                        Clip("natural-audio", voice.id, 0L, DURATION_US, 0L, DURATION_US),
+                    ))
+                }
+            },
+        )
+        assertEquals(1, project.tracks.first { it.type == TrackType.AUDIO }.clips.size)
+        val output = File(context.cacheDir, "natural-face-" + System.nanoTime() + ".mp4")
+        try {
+            export(project, output, instrumentation, context)
+            assertTrue("Natural motion export not created", output.isFile && output.length() > 0L)
+            val before = extractFrame(output, 80_000L)
+            val blink = extractFrame(output, 420_000L)
+            val after = extractFrame(output, 900_000L)
+            try {
+                val eyeX = (before.width * 0.40).toInt()
+                val eyeY = (before.height * 0.42).toInt() + 6
+                val blinkDelta = pixelRgbDelta(
+                    before.getPixel(eyeX, eyeY), blink.getPixel(eyeX, eyeY),
+                )
+                assertTrue("varied blink must visibly cover eye; delta=" + blinkDelta,
+                    blinkDelta >= 60)
+                var headDelta = 0L
+                for (y in (eyeY - 9)..(eyeY + 9)) {
+                    for (x in (eyeX - 10)..(eyeX + 10)) {
+                        headDelta += pixelRgbDelta(before.getPixel(x, y), after.getPixel(x, y))
+                    }
+                }
+                assertTrue("enabled head motion must shift facial texture; delta=" + headDelta,
+                    headDelta >= 50L)
+                assertTrue("background outside face must stay unchanged",
+                    pixelRgbDelta(before.getPixel(8, 8), after.getPixel(8, 8)) <= 25)
+            } finally {
+                before.recycle()
+                blink.recycle()
+                after.recycle()
+            }
+        } finally {
+            output.delete()
+            face.delete()
+            audio.delete()
+        }
+    }
+
+    @Test
     fun guidedTextChangesExportedArticulationWithoutReplacingVoiceOrBlink() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

@@ -62,6 +62,7 @@ internal fun CharacterAnimationStudioPanel(
         mutableStateOf(restored != null)
     }
     var showGeometry by remember(clip.id) { mutableStateOf(false) }
+    var showAdvancedMotion by remember(clip.id) { mutableStateOf(false) }
     var mouthX by remember(clip.id) { mutableStateOf(0.51) }
     var mouthY by remember(clip.id) { mutableStateOf(0.49) }
     var mouthRadiusX by remember(clip.id) { mutableStateOf(0.07) }
@@ -253,6 +254,27 @@ internal fun CharacterAnimationStudioPanel(
         MotionValueSlider(
             "Oscilação lateral leve (%)", settings.swayStrength, 0f..1f, percent = true,
         ) { settings = settings.copy(swayStrength = it) }
+
+        OutlinedButton(onClick = { showAdvancedMotion = !showAdvancedMotion }) {
+            Text(if (showAdvancedMotion) "Ocultar movimentos avançados"
+                else "Movimentos avançados do rosto")
+        }
+        if (showAdvancedMotion) {
+            MotionValueSlider(
+                "Movimento suave da cabeça (%)", settings.headMotionStrength, 0f..1f, percent = true,
+            ) { settings = settings.copy(headMotionStrength = it) }
+            MotionValueSlider(
+                "Movimento leve do cabelo (%)", settings.hairMotionStrength, 0f..1f, percent = true,
+            ) { settings = settings.copy(hairMotionStrength = it) }
+            MotionValueSlider(
+                "Variação natural das piscadas (%)", settings.blinkVariation, 0f..1f, percent = true,
+            ) { settings = settings.copy(blinkVariation = it) }
+            MotionValueSlider(
+                "Assimetria suave dos olhos (%)", settings.blinkAsymmetry, 0f..1f, percent = true,
+            ) { settings = settings.copy(blinkAsymmetry = it) }
+            Text("Movimentos leves por regiões da imagem; não fazem uma cabeça 3D real.",
+                style = MaterialTheme.typography.bodySmall)
+        }
 
         OutlinedButton(onClick = { showGeometry = !showGeometry }) {
             Text(if (showGeometry) "Ocultar posição dos olhos" else "Ajustar posição dos olhos")

@@ -56,6 +56,28 @@ class PortraitMotionPresetsTest {
         assertNull(PortraitMotionPresets.deserialize(encoded.replace("0.37", "0.99")))
     }
 
+    @Test fun newHeadHairAndBlinkControlsDefaultToZeroForLegacySettings() {
+        val old = PortraitMotionSettings()
+        val legacy = "portrait-motion-v1|" + old.values().take(11).joinToString("|")
+        assertEquals(old, PortraitMotionPresets.deserialize(legacy))
+        val expressive = PortraitMotionPresets.preset(PortraitMotionPreset.EXPRESSIVE)
+        val calm = PortraitMotionPresets.preset(PortraitMotionPreset.CALM)
+        assertTrue(expressive.headMotionStrength > calm.headMotionStrength)
+        assertTrue(expressive.hairMotionStrength > calm.hairMotionStrength)
+        assertTrue(expressive.blinkVariation > calm.blinkVariation)
+        assertTrue(expressive.blinkAsymmetry > calm.blinkAsymmetry)
+        val upgraded = PortraitMotionPresets.upsert("face", listOf(talk), expressive)
+        assertEquals(expressive, PortraitMotionPresets.fromEffect(upgraded.last()))
+        assertEquals(expressive, PortraitMotionPresets.deserialize(
+            PortraitMotionPresets.serialize(expressive)))
+        assertTrue(runCatching {
+            PortraitMotionPresets.upsert("bad", listOf(talk),
+                expressive.copy(headMotionStrength = Double.NaN))
+        }.isFailure)
+        assertNull(PortraitMotionPresets.deserialize(
+            PortraitMotionPresets.serialize(expressive).replace("portrait-motion-v2", "portrait-motion-v0")))
+    }
+
     @Test fun corruptPersistedBlinkDoesNotCrashSettingsRecovery() {
         val corrupt = EffectInstance(
             id = "eye-corrupt", typeId = PortraitMotionPresets.TYPE_ID,

@@ -47,6 +47,63 @@ internal object EyeBlinkMath {
         )
     }
 
+    /** Head and hair movement only sample a tightly feathered face ROI. */
+    fun headOffsets(timeUs: Long, strength: Double): FloatArray {
+        require(strength.isFinite() && strength in 0.0..1.0)
+        val seconds = max(0L, timeUs) / 1_000_000.0
+        return floatArrayOf(
+            (0.004 * strength * sin(seconds * 2.0 * PI / 4.8)).toFloat(),
+            (0.0025 * strength * sin(seconds * 2.0 * PI / 5.6 + 0.85)).toFloat(),
+        )
+    }
+
+    fun hairOffsets(timeUs: Long, strength: Double): FloatArray {
+        require(strength.isFinite() && strength in 0.0..1.0)
+        val seconds = max(0L, timeUs) / 1_000_000.0
+        return floatArrayOf(
+            (0.005 * strength * sin(seconds * 2.0 * PI / 2.7 + 0.6)).toFloat(),
+            (0.002 * strength * sin(seconds * 2.0 * PI / 3.5 + 0.3)).toFloat(),
+        )
+    }
+
+    /**
+     * Slight, reproducible blink-timing variation; no Random, no frame state,
+     * no difference between preview and exported video.
+     */
+    fun naturalClosureAt(
+        presentationTimeUs: Long,
+        firstBlinkSeconds: Double,
+        intervalSeconds: Double,
+        durationSeconds: Double,
+        variation: Double,
+    ): Double {
+        require(variation.isFinite() && variation in 0.0..1.0)
+        if (variation == 0.0) {
+            return closureAt(presentationTimeUs, firstBlinkSeconds, intervalSeconds, durationSeconds)
+        }
+        require(listOf(firstBlinkSeconds, intervalSeconds, durationSeconds).all(Double::isFinite))
+        require(firstBlinkSeconds >= 0.0 && intervalSeconds >= 1.0 &&
+            durationSeconds > 0.0 && durationSeconds < intervalSeconds)
+        val seconds = max(0L, presentationTimeUs) / 1_000_000.0
+        val nominal = kotlin.math.floor((seconds - firstBlinkSeconds) / intervalSeconds)
+            .toLong()
+        val from = maxOf(0L, nominal - 1L)
+        val until = maxOf(0L, nominal + 1L)
+        var closure = 0.0
+        for (cycle in from..until) {
+            val offset = sin(cycle.toDouble() * 2.37 + 0.9) *
+                intervalSeconds * 0.13 * variation
+            val phase = seconds - (firstBlinkSeconds + cycle * intervalSeconds + offset)
+            if (phase >= 0.0 && phase < durationSeconds) {
+                val t = (phase / durationSeconds).coerceIn(0.0, 1.0)
+                val triangle = if (t <= 0.5) t * 2.0 else (1.0 - t) * 2.0
+                val eased = triangle * triangle * (3.0 - 2.0 * triangle)
+                closure = maxOf(closure, eased)
+            }
+        }
+        return closure
+    }
+
     fun closureAt(
         presentationTimeUs: Long,
         firstBlinkSeconds: Double,
@@ -110,8 +167,11 @@ private class EyeBlinkShaderProgram(
             program.setFloatsUniform("uRadius", floatArrayOf(
                 number("radiusX", 0.09).toFloat(), number("radiusY", 0.045).toFloat(),
             ))
-            program.setFloatUniform("uClosure", 0f)
+            program.setFloatUniform("uLeftClosure", 0f)
+            program.setFloatUniform("uRightClosure", 0f)
             program.setFloatsUniform("uIdleOffsets", floatArrayOf(0f, 0f))
+            program.setFloatsUniform("uHeadOffsets", floatArrayOf(0f, 0f))
+            program.setFloatsUniform("uHairOffsets", floatArrayOf(0f, 0f))
         } catch (error: GlUtil.GlException) {
             throw VideoFrameProcessingException(error)
         }
@@ -123,18 +183,33 @@ private class EyeBlinkShaderProgram(
         try {
             program.use()
             program.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
-            program.setFloatUniform("uClosure", (
-                EyeBlinkMath.closureAt(
-                    presentationTimeUs,
-                    number("firstBlinkSeconds", 1.40),
-                    number("intervalSeconds", 3.20),
-                    number("durationSeconds", 0.18),
-                ) * number("blinkStrength", 1.0)
+            val first = number("firstBlinkSeconds", 1.40)
+            val interval = number("intervalSeconds", 3.20)
+            val duration = number("durationSeconds", 0.18)
+            val variation = number("blinkVariation", 0.0)
+            val asymmetryDelayUs = (35_000.0 * number("blinkAsymmetry", 0.0)).toLong()
+            val strength = number("blinkStrength", 1.0)
+            program.setFloatUniform("uLeftClosure", (
+                EyeBlinkMath.naturalClosureAt(
+                    presentationTimeUs, first, interval, duration, variation,
+                ) * strength
+            ).toFloat())
+            program.setFloatUniform("uRightClosure", (
+                EyeBlinkMath.naturalClosureAt(
+                    (presentationTimeUs - asymmetryDelayUs).coerceAtLeast(0L),
+                    first, interval, duration, variation,
+                ) * strength
             ).toFloat())
             program.setFloatsUniform("uIdleOffsets", EyeBlinkMath.idleOffsets(
                 presentationTimeUs,
                 number("swayStrength", 0.0),
                 number("breathStrength", 0.0),
+            ))
+            program.setFloatsUniform("uHeadOffsets", EyeBlinkMath.headOffsets(
+                presentationTimeUs, number("headMotionStrength", 0.0),
+            ))
+            program.setFloatsUniform("uHairOffsets", EyeBlinkMath.hairOffsets(
+                presentationTimeUs, number("hairMotionStrength", 0.0),
             ))
             program.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
@@ -184,22 +259,25 @@ private class EyeBlinkShaderProgram(
             uniform vec2 uLeftEye;
             uniform vec2 uRightEye;
             uniform vec2 uRadius;
-            uniform float uClosure;
+            uniform float uLeftClosure;
+            uniform float uRightClosure;
             uniform vec2 uIdleOffsets;
+            uniform vec2 uHeadOffsets;
+            uniform vec2 uHairOffsets;
             varying vec2 vTexSamplingCoord;
 
             vec2 clampUv(vec2 uv) {
                 return clamp(uv, vec2(0.001), vec2(0.999));
             }
 
-            vec4 blinkOne(vec4 original, vec2 uv, vec2 center) {
+            vec4 blinkOne(vec4 original, vec2 uv, vec2 center, float closure) {
                 vec2 p = (uv - center) / max(uRadius, vec2(0.0001));
                 float radius2 = dot(p, p);
                 if (radius2 >= 1.0) return original;
                 // The upper lid progressively descends across the eye.
                 // Sampling nearby cheek skin covers the source iris, even
                 // when the only input is a static portrait.
-                float lidEdge = mix(1.15, -1.15, uClosure);
+                float lidEdge = mix(1.15, -1.15, closure);
                 float covered = smoothstep(lidEdge - 0.08, lidEdge + 0.08, p.y);
                 float softRoi = 1.0 - smoothstep(0.82, 1.0, radius2);
                 vec3 skin = texture2D(uTexSampler, clampUv(
@@ -209,7 +287,7 @@ private class EyeBlinkShaderProgram(
                 // A fine curved lid line appears at full closure.
                 float line = (1.0 - smoothstep(0.025, 0.12, abs(p.y))) *
                     (1.0 - smoothstep(0.65, 0.98, abs(p.x))) *
-                    smoothstep(0.80, 0.98, uClosure) * softRoi;
+                    smoothstep(0.80, 0.98, closure) * softRoi;
                 color = mix(color, vec3(0.14, 0.085, 0.095), 0.86 * line);
                 return vec4(color, original.a);
             }
@@ -221,15 +299,30 @@ private class EyeBlinkShaderProgram(
                 float horizontalBlend = smoothstep(0.04, 0.20, uv.x) *
                     (1.0 - smoothstep(0.80, 0.96, uv.x));
                 float lowerBodyBlend = 1.0 - smoothstep(0.26, 0.63, uv.y);
-                vec2 sampleUv = clampUv(uv +
-                    uIdleOffsets * horizontalBlend * lowerBodyBlend);
+                // Optional local 2D/2.5D motion: face and fringe regions
+                // are softly bounded. Pure image warps, not 3D reconstruction.
+                float faceX = smoothstep(0.15, 0.32, uv.x) *
+                    (1.0 - smoothstep(0.68, 0.85, uv.x));
+                float faceY = smoothstep(0.30, 0.49, uv.y) *
+                    (1.0 - smoothstep(0.84, 0.97, uv.y));
+                float faceBlend = faceX * faceY;
+                float hairX = smoothstep(0.17, 0.32, uv.x) *
+                    (1.0 - smoothstep(0.68, 0.83, uv.x));
+                float hairY = smoothstep(0.65, 0.77, uv.y) *
+                    (1.0 - smoothstep(0.94, 0.99, uv.y));
+                vec2 sampleUv = clampUv(
+                    uv +
+                    uIdleOffsets * horizontalBlend * lowerBodyBlend +
+                    uHeadOffsets * faceBlend +
+                    uHairOffsets * hairX * hairY
+                );
                 vec4 original = texture2D(uTexSampler, sampleUv);
-                if (uClosure <= 0.001) {
+                if (max(uLeftClosure, uRightClosure) <= 0.001) {
                     gl_FragColor = original;
                     return;
                 }
-                vec4 withLeft = blinkOne(original, sampleUv, uLeftEye);
-                gl_FragColor = blinkOne(withLeft, sampleUv, uRightEye);
+                vec4 withLeft = blinkOne(original, sampleUv, uLeftEye, uLeftClosure);
+                gl_FragColor = blinkOne(withLeft, sampleUv, uRightEye, uRightClosure);
             }
         """.trimIndent()
     }

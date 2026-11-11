@@ -41,6 +41,33 @@ class LocalCutEyeBlinkEffectTest {
         )
     }
 
+    @Test fun naturalBlinkAndHeadHairAreBoundedAndDeterministic() {
+        val head = EyeBlinkMath.headOffsets(1_000_000L, 1.0)
+        val hair = EyeBlinkMath.hairOffsets(1_000_000L, 1.0)
+        assertTrue(kotlin.math.abs(head[0]) <= 0.0041f)
+        assertTrue(kotlin.math.abs(head[1]) <= 0.0026f)
+        assertTrue(kotlin.math.abs(hair[0]) <= 0.0051f)
+        assertTrue(kotlin.math.abs(hair[1]) <= 0.0021f)
+        assertEquals(listOf(0f, 0f), EyeBlinkMath.headOffsets(1_000_000L, 0.0).toList())
+        assertEquals(listOf(0f, 0f), EyeBlinkMath.hairOffsets(1_000_000L, 0.0).toList())
+        assertEquals(head.toList(), EyeBlinkMath.headOffsets(1_000_000L, 1.0).toList())
+        assertTrue(runCatching { EyeBlinkMath.headOffsets(0L, Double.NaN) }.isFailure)
+        assertTrue(runCatching { EyeBlinkMath.hairOffsets(0L, 1.5) }.isFailure)
+        assertTrue(runCatching {
+            EyeBlinkMath.naturalClosureAt(1_400_000L, 1.4, 3.2, 0.18, -0.1)
+        }.isFailure)
+        for (time in listOf(0L, 1_490_000L, 4_690_000L)) {
+            assertEquals(EyeBlinkMath.closureAt(time, 1.4, 3.2, 0.18),
+                EyeBlinkMath.naturalClosureAt(time, 1.4, 3.2, 0.18, 0.0), 0.0)
+        }
+        for (time in 0L..9_000_000L step 50_000L) {
+            val closure = EyeBlinkMath.naturalClosureAt(time, 1.4, 3.2, 0.18, 0.35)
+            assertTrue(closure.isFinite() && closure in 0.0..1.0)
+            assertEquals(closure, EyeBlinkMath.naturalClosureAt(
+                time, 1.4, 3.2, 0.18, 0.35), 0.0)
+        }
+    }
+
     @Test fun correctTopLeftToGlYAndPreserveX() {
         val v = EyeBlinkMath.glPoint(EffectParameter.Point(0.37, 0.36))
         assertEquals(0.37, v[0].toDouble(), 1e-5)

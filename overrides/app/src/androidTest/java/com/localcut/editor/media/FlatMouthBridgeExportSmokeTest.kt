@@ -194,9 +194,10 @@ class FlatMouthBridgeExportSmokeTest {
         val faceAsset = imageAsset(context.packageName, image)
         val voiceAsset = Asset(
             id = "viseme-voice-asset", type = AssetType.AUDIO,
-            uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", audio).toString(),
-            displayName = audio.name,
-            durationUs = DURATION_US,
+            uri = FileProvider.getUriForFile(context,
+                context.packageName + ".remote-media", audio).toString(),
+            sourceDurationUs = DURATION_US, sizeBytes = audio.length(),
+            displayName = audio.name, mimeType = "audio/wav",
             fingerprint = "viseme-wav-" + audio.length(),
         )
         val seed = Project.create("viseme-visual-smoke", WIDTH, HEIGHT, 30)

@@ -84,6 +84,42 @@ class VisemeTimelineTest {
     }
 
     @Test
+    fun contiguousSoundsBlendWithoutClosingAtEveryBoundary() {
+        val timeline = VisemeTimeline(
+            listOf(
+                VisemeCue(100_000L, 200_000L, VisemeShape.A),
+                VisemeCue(300_000L, 200_000L, VisemeShape.O),
+                VisemeCue(500_000L, 200_000L, VisemeShape.U),
+            ),
+            durationUs = 800_000L,
+        )
+        val beforeTransition = timeline.poseAt(299_999L)
+        val atTransition = timeline.poseAt(300_000L)
+        val afterTransition = timeline.poseAt(320_000L)
+        assertTrue(beforeTransition.openness > 0.80)
+        assertEquals(VisemeShape.A.openness, atTransition.openness, 1e-9)
+        assertTrue(afterTransition.openness in VisemeShape.O.openness..VisemeShape.A.openness)
+        assertTrue(afterTransition.rounding > 0.0)
+        assertEquals(VisemeShape.O.openness, timeline.poseAt(500_000L).openness, 1e-9)
+        assertEquals(VisemePose.REST, timeline.poseAt(700_000L))
+    }
+
+    @Test
+    fun gapBetweenSoundsReturnsToSilenceInsteadOfHoldingPreviousShape() {
+        val timeline = VisemeTimeline(
+            listOf(
+                VisemeCue(0L, 100_000L, VisemeShape.A),
+                VisemeCue(140_000L, 100_000L, VisemeShape.E_I),
+            ),
+            durationUs = 300_000L,
+        )
+        assertEquals(VisemePose.REST, timeline.poseAt(120_000L))
+        assertEquals(VisemePose.REST, timeline.poseAt(140_000L))
+        assertTrue(timeline.poseAt(190_000L).openness > 0.0)
+        assertEquals(VisemePose.REST, timeline.poseAt(240_000L))
+    }
+
+    @Test
     fun invalidCueFieldsAreRejected() {
         val bad = listOf<() -> Any>(
             { VisemeCue(-1L, 1L, VisemeShape.A) },

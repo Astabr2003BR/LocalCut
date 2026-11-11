@@ -82,21 +82,41 @@ class VisemeTimeline(cues: List<VisemeCue>, val durationUs: Long) {
             when {
                 timeUs < cue.offsetUs -> high = middle - 1
                 timeUs >= cue.endUs -> low = middle + 1
-                else -> return poseInside(cue, timeUs)
+                else -> return poseInside(middle, timeUs)
             }
         }
         return VisemePose.REST
     }
 
-    private fun poseInside(cue: VisemeCue, timeUs: Long): VisemePose {
+    /**
+     * Blend directly between adjacent visemes instead of closing the mouth
+     * at every syllable boundary. Silence before/after a run still returns REST.
+     */
+    private fun poseInside(index: Int, timeUs: Long): VisemePose {
+        val cue = entries[index]
+        val target = poseFor(cue)
+        val previous = entries.getOrNull(index - 1)
+        val next = entries.getOrNull(index + 1)
+        val joinsPrevious = previous?.endUs == cue.offsetUs
+        val joinsNext = next?.offsetUs == cue.endUs
+        val from = if (joinsPrevious && previous != null) poseFor(previous) else VisemePose.REST
+
         val attackUs = minOf(40_000L, cue.durationUs / 3L)
-        val releaseUs = minOf(50_000L, cue.durationUs / 3L)
-        val startWeight = if (attackUs == 0L) 1.0 else
-            (timeUs - cue.offsetUs).toDouble() / attackUs.toDouble()
-        val endWeight = if (releaseUs == 0L) 1.0 else
-            (cue.endUs - timeUs).toDouble() / releaseUs.toDouble()
-        val weight = smoothstep(minOf(startWeight, endWeight).coerceIn(0.0, 1.0)) * cue.strength
+        val releaseUs = if (joinsNext) 0L else minOf(50_000L, cue.durationUs / 3L)
+        if (attackUs > 0L && timeUs < cue.offsetUs + attackUs) {
+            val fraction = (timeUs - cue.offsetUs).toDouble() / attackUs.toDouble()
+            return interpolate(from, target, smoothstep(fraction))
+        }
+        if (releaseUs > 0L && timeUs >= cue.endUs - releaseUs) {
+            val fraction = (timeUs - (cue.endUs - releaseUs)).toDouble() / releaseUs.toDouble()
+            return interpolate(target, VisemePose.REST, smoothstep(fraction))
+        }
+        return target
+    }
+
+    private fun poseFor(cue: VisemeCue): VisemePose {
         val shape = cue.shape
+        val weight = cue.strength
         return VisemePose(
             openness = shape.openness * weight,
             widthScale = 1.0 + (shape.widthScale - 1.0) * weight,
@@ -105,5 +125,19 @@ class VisemeTimeline(cues: List<VisemeCue>, val durationUs: Long) {
         )
     }
 
-    private fun smoothstep(value: Double): Double = value * value * (3.0 - 2.0 * value)
+    private fun interpolate(from: VisemePose, to: VisemePose, fraction: Double): VisemePose {
+        val t = fraction.coerceIn(0.0, 1.0)
+        fun lerp(a: Double, b: Double): Double = a + (b - a) * t
+        return VisemePose(
+            openness = lerp(from.openness, to.openness),
+            widthScale = lerp(from.widthScale, to.widthScale),
+            rounding = lerp(from.rounding, to.rounding),
+            teethVisibility = lerp(from.teethVisibility, to.teethVisibility),
+        )
+    }
+
+    private fun smoothstep(value: Double): Double {
+        val t = value.coerceIn(0.0, 1.0)
+        return t * t * (3.0 - 2.0 * t)
+    }
 }

@@ -185,6 +185,115 @@ class FlatMouthBridgeExportSmokeTest {
     }
 
     @Test
+    fun eyebrowExpressionChangesOnlyBrowsWhilePreservingTalkBlinkAndAudioInMp4() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val directory = File(context.filesDir, "remote-media").apply { mkdirs() }
+        val face = createBrowFacePng(File(directory, "expression-" + System.nanoTime() + ".png"))
+        val voice = createVoiceWav(File(directory, "expression-voice-" + System.nanoTime() + ".wav"))
+        val faceAsset = imageAsset(context.packageName, face)
+        val voiceAsset = Asset(
+            id = "expression-voice", type = AssetType.AUDIO,
+            uri = FileProvider.getUriForFile(
+                context, context.packageName + ".remote-media", voice,
+            ).toString(),
+            sourceDurationUs = DURATION_US, sizeBytes = voice.length(),
+            displayName = voice.name, mimeType = "audio/wav",
+            fingerprint = "expression-voice-" + voice.length(),
+        )
+        val mouth = com.localcut.editor.domain.model.EffectInstance(
+            id = "existing-talk", typeId = LocalCutMouthWarpEffect.TYPE_ID,
+            parameters = mapOf(
+                "center" to com.localcut.editor.domain.model.EffectParameter.Point(0.50, 0.68),
+                "radiusX" to com.localcut.editor.domain.model.EffectParameter.Number(0.14),
+                "radiusY" to com.localcut.editor.domain.model.EffectParameter.Number(0.08),
+                "openness" to com.localcut.editor.domain.model.EffectParameter.Number(0.20),
+            ),
+        )
+        val blink = com.localcut.editor.domain.animation.PortraitMotionPresets.upsert(
+            "face", emptyList(),
+            com.localcut.editor.domain.animation.PortraitMotionSettings(
+                leftX = 0.40, rightX = 0.60, eyeY = 0.42,
+                radiusX = 0.07, radiusY = 0.07,
+                blinkStrength = 0.0,
+            ),
+        ).single()
+        val baseline = listOf(mouth, blink)
+        val settings = com.localcut.editor.domain.animation.BrowExpressionSettings(
+            leftX = 0.40, rightX = 0.60,
+            browY = 0.28, radiusX = 0.07, radiusY = 0.055,
+            emotion = com.localcut.editor.domain.animation.BrowEmotion.SURPRISED,
+            intensity = 1.0,
+        )
+        val expressed = com.localcut.editor.domain.animation.BrowExpressionPresets.upsert(
+            "face", baseline, settings,
+        )
+        assertEquals(baseline, expressed.take(2))
+        assertEquals(baseline,
+            com.localcut.editor.domain.animation.BrowExpressionPresets.remove(expressed))
+        assertTrue(Media3EffectStackFactory.canRender(expressed.last()))
+        fun build(effects: List<com.localcut.editor.domain.model.EffectInstance>): Project =
+            Project.create("brow-expression-smoke", WIDTH, HEIGHT, 30).let { seed ->
+                seed.copy(
+                    assets = listOf(faceAsset, voiceAsset),
+                    tracks = seed.tracks.map { track ->
+                        when (track.type) {
+                            TrackType.VISUAL -> track.copy(clips = listOf(
+                                Clip("face", faceAsset.id, 0L, DURATION_US, 0L, DURATION_US,
+                                    effects = effects),
+                            ))
+                            TrackType.AUDIO -> track.copy(clips = listOf(
+                                Clip("voice", voiceAsset.id, 0L, DURATION_US, 0L, DURATION_US),
+                            ))
+                        }
+                    },
+                )
+            }
+        val neutral = build(baseline)
+        val emotion = build(expressed)
+        assertEquals(neutral.tracks.first { it.type == TrackType.AUDIO },
+            emotion.tracks.first { it.type == TrackType.AUDIO })
+        val neutralFile = File(context.cacheDir, "neutral-brow-" + System.nanoTime() + ".mp4")
+        val emotionFile = File(context.cacheDir, "emotion-brow-" + System.nanoTime() + ".mp4")
+        try {
+            export(neutral, neutralFile, instrumentation, context)
+            export(emotion, emotionFile, instrumentation, context)
+            assertTrue(neutralFile.isFile && emotionFile.isFile)
+            val before = extractFrame(neutralFile, 500_000L)
+            val after = extractFrame(emotionFile, 500_000L)
+            try {
+                assertEquals(before.width, after.width)
+                assertEquals(before.height, after.height)
+                val browX = (before.width * 0.40f).toInt()
+                val browY = (before.height * 0.28f).toInt()
+                var delta = 0L
+                for (y in (browY - 4)..(browY + 4)) {
+                    for (x in (browX - 10)..(browX + 10)) {
+                        delta += pixelRgbDelta(before.getPixel(x, y), after.getPixel(x, y))
+                    }
+                }
+                assertTrue("Surprised brow should visibly move; RGB delta=" + delta,
+                    delta >= 250L)
+                assertTrue("Unrelated corner must remain unchanged",
+                    pixelRgbDelta(before.getPixel(8, 8), after.getPixel(8, 8)) <= 25)
+                val eyeX = (before.width * 0.40f).toInt()
+                val eyeY = (before.height * 0.42f).toInt()
+                assertTrue("Expression must not change iris",
+                    pixelRgbDelta(before.getPixel(eyeX, eyeY),
+                        after.getPixel(eyeX, eyeY)) <= 25)
+            } finally {
+                before.recycle()
+                after.recycle()
+            }
+        } finally {
+            neutralFile.delete()
+            emotionFile.delete()
+            face.delete()
+            voice.delete()
+        }
+    }
+
+    @Test
     fun optInGazeMovesIrisWithoutDisturbingBackgroundInExport() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
@@ -940,6 +1049,29 @@ class FlatMouthBridgeExportSmokeTest {
             bytes.putShort(amplitude)
         }
         file.writeBytes(bytes.array())
+        return file
+    }
+
+    private fun createBrowFacePng(file: File): File {
+        val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.rgb(235, 220, 200))
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.color = Color.BLACK
+        paint.strokeWidth = 5f
+        canvas.drawLine(WIDTH * 0.34f, HEIGHT * 0.28f,
+            WIDTH * 0.46f, HEIGHT * 0.28f, paint)
+        canvas.drawLine(WIDTH * 0.54f, HEIGHT * 0.28f,
+            WIDTH * 0.66f, HEIGHT * 0.28f, paint)
+        canvas.drawCircle(WIDTH * 0.40f, HEIGHT * 0.42f, 8f, paint)
+        canvas.drawCircle(WIDTH * 0.60f, HEIGHT * 0.42f, 8f, paint)
+        paint.strokeWidth = 6f
+        canvas.drawLine(WIDTH * 0.42f, HEIGHT * 0.68f,
+            WIDTH * 0.58f, HEIGHT * 0.68f, paint)
+        file.outputStream().use { output ->
+            check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+        }
+        bitmap.recycle()
         return file
     }
 

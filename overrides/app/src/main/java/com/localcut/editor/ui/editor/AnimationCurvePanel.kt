@@ -96,6 +96,7 @@ fun AnimationCurvePanel(
                     selectedClipId = selectedClipId,
                     onSetEffects = onSetEffects,
                 )
+                LayeredCharacterActionControl()
             }
             if (asset?.type == AssetType.VIDEO || asset?.type == AssetType.IMAGE) {
                 MotionPathActionControl(modifier = Modifier.fillMaxWidth())

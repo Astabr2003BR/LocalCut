@@ -20,6 +20,13 @@ class PreviewBackgroundSession {
         return true
     }
 
+    /** Replace the pending resume position while codecs are released, without recreating the player. */
+    fun updateSuspendedPositionUs(positionUs: Long): Boolean {
+        if (savedPositionUs == null) return false
+        savedPositionUs = positionUs.coerceAtLeast(0L)
+        return true
+    }
+
     fun takeResumePositionUs(): Long? {
         val saved = savedPositionUs ?: return null
         savedPositionUs = null

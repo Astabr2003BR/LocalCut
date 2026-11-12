@@ -90,8 +90,7 @@ class BridgeConnectionCoordinator(
 
     @Synchronized
     override fun onFailure(message: String) {
-        observer.onFailure(message)
-        scheduleReconnectIfAllowed()
+        reportTransportFailure(message, scheduleReconnect = true)
     }
 
     @Synchronized
@@ -104,11 +103,24 @@ class BridgeConnectionCoordinator(
         val session = sessionProvider.currentSession()
             ?: return Result.failure(IllegalStateException("paired bridge session is unavailable or expired"))
         val result = socketClient.connect(session, this)
-        if (result.isFailure && scheduleOnTransportFailure) {
-            observer.onFailure(result.exceptionOrNull()?.message ?: "bridge connect failed")
-            scheduleReconnectIfAllowed()
+        if (result.isFailure) {
+            reportTransportFailure(
+                message = result.exceptionOrNull()?.message ?: "bridge connect failed",
+                scheduleReconnect = scheduleOnTransportFailure,
+            )
         }
         return result
+    }
+
+    private fun reportTransportFailure(message: String, scheduleReconnect: Boolean) {
+        val reconnectAllowed = scheduleReconnect &&
+            reconnectPolicy.shouldReconnect(manuallyDisconnected, settingsStore.sessionEnabled)
+        if (reconnectAllowed) {
+            observer.onDisconnected(null, message)
+            scheduleReconnectIfAllowed()
+        } else {
+            observer.onFailure(message)
+        }
     }
 
     private fun scheduleReconnectIfAllowed() {

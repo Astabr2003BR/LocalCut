@@ -35,20 +35,30 @@ internal object Media3EffectStackFactory {
         "localcut.color.hsl",
         "localcut.blur.gaussian",
         "localcut.motion_blur",
+        LocalCutMouthWarpEffect.TYPE_ID,
+        LocalCutEyeBlinkEffect.TYPE_ID,
+        LocalCutBrowExpressionEffect.TYPE_ID,
     ) + LocalCutStylizeEffect.SUPPORTED_TYPES + matrixEffectTypes
 
-    fun canRender(effect: EffectInstance): Boolean =
-        !effect.enabled ||
-            (effect.typeId in supportedTypeIds &&
-                effect.animations.isEmpty() &&
-                EffectRegistry.validationIssues(effect).isEmpty())
+    fun canRender(effect: EffectInstance): Boolean {
+        if (!effect.enabled) return true
+        if (effect.typeId !in supportedTypeIds || EffectRegistry.validationIssues(effect).isNotEmpty()) return false
+        if (effect.animations.isEmpty()) return true
+        return effect.typeId == LocalCutMouthWarpEffect.TYPE_ID &&
+            effect.animations.all { it.propertyId in setOf("openness", "widthScale", "rounding", "teethVisibility", "articulationGate") }
+    }
 
     fun create(effects: List<EffectInstance>): List<Effect> = buildList {
         effects.forEach { effect ->
             if (!effect.enabled) return@forEach
             require(canRender(effect)) { "unsupported Media3 effect: ${effect.typeId}" }
-            val evaluated = EffectRegistry.evaluate(effect, 0L)
-            createOne(evaluated)?.let(::add)
+            val renderEffect = if (effect.typeId == LocalCutMouthWarpEffect.TYPE_ID ||
+                effect.typeId == LocalCutEyeBlinkEffect.TYPE_ID) {
+                effect
+            } else {
+                EffectRegistry.evaluate(effect, 0L)
+            }
+            createOne(renderEffect)?.let(::add)
         }
     }
 
@@ -108,6 +118,9 @@ internal object Media3EffectStackFactory {
             shutterAngle = number(effect, "shutterAngle"),
             requestedSamples = number(effect, "samples").roundToInt(),
         )
+        LocalCutMouthWarpEffect.TYPE_ID -> LocalCutMouthWarpEffect(effect)
+        LocalCutEyeBlinkEffect.TYPE_ID -> LocalCutEyeBlinkEffect(effect)
+        LocalCutBrowExpressionEffect.TYPE_ID -> LocalCutBrowExpressionEffect(effect)
         "localcut.flip.horizontal" -> MatrixTransformation {
             Matrix().apply { postScale(-1f, 1f) }
         }

@@ -40,6 +40,18 @@ class BridgeConnectionCoordinatorTest {
     }
 
     @Test
+    fun recoverableTimeoutReportsReconnectingInsteadOfTerminalFailure() {
+        val fixture = fixture()
+        fixture.coordinator.connectFromUser()
+
+        fixture.socket.listener!!.onFailure("timeout")
+
+        assertEquals(listOf("disconnected:null:timeout"), fixture.observer.events)
+        assertEquals(1, fixture.scheduler.pendingCount)
+        assertTrue(fixture.settings.sessionEnabled)
+    }
+
+    @Test
     fun manualDisconnectCancelsReconnectAndKeepsAlwaysConnectedPreference() {
         val fixture = fixture(alwaysConnected = true)
         fixture.coordinator.connectFromUser()
@@ -70,6 +82,7 @@ class BridgeConnectionCoordinatorTest {
         val socket: FakeSocketClient,
         val scheduler: FakeScheduler,
         val settings: InMemoryBridgeSettingsStore,
+        val observer: RecordingObserver,
     )
 
     private fun fixture(
@@ -79,6 +92,7 @@ class BridgeConnectionCoordinatorTest {
         val socket = FakeSocketClient()
         val scheduler = FakeScheduler()
         val settings = InMemoryBridgeSettingsStore(alwaysConnected = alwaysConnected)
+        val observer = RecordingObserver()
         val coordinator = BridgeConnectionCoordinator(
             socketClient = socket,
             sessionProvider = sessionProvider,
@@ -86,8 +100,25 @@ class BridgeConnectionCoordinatorTest {
             reconnectPolicy = BridgeReconnectPolicy(jitterFraction = 0.0),
             scheduler = scheduler,
             randomUnit = { 0.5 },
+            observer = observer,
         )
-        return Fixture(coordinator, socket, scheduler, settings)
+        return Fixture(coordinator, socket, scheduler, settings, observer)
+    }
+
+    private class RecordingObserver : BridgeConnectionObserver {
+        val events = mutableListOf<String>()
+
+        override fun onConnected() {
+            events += "connected"
+        }
+
+        override fun onDisconnected(code: Int?, reason: String?) {
+            events += "disconnected:$code:$reason"
+        }
+
+        override fun onFailure(message: String) {
+            events += "failure:$message"
+        }
     }
 
     private class FakeSocketClient : BridgeSocketClient {

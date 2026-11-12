@@ -67,7 +67,18 @@ class Media3PreviewController(
 
     override fun play() = delegate.play()
     override fun pause() = delegate.pause()
+
+    /** Enables Media3 rapid-seek optimization only during a playhead drag. */
+    fun setScrubbingModeEnabled(enabled: Boolean) {
+        engine.setScrubbingModeEnabled(enabled)
+    }
+
     override fun seekToUs(positionUs: Long) {
+        if (backgroundSession.isSuspended) {
+            val targetUs = delegate.seekToUsWhileSuspended(positionUs)
+            backgroundSession.updateSuspendedPositionUs(targetUs)
+            return
+        }
         delegate.seekToUs(positionUs)
         bridgePreviewFramePort.requestRefresh()
     }
@@ -197,6 +208,8 @@ private class Media3PreviewEngine(
     private val appContext = context.applicationContext
     private var activePlayer: CompositionPlayer? = null
     private var activeUsesCustomProcessor: Boolean = false
+    private var activeUsesMultipleInputGraph: Boolean = false
+    private var scrubbingModeEnabled: Boolean = false
     private var errorCallback: (String) -> Unit = {}
 
     val player: CompositionPlayer
@@ -208,7 +221,14 @@ private class Media3PreviewEngine(
 
     fun currentPlayerOrNull(): CompositionPlayer? = activePlayer
 
+    fun setScrubbingModeEnabled(enabled: Boolean) {
+        if (scrubbingModeEnabled == enabled) return
+        scrubbingModeEnabled = enabled
+        activePlayer?.setScrubbingModeEnabled(enabled)
+    }
+
     fun releaseForBackground() {
+        scrubbingModeEnabled = false
         activePlayer?.release()
         activePlayer = null
     }
@@ -273,27 +293,35 @@ private class Media3PreviewEngine(
 
     private fun ensurePlayer(project: Project? = null): CompositionPlayer {
         val requestedCustomProcessor = project?.let(LocalCutFrameProcessorIntegration::shouldUseCustomProcessor)
+        val requestedMultipleInputGraph = project?.let {
+            requestedCustomProcessor != true &&
+                LocalCutFrameProcessorRoutePolicy.requiresMultipleInputVideoGraph(it)
+        }
         activePlayer?.let { current ->
-            if (requestedCustomProcessor == null || requestedCustomProcessor == activeUsesCustomProcessor) {
+            if (requestedCustomProcessor == null ||
+                (requestedCustomProcessor == activeUsesCustomProcessor &&
+                    requestedMultipleInputGraph == activeUsesMultipleInputGraph)
+            ) {
                 return current
             }
+            // A graph factory cannot be switched on an existing CompositionPlayer.
             current.release()
             activePlayer = null
         }
 
         val builder = CompositionPlayer.Builder(appContext)
-        if (project == null) {
-            builder.setVideoGraphFactory(androidx.media3.effect.MultipleInputVideoGraph.Factory())
-            activeUsesCustomProcessor = false
-        } else {
+        if (project != null) {
             LocalCutFrameProcessorIntegration.configurePreviewBuilder(builder, appContext, project)
-            activeUsesCustomProcessor = requestedCustomProcessor == true
         }
+        // The builder's default is SingleInputVideoGraph, including before load.
+        activeUsesCustomProcessor = requestedCustomProcessor == true
+        activeUsesMultipleInputGraph = requestedMultipleInputGraph == true
 
         return builder.build().also { created ->
+            if (scrubbingModeEnabled) created.setScrubbingModeEnabled(true)
             created.addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
-                    errorCallback(error.message ?: "Media3 playback error")
+                    errorCallback(PreviewPlaybackErrorDiagnostics.describe(error.errorCode, error))
                 }
             })
             activePlayer = created

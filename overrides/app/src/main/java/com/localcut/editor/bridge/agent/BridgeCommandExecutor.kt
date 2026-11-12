@@ -90,6 +90,8 @@ class BridgeCommandExecutor(
                 BridgeCapability.SET_TRANSFORM -> executeTransform(command)
                 BridgeCapability.SET_VOLUME -> executeVolume(command)
                 BridgeCapability.SET_KEYFRAMES -> executeKeyframes(command)
+                BridgeCapability.ANIMATE_CHARACTER -> BridgeAnimationCommandHandler(session).executeCharacter(command)
+                BridgeCapability.ANIMATE_SCENE -> BridgeAnimationCommandHandler(session).executeScene(command)
                 BridgeCapability.ADD_TEXT -> executeAddText(command)
                 BridgeCapability.PROJECT_EDIT -> executeProjectEdit(command)
                 BridgeCapability.ADD_TRANSITION -> executeAddTransition(command)

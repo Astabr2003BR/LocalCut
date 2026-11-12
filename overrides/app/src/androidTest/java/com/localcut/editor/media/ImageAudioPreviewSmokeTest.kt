@@ -13,6 +13,7 @@ import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.TrackType
+import com.localcut.editor.mobile.AndroidAudioSourceDurationProbe
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -95,6 +96,89 @@ class ImageAudioPreviewSmokeTest {
         } finally {
             controller?.let { activeController ->
                 instrumentation.runOnMainSync { activeController.release() }
+            }
+            imageFile.delete()
+            audioFile.delete()
+        }
+    }
+
+
+    @Test
+    fun localAudioDurationProbeReadsOwnedFileWithoutNetwork() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = File(context.filesDir, "remote-media").apply { mkdirs() }
+        val wav = createMonoPcmWav(
+            File(directory, "duration-probe-${System.nanoTime()}.wav"),
+            1_000_000L,
+        )
+        try {
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.remote-media",
+                wav,
+            ).toString()
+            val probe = AndroidAudioSourceDurationProbe(context)
+            val measured = probe.readDurationUs(uri)
+            assertTrue("owned 1s PCM WAV must report duration: $measured",
+                measured != null && measured in 900_000L..1_100_000L)
+            assertNull("network URIs must not be fetched",
+                probe.readDurationUs("https://example.com/private.mp3"))
+            assertNull("malformed file URI must not crash",
+                probe.readDurationUs("file:///does-not-exist/missing.wav"))
+        } finally {
+            wav.delete()
+        }
+    }
+
+    @Test
+    fun rapidBackAndForthScrubbingKeepsImageAudioPreviewUsable() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val directory = File(context.filesDir, "remote-media").apply { mkdirs() }
+        val imageFile = createPng(File(directory, "scrub-image-${System.nanoTime()}.png"), Color.BLUE)
+        val audioFile = createMonoPcmWav(File(directory, "scrub-audio-${System.nanoTime()}.wav"), DURATION_US)
+        val imageAsset = asset(context.packageName, "scrub-still", imageFile, AssetType.IMAGE, "image/png", null)
+        val audioAsset = asset(context.packageName, "scrub-sound", audioFile, AssetType.AUDIO, "audio/wav", DURATION_US)
+        val seed = Project.create("image-audio-scrub", WIDTH, HEIGHT, 30)
+        val visualTrack = seed.tracks.first { it.type == TrackType.VISUAL }.copy(
+            clips = listOf(clip("scrub-still-clip", imageAsset.id, DURATION_US)),
+        )
+        val audioTrack = seed.tracks.first { it.type == TrackType.AUDIO }.copy(
+            clips = listOf(clip("scrub-sound-clip", audioAsset.id, DURATION_US)),
+        )
+        val project = seed.copy(
+            assets = listOf(imageAsset, audioAsset),
+            tracks = listOf(visualTrack, audioTrack),
+        )
+
+        var controller: Media3PreviewController? = null
+        try {
+            instrumentation.runOnMainSync {
+                val created = Media3PreviewController(
+                    context,
+                    ProjectCompositionCompiler(AssetUriResolver(context.contentResolver)),
+                )
+                controller = created
+                assertTrue("scrub project must load", created.load(project).isSuccess)
+                created.setScrubbingModeEnabled(true)
+                repeat(60) { step ->
+                    created.seekToUs(if (step % 2 == 0) 800_000L else 120_000L)
+                }
+                created.setScrubbingModeEnabled(false)
+                created.seekToUs(300_000L)
+                created.play()
+            }
+            // Observe asynchronous decoder / video graph failures after seek commands settle.
+            runBlocking { kotlinx.coroutines.delay(1_500L) }
+            val settled = checkNotNull(controller).state.value
+            assertNull("rapid scrubbing must not fail video frames", settled.errorMessage)
+            assertTrue("preview must remain loaded after scrubbing", settled.durationUs == DURATION_US)
+        } finally {
+            controller?.let { active ->
+                instrumentation.runOnMainSync {
+                    active.setScrubbingModeEnabled(false)
+                    active.release()
+                }
             }
             imageFile.delete()
             audioFile.delete()

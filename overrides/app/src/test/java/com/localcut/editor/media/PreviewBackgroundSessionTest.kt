@@ -20,6 +20,18 @@ class PreviewBackgroundSessionTest {
     }
 
     @Test
+    fun mobileHandoffSeekWhileSuspendedReplacesSavedPositionWithoutUnsuspending() {
+        val session = PreviewBackgroundSession()
+        assertFalse(session.updateSuspendedPositionUs(1_500_000L))
+        assertTrue(session.beginSuspend(0L))
+        assertTrue(session.updateSuspendedPositionUs(1_500_000L))
+        assertTrue(session.isSuspended)
+        assertEquals(1_500_000L, session.takeResumePositionUs())
+        assertFalse(session.updateSuspendedPositionUs(900_000L))
+        assertNull(session.takeResumePositionUs())
+    }
+
+    @Test
     fun clampsNegativePositionBeforeSaving() {
         val session = PreviewBackgroundSession()
 

@@ -30,6 +30,7 @@ import com.localcut.editor.analysis.TermuxGlobalMotionAdapter
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.CubicBezierCurve
 import com.localcut.editor.domain.model.EasingKind
+import com.localcut.editor.domain.model.EffectInstance
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.PropertyAnimation
 import com.localcut.editor.termux.TermuxAgentEngineRuntime
@@ -49,6 +50,7 @@ fun AnimationCurvePanel(
     project: Project,
     selectedClipId: String?,
     onSetPropertyAnimations: (List<PropertyAnimation>) -> Unit,
+    onSetEffects: (List<EffectInstance>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val clip = selectedClipId?.let(project::findClip)
@@ -88,6 +90,14 @@ fun AnimationCurvePanel(
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
+            if (asset?.type == AssetType.IMAGE) {
+                CharacterAnimationStudioPanel(
+                    project = project,
+                    selectedClipId = selectedClipId,
+                    onSetEffects = onSetEffects,
+                )
+                LayeredCharacterActionControl()
+            }
             if (asset?.type == AssetType.VIDEO || asset?.type == AssetType.IMAGE) {
                 MotionPathActionControl(modifier = Modifier.fillMaxWidth())
             }

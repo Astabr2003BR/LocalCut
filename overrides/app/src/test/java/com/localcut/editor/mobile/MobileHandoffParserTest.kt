@@ -8,6 +8,97 @@ import org.junit.Test
 
 class MobileHandoffParserTest {
     @Test
+    fun parsesBlinkHandoffWithPortraitDefaults() {
+        val command = MobileHandoffParser.parse(
+            "https://localcut-bridge-v1.onrender.com/open?action=blink&returnTo=editor",
+        ).getOrThrow()
+        assertNull(command.capability)
+        assertEquals(MobileHandoffReturnTarget.EDITOR, command.returnTarget)
+        val region = requireNotNull(command.blinkRegion)
+        assertEquals(0.37, region.leftX, 0.000001)
+        assertEquals(0.63, region.rightX, 0.000001)
+        assertEquals(0.36, region.y, 0.000001)
+        assertTrue(command.description.contains("Desfazer") ||
+            command.description.contains("desfeita"))
+    }
+
+    @Test
+    fun blinkHandoffRejectsOverlappingOrUnsafeEyes() {
+        val queries = listOf(
+            "action=blink&leftX=NaN",
+            "action=blink&rightX=1.0",
+            "action=blink&leftX=0.51&rightX=0.53",
+            "action=blink&radiusY=0.2",
+            "action=blink&radiusX=0",
+            "action=blink&y=0.001",
+        )
+        queries.forEach { query ->
+            assertTrue(query, MobileHandoffParser.parse(
+                "localcut://command?$query",
+            ).isFailure)
+        }
+    }
+
+    @Test
+    fun portraitMotionHandoffAcceptsDataOnlyPresetsAndAdjustments() {
+        val natural = MobileHandoffParser.parse(
+            "https://localcut-bridge-v1.onrender.com/open?action=blink&preset=natural" +
+                "&intervalSeconds=2.8&breathStrength=0.60&swayStrength=0.30" +
+                "&returnTo=editor",
+        ).getOrThrow().blinkRegion!!.settings()
+        assertEquals(2.8, natural.intervalSeconds, 0.000001)
+        assertEquals(0.60, natural.breathStrength, 0.000001)
+        assertEquals(0.30, natural.swayStrength, 0.000001)
+        assertEquals(0.37, natural.leftX, 0.000001)
+        assertEquals(0.63, natural.rightX, 0.000001)
+    }
+
+    @Test
+    fun portraitMotionHandoffRejectsMalformedPresetsAndNumbers() {
+        val rejects = listOf(
+            "action=blink&preset=remoteScript",
+            "action=blink&breathStrength=NaN",
+            "action=blink&swayStrength=Infinity",
+            "action=blink&intervalSeconds=0.1",
+            "action=blink&blinkStrength=1.1",
+            "action=blink&durationSeconds=0.5",
+            "action=blink&leftX=0.49&rightX=0.50",
+        )
+        rejects.forEach {
+            assertTrue(it, MobileHandoffParser.parse("localcut://command?$it").isFailure)
+        }
+    }
+
+    @Test
+    fun parsesConfirmedLocalLipSyncHandoff() {
+        val result = MobileHandoffParser.parse(
+            "https://localcut-bridge-v1.onrender.com/open?action=lip_sync&x=0.51&y=0.49&radiusX=0.07&radiusY=0.025&returnTo=chatgpt",
+        ).getOrThrow()
+        assertEquals(null, result.capability)
+        assertEquals(0.51, result.lipSyncRegion!!.centerX, 0.00001)
+        assertEquals(0.49, result.lipSyncRegion!!.centerY, 0.00001)
+        assertEquals(MobileHandoffReturnTarget.CHATGPT, result.returnTarget)
+        assertTrue(result.description.contains("Desfazer") || result.description.contains("desfeita"))
+    }
+
+    @Test
+    fun rejectsUnsafeOrMissingLipSyncGeometry() {
+        val malformed = listOf(
+            "action=lip_sync",
+            "action=lip_sync&x=NaN&y=0.49&radiusX=0.07&radiusY=0.025",
+            "action=lip_sync&x=1.0&y=0.49&radiusX=0.07&radiusY=0.025",
+            "action=lip_sync&x=0.01&y=0.49&radiusX=0.07&radiusY=0.025",
+            "action=lip_sync&x=0.51&y=0.49&radiusX=0.0&radiusY=0.025",
+            "action=lip_sync&x=0.51&y=0.001&radiusX=0.07&radiusY=0.025",
+            "action=lip_sync&x=0.51&y=0.49&radiusX=0.07&radiusY=0.4",
+        )
+        malformed.forEach { query ->
+            assertTrue("Invalid link accepted: $query",
+                MobileHandoffParser.parse("https://localcut-bridge-v1.onrender.com/open?$query").isFailure)
+        }
+    }
+
+    @Test
     fun parsesHttpsAddTextHandoffAndReturnsToChatGptByDefault() {
         val result = MobileHandoffParser.parse(
             "https://localcut-bridge-v1.onrender.com/open?action=add_text&id=t1&text=Oi%20mundo&startUs=5000000&durationUs=3000000",

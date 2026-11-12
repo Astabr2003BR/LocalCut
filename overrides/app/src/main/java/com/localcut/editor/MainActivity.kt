@@ -1,6 +1,7 @@
 package com.localcut.editor
 
 import android.Manifest
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -27,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
+import com.localcut.editor.bridge.agent.BridgeProcessConnectionStatus
 import com.localcut.editor.domain.timeline.TimelineMath
 import com.localcut.editor.media.AndroidExportCapabilitiesProvider
 import com.localcut.editor.media.ExportEvent
@@ -36,6 +38,9 @@ import com.localcut.editor.media.Media3ExportController
 import com.localcut.editor.media.Media3PreviewController
 import com.localcut.editor.media.PreviewResumePolicy
 import com.localcut.editor.media.SafExportDestination
+import com.localcut.editor.mobile.LockedMediaImportRecovery
+import com.localcut.editor.mobile.RemoteMediaImportExecutor
+import com.localcut.editor.mobile.RemoteMediaUrlPolicy
 import com.localcut.editor.mobile.SharedMediaIntentParser
 import com.localcut.editor.ui.editor.BridgePanel
 import com.localcut.editor.ui.editor.EditorScreen
@@ -64,11 +69,13 @@ class MainActivity : ComponentActivity() {
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var lastFinalPreviewFile: File? = null
     private var pendingExportProfile: ExportProfile? = null
+    private var remoteLinkImportRunning = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         runtime = LocalCutProcessRuntime.get(this)
+        BridgeProcessConnectionStatus.relay.attach(runtime.bridgeControl.connectionObserver)
         runtime.loadWarning?.let { warning ->
             Toast.makeText(this, warning, Toast.LENGTH_LONG).show()
         }
@@ -186,6 +193,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             },
                             onImportAudioRequested = { audioImportLauncher.launch(arrayOf("audio/*")) },
+                            onImportLinkRequested = { rawUrl -> importFromLink(rawUrl) },
                             onImportOverlayRequested = {
                                 overlayImportLauncher.launch(
                                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
@@ -231,6 +239,87 @@ class MainActivity : ComponentActivity() {
         consumeSharedMediaIntent(intent)
     }
 
+    private fun importFromLink(rawUrl: String, recoveryAttempted: Boolean = false) {
+        if (remoteLinkImportRunning) {
+            showError("Já existe uma importação por link em andamento.")
+            return
+        }
+        val url = RemoteMediaUrlPolicy.parseAndValidate(rawUrl.trim()).getOrElse {
+            showError(it.message ?: "Link HTTPS inválido")
+            return
+        }
+        if (!recoveryAttempted) {
+            val blockedTrack = LockedMediaImportRecovery.blockedTrackForMediaLink(
+                runtime.session.state.project, url.toASCIIString(),
+            )
+            if (blockedTrack != null) {
+                AlertDialog.Builder(this)
+                    .setTitle("Faixa bloqueada")
+                    .setMessage(
+                        "A faixa $blockedTrack está bloqueada. " +
+                            "Desbloquear antes de baixar e importar esta mídia? " +
+                            "A mudança pode ser desfeita.",
+                    )
+                    .setNegativeButton("Cancelar", null)
+                    .setPositiveButton("Desbloquear e importar") { _, _ ->
+                        if (LockedMediaImportRecovery.unlock(runtime.session, blockedTrack)) {
+                            editorViewModel.refreshSnapshot()
+                            importFromLink(url.toASCIIString(), recoveryAttempted = true)
+                        } else {
+                            showError("Não foi possível desbloquear $blockedTrack")
+                        }
+                    }
+                    .show()
+                return
+            }
+        }
+        remoteLinkImportRunning = true
+        Toast.makeText(this, "Importando mídia do link…", Toast.LENGTH_SHORT).show()
+        activityScope.launch {
+            try {
+                val result = RemoteMediaImportExecutor(
+                    context = applicationContext,
+                    mediaIngestCoordinator = runtime.mediaIngestCoordinator,
+                ).importUrl(url.toASCIIString())
+                result.onSuccess { imported ->
+                    editorViewModel.refreshSnapshot()
+                    if (imported.importedCount == 1 && imported.failedCount == 0 && imported.errors.isEmpty()) {
+                        Toast.makeText(applicationContext, "Mídia importada no LocalCut", Toast.LENGTH_LONG).show()
+                    } else {
+                        showError(imported.errors.firstOrNull() ?: "Não foi possível importar a mídia")
+                    }
+                }.onFailure { error ->
+                    val lockedTrackId = if (!recoveryAttempted) {
+                        LockedMediaImportRecovery.blockedTrackId(runtime.session.state.project, error)
+                    } else null
+                    if (lockedTrackId == null) {
+                        showError(error.message ?: "Falha ao importar mídia por link")
+                    } else if (!isFinishing && !isDestroyed) {
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("Faixa bloqueada")
+                            .setMessage(
+                                "A faixa $lockedTrackId está bloqueada. " +
+                                    "Deseja desbloqueá-la e tentar importar a mídia novamente? " +
+                                    "A alteração pode ser desfeita.",
+                            )
+                            .setNegativeButton("Cancelar", null)
+                            .setPositiveButton("Desbloquear e importar") { _, _ ->
+                                if (LockedMediaImportRecovery.unlock(runtime.session, lockedTrackId)) {
+                                    editorViewModel.refreshSnapshot()
+                                    importFromLink(url.toASCIIString(), recoveryAttempted = true)
+                                } else {
+                                    showError("Não foi possível desbloquear $lockedTrackId")
+                                }
+                            }
+                            .show()
+                    }
+                }
+            } finally {
+                remoteLinkImportRunning = false
+            }
+        }
+    }
+
     private fun importUris(uris: List<Uri>, shared: Boolean = false) {
         activityScope.launch {
             val result = if (shared) {
@@ -262,6 +351,9 @@ class MainActivity : ComponentActivity() {
             action = action,
             mimeType = sourceIntent.type,
             uriStrings = sharedUriStrings(sourceIntent),
+            resolveUriMime = { uri ->
+                runCatching { contentResolver.getType(Uri.parse(uri)) }.getOrNull()
+            },
         )
         markSharedIntentConsumed(sourceIntent)
 

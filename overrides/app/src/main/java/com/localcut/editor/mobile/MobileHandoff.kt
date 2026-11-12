@@ -1,6 +1,10 @@
 package com.localcut.editor.mobile
 
 import com.localcut.editor.bridge.protocol.BridgeCapability
+import com.localcut.editor.domain.animation.MouthRegion
+import com.localcut.editor.domain.animation.PortraitMotionPreset
+import com.localcut.editor.domain.animation.PortraitMotionPresets
+import com.localcut.editor.domain.animation.PortraitMotionSettings
 import com.localcut.editor.data.project.jsonString
 import java.net.URI
 import java.net.URLDecoder
@@ -15,6 +19,34 @@ enum class MobileHandoffReturnTarget {
     EDITOR,
 }
 
+/** Eye locations are normalized to the original portrait, top-left origin. */
+data class MobileBlinkRegion(
+    val leftX: Double,
+    val rightX: Double,
+    val y: Double,
+    val radiusX: Double,
+    val radiusY: Double,
+    val firstBlinkSeconds: Double = 1.4,
+    val intervalSeconds: Double = 3.2,
+    val durationSeconds: Double = 0.18,
+    val blinkStrength: Double = 1.0,
+    val swayStrength: Double = 0.0,
+    val breathStrength: Double = 0.0,
+) {
+    fun settings() = PortraitMotionSettings(
+        leftX = leftX, rightX = rightX, eyeY = y,
+        radiusX = radiusX, radiusY = radiusY,
+        firstBlinkSeconds = firstBlinkSeconds,
+        intervalSeconds = intervalSeconds, durationSeconds = durationSeconds,
+        blinkStrength = blinkStrength, swayStrength = swayStrength,
+        breathStrength = breathStrength,
+    ).also { it.validate() }
+
+    init {
+        settings()
+    }
+}
+
 data class MobileHandoffCommand(
     val capability: BridgeCapability?,
     val payloadJson: String,
@@ -22,6 +54,8 @@ data class MobileHandoffCommand(
     val returnTarget: MobileHandoffReturnTarget = MobileHandoffReturnTarget.EDITOR,
     val mobilePairingCode: String? = null,
     val remoteMediaUrl: String? = null,
+    val lipSyncRegion: MouthRegion? = null,
+    val blinkRegion: MobileBlinkRegion? = null,
     val deleteAllVisualClips: Boolean = false,
     val resolveSelectedClip: Boolean = false,
     val resolveVisualClipAtPositionUs: Long? = null,
@@ -75,6 +109,81 @@ object MobileHandoffParser {
                     payloadJson = "{}",
                     description = "Baixar e importar mídia remota no LocalCut",
                     remoteMediaUrl = mediaUri.toASCIIString(),
+                )
+            }
+            "blink" -> {
+                // A single, backward-compatible handoff accepts future
+                // variations as validated numeric data; no new native route
+                // or remotely supplied executable code is needed for presets.
+                val requestedPreset = params["preset"]?.let { value ->
+                    PortraitMotionPreset.entries.singleOrNull {
+                        it.name.equals(value, ignoreCase = true)
+                    } ?: throw IllegalArgumentException("HANDOFF_UNKNOWN_MOTION_PRESET")
+                }
+                val defaults = requestedPreset?.let {
+                    PortraitMotionPresets.preset(it)
+                } ?: PortraitMotionSettings()
+                fun number(name: String, min: Double, max: Double, fallback: Double) =
+                    if (params.containsKey(name)) requiredDouble(params, name, min, max)
+                    else fallback
+                val region = MobileBlinkRegion(
+                    leftX = number("leftX", 0.01, 0.99, defaults.leftX),
+                    rightX = number("rightX", 0.01, 0.99, defaults.rightX),
+                    y = number("y", 0.01, 0.99, defaults.eyeY),
+                    radiusX = number("radiusX", 0.02, 0.15, defaults.radiusX),
+                    radiusY = number("radiusY", 0.01, 0.09, defaults.radiusY),
+                    firstBlinkSeconds = number(
+                        "firstBlinkSeconds", 0.10, 3.0, defaults.firstBlinkSeconds,
+                    ),
+                    intervalSeconds = number(
+                        "intervalSeconds", 2.0, 6.0, defaults.intervalSeconds,
+                    ),
+                    durationSeconds = number(
+                        "durationSeconds", 0.10, 0.35, defaults.durationSeconds,
+                    ),
+                    blinkStrength = number(
+                        "blinkStrength", 0.0, 1.0, defaults.blinkStrength,
+                    ),
+                    swayStrength = number(
+                        "swayStrength", 0.0, 1.0, defaults.swayStrength,
+                    ),
+                    breathStrength = number(
+                        "breathStrength", 0.0, 1.0, defaults.breathStrength,
+                    ),
+                )
+                MobileHandoffCommand(
+                    capability = null,
+                    payloadJson = "{}",
+                    description = "Configurar piscadas e movimento leve no retrato selecionado. " +
+                        "Olhos: ${(region.leftX * 100).toInt()}%, " +
+                        "${(region.rightX * 100).toInt()}% e altura " +
+                        "${(region.y * 100).toInt()}%. " +
+                        "Intervalo ${region.intervalSeconds}s, respiração " +
+                        "${(region.breathStrength * 100).toInt()}%, oscilação " +
+                        "${(region.swayStrength * 100).toInt()}%. " +
+                        "Preserva TALK, áudio e outros efeitos. Desfazer disponível.",
+                    blinkRegion = region,
+                )
+            }
+            "lip_sync" -> {
+                val x = requiredDouble(params, "x", min = 0.01, max = 0.99)
+                val y = requiredDouble(params, "y", min = 0.005, max = 0.995)
+                val rx = requiredDouble(params, "radiusX", min = 0.01, max = 0.50)
+                val ry = requiredDouble(params, "radiusY", min = 0.005, max = 0.30)
+                val region = MouthRegion(x, y, rx, ry)
+                require(x >= rx && x <= 1.0 - rx && y >= ry && y <= 1.0 - ry) {
+                    "HANDOFF_LIP_SYNC_REGION_OUTSIDE_FRAME"
+                }
+                MobileHandoffCommand(
+                    capability = null,
+                    payloadJson = "{}",
+                    description = "Aplicar lip-sync local à única imagem e voz elegíveis. " +
+                        "Boca: X=${(x * 100).toInt()}%, Y=${(y * 100).toInt()}%. " +
+                        "Somente o trecho onde imagem e áudio coincidem será animado. " +
+                        "O APK também poderá estender um áudio importado com duração padrão de 5s, " +
+                        "quando a origem for maior e não houver conflitos. " +
+                        "A operação poderá ser desfeita.",
+                    lipSyncRegion = region,
                 )
             }
             "seek" -> {

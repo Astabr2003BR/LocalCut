@@ -65,6 +65,9 @@ cat > "$AUTO_RECOVER_SCRIPT" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 cd $QUOTED_ROOT
+if [ "\${1:-}" = "--daemon" ] && command -v termux-wake-lock >/dev/null 2>&1; then
+  termux-wake-lock >/dev/null 2>&1 || true
+fi
 exec $QUOTED_PYTHON termux-engine/localcut_automation.py "\$@"
 EOF
 chmod 700 "$AUTO_RECOVER_SCRIPT"

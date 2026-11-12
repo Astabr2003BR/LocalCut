@@ -41,12 +41,14 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
 import com.localcut.editor.domain.history.AddBeatMarkerCommand
+import com.localcut.editor.domain.history.RippleDeleteClipCommand
 import com.localcut.editor.domain.history.ApplyDetectedBeatMarkersCommand
 import com.localcut.editor.domain.history.DeleteBeatMarkerCommand
 import com.localcut.editor.domain.history.SetClipOpacityCommand
 import com.localcut.editor.domain.history.SetCompositionGraphCommand
 import com.localcut.editor.domain.history.SetProjectCanvasSizeCommand
 import com.localcut.editor.domain.history.SetTrackDuckingCommand
+import com.localcut.editor.domain.history.SetTrackLockedCommand
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.ClipTransition
 import com.localcut.editor.media.ExportCapabilities
@@ -81,6 +83,7 @@ fun EditorScreen(
     exportCapabilities: ExportCapabilities,
     onImportRequested: () -> Unit,
     onImportAudioRequested: () -> Unit,
+    onImportLinkRequested: (String) -> Unit,
     onImportOverlayRequested: () -> Unit,
     onExportRequested: (ExportProfile) -> Unit,
     onCancelExport: () -> Unit,
@@ -100,6 +103,7 @@ fun EditorScreen(
     var loopEnabled by remember { mutableStateOf(false) }
     var showExportSettings by remember { mutableStateOf(false) }
     var showTextManager by remember { mutableStateOf(false) }
+    var showImportLink by remember { mutableStateOf(false) }
     var textEditor by remember { mutableStateOf<TextOverlayEditorModel?>(null) }
     var exportSettings by remember(
         session.project.width,
@@ -122,6 +126,16 @@ fun EditorScreen(
             onConfirm = {
                 showExportSettings = false
                 onExportRequested(exportSettings.toProfile())
+            },
+        )
+    }
+
+    if (showImportLink) {
+        RemoteMediaLinkImportDialog(
+            onDismiss = { showImportLink = false },
+            onConfirm = { url ->
+                showImportLink = false
+                onImportLinkRequested(url)
             },
         )
     }
@@ -188,6 +202,7 @@ fun EditorScreen(
                 loopEnabled = loopEnabled,
                 exportState = exportState,
                 onUndo = { viewModel.dispatch(EditorAction.Undo) },
+                onImportLink = { showImportLink = true },
                 onRedo = { viewModel.dispatch(EditorAction.Redo) },
                 onLoopChange = { enabled ->
                     loopEnabled = enabled
@@ -236,6 +251,7 @@ fun EditorScreen(
                             session = session,
                             playheadUs = preview.positionUs,
                             viewModel = viewModel,
+                            onScrubActiveChanged = previewController::setScrubbingModeEnabled,
                             modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 3.dp),
                         )
                     }
@@ -259,6 +275,7 @@ fun EditorScreen(
                         session = session,
                         playheadUs = preview.positionUs,
                         viewModel = viewModel,
+                        onScrubActiveChanged = previewController::setScrubbingModeEnabled,
                         modifier = Modifier.fillMaxSize().padding(horizontal = 3.dp, vertical = 2.dp),
                     )
                 }
@@ -293,6 +310,7 @@ private fun ProfessionalEditorToolbar(
     loopEnabled: Boolean,
     exportState: ExportUiState,
     onUndo: () -> Unit,
+    onImportLink: () -> Unit,
     onRedo: () -> Unit,
     onLoopChange: (Boolean) -> Unit,
     onExportRequested: () -> Unit,
@@ -337,6 +355,11 @@ private fun ProfessionalEditorToolbar(
 
     @Composable
     fun EditActions() {
+        TextButton(
+            onClick = onImportLink,
+            enabled = !exportState.running,
+            contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+        ) { Text("Importar link", maxLines = 1, softWrap = false) }
         TextButton(
             onClick = onUndo,
             enabled = canUndo && !exportState.running,
@@ -585,6 +608,7 @@ private fun ProfessionalContextPanel(
                         project = session.project,
                         selectedClipId = session.selectedClipId,
                         onSetPropertyAnimations = { viewModel.dispatch(EditorAction.SetSelectedPropertyAnimations(it)) },
+                        onSetEffects = { viewModel.dispatch(EditorAction.SetSelectedEffects(it)) },
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
                 }
@@ -663,6 +687,10 @@ private fun ProfessionalClipQuickActions(
     val transitionCandidate = FadeTransitionUiPolicy.createOrUpdate(session.project, clip.id, 500_000L)
     val existingFade = FadeTransitionUiPolicy.existingFade(session.project, clip.id)
     var showTransitionDialog by remember(clip.id) { mutableStateOf(false) }
+    var rippleConfirmation by remember(clip.id) { mutableStateOf(false) }
+    var rippleRevision by remember(clip.id) { mutableStateOf<Long?>(null) }
+    var rippleMessage by remember(clip.id) { mutableStateOf<String?>(null) }
+    val ripplePreview = RippleDeleteUiPolicy.preview(session.project, clip.id)
 
     if (showTransitionDialog && transitionCandidate != null) {
         ProfessionalFadeTransitionDialog(
@@ -683,6 +711,46 @@ private fun ProfessionalClipQuickActions(
                 }
             },
             onDismiss = { showTransitionDialog = false },
+        )
+    }
+
+    if (rippleConfirmation && ripplePreview != null) {
+        AlertDialog(
+            onDismissRequest = { rippleConfirmation = false },
+            title = { Text("Excluir e fechar espaço?") },
+            text = {
+                Text(
+                    "O clipe selecionado será excluído e " +
+                        "${ripplePreview.followingClipCount} clipe(s) posterior(es) desta faixa " +
+                        "serão deslocados para a esquerda. Outras faixas não serão movidas. " +
+                        "Você poderá usar Desfazer.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val current = viewModel.sessionState.value
+                        val valid = rippleRevision?.let { revision ->
+                            RippleDeleteUiPolicy.matchesCurrent(current, revision, ripplePreview)
+                        } == true
+                        if (!valid) {
+                            rippleMessage = "A seleção ou a timeline mudou. Tente novamente."
+                        } else {
+                            viewModel.dispatch(EditorAction.Execute(RippleDeleteClipCommand(clip.id)))
+                            val after = viewModel.sessionState.value
+                            rippleMessage = if (after.revision > current.revision) {
+                                "Espaço fechado. Use Desfazer para reverter."
+                            } else {
+                                after.lastError ?: "Não foi possível fechar o espaço."
+                            }
+                        }
+                        rippleConfirmation = false
+                    },
+                ) { Text("Excluir e fechar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { rippleConfirmation = false }) { Text("Cancelar") }
+            },
         )
     }
 
@@ -708,6 +776,24 @@ private fun ProfessionalClipQuickActions(
             onClick = { viewModel.dispatch(EditorAction.DeleteSelected) },
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
         ) { Text("Excluir") }
+        OutlinedButton(
+            onClick = {
+                rippleRevision = session.revision
+                rippleMessage = null
+                rippleConfirmation = true
+            },
+            enabled = ripplePreview != null,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+        ) { Text("Excluir + fechar") }
+    }
+    rippleMessage?.let { message ->
+        Text(
+            message,
+            color = if (message.startsWith("Espaço fechado.")) EditorAccent
+                else MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        )
     }
 }
 
@@ -716,6 +802,7 @@ private fun TimelineForProfessionalState(
     session: ProjectSessionState,
     playheadUs: Long,
     viewModel: EditorViewModel,
+    onScrubActiveChanged: (Boolean) -> Unit,
     modifier: Modifier,
 ) {
     TimelinePane(
@@ -724,6 +811,7 @@ private fun TimelineForProfessionalState(
         playheadUs = playheadUs,
         onSelectClip = { viewModel.dispatch(EditorAction.SelectClip(it)) },
         onSeek = viewModel::seekToUs,
+        onScrubActiveChanged = onScrubActiveChanged,
         onMoveClip = { clipId, newStart ->
             viewModel.dispatch(EditorAction.SelectClip(clipId))
             viewModel.dispatch(EditorAction.MoveSelected(newStart))
@@ -741,6 +829,9 @@ private fun TimelineForProfessionalState(
         },
         onSetTrackSolo = { trackId, solo ->
             viewModel.dispatch(EditorAction.SetTrackSolo(trackId, solo))
+        },
+        onSetTrackLocked = { trackId, locked ->
+            viewModel.dispatch(EditorAction.Execute(SetTrackLockedCommand(trackId, locked)))
         },
         modifier = modifier,
     )

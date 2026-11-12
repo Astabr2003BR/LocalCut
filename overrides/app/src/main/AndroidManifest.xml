@@ -37,8 +37,15 @@
                 <data android:mimeType="video/*" />
                 <data android:mimeType="audio/*" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
         </activity>
 
+        <!-- Android Files uses */* for mixed image + audio selection. The Kotlin
+             importer individually validates each URI and rejects non-media content. -->
         <activity
             android:name=".mobile.MobileHandoffActivity"
             android:exported="true">

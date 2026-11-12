@@ -49,6 +49,31 @@ class CharacterFlatMouthPlannerTest {
     }
 
     @Test
+    fun flatPortraitTalkPreservesFramingInsteadOfRotatingTheEntireBackground() {
+        val positioned = body.copy(transform = TransformValue(
+            x = 12.0, y = -9.0, scale = 1.15, rotationDeg = 3.0,
+        ))
+        val plan = CharacterSceneAnimationPlanner.character(
+            CharacterActionRequest(
+                action = CharacterAction.TALK,
+                rig = CharacterRigBinding(bodyClipId = "body"),
+                startOffsetUs = 200_000L, durationUs = 2_000_000L, intensity = 2.0,
+                mouthRegion = MouthRegion(0.5, 0.65, 0.1, 0.05),
+            ),
+            mapOf("body" to positioned),
+        )
+        val animations = plan.patches.single().propertyAnimations
+        assertEquals(setOf("transform.y", "transform.rotationDeg"),
+            animations.map { it.propertyId }.toSet())
+        animations.forEach { animation ->
+            val expected = if (animation.propertyId == "transform.y") -9.0 else 3.0
+            assertEquals(listOf(200_000L, 2_200_000L), animation.keyframes.map { it.offsetUs })
+            assertTrue(animation.keyframes.all { (it.value as PropertyValue.Scalar).value == expected })
+        }
+        assertEquals("localcut.character.mouth_warp", plan.effectPatches.single().effects.single().typeId)
+    }
+
+    @Test
     fun explicitMouthClipKeepsRiggedPathAndDoesNotAddFlatMouthEffect() {
         val mouth = body.copy(clipId = "mouth")
         val plan = CharacterSceneAnimationPlanner.character(
@@ -63,6 +88,9 @@ class CharacterFlatMouthPlannerTest {
         )
 
         assertTrue(plan.effectPatches.isEmpty())
+        val rotation = plan.patches.single { it.clipId == "body" }.propertyAnimations
+            .single { it.propertyId == "transform.rotationDeg" }
+        assertTrue(rotation.keyframes.any { (it.value as PropertyValue.Scalar).value != 0.0 })
         assertTrue(
             plan.patches.single { it.clipId == "mouth" }
                 .propertyAnimations.any { it.propertyId == "transform.scale" },

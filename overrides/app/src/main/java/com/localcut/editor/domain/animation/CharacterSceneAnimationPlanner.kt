@@ -143,7 +143,25 @@ object CharacterSceneAnimationPlanner {
                 request.rig.eyesClipId?.let { id -> blink(plan.patch(id), requireClip(id, clips), start, end) }
             }
             CharacterAction.TALK -> {
-                talkBody(plan.patch(body.clipId), body, start, end, request.intensity)
+                val flatPortrait = request.mouthRegion != null && listOfNotNull(
+                    request.rig.headClipId, request.rig.eyesClipId, request.rig.mouthClipId,
+                    request.rig.leftArmClipId, request.rig.rightArmClipId,
+                    request.rig.leftLegClipId, request.rig.rightLegClipId,
+                    request.rig.heldObjectClipId,
+                ).isEmpty()
+                if (flatPortrait) {
+                    // A single baked portrait may include the entire background.
+                    // Keep its framing fixed; face-local effects supply motion.
+                    // Write neutral keys so reapplying TALK replaces old sway keys
+                    // inside the requested interval without changing base framing.
+                    val builder = plan.patch(body.clipId)
+                    builder.scalar(PROP_Y, start, body.transform.y, hold())
+                    builder.scalar(PROP_Y, end, body.transform.y)
+                    builder.scalar(PROP_ROTATION, start, body.transform.rotationDeg, hold())
+                    builder.scalar(PROP_ROTATION, end, body.transform.rotationDeg)
+                } else {
+                    talkBody(plan.patch(body.clipId), body, start, end, request.intensity)
+                }
                 request.rig.headClipId?.let { id -> headTalk(plan.patch(id), requireClip(id, clips), start, end, request.intensity) }
                 val mouthId = request.rig.mouthClipId
                 if (mouthId != null) {

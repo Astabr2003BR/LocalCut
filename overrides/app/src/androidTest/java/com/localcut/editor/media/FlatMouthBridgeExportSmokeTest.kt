@@ -768,6 +768,17 @@ class FlatMouthBridgeExportSmokeTest {
                     Color.blue(openedPixel)
                 assertTrue("speaking mouth must preserve non-black warm color; RGB sum=$openedRgb",
                     openedRgb >= 55)
+                // Check the actual outer corners too: an interior sample alone
+                // misses thin black wedges caused by whole-image TALK rotation.
+                for ((x, y) in listOf(
+                    1 to 1, (speaking.width - 2) to 1,
+                    1 to (speaking.height - 2),
+                    (speaking.width - 2) to (speaking.height - 2),
+                )) {
+                    val before = closed.getPixel(x, y)
+                    val after = speaking.getPixel(x, y)
+                    assertTrue("TALK must preserve corner ($x,$y)", pixelRgbDelta(before, after) <= 35)
+                }
                 val outsideDelta = pixelRgbDelta(closed.getPixel(8, 8), speaking.getPixel(8, 8))
                 assertTrue("unrelated pixels must stay stable; delta=$outsideDelta",
                     outsideDelta <= 25)

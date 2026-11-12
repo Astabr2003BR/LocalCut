@@ -49,6 +49,18 @@ class GuidedVisemeOverlayTest {
         assertEquals(cues, PortugueseVisemeGuide.plan("Oi! Agora minha voz funciona.", 4_000_000L))
     }
 
+    @Test fun portugueseDigraphsAndUnicodeAccentsUseOneApproximateSound() {
+        fun shapes(text: String) =
+            PortugueseVisemeGuide.plan(text, 2_000_000L).map { it.shape }
+        assertEquals(listOf(VisemeShape.S_T, VisemeShape.A), shapes("chá"))
+        assertEquals(listOf(VisemeShape.L, VisemeShape.A), shapes("lha"))
+        assertEquals(listOf(VisemeShape.S_T, VisemeShape.A), shapes("nha"))
+        assertEquals(listOf(VisemeShape.O, VisemeShape.L, VisemeShape.A), shapes("olha"))
+        assertEquals(listOf(VisemeShape.O, VisemeShape.E_I), shapes("hoi"))
+        assertEquals(PortugueseVisemeGuide.plan("ação", 2_000_000L),
+            PortugueseVisemeGuide.plan("ac\u0327a\u0303o", 2_000_000L))
+    }
+
     @Test fun guidedOverlayPreservesOriginalTalkAndOtherEffects() {
         val prior = talk()
         val blink = EffectInstance(id = "blink", typeId = "localcut.character.eye_blink")

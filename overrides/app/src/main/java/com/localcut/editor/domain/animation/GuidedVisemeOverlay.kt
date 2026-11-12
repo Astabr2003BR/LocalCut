@@ -10,8 +10,9 @@ import com.localcut.editor.domain.model.PropertyValue
 import com.localcut.editor.effects.EffectRegistry
 
 /**
- * Adds ONLY guided mouth geometry animations to an existing audio-driven TALK.
- * Never re-times audio, changes the waveform openness, or touches blink effects.
+ * Adds guided mouth geometry and a non-destructive articulation multiplier
+ * to an existing audio-driven TALK. Never re-times audio, rewrites the raw
+ * waveform openness, or touches blink effects.
  * Re-application is deterministic and one editor Undo via the caller.
  */
 object GuidedVisemeOverlay {

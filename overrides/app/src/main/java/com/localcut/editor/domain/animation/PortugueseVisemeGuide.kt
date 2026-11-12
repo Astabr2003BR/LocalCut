@@ -1,6 +1,7 @@
 package com.localcut.editor.domain.animation
 
 import java.util.Locale
+import java.text.Normalizer
 
 /**
  * PT-BR spelling-to-mouth-shape approximation, NOT speech recognition.
@@ -27,7 +28,27 @@ object PortugueseVisemeGuide {
                 symbols += shape to weight
             }
         }
-        for (ch in text.lowercase(Locale.ROOT)) {
+        val normalized = Normalizer.normalize(text, Normalizer.Form.NFC)
+            .lowercase(Locale.ROOT)
+        var index = 0
+        while (index < normalized.length) {
+            val ch = normalized[index]
+            val pair = if (index + 1 < normalized.length)
+                normalized.substring(index, index + 2) else ""
+            // Digraphs approximate one consonant sound, not two mouth events.
+            // This is spelling-based guidance; dialect and exceptions still
+            // require a real speech alignment engine.
+            val digraph = when (pair) {
+                "ch", "nh", "ss", "rr" -> VisemeShape.S_T
+                "lh" -> VisemeShape.L
+                else -> null
+            }
+            if (digraph != null) {
+                append(digraph, 2)
+                index += 2
+                continue
+            }
+            index++
             when (ch) {
                 'a', 'á', 'à', 'â', 'ã' -> append(VisemeShape.A, 3)
                 'e', 'é', 'ê', 'i', 'í', 'y' -> append(VisemeShape.E_I, 3)
@@ -36,7 +57,7 @@ object PortugueseVisemeGuide {
                 'm', 'b', 'p' -> append(VisemeShape.M_B_P, 2)
                 'f', 'v' -> append(VisemeShape.F_V, 2)
                 'l', 'r' -> append(VisemeShape.L, 2)
-                's', 't', 'd', 'z', 'c', 'ç', 'j', 'x', 'g', 'q', 'n', 'h', 'k', 'w' ->
+                's', 't', 'd', 'z', 'c', 'ç', 'j', 'x', 'g', 'q', 'n', 'k', 'w' ->
                     append(VisemeShape.S_T, 2)
                 ' ', '\n', '\t', '\r', '-', '_' -> append(VisemeShape.REST, 1)
                 ',', ';', ':' -> append(VisemeShape.REST, 3)

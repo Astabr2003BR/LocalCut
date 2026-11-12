@@ -88,6 +88,21 @@ class GuidedVisemeOverlayTest {
         assertEquals(listOf(base), GuidedVisemeOverlay.remove(listOf(guided)))
     }
 
+    @Test fun timedImportKeepsOriginalWaveformAndUsesExactClipTimes() {
+        val original = talk()
+        val cues = RhubarbCueImport.parse("0\tX\n0.5\tD\n1.0\tA\n1.5\tX", 5_000_000L)
+        val updated = GuidedVisemeOverlay.applyTimed(5_000_000L, listOf(original), cues)
+        val effect = updated.single()
+        val gate = effect.animations.single { it.propertyId == "articulationGate" }
+        assertTrue(gate.keyframes.any { it.offsetUs == 500_000L })
+        assertTrue(gate.keyframes.any { it.offsetUs == 1_000_000L })
+        assertEquals(original.animations.single(), effect.animations.first())
+        assertEquals(updated, GuidedVisemeOverlay.applyTimed(5_000_000L, updated, cues))
+        assertEquals(listOf(original), GuidedVisemeOverlay.remove(updated))
+        assertTrue(runCatching { GuidedVisemeOverlay.applyTimed(500_000L,
+            listOf(original), cues) }.isFailure)
+    }
+
     @Test fun repeatedApplyIsIdempotent() {
         val once = GuidedVisemeOverlay.apply(5_000_000L, listOf(talk()), "Oi agora")
         val twice = GuidedVisemeOverlay.apply(5_000_000L, once, "Oi agora")

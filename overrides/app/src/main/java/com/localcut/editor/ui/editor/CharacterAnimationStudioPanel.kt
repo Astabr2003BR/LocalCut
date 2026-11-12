@@ -72,6 +72,9 @@ internal fun CharacterAnimationStudioPanel(
     var mouthRadiusY by remember(clip.id) { mutableStateOf(0.025) }
     var mouthVerified by remember(clip.id) { mutableStateOf(false) }
     var voiceTranscript by remember(clip.id) { mutableStateOf("") }
+    var showTimedCues by remember(clip.id) { mutableStateOf(false) }
+    var timedCueText by remember(clip.id) { mutableStateOf("") }
+    var timedCuesConfirmed by remember(clip.id, clip.effects) { mutableStateOf(false) }
     val browCurrent = clip.effects.firstOrNull { it.typeId == BrowExpressionPresets.TYPE_ID }
     val savedBrows = remember(clip.id, browCurrent) {
         BrowExpressionPresets.fromEffectOrNull(browCurrent)
@@ -223,6 +226,50 @@ internal fun CharacterAnimationStudioPanel(
                 },
                 enabled = !locked && hasGuidedVisemes,
             ) { Text("Remover formas guiadas") }
+        }
+        OutlinedButton(onClick = { showTimedCues = !showTimedCues }) {
+            Text(if (showTimedCues) "Ocultar visemas temporizados" else "Visemas temporizados (avançado)")
+        }
+        if (showTimedCues) {
+            Text("Cole o TSV de um alinhador Rhubarb para a mesma fala, começando no " +
+                "início do clipe. Use segundos, tabulação e código A–H ou X. " +
+                "O último registro é o fim da fala. Não analisa áudio neste aparelho.",
+                style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(
+                value = timedCueText,
+                onValueChange = {
+                    if (it.length <= com.localcut.editor.domain.animation.RhubarbCueImport.MAX_TEXT_LENGTH) {
+                        timedCueText = it
+                        timedCuesConfirmed = false
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Visemas TSV") },
+                minLines = 3,
+                maxLines = 5,
+                enabled = !locked && hasTalk && !hasVisemeDemo,
+            )
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Checkbox(checked = timedCuesConfirmed, onCheckedChange = { timedCuesConfirmed = it },
+                    enabled = !locked && hasTalk && !hasVisemeDemo)
+                Text("Conferi que os tempos correspondem ao áudio deste clipe.",
+                    modifier = Modifier.padding(top = 12.dp),
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            FilledTonalButton(
+                onClick = {
+                    runCatching {
+                        val cues = com.localcut.editor.domain.animation.RhubarbCueImport.parse(
+                            timedCueText, clip.durationUs)
+                        val updated = GuidedVisemeOverlay.applyTimed(clip.durationUs, clip.effects, cues)
+                        if (updated != clip.effects) onSetEffects(updated)
+                        notice = "Visemas temporizados aplicados. Confira a prévia."
+                    }.onFailure { notice = "Importação recusada: " + (it.message ?: "dados inválidos") }
+                },
+                enabled = !locked && hasTalk && !hasVisemeDemo &&
+                    timedCuesConfirmed && timedCueText.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Aplicar visemas temporizados") }
         }
         if (!hasTalk) {
             Text("Para sincronizar com a voz, primeiro aplique TALK ao clipe de imagem.",

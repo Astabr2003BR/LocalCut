@@ -35,6 +35,25 @@ object GuidedVisemeOverlay {
         existing: List<EffectInstance>,
         transcript: String,
     ): List<EffectInstance> {
+        return applyInternal(clipDurationUs, existing, transcript, null)
+    }
+
+    /** Imported cue times are already relative to the selected image clip. */
+    fun applyTimed(
+        clipDurationUs: Long,
+        existing: List<EffectInstance>,
+        cues: List<VisemeCue>,
+    ): List<EffectInstance> {
+        require(cues.isNotEmpty() && cues.size <= RhubarbCueImport.MAX_CUES)
+        return applyInternal(clipDurationUs, existing, null, cues)
+    }
+
+    private fun applyInternal(
+        clipDurationUs: Long,
+        existing: List<EffectInstance>,
+        transcript: String?,
+        timedCues: List<VisemeCue>?,
+    ): List<EffectInstance> {
         require(clipDurationUs > 0L && clipDurationUs <= 120_000_000L) {
             "Duração do clipe inválida"
         }
@@ -51,13 +70,16 @@ object GuidedVisemeOverlay {
         }) { "O TALK contém animações de boca personalizadas; não serão sobrescritas" }
         val openness = original.animations.singleOrNull { it.propertyId == "openness" }
             ?: throw IllegalArgumentException("TALK não possui sincronização com o áudio")
-        val windows = TalkSpeechWindows.detect(openness, clipDurationUs)
-        val activeDurationUs = windows.sumOf(TalkSpeechWindow::durationUs)
-        require(activeDurationUs >= PortugueseVisemeGuide.MIN_DURATION_US) {
-            "Trecho falado muito curto para guiar visemas"
+        val windows = if (timedCues == null) TalkSpeechWindows.detect(openness, clipDurationUs)
+            else emptyList()
+        val cues = if (timedCues != null) timedCues else {
+            val activeDurationUs = windows.sumOf(TalkSpeechWindow::durationUs)
+            require(activeDurationUs >= PortugueseVisemeGuide.MIN_DURATION_US) {
+                "Trecho falado muito curto para guiar visemas"
+            }
+            val abstractCues = PortugueseVisemeGuide.plan(requireNotNull(transcript), activeDurationUs)
+            TalkSpeechWindows.distribute(abstractCues, windows)
         }
-        val abstractCues = PortugueseVisemeGuide.plan(transcript, activeDurationUs)
-        val cues = TalkSpeechWindows.distribute(abstractCues, windows)
         val timeline = VisemeTimeline(cues, clipDurationUs)
         val positions = sortedSetOf(0L, clipDurationUs)
         windows.forEach { window ->

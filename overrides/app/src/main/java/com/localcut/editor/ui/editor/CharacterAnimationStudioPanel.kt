@@ -107,6 +107,29 @@ internal fun CharacterAnimationStudioPanel(
             style = MaterialTheme.typography.bodySmall,
         )
 
+        var showFacePicker by remember(clip.id, asset.fingerprint) { mutableStateOf(false) }
+        OutlinedButton(onClick = { showFacePicker = !showFacePicker }) {
+            Text(if (showFacePicker) "Ocultar configuração facial" else "Configurar rosto na imagem")
+        }
+        if (showFacePicker) {
+            PortraitFacePicker(asset, settings, brows, !locked) { suggestion ->
+                settings = suggestion.motion
+                brows = suggestion.brows
+                eyesVerified = false
+                browsVerified = false
+                showGeometry = true
+                if (!hasTalk) {
+                    mouthX = suggestion.mouth.centerX
+                    mouthY = suggestion.mouth.centerY
+                    mouthRadiusX = suggestion.mouth.radiusX
+                    mouthRadiusY = suggestion.mouth.radiusY
+                    mouthVerified = false
+                }
+                notice = if (hasTalk) "Sugestão de olhos e sobrancelhas; TALK existente preservado."
+                    else "Sugestão facial pronta. Confira as regiões antes de aplicar."
+            }
+        }
+
         Text("Movimento de boca", style = MaterialTheme.typography.labelLarge)
         AudioLipSyncActionControl(modifier = Modifier.fillMaxWidth())
 

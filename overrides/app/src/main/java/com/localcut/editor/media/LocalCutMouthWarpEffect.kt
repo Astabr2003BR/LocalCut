@@ -34,8 +34,10 @@ internal object LocalCutMouthWarpMath {
         radiusX: Double,
         radiusY: Double,
         openness: Double,
+        widthScale: Double = 1.0,
+        rounding: Double = 0.0,
     ): Pair<Double, Double> {
-        require(listOf(u, v, centerX, centerY, radiusX, radiusY, openness).all { it.isFinite() })
+        require(listOf(u, v, centerX, centerY, radiusX, radiusY, openness, widthScale, rounding).all { it.isFinite() })
         require(radiusX > 0.0 && radiusY > 0.0)
         val safeOpen = openness.coerceIn(0.0, 1.0)
         val dx = u - centerX
@@ -45,10 +47,15 @@ internal object LocalCutMouthWarpMath {
         val distanceSquared = nx * nx + ny * ny
         var sampleU = u
         var sampleV = v
-        if (safeOpen > 0.0 && distanceSquared < 1.0) {
+        if (safeOpen > 0.001 && distanceSquared < 1.0) {
             val influence = (1.0 - distanceSquared) * (1.0 - distanceSquared)
-            val stretch = 1.0 + 0.45 * safeOpen * influence
-            sampleV = centerY + dy / stretch
+            val rounded = rounding.coerceIn(0.0, 1.0)
+            val widthRatio = widthScale.coerceIn(0.60, 1.30)
+            val horizontalStretch = 1.0 + safeOpen * influence *
+                ((widthRatio - 1.0) - 0.20 * rounded)
+            val verticalStretch = 1.0 + 0.45 * safeOpen * influence * (1.0 + 0.22 * rounded)
+            sampleU = centerX + dx / horizontalStretch
+            sampleV = centerY + dy / verticalStretch
         }
         return sampleU.coerceIn(0.001, 0.999) to sampleV.coerceIn(0.001, 0.999)
     }
@@ -251,15 +258,21 @@ private class LocalCutMouthWarpShaderProgram(
                 // Keep the original local deformation at the lip boundary.
                 float edge = 1.0 - distanceSquared;
                 float influence = edge * edge;
-                float stretch = 1.0 + 0.45 * strength * influence;
-                vec2 sampleUv = vec2(uv.x, uCenter.y + delta.y / stretch);
+                float rounded = clamp(uRounding, 0.0, 1.0);
+                float widthRatio = clamp(uWidthScale, 0.60, 1.30);
+                // Inverse sampling: wide visemes expand the source lip line;
+                // rounded/narrow visemes contract it. The feather is zero
+                // at the ROI boundary, preserving adjacent facial features.
+                float horizontalStretch = 1.0 + strength * influence *
+                    ((widthRatio - 1.0) - 0.20 * rounded);
+                float verticalStretch = 1.0 + 0.45 * strength * influence *
+                    (1.0 + 0.22 * rounded);
+                vec2 sampleUv = uCenter + delta / vec2(horizontalStretch, verticalStretch);
                 vec4 warped = texture2D(uTexSampler, clampUv(sampleUv));
 
                 // A broad opaque oval looks artificial on a still portrait.
                 // Keep a shallow, feathered opening that retains the source lip
                 // line and skin detail. Only the mouth ROI is processed.
-                float rounded = clamp(uRounding, 0.0, 1.0);
-                float widthRatio = clamp(uWidthScale, 0.60, 1.30);
                 vec2 mouthRadius = safeRadius * vec2(
                     0.62 * widthRatio * (1.0 - 0.12 * rounded),
                     0.04 + 0.42 * strength * (1.0 + 0.22 * rounded)

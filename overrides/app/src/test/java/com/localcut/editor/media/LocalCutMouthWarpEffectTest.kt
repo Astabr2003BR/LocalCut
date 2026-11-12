@@ -175,6 +175,27 @@ class LocalCutMouthWarpEffectTest {
     }
 
     @Test
+    fun visemeWidthAndRoundingDeformLipLineWithoutMovingClosedOrOutsidePixels() {
+        fun uv(x: Double, y: Double, open: Double, width: Double, round: Double) =
+            LocalCutMouthWarpMath.sampleUv(x, y, 0.5, 0.65, 0.10, 0.05, open, width, round)
+        val x = 0.53
+        val y = 0.66
+        val legacy = uv(x, y, 0.8, 1.0, 0.0)
+        val wide = uv(x, y, 0.8, 1.30, 0.0)
+        val round = uv(x, y, 0.8, 0.60, 1.0)
+        assertEquals(x, legacy.first, 1e-9)
+        assertTrue(wide.first < legacy.first)
+        assertTrue(round.first > legacy.first)
+        assertTrue(round.second < legacy.second)
+        assertEquals(x to y, uv(x, y, 0.0, 0.60, 1.0))
+        assertEquals(x to y, uv(x, y, 0.001, 1.30, 0.0))
+        assertEquals(0.70 to 0.65, uv(0.70, 0.65, 1.0, 0.60, 1.0))
+        val edge = uv(0.60, 0.65, 1.0, 0.60, 1.0)
+        assertEquals(0.60, edge.first, 1e-9)
+        assertTrue(runCatching { uv(x, y, 1.0, Double.NaN, 0.0) }.isFailure)
+    }
+
+    @Test
     fun visibleMouthMaskIsClosedAtSilenceAndOpensInsideUserMarkedRegion() {
         val cx = 0.51
         val cy = 0.49

@@ -75,6 +75,28 @@ class LocalCutEyeBlinkEffectTest {
         }
     }
 
+    @Test fun motionAnchorTracksFaceCenterAndScaleWithoutUnboundedWarps() {
+        val baseline = EyeBlinkMath.motionAnchor(
+            EffectParameter.Point(0.37, 0.36), EffectParameter.Point(0.63, 0.36), 0.042)
+        assertEquals(0.5, baseline[0].toDouble(), 1e-6)
+        assertEquals(0.64, baseline[1].toDouble(), 1e-6)
+        assertEquals(1.0, baseline[2].toDouble(), 1e-6)
+        assertEquals(1.0, baseline[3].toDouble(), 1e-6)
+        val shifted = EyeBlinkMath.motionAnchor(
+            EffectParameter.Point(0.20, 0.45), EffectParameter.Point(0.40, 0.45), 0.021)
+        assertEquals(0.30, shifted[0].toDouble(), 1e-6)
+        assertEquals(0.55, shifted[1].toDouble(), 1e-6)
+        assertEquals(0.20 / 0.26, shifted[2].toDouble(), 1e-6)
+        assertEquals(0.5, shifted[3].toDouble(), 1e-6)
+        val wide = EyeBlinkMath.motionAnchor(
+            EffectParameter.Point(0.05, 0.4), EffectParameter.Point(0.95, 0.4), 0.09)
+        assertEquals(1.7, wide[2].toDouble(), 1e-6)
+        assertEquals(1.7, wide[3].toDouble(), 1e-6)
+        assertTrue(runCatching { EyeBlinkMath.motionAnchor(
+            EffectParameter.Point(0.37, 0.36), EffectParameter.Point(0.63, 0.36), Double.NaN)
+        }.isFailure)
+    }
+
     @Test fun correctTopLeftToGlYAndPreserveX() {
         val v = EyeBlinkMath.glPoint(EffectParameter.Point(0.37, 0.36))
         assertEquals(0.37, v[0].toDouble(), 1e-5)

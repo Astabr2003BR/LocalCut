@@ -28,6 +28,22 @@ internal object EyeBlinkMath {
         return floatArrayOf(point.x.toFloat(), (1.0 - point.y).toFloat())
     }
 
+    /** Anchor the legacy motion masks to the selected face, with bounded scale.
+     * GL coordinates: y increases upward. Default geometry is the old mask. */
+    fun motionAnchor(
+        left: EffectParameter.Point, right: EffectParameter.Point, radiusY: Double,
+    ): FloatArray {
+        val l = glPoint(left)
+        val r = glPoint(right)
+        require(radiusY.isFinite() && radiusY in 0.01..0.09)
+        return floatArrayOf(
+            (l[0] + r[0]) * 0.5f,
+            (l[1] + r[1]) * 0.5f,
+            (kotlin.math.abs(r[0] - l[0]) / 0.26f).coerceIn(0.5f, 1.7f),
+            (radiusY / 0.042).coerceIn(0.5, 1.7).toFloat(),
+        )
+    }
+
     /**
      * Safe, dimensionless movement values; the shader masks motion to the
      * portrait's central lower portion to avoid distorting face and background.
@@ -180,6 +196,11 @@ private class EyeBlinkShaderProgram(
             program.setFloatsUniform("uRadius", floatArrayOf(
                 number("radiusX", 0.09).toFloat(), number("radiusY", 0.045).toFloat(),
             ))
+            program.setFloatsUniform("uMotionAnchor", EyeBlinkMath.motionAnchor(
+                effect.parameters["leftEye"] as? EffectParameter.Point ?: EffectParameter.Point(0.37, 0.36),
+                effect.parameters["rightEye"] as? EffectParameter.Point ?: EffectParameter.Point(0.63, 0.36),
+                number("radiusY", 0.042),
+            ))
             program.setFloatUniform("uLeftClosure", 0f)
             program.setFloatUniform("uRightClosure", 0f)
             program.setFloatsUniform("uIdleOffsets", floatArrayOf(0f, 0f))
@@ -276,6 +297,7 @@ private class EyeBlinkShaderProgram(
             uniform vec2 uLeftEye;
             uniform vec2 uRightEye;
             uniform vec2 uRadius;
+            uniform vec4 uMotionAnchor;
             uniform float uLeftClosure;
             uniform float uRightClosure;
             uniform vec2 uIdleOffsets;
@@ -328,28 +350,32 @@ private class EyeBlinkShaderProgram(
 
             void main() {
                 vec2 uv = vTexSamplingCoord;
-                // Localized, subpixel idle motion affects the lower part of
-                // the portrait only. Face and outer background remain still.
-                float horizontalBlend = smoothstep(0.04, 0.20, uv.x) *
-                    (1.0 - smoothstep(0.80, 0.96, uv.x));
-                float lowerBodyBlend = 1.0 - smoothstep(0.26, 0.63, uv.y);
-                // Optional local 2D/2.5D motion: face and fringe regions
-                // are softly bounded. Pure image warps, not 3D reconstruction.
-                float faceX = smoothstep(0.15, 0.32, uv.x) *
-                    (1.0 - smoothstep(0.68, 0.85, uv.x));
-                float faceY = smoothstep(0.30, 0.49, uv.y) *
-                    (1.0 - smoothstep(0.84, 0.97, uv.y));
+                // Map portrait-local masks around the confirmed eyes instead
+                // of assuming every character is centered at the same scale.
+                vec2 localUv = vec2(0.5, 0.64) +
+                    (uv - uMotionAnchor.xy) / uMotionAnchor.zw;
+                float horizontalBlend = smoothstep(0.04, 0.20, localUv.x) *
+                    (1.0 - smoothstep(0.80, 0.96, localUv.x));
+                float lowerBodyBlend = 1.0 - smoothstep(0.26, 0.63, localUv.y);
+                float faceX = smoothstep(0.15, 0.32, localUv.x) *
+                    (1.0 - smoothstep(0.68, 0.85, localUv.x));
+                float faceY = smoothstep(0.30, 0.49, localUv.y) *
+                    (1.0 - smoothstep(0.84, 0.97, localUv.y));
                 float faceBlend = faceX * faceY;
-                float hairX = smoothstep(0.17, 0.32, uv.x) *
-                    (1.0 - smoothstep(0.68, 0.83, uv.x));
-                float hairY = smoothstep(0.65, 0.77, uv.y) *
-                    (1.0 - smoothstep(0.94, 0.99, uv.y));
-                vec2 sampleUv = clampUv(
-                    uv +
+                float hairX = smoothstep(0.17, 0.32, localUv.x) *
+                    (1.0 - smoothstep(0.68, 0.83, localUv.x));
+                float hairY = smoothstep(0.65, 0.77, localUv.y) *
+                    (1.0 - smoothstep(0.94, 0.99, localUv.y));
+                // Preserve the outer image border, even for an off-center face.
+                float edge = smoothstep(0.0, 0.025, uv.x) *
+                    (1.0 - smoothstep(0.975, 1.0, uv.x)) *
+                    smoothstep(0.0, 0.025, uv.y) *
+                    (1.0 - smoothstep(0.975, 1.0, uv.y));
+                vec2 sampleUv = clampUv(uv + edge * (
                     uIdleOffsets * horizontalBlend * lowerBodyBlend +
                     uHeadOffsets * faceBlend +
                     uHairOffsets * hairX * hairY
-                );
+                ));
                 vec4 original = texture2D(uTexSampler, sampleUv);
                 // When strength=0, this preserves bit-identical legacy behavior.
                 vec4 withGaze = original;

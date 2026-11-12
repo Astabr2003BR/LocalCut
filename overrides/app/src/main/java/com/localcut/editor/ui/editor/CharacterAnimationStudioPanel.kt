@@ -177,7 +177,8 @@ internal fun CharacterAnimationStudioPanel(
         Text(
             "Escreva exatamente a fala do áudio já sincronizado com TALK. " +
                 "Os formatos de boca serão distribuídos aproximadamente entre os momentos de voz, " +
-                "sem reconhecer o som. O áudio, as piscadas e a abertura original serão preservados.",
+                "sem reconhecer o som. O áudio e a curva de abertura original serão preservados; " +
+                "a articulação pode fechar a boca nos sons M/B/P.",
             style = MaterialTheme.typography.bodySmall,
         )
         OutlinedTextField(
@@ -238,6 +239,24 @@ internal fun CharacterAnimationStudioPanel(
         }
 
         Text("Animação do retrato", style = MaterialTheme.typography.labelLarge)
+        Text("Aplicação conjunta: confira olhos e sobrancelhas, escolha a expressão e " +
+            "opcionalmente informe a fala. Uma única alteração, com Desfazer.",
+            style = MaterialTheme.typography.bodySmall)
+        FilledTonalButton(
+            onClick = {
+                runCatching {
+                    val motion = PortraitMotionPresets.preset(PortraitMotionPreset.NATURAL, settings)
+                    val combined = com.localcut.editor.domain.animation.PortraitStudioBatch.apply(
+                        clip.id, clip.durationUs, clip.effects, motion, brows,
+                        voiceTranscript.takeIf { it.isNotBlank() && hasTalk && !hasVisemeDemo },
+                    )
+                    if (combined != clip.effects) onSetEffects(combined)
+                    notice = "Estúdio aplicado. Confira a prévia; Desfazer preserva o estado anterior."
+                }.onFailure { notice = "Estúdio não aplicado: " + (it.message ?: "entrada inválida") }
+            },
+            enabled = !locked && eyesVerified && browsVerified,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Aplicar conjunto natural") }
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(5.dp),

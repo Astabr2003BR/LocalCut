@@ -58,10 +58,22 @@ class GuidedVisemeOverlayTest {
         assertEquals(blink, guided.last())
         assertEquals(prior.parameters, guided.first().parameters)
         assertEquals(prior.animations.single(), guided.first().animations.first())
-        assertEquals(4, guided.first().animations.size)
+        assertEquals(5, guided.first().animations.size)
         assertTrue(GuidedVisemeOverlay.hasGuidance(guided.first()))
         assertTrue(EffectRegistry.validationIssues(guided.first()).isEmpty())
         assertEquals(source, GuidedVisemeOverlay.remove(guided))
+    }
+
+    @Test fun guidedBilabialClosureHasSeparateGateAndPreservesWaveform() {
+        val base = talk()
+        val guided = GuidedVisemeOverlay.apply(5_000_000L, listOf(base), "ma").single()
+        val gate = guided.animations.single { it.propertyId == "articulationGate" }
+        val values = gate.keyframes.map { (it.value as PropertyValue.Scalar).value }
+        assertTrue(values.all { it in 0.0..1.0 })
+        assertTrue(values.any { it == 0.0 })
+        assertTrue(values.any { it > 0.5 })
+        assertEquals(base.animations.single(), guided.animations.first())
+        assertEquals(listOf(base), GuidedVisemeOverlay.remove(listOf(guided)))
     }
 
     @Test fun repeatedApplyIsIdempotent() {
@@ -69,7 +81,7 @@ class GuidedVisemeOverlayTest {
         val twice = GuidedVisemeOverlay.apply(5_000_000L, once, "Oi agora")
         assertEquals(once, twice)
         val different = GuidedVisemeOverlay.apply(5_000_000L, once, "Oi vida")
-        assertEquals(4, different.single().animations.size)
+        assertEquals(5, different.single().animations.size)
         assertTrue(different != once)
     }
 
@@ -121,7 +133,7 @@ class GuidedVisemeOverlayTest {
             (quiet.parameters.getValue("rounding") as EffectParameter.Number).value, 1e-9)
         assertEquals(0.0,
             (quiet.parameters.getValue("teethVisibility") as EffectParameter.Number).value, 1e-9)
-        assertEquals(3, fx.animations.size - twoBursts.animations.size)
+        assertEquals(4, fx.animations.size - twoBursts.animations.size)
         assertTrue(EffectRegistry.validationIssues(fx).isEmpty())
         for (at in listOf(0L, 950_000L, 1_700_000L, 2_500_000L, 4_500_000L)) {
             val before = EffectRegistry.evaluate(twoBursts, at)

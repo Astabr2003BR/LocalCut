@@ -104,6 +104,7 @@ object EffectRegistry {
                 numberSpec("widthScale", 1.0, 0.60, 1.30),
                 numberSpec("rounding", 0.0, 0.0, 1.0),
                 numberSpec("teethVisibility", 0.0, 0.0, 1.0),
+                numberSpec("articulationGate", 1.0, 0.0, 1.0),
             ),
         ),
         EffectDefinition(

@@ -18,7 +18,7 @@ object GuidedVisemeOverlay {
     private const val MOUTH_TYPE = "localcut.character.mouth_warp"
     private const val DEMO_PREFIX = "localcut-viseme-demo-"
     private const val OWNED_PREFIX = "guided-viseme-"
-    private val geometryProperties = setOf("widthScale", "rounding", "teethVisibility")
+    private val geometryProperties = setOf("widthScale", "rounding", "teethVisibility", "articulationGate")
 
     fun hasGuidance(effect: EffectInstance): Boolean =
         effect.typeId == MOUTH_TYPE &&
@@ -78,6 +78,10 @@ object GuidedVisemeOverlay {
             "widthScale" to { it.widthScale },
             "rounding" to { it.rounding },
             "teethVisibility" to { it.teethVisibility },
+            // Keep the original waveform animation intact. A separate bounded
+            // multiplier permits bilabial closure and brief text-guided rests.
+            // This is still an approximate guide, not phoneme recognition.
+            "articulationGate" to { (it.openness / 0.44).coerceIn(0.0, 1.0) },
         )
         val newAnimations = properties.map { (name, select) ->
             PropertyAnimation(

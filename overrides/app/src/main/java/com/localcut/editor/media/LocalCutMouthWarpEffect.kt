@@ -100,7 +100,7 @@ internal class LocalCutMouthWarpEffect(
     init {
         require(effect.typeId == TYPE_ID) { "unsupported mouth warp effect ${effect.typeId}" }
         require(effect.animations.all {
-            it.propertyId in setOf("openness", "widthScale", "rounding", "teethVisibility")
+            it.propertyId in setOf("openness", "widthScale", "rounding", "teethVisibility", "articulationGate")
         }) {
             "mouth warp only supports animated viseme parameters"
         }
@@ -195,7 +195,9 @@ private class LocalCutMouthWarpShaderProgram(
         number(effect, "radiusY", 0.05).toFloat(),
     )
 
-    private fun openness(effect: EffectInstance): Double = number(effect, "openness", 0.0).coerceIn(0.0, 1.0)
+    private fun openness(effect: EffectInstance): Double =
+        number(effect, "openness", 0.0).coerceIn(0.0, 1.0) *
+            number(effect, "articulationGate", 1.0).coerceIn(0.0, 1.0)
 
     private fun number(effect: EffectInstance, name: String, default: Double): Double =
         (effect.parameters[name] as? EffectParameter.Number)?.value ?: default

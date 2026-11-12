@@ -38,6 +38,13 @@ class LayeredCharacterActionPolicyTest {
         val x = plan.patches.single { it.clipId == "body" }.propertyAnimations
             .single { it.propertyId == "transform.x" }
         assertTrue(x.keyframes.all { (it.value as PropertyValue.Scalar).value == 0.0 })
+        val arm = plan.patches.single { it.clipId == "ra" }.propertyAnimations
+            .single { it.propertyId == "transform.rotationDeg" }
+        assertEquals(PropertyValue.Scalar(0.0), arm.keyframes.first().value)
+        assertEquals(PropertyValue.Scalar(0.0), arm.keyframes.last().value)
+        assertTrue(arm.keyframes.drop(1).dropLast(1).any {
+            (it.value as PropertyValue.Scalar).value != 0.0
+        })
         val history = HistoryManager(original)
         history.execute(ApplyAnimationPlanCommand(plan))
         assertTrue(history.project.findClip("ra")!!.propertyAnimations.isNotEmpty())

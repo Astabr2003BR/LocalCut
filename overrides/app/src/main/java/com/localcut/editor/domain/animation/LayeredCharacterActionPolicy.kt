@@ -41,6 +41,9 @@ object LayeredCharacterActionPolicy {
             CharacterAction.TALK -> require(rig.mouthClipId != null) { "Marque a camada da boca" }
             else -> require(rig.headClipId != null || rig.eyesClipId != null) { "Marque cabeça ou olhos" }
         }
+        require(ids.all { valid.getValue(it).keyframes.isEmpty() }) {
+            "Uma camada possui keyframes de transformação legados; use uma cópia sem esses movimentos."
+        }
         val states = ids.associateWith { id ->
             val clip = valid.getValue(id)
             fun scalar(property: String, fallback: Double): Double {
@@ -70,6 +73,23 @@ object LayeredCharacterActionPolicy {
                 "Uma camada já possui movimento nessas propriedades. Use cópias ou remova os movimentos anteriores."
             }
         }
-        return plan
+        // The legacy walking planner starts/ends at a swing extreme. For the
+        // new in-place UI preset, enter and leave in the original pose instead.
+        if (action != CharacterAction.WALK) return plan
+        val limbs = setOfNotNull(rig.leftArmClipId, rig.rightArmClipId,
+            rig.leftLegClipId, rig.rightLegClipId)
+        return plan.copy(patches = plan.patches.map { patch ->
+            if (patch.clipId !in limbs) patch else patch.copy(
+                propertyAnimations = patch.propertyAnimations.map { animation ->
+                    if (animation.propertyId != "transform.rotationDeg") animation else {
+                        val rest = PropertyValue.Scalar(states.getValue(patch.clipId).transform.rotationDeg)
+                        animation.copy(keyframes = animation.keyframes.mapIndexed { index, frame ->
+                            if (index == 0 || index == animation.keyframes.lastIndex)
+                                frame.copy(value = rest) else frame
+                        })
+                    }
+                },
+            )
+        })
     }
 }

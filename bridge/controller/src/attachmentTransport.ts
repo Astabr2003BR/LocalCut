@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { isIP } from "node:net";
 import {
   isAllowedTransientMediaType,
   type TransientMediaStore,
@@ -125,6 +126,16 @@ function validateSourceUrl(value: string): URL {
   }
   if (url.protocol !== "https:" || url.username || url.password) {
     throw new Error("ATTACHMENT_HTTPS_REQUIRED");
+  }
+  // Reject literal IPs (including WHATWG-normalized IPv4 aliases), local names
+  // and nonstandard ports before fetch. This is defense in depth, not a DNS
+  // rebinding defense: a public hostname may still resolve to a private IP.
+  const host = url.hostname.toLowerCase().replace(/\.$/, "");
+  if (url.port || isIP(host.replace(/^\[|\]$/g, "")) !== 0 ||
+      !host.includes(".") || host === "localhost" ||
+      /\.(localhost|local|internal|home\.arpa)$/.test(host) ||
+      url.hash) {
+    throw new Error("ATTACHMENT_SOURCE_NOT_ALLOWED");
   }
   return url;
 }

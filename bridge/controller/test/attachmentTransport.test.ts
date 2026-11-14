@@ -195,3 +195,24 @@ test("attachment stager cancels oversized streaming bodies and releases the read
   assert.equal(cancelled, 1);
   assert.equal(body.locked, false);
 });
+
+
+test("attachment source rejects literal IP aliases, local names, ports and fragments before fetch", async () => {
+  let calls = 0;
+  const stager = createAttachmentStager({
+    publicBaseUrl: "https://localcut-bridge.example",
+    transientMediaStore: createTransientMediaStore(),
+    fetchImpl: async () => { calls++; return new Response("ok"); },
+  });
+  for (const download_url of [
+    "https://127.0.0.1/a", "https://2130706433/a", "https://0x7f000001/a",
+    "https://[::1]/a", "https://[::ffff:127.0.0.1]/a",
+    "https://169.254.169.254/a", "https://localhost./a",
+    "https://service.internal/a", "https://printer.local/a",
+    "https://router.home.arpa/a", "https://files.example:8443/a",
+    "https://files.example/a#fragment",
+  ]) {
+    await assert.rejects(stager(file({ download_url })), /ATTACHMENT_SOURCE_NOT_ALLOWED/);
+  }
+  assert.equal(calls, 0);
+});

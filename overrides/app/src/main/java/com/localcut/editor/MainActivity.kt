@@ -18,6 +18,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import com.localcut.editor.mobile.TikTokCarouselActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.LaunchedEffect
@@ -181,6 +184,15 @@ class MainActivity : ComponentActivity() {
                         onRevokePairing = runtime.bridgeControl::revokePairing,
                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
                     )
+                    TextButton(
+                        enabled = !exportState.running,
+                        onClick = {
+                            if (Build.VERSION.SDK_INT >= 29) {
+                                editorViewModel.pause()
+                                startActivity(Intent(this@MainActivity, TikTokCarouselActivity::class.java))
+                            } else showError("Carrossel requer Android 10 ou superior.")
+                        },
+                    ) { Text("Carrossel TikTok") }
                     Box(modifier = Modifier.weight(1f)) {
                         EditorScreen(
                             viewModel = editorViewModel,

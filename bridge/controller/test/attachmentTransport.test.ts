@@ -156,3 +156,42 @@ test("attachment download never follows redirects and has a deadline", async () 
   await assert.rejects(stager(file()), /ATTACHMENT_DOWNLOAD_FAILED/);
   assert.equal(calls, 1);
 });
+
+
+test("attachment stager cancels rejected response bodies without masking validation errors", async () => {
+  const scenarios: Array<{ status: number; headers: Record<string, string>; error: string }> = [
+    { status: 503, headers: { "content-type": "image/png" }, error: "ATTACHMENT_DOWNLOAD_FAILED" },
+    { status: 200, headers: { "content-type": "text/plain" }, error: "ATTACHMENT_MEDIA_TYPE_UNSUPPORTED" },
+    { status: 200, headers: { "content-type": "image/png", "content-length": "3" }, error: "ATTACHMENT_TOO_LARGE" },
+  ];
+  for (const scenario of scenarios) {
+    let cancelled = 0;
+    const body = new ReadableStream<Uint8Array>({
+      cancel() { cancelled += 1; },
+    });
+    const stager = createAttachmentStager({
+      publicBaseUrl: "https://localcut-bridge.example",
+      transientMediaStore: createTransientMediaStore({ maxBytes: 2 }),
+      fetchImpl: async () => new Response(body, { status: scenario.status, headers: scenario.headers }),
+    });
+    await assert.rejects(stager(file()), new RegExp(scenario.error));
+    assert.equal(cancelled, 1);
+    assert.equal(body.locked, false);
+  }
+});
+
+test("attachment stager cancels oversized streaming bodies and releases the reader", async () => {
+  let cancelled = 0;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) { controller.enqueue(new Uint8Array([1, 2, 3])); },
+    cancel() { cancelled += 1; },
+  });
+  const stager = createAttachmentStager({
+    publicBaseUrl: "https://localcut-bridge.example",
+    transientMediaStore: createTransientMediaStore({ maxBytes: 2 }),
+    fetchImpl: async () => new Response(body, { headers: { "content-type": "image/png" } }),
+  });
+  await assert.rejects(stager(file()), /ATTACHMENT_TOO_LARGE/);
+  assert.equal(cancelled, 1);
+  assert.equal(body.locked, false);
+});

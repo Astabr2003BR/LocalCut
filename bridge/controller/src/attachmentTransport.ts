@@ -50,15 +50,26 @@ export function createAttachmentStager(options: AttachmentStagerOptions) {
       throw new Error("ATTACHMENT_DOWNLOAD_FAILED");
     }
 
-    if (!response.ok) throw new Error("ATTACHMENT_DOWNLOAD_FAILED");
-    if (response.url) validateSourceUrl(response.url);
+    let mimeType: string;
+    let bytes: Buffer;
+    try {
+      if (!response.ok) throw new Error("ATTACHMENT_DOWNLOAD_FAILED");
+      if (response.url) validateSourceUrl(response.url);
 
-    const mimeType = resolveMediaType(
-      normalizedContentType(response.headers.get("content-type") ?? ""),
-      normalizedContentType(file.mime_type ?? ""),
-    );
-    const bytes = await readBoundedResponseBody(response, options.transientMediaStore.maxBytes);
-    if (bytes.length === 0) throw new Error("ATTACHMENT_BODY_EMPTY");
+      mimeType = resolveMediaType(
+        normalizedContentType(response.headers.get("content-type") ?? ""),
+        normalizedContentType(file.mime_type ?? ""),
+      );
+      bytes = await readBoundedResponseBody(response, options.transientMediaStore.maxBytes);
+      if (bytes.length === 0) throw new Error("ATTACHMENT_BODY_EMPTY");
+    } catch (error) {
+      // Release the upstream connection even when headers fail validation.
+      // Cancellation is best effort and must not mask the original error.
+      if (response.body && !response.body.locked) {
+        void response.body.cancel().catch(() => {});
+      }
+      throw error;
+    }
 
     const token = tokenGenerator();
     let staged;
@@ -165,14 +176,16 @@ async function readBoundedResponseBody(response: Response, maxBytes: number): Pr
       const chunk = Buffer.from(value);
       total += chunk.length;
       if (total > maxBytes) {
-        await reader.cancel();
         throw new Error("ATTACHMENT_TOO_LARGE");
       }
       chunks.push(chunk);
     }
   } catch (error) {
+    void reader.cancel().catch(() => {});
     if (error instanceof Error && error.message === "ATTACHMENT_TOO_LARGE") throw error;
     throw new Error("ATTACHMENT_DOWNLOAD_FAILED");
+  } finally {
+    reader.releaseLock();
   }
 
   return Buffer.concat(chunks, total);

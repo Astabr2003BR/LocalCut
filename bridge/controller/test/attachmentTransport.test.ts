@@ -138,3 +138,21 @@ test("attachment stager falls back to declared media MIME only for generic upstr
   const result = await stager(file({ mime_type: "audio/wav", file_name: "voice.wav" }));
   assert.equal(result.mimeType, "audio/wav");
 });
+
+
+test("attachment download never follows redirects and has a deadline", async () => {
+  let calls = 0;
+  const stager = createAttachmentStager({
+    publicBaseUrl: "https://localcut-bridge.example",
+    transientMediaStore: createTransientMediaStore(),
+    fetchImpl: async (_url, init) => {
+      calls += 1;
+      assert.equal(init?.redirect, "error");
+      assert.ok(init?.signal instanceof AbortSignal);
+      assert.equal(init.signal.aborted, false);
+      throw new TypeError("redirect rejected");
+    },
+  });
+  await assert.rejects(stager(file()), /ATTACHMENT_DOWNLOAD_FAILED/);
+  assert.equal(calls, 1);
+});

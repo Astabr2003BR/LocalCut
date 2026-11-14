@@ -42,7 +42,8 @@ export function createAttachmentStager(options: AttachmentStagerOptions) {
     try {
       response = await fetchImpl(sourceUrl, {
         method: "GET",
-        redirect: "follow",
+        redirect: "error",
+        signal: AbortSignal.timeout(30_000),
         headers: { accept: "image/*,audio/*,video/*,application/octet-stream" },
       });
     } catch {

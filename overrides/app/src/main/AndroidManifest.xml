@@ -45,6 +45,7 @@
         </activity>
 
         <activity android:name=".mobile.TikTokCarouselActivity" android:exported="false" />
+        <activity android:name=".mobile.AutomaticVideoActivity" android:exported="false" />
 
         <!-- Android Files uses */* for mixed image + audio selection. The Kotlin
              importer individually validates each URI and rejects non-media content. -->

@@ -135,6 +135,7 @@ class TikTokCarouselActivity : ComponentActivity() {
                 Column(Modifier.fillMaxSize().safeDrawingPadding().padding(12.dp)) {
                     Text("Carrossel TikTok", style = MaterialTheme.typography.headlineSmall)
                     Text("Fotos em ordem ou vídeo de páginas. O projeto do editor fica intacto.")
+                    TextButton(onClick = { startActivity(Intent(this@TikTokCarouselActivity, AutomaticVideoActivity::class.java)) }, enabled = !busy && !videoPickerOpen) { Text("Estúdio automático • criar vídeo") }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = { finish() }, enabled = !busy) { Text("Voltar") }
                         Button(onClick = { pick.launch(arrayOf("image/*")) }, enabled = !busy && pages.size < TikTokCarouselPolicy.MAX_PAGES) { Text("Adicionar fotos") }

@@ -1,5 +1,6 @@
 package com.localcut.editor.mobile
 
+import android.content.ActivityNotFoundException
 import android.content.ContentValues
 import android.content.Intent
 import android.graphics.Bitmap
@@ -50,6 +51,7 @@ class TikTokCarouselActivity : ComponentActivity() {
     private var busy by mutableStateOf(false)
     private var message by mutableStateOf("")
     private var videoPickerOpen = false
+    private var shareOptions by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -80,6 +82,25 @@ class TikTokCarouselActivity : ComponentActivity() {
         }
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
+                if (shareOptions) {
+                    AlertDialog(
+                        onDismissRequest = { shareOptions = false },
+                        title = { Text("Compartilhar no TikTok") },
+                        text = { Text("Envie as fotos originais na ordem escolhida, ou exporte no formato selecionado antes de enviar. No TikTok, escolha Modo Foto, se disponível. Confira a ordem e identifique conteúdo gerado por IA quando aplicável.") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                shareOptions = false
+                                shareToTikTok(pages.map(Uri::parse))
+                            }) { Text("Enviar originais") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                shareOptions = false
+                                exportPhotos(shareAfterExport = true)
+                            }) { Text("Formatar e enviar") }
+                        },
+                    )
+                }
                 BackHandler(enabled = busy) { message = "Exportação em andamento. Aguarde a conclusão." }
                 Column(Modifier.fillMaxSize().safeDrawingPadding().padding(12.dp)) {
                     Text("Carrossel TikTok", style = MaterialTheme.typography.headlineSmall)
@@ -130,6 +151,9 @@ class TikTokCarouselActivity : ComponentActivity() {
                     Slider(value = seconds.toFloat(), onValueChange = { seconds = it.toInt().coerceIn(2, 15) }, valueRange = 2f..15f, steps = 12, enabled = !busy)
                     if (message.isNotEmpty()) Text(message, style = MaterialTheme.typography.bodySmall)
                     if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Button(onClick = { shareOptions = true }, enabled = !busy && !videoPickerOpen && pages.size in 2..TikTokCarouselPolicy.MAX_PAGES, modifier = Modifier.fillMaxWidth()) {
+                        Text("Compartilhar no TikTok")
+                    }
                     Button(onClick = { exportPhotos() }, enabled = !busy && pages.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
                         Text("Exportar fotos para galeria")
                     }
@@ -176,7 +200,7 @@ class TikTokCarouselActivity : ComponentActivity() {
         } finally { source.recycle() }
     }
 
-    private fun exportPhotos() {
+    private fun exportPhotos(shareAfterExport: Boolean = false) {
         if (busy || pages.isEmpty()) return
         val snapshot = pages.toList()
         val chosen = format
@@ -185,6 +209,7 @@ class TikTokCarouselActivity : ComponentActivity() {
         message = "Preparando fotos…"
         scope.launch {
             val created = mutableListOf<Uri>()
+            var exportSucceeded = false
             try {
                 withContext(Dispatchers.IO) {
                     snapshot.forEachIndexed { index, page ->
@@ -207,6 +232,7 @@ class TikTokCarouselActivity : ComponentActivity() {
                         check(contentResolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null) == 1)
                     }
                 }
+                exportSucceeded = true
                 message = "${created.size} fotos salvas em Pictures/$batch. Selecione em ordem no TikTok."
             } catch (e: Exception) {
                 withContext(NonCancellable + Dispatchers.IO) {
@@ -215,6 +241,34 @@ class TikTokCarouselActivity : ComponentActivity() {
                 if (e is CancellationException) throw e
                 message = "Falha ao exportar fotos: ${e.message ?: "verifique as imagens"}"
             } finally { busy = false }
+            // Sharing is intentionally outside the export rollback boundary. A missing
+            // recipient must never delete successfully exported photos.
+            if (shareAfterExport && exportSucceeded && !isFinishing && !isDestroyed) {
+                shareToTikTok(created.toList())
+            }
+        }
+    }
+
+    private fun shareToTikTok(uris: List<Uri>) {
+        if (busy || isFinishing || isDestroyed || uris.size !in 2..TikTokCarouselPolicy.MAX_PAGES) return
+        val intent = TikTokShareIntentFactory.create(uris)
+        val packages = listOf("com.zhiliaoapp.musically", "com.ss.android.ugc.trill")
+        for (packageName in packages) {
+            try {
+                startActivity(Intent(intent).setPackage(packageName))
+                message = "Fotos enviadas ao TikTok. Confira a ordem e escolha Modo Foto antes de publicar."
+                return
+            } catch (_: ActivityNotFoundException) {
+                // Try the next official package; no package visibility query needed.
+            } catch (_: SecurityException) {
+                // A source provider may not allow the receiving app to read its URI.
+            }
+        }
+        try {
+            startActivity(Intent.createChooser(intent, "Compartilhar fotos"))
+            message = "Escolha TikTok. Se não aparecer, exporte para a galeria e selecione as fotos no TikTok."
+        } catch (_: Exception) {
+            message = "Não foi possível compartilhar. Exporte para a galeria e selecione as fotos no TikTok."
         }
     }
 

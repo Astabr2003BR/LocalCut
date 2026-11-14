@@ -60,7 +60,7 @@ class AutomaticVideoActivity : ComponentActivity() {
         choosingOutput = savedInstanceState?.getBoolean("choosing") ?: false
         val imagePicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
             if (!busy && !choosingOutput && uris.isNotEmpty()) {
-                val valid = uris.filter { it.scheme == "content" && contentResolver.getType(it)?.startsWith("image/") == true }
+                val valid = uris.filter { it.scheme == "content" && runCatching { contentResolver.getType(it)?.startsWith("image/") == true }.getOrDefault(false) }
                 if (valid.size != uris.size) message = "Seleção contém mídia não reconhecida; nada alterado."
                 else {
                     valid.forEach(::persist)
@@ -71,7 +71,7 @@ class AutomaticVideoActivity : ComponentActivity() {
         }
         val audioPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (!busy && !choosingOutput && uri != null) {
-                if (uri.scheme == "content" && contentResolver.getType(uri)?.startsWith("audio/") == true) {
+                if (uri.scheme == "content" && runCatching { contentResolver.getType(uri)?.startsWith("audio/") == true }.getOrDefault(false)) {
                     persist(uri)
                     audio = uri.toString()
                     message = "Áudio selecionado. Será cortado ao final do vídeo, se for mais longo."
@@ -84,7 +84,7 @@ class AutomaticVideoActivity : ComponentActivity() {
             approvedPlan = null
             if (uri != null && !busy) {
                 if (plan != null) export(plan, uri)
-                else { SafExportDestination(contentResolver, uri).discard(); message = "Roteiro inválido. Nenhum vídeo criado." }
+                else { message = "Roteiro inválido. Nenhum vídeo criado; confira o destino selecionado." }
             }
         }
         setContent {
@@ -109,7 +109,8 @@ class AutomaticVideoActivity : ComponentActivity() {
                     Button(onClick = { imagePicker.launch(arrayOf("image/*")) }, enabled = editable) { Text("Adicionar imagens locais") }
                     images.forEachIndexed { index, source ->
                         Row(Modifier.fillMaxWidth()) {
-                            Text("${index + 1}. ${sourceName(source)}", modifier = Modifier.weight(1f), maxLines = 2)
+                            val name by produceState("Mídia local", source) { value = withContext(Dispatchers.IO) { sourceName(source) } }
+                            Text("${index + 1}. $name", modifier = Modifier.weight(1f), maxLines = 2)
                             TextButton(enabled = editable && index > 0, onClick = {
                                 images = images.toMutableList().apply { add(index - 1, removeAt(index)) }
                             }) { Text("↑") }
@@ -117,7 +118,11 @@ class AutomaticVideoActivity : ComponentActivity() {
                         }
                     }
                     Button(onClick = { audioPicker.launch(arrayOf("audio/*")) }, enabled = editable) { Text(if (audio == null) "Adicionar áudio (opcional)" else "Trocar áudio") }
-                    audio?.let { Text(sourceName(it)); TextButton(onClick = { audio = null }, enabled = editable) { Text("Remover áudio") } }
+                    audio?.let { source ->
+                        val name by produceState("Áudio local", source) { value = withContext(Dispatchers.IO) { sourceName(source) } }
+                        Text(name)
+                        TextButton(onClick = { audio = null }, enabled = editable) { Text("Remover áudio") }
+                    }
                     Text("Cole o roteiro do GPT. image = número da imagem; durationMs = duração em milissegundos. Formatos: 9:16, 4:5, 16:9, 1:1.")
                     OutlinedTextField(value = recipe, onValueChange = {
                         if (it.length <= AutomaticVideoRecipe.MAX_CHARS) recipe = it

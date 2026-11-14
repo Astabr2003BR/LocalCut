@@ -1,6 +1,9 @@
 package com.localcut.editor.mobile
 
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.ContentValues
 import android.content.Intent
 import android.graphics.Bitmap
@@ -52,6 +55,9 @@ class TikTokCarouselActivity : ComponentActivity() {
     private var message by mutableStateOf("")
     private var videoPickerOpen = false
     private var shareOptions by mutableStateOf(false)
+    private var postDraft by mutableStateOf(TikTokPostDraft())
+    private var showPostDraft by mutableStateOf(false)
+    private var copyOnShare by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,6 +71,13 @@ class TikTokCarouselActivity : ComponentActivity() {
         selected = (savedInstanceState?.getInt("selected") ?: 0).coerceIn(0, (pages.size - 1).coerceAtLeast(0))
         seconds = (savedInstanceState?.getInt("seconds") ?: 5).coerceIn(2, 15)
         videoPickerOpen = savedInstanceState?.getBoolean("videoPickerOpen") ?: false
+        postDraft = TikTokPostDraft(
+            title = savedInstanceState?.getString("postTitle").orEmpty(),
+            description = savedInstanceState?.getString("postDescription").orEmpty(),
+            hashtags = savedInstanceState?.getString("postHashtags").orEmpty(),
+        ).bounded()
+        copyOnShare = savedInstanceState?.getBoolean("copyOnShare") ?: false
+        showPostDraft = savedInstanceState?.getBoolean("showPostDraft") ?: false
 
         val pick = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
             if (busy || uris.isEmpty()) return@registerForActivityResult
@@ -82,11 +95,28 @@ class TikTokCarouselActivity : ComponentActivity() {
         }
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
+                if (showPostDraft) {
+                    TikTokPostDraftDialog(
+                        draft = postDraft,
+                        onChange = { postDraft = it.bounded() },
+                        copyOnShare = copyOnShare,
+                        onCopyOnShareChange = { copyOnShare = it },
+                        onCopy = ::copyPostText,
+                        onDismiss = { showPostDraft = false },
+                    )
+                }
                 if (shareOptions) {
                     AlertDialog(
                         onDismissRequest = { shareOptions = false },
                         title = { Text("Compartilhar no TikTok") },
-                        text = { Text("Envie as fotos originais na ordem escolhida, ou exporte no formato selecionado antes de enviar. No TikTok, escolha Modo Foto, se disponível. Confira a ordem e identifique conteúdo gerado por IA quando aplicável.") },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Envie as fotos originais na ordem escolhida, ou exporte no formato selecionado. No TikTok, escolha Modo Foto, confira a ordem e identifique conteúdo gerado por IA quando aplicável.")
+                                if (postDraft.fullText().isNotBlank()) {
+                                    Text(if (copyOnShare) "O texto completo será copiado ao enviar. Cole no TikTok." else "Texto preparado. Abra Título, descrição e hashtags para copiar.")
+                                }
+                            }
+                        },
                         confirmButton = {
                             TextButton(onClick = {
                                 shareOptions = false
@@ -114,6 +144,11 @@ class TikTokCarouselActivity : ComponentActivity() {
                         FilterChip(selected = format == CarouselFormat.VERTICAL, onClick = { format = CarouselFormat.VERTICAL }, enabled = !busy, label = { Text("9:16") })
                         Text("${pages.size}/35")
                     }
+                    TextButton(
+                        onClick = { showPostDraft = true },
+                        enabled = !busy && !videoPickerOpen,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Título, descrição e hashtags") }
                     val current = pages.getOrNull(selected)
                     if (current != null) {
                         val preview by produceState<Bitmap?>(null, current) {
@@ -174,6 +209,11 @@ class TikTokCarouselActivity : ComponentActivity() {
         outState.putInt("selected", selected)
         outState.putInt("seconds", seconds)
         outState.putBoolean("videoPickerOpen", videoPickerOpen)
+        outState.putString("postTitle", postDraft.title)
+        outState.putString("postDescription", postDraft.description)
+        outState.putString("postHashtags", postDraft.hashtags)
+        outState.putBoolean("copyOnShare", copyOnShare)
+        outState.putBoolean("showPostDraft", showPostDraft)
         super.onSaveInstanceState(outState)
     }
 
@@ -249,8 +289,20 @@ class TikTokCarouselActivity : ComponentActivity() {
         }
     }
 
+    private fun copyPostText(text: String) {
+        if (text.isBlank()) return
+        try {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("Texto da publicação", text))
+            message = "Texto copiado. Cole no TikTok."
+        } catch (_: Exception) {
+            message = "Não foi possível copiar. O texto continua salvo nesta tela."
+        }
+    }
+
     private fun shareToTikTok(uris: List<Uri>) {
         if (busy || isFinishing || isDestroyed || uris.size !in 2..TikTokCarouselPolicy.MAX_PAGES) return
+        if (copyOnShare) copyPostText(postDraft.fullText())
         val intent = TikTokShareIntentFactory.create(uris)
         val packages = listOf("com.zhiliaoapp.musically", "com.ss.android.ugc.trill")
         for (packageName in packages) {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { createAttachmentStager } from "../src/attachmentTransport.ts";
 import { createTransientMediaStore } from "../src/transientMediaHttp.ts";
@@ -38,6 +39,7 @@ test("attachment stager fetches a ChatGPT file and stages it without exposing so
   assert.equal(result.fileName, "frame.png");
   assert.equal(result.mimeType, "image/png");
   assert.equal(result.sizeBytes, 11);
+  assert.equal(result.sha256, createHash("sha256").update("image-bytes").digest("hex"));
   assert.equal(result.relayUrl, `https://localcut-bridge.example/v1/mobile-media/${TOKEN}`);
   assert.equal(
     result.handoffUrl,
@@ -50,6 +52,7 @@ test("attachment stager fetches a ChatGPT file and stages it without exposing so
   assert.ok(entry);
   assert.equal(entry?.contentType, "image/png");
   assert.deepEqual(entry?.bytes, Buffer.from("image-bytes"));
+  assert.equal(result.sha256, createHash("sha256").update(entry.bytes).digest("hex"));
   assert.equal(store.take(TOKEN), null, "relay entry must be one-time");
 });
 

@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { isIP } from "node:net";
 import {
   isAllowedTransientMediaType,
@@ -17,6 +17,7 @@ export type AttachmentStageResult = {
   fileName: string | null;
   mimeType: string;
   sizeBytes: number;
+  sha256: string;
   expiresAtEpochMs: number;
   relayUrl: string;
   handoffUrl: string;
@@ -114,6 +115,7 @@ export function createAttachmentStager(options: AttachmentStagerOptions) {
       fileName: file.file_name ?? null,
       mimeType,
       sizeBytes: bytes.length,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
       expiresAtEpochMs: staged.expiresAtEpochMs,
       relayUrl,
       handoffUrl: handoff.toString(),

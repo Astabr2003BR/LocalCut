@@ -11,6 +11,8 @@ import org.junit.runner.RunWith
 import java.io.File
 import java.security.MessageDigest
 import java.util.Base64
+import java.util.UUID
+import androidx.core.content.FileProvider
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -65,6 +67,38 @@ class PortableStudioPackageSmokeTest {
         cases.forEach { (json, files) ->
             withArchive(json, files) { file ->
                 assertTrue(runCatching { PortableStudioPackage.verify(file) }.isFailure)
+            }
+        }
+    }
+
+    @Test fun stagesPrivateImagesAndReadsThroughAndroidFileProvider() {
+        withArchive(manifest(), listOf("media/frame" to png)) { archive ->
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val dir = File(File(context.cacheDir, "portable-studio"), UUID.randomUUID().toString())
+            try {
+                val staged = PortableStudioStager.stage(dir, { archive.inputStream() })
+                assertEquals(AutomaticVideoRecipe.EXAMPLE, staged.recipe)
+                assertEquals("frame.png", staged.images.single().name)
+                assertTrue(!File(dir, "archive.localcut").exists())
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.remote-media", staged.images.single())
+                assertTrue(context.contentResolver.openInputStream(uri)!!.use { it.readBytes() }.contentEquals(png))
+            } finally { dir.deleteRecursively() }
+        }
+    }
+
+    @Test fun stagingFailureLeavesNoPartialDirectory() {
+        withArchive(manifest(), listOf("media/frame" to png)) { archive ->
+            val cache = InstrumentationRegistry.getInstrumentation().targetContext.cacheDir
+            for (mode in listOf("space", "cancel", "corrupt")) {
+                val dir = File(cache, "portable-test-${UUID.randomUUID()}")
+                val outcome = runCatching {
+                    PortableStudioStager.stage(dir,
+                        openSource = { if (mode == "corrupt") byteArrayOf(1, 2, 3).inputStream() else archive.inputStream() },
+                        checkCancelled = { if (mode == "cancel") error("cancelled") },
+                        availableBytes = { if (mode == "space") 0L else Long.MAX_VALUE })
+                }
+                assertTrue(outcome.isFailure)
+                assertTrue(!dir.exists())
             }
         }
     }

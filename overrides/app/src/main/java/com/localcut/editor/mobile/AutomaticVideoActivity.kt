@@ -24,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
+import androidx.core.content.FileProvider
 import com.localcut.editor.LocalCutProcessRuntime
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
@@ -50,6 +51,12 @@ class AutomaticVideoActivity : ComponentActivity() {
     private var choosingOutput by mutableStateOf(false)
     private var approvedPlan: AutomaticVideoPlan? = null
     private var showApproval by mutableStateOf(false)
+    private var packageDirectory: String? = null
+    private var packageAudioSource: String? = null
+    private var packageAudioMime: String? = null
+    private var showPackageReplace by mutableStateOf(false)
+    private var importingPackage by mutableStateOf(false)
+    private var packageJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,6 +65,12 @@ class AutomaticVideoActivity : ComponentActivity() {
         audio = savedInstanceState?.getString("audio")
         recipe = savedInstanceState?.getString("recipe") ?: AutomaticVideoRecipe.EXAMPLE
         choosingOutput = savedInstanceState?.getBoolean("choosing") ?: false
+        packageDirectory = savedInstanceState?.getString("packageDirectory")
+        packageAudioSource = savedInstanceState?.getString("packageAudioSource")
+        packageAudioMime = savedInstanceState?.getString("packageAudioMime")
+        val packagePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null && !busy && !choosingOutput && uri.scheme == "content") importPackage(uri)
+        }
         val imagePicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
             if (!busy && !choosingOutput && uris.isNotEmpty()) {
                 val valid = uris.filter { it.scheme == "content" && runCatching { contentResolver.getType(it)?.startsWith("image/") == true }.getOrDefault(false) }
@@ -89,6 +102,13 @@ class AutomaticVideoActivity : ComponentActivity() {
         }
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
+                if (showPackageReplace) AlertDialog(
+                    onDismissRequest = { showPackageReplace = false },
+                    title = { Text("Abrir pacote .localcut") },
+                    text = { Text("O pacote substituirá apenas a seleção e o roteiro deste Estúdio. O projeto do editor não será alterado.") },
+                    confirmButton = { TextButton(onClick = { showPackageReplace = false; packagePicker.launch(arrayOf("*/*")) }) { Text("Selecionar pacote") } },
+                    dismissButton = { TextButton(onClick = { showPackageReplace = false }) { Text("Cancelar") } },
+                )
                 if (showApproval) AlertDialog(
                     onDismissRequest = { showApproval = false; approvedPlan = null },
                     title = { Text("Criar vídeo local") },
@@ -100,12 +120,17 @@ class AutomaticVideoActivity : ComponentActivity() {
                     }) { Text("Escolher destino e criar") } },
                     dismissButton = { TextButton(onClick = { showApproval = false; approvedPlan = null }) { Text("Cancelar") } },
                 )
-                BackHandler(enabled = busy) { message = "Exportação em andamento. Mantenha esta tela aberta." }
+                BackHandler(enabled = busy) { message = if (importingPackage) "Use Cancelar importação." else "Exportação em andamento. Mantenha esta tela aberta." }
                 Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Estúdio automático", style = MaterialTheme.typography.headlineSmall)
                     Text("Vídeo offline a partir de imagens, roteiro JSON e áudio opcional. Sem IA interna ou créditos.")
                     val editable = !busy && !choosingOutput
                     TextButton(onClick = { finish() }, enabled = editable) { Text("Voltar") }
+                    Button(onClick = {
+                        if (images.isNotEmpty() || audio != null || recipe != AutomaticVideoRecipe.EXAMPLE) showPackageReplace = true
+                        else packagePicker.launch(arrayOf("*/*"))
+                    }, enabled = editable) { Text("Abrir pacote .localcut") }
+                    if (importingPackage) TextButton(onClick = { packageJob?.cancel() }) { Text("Cancelar importação") }
                     Button(onClick = { imagePicker.launch(arrayOf("image/*")) }, enabled = editable) { Text("Adicionar imagens locais") }
                     images.forEachIndexed { index, source ->
                         Row(Modifier.fillMaxWidth()) {
@@ -147,7 +172,58 @@ class AutomaticVideoActivity : ComponentActivity() {
         outState.putString("audio", audio)
         outState.putString("recipe", recipe)
         outState.putBoolean("choosing", choosingOutput)
+        outState.putString("packageDirectory", packageDirectory)
+        outState.putString("packageAudioSource", packageAudioSource)
+        outState.putString("packageAudioMime", packageAudioMime)
         super.onSaveInstanceState(outState)
+    }
+
+    private fun packagePath(name: String): File {
+        require(name.matches(Regex("[0-9a-f-]{36}")))
+        return File(File(cacheDir, "portable-studio"), name)
+    }
+
+    private fun importPackage(uri: Uri) {
+        val name = UUID.randomUUID().toString()
+        val directory = packagePath(name)
+        busy = true
+        importingPackage = true
+        message = "Validando pacote e mídias locais..."
+        packageJob = scope.launch {
+            var adopted = false
+            try {
+                val staged = withContext(Dispatchers.IO) {
+                    val context = currentCoroutineContext()
+                    PortableStudioStager.stage(directory,
+                        openSource = { contentResolver.openInputStream(uri) ?: error("Arquivo indisponível") },
+                        checkCancelled = { context.ensureActive() })
+                }
+                val authority = "$packageName.remote-media"
+                val newImages = staged.images.map { FileProvider.getUriForFile(this@AutomaticVideoActivity, authority, it).toString() }
+                val newAudio = staged.audio?.let { FileProvider.getUriForFile(this@AutomaticVideoActivity, authority, it).toString() }
+                val previous = packageDirectory
+                images = newImages
+                audio = newAudio
+                recipe = staged.recipe
+                packageDirectory = name
+                packageAudioSource = newAudio
+                packageAudioMime = staged.audioMime
+                approvedPlan = null
+                adopted = true
+                message = "Pacote aberto: ${newImages.size} imagens. Confira o roteiro e escolha Validar e criar MP4."
+                if (previous != null) withContext(Dispatchers.IO) { packagePath(previous).deleteRecursively() }
+            } catch (e: CancellationException) {
+                message = "Importação cancelada."
+                throw e
+            } catch (e: Exception) {
+                message = "Não foi possível abrir o pacote: ${e.message ?: "arquivo inválido"}"
+            } finally {
+                if (!adopted) withContext(NonCancellable + Dispatchers.IO) { directory.deleteRecursively() }
+                importingPackage = false
+                busy = false
+                packageJob = null
+            }
+        }
     }
 
     private fun persist(uri: Uri) {
@@ -207,7 +283,8 @@ class AutomaticVideoActivity : ComponentActivity() {
                     var audioClip: Clip? = null
                     if (chosenAudio != null) {
                         val uri = Uri.parse(chosenAudio)
-                        val mime = contentResolver.getType(uri)?.takeIf { it.startsWith("audio/") } ?: error("Áudio inválido")
+                        val mime = (if (chosenAudio == packageAudioSource) packageAudioMime else contentResolver.getType(uri))
+                            ?.takeIf { it.startsWith("audio/") } ?: error("Áudio inválido")
                         val retriever = MediaMetadataRetriever()
                         val duration = try {
                             retriever.setDataSource(this@AutomaticVideoActivity, uri)
@@ -269,5 +346,9 @@ class AutomaticVideoActivity : ComponentActivity() {
         }
     }
 
-    override fun onDestroy() { scope.cancel(); super.onDestroy() }
+    override fun onDestroy() {
+        scope.cancel()
+        if (isFinishing && !busy) packageDirectory?.let { packagePath(it).deleteRecursively() }
+        super.onDestroy()
+    }
 }

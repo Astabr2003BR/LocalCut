@@ -72,22 +72,16 @@ internal object AutomaticVideoProjectBuilder {
             val file = File(dir, "audio.$extension")
             (context.contentResolver.openInputStream(uri) ?: error("Áudio indisponível")).use { input ->
                 file.outputStream().use { out ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        checkCancelled()
-                        val size = input.read(buffer)
-                        if (size < 0) break
-                        out.write(buffer, 0, size)
-                    }
+                    copyStudioMedia(input, out, checkCancelled, availableBytes = { dir.usableSpace })
                 }
             }
-            check(file.length() > 0)
             assets += Asset(id = "audio", type = AssetType.AUDIO, uri = Uri.fromFile(file).toString(),
                 sourceDurationUs = duration, sizeBytes = file.length(), displayName = file.name,
                 mimeType = mime, fingerprint = "${file.name}-${file.length()}")
             val end = minOf(duration, plan.durationUs)
             audioClip = Clip(id = "audio-clip", assetId = "audio", startUs = 0L, durationUs = end, sourceInUs = 0L, sourceOutUs = end)
         }
+        checkCancelled()
         val base = Project.create("Estúdio automático", plan.width, plan.height, 30, id = UUID.randomUUID().toString())
         val visual = base.tracks.first { it.type == TrackType.VISUAL }.id
         val sound = base.tracks.first { it.type == TrackType.AUDIO }.id
@@ -101,24 +95,11 @@ internal object AutomaticVideoProjectBuilder {
     }
 
     private fun prepareVideo(context: Context, uri: Uri, file: File, checkCancelled: () -> Unit): Long {
-        val limit = 128L * 1024 * 1024
-        val reserve = 16L * 1024 * 1024
-        var total = 0L
         (context.contentResolver.openInputStream(uri) ?: error("Vídeo indisponível")).use { input ->
             file.outputStream().use { output ->
-                val buffer = ByteArray(64 * 1024)
-                while (true) {
-                    checkCancelled()
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    require(count > 0 && total <= limit - count) { "Vídeo excede limite técnico de importação" }
-                    require(file.parentFile!!.usableSpace >= reserve + count) { "Espaço insuficiente" }
-                    output.write(buffer, 0, count)
-                    total += count
-                }
+                copyStudioMedia(input, output, checkCancelled, availableBytes = { file.parentFile!!.usableSpace })
             }
         }
-        require(total > 0) { "Vídeo vazio" }
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(file.absolutePath)

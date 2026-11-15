@@ -157,6 +157,9 @@ class BridgeCommandExecutor(
     }
 
     private fun executeSeek(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        if (command.expectedRevision != null && command.expectedRevision != session.state.revision) {
+            return error(command, BridgeErrorCode.REVISION_CONFLICT, "project revision changed", retryable = true)
+        }
         val positionUs = payload(command).requiredLong("positionUs")
         require(positionUs >= 0L) { "positionUs must be non-negative" }
         val result = playback.seekToUs(positionUs)

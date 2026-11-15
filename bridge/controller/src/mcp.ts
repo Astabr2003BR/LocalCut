@@ -10,6 +10,7 @@ import {
   revisionRequiredCapabilities,
 } from "./protocol.ts";
 import { registerTermuxTools } from "./termuxMcp.ts";
+import { MAX_REVIEW_FRAMES, PreviewReviewCoordinator, previewReviewToolResult } from "./previewReview.ts";
 
 const MAX_PREVIEW_BASE64_CHARS = 2_000_000;
 const ACTIVE_PROJECT_SENTINEL = "__localcut_active_project__";
@@ -141,6 +142,7 @@ export function createLocalCutMcpServer(
   router: CommandRouter,
   controllerId: string,
   admin?: ControllerAdminActions,
+  review?: { coordinator: PreviewReviewCoordinator; authorizedDeviceId: () => string | null },
 ): McpServer {
   if (!controllerId) throw new Error("controllerId is required");
   const server = new McpServer({ name: "LocalCut Controller", version: "0.1.0" });
@@ -166,6 +168,24 @@ export function createLocalCutMcpServer(
   );
 
   registerTermuxTools(server, router, controllerId);
+
+  if (review) {
+    const reviewSchema = z.object({
+      deviceId: z.string().min(1).max(128), projectId: z.string().min(1).max(256),
+      expectedRevision: z.number().int().nonnegative(),
+      positionsUs: z.array(z.number().int().nonnegative()).min(2).max(MAX_REVIEW_FRAMES),
+    }).strict();
+    server.registerTool("review_preview_frames", {
+      title: "LocalCut: review multiple preview frames",
+      description: "Collect 2-4 ordered editor preview images for one exact project revision on your OAuth-authorized paired device. Pause playback first. Moves the visible playhead to the requested positions and leaves it at the last sampled position; does not edit the project. Images are approximate editor previews, not final export QA. If any frame or revision check fails, no images are returned.",
+      inputSchema: reviewSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      _meta: oauthToolMeta(["localcut:read", "localcut:write"]),
+    }, async input => {
+      const parsed = reviewSchema.parse(input);
+      return previewReviewToolResult(await review.coordinator.collect(router, controllerId, parsed, review.authorizedDeviceId));
+    });
+  }
 
   for (const capability of bridgeCapabilities) {
     const inputSchema = buildToolInputSchema(capability);

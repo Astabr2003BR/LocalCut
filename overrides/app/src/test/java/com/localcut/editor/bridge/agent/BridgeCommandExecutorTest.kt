@@ -197,6 +197,22 @@ class BridgeCommandExecutorTest {
     }
 
     @Test
+    fun revisionBoundSeekRejectsStaleRevisionWithoutMovingPlayhead() {
+        val fixture = fixture()
+        val stale = fixture.executor.execute(command(BridgeCapability.SEEK,
+            payload = """{"positionUs":1000000}""", expectedRevision = 4L))
+        assertFalse(stale.success)
+        assertEquals(BridgeErrorCode.REVISION_CONFLICT, stale.code)
+        assertEquals(0L, fixture.playback.positionUs)
+        assertEquals(5L, fixture.session.state.revision)
+        val valid = fixture.executor.execute(command(BridgeCapability.SEEK,
+            payload = """{"positionUs":1000000}""", messageId = "valid-seek", expectedRevision = 5L))
+        assertTrue(valid.success)
+        assertEquals(1_000_000L, fixture.playback.positionUs)
+        assertEquals(5L, fixture.session.state.revision)
+    }
+
+    @Test
     fun seekChangesPlaybackStateButNotProjectRevision() {
         val fixture = fixture()
         val result = fixture.executor.execute(

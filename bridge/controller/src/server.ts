@@ -1,4 +1,6 @@
 import { createPublicKey, timingSafeEqual, verify } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { PreviewReviewCoordinator } from "./previewReview.ts";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { pathToFileURL } from "node:url";
 import { createMcpHandler } from "@modelcontextprotocol/server";
@@ -96,6 +98,8 @@ export function createControllerServer(options: ControllerServerOptions): Contro
     ...(options.remoteRandomToken ? { randomToken: options.remoteRandomToken } : {}),
   });
   const wss = new WebSocketServer({ noServer: true, clientTracking: false });
+  const reviewAuth = new AsyncLocalStorage<string>();
+  const reviewCoordinator = new PreviewReviewCoordinator();
   const mcpHandler = createMcpHandler(() => createLocalCutMcpServer(
     router,
     options.controllerId,
@@ -116,6 +120,15 @@ export function createControllerServer(options: ControllerServerOptions): Contro
         options.sessions.revoke(deviceId);
         registry.get(deviceId)?.close("device_revoked");
         return { revoked: true, deviceId };
+      },
+    },
+    {
+      coordinator: reviewCoordinator,
+      authorizedDeviceId: () => {
+        const token = reviewAuth.getStore();
+        if (!token) return null;
+        try { return oauth.verifyAccessToken(token, ["localcut:read", "localcut:write"]).deviceId; }
+        catch { return null; }
       },
     },
   ));
@@ -192,7 +205,7 @@ export function createControllerServer(options: ControllerServerOptions): Contro
         } catch {
           return sendMcpAuthRequired(res, oauth.issuerBaseUrl);
         }
-        await nodeMcpHandler(req, res);
+        await reviewAuth.run(token!, () => nodeMcpHandler(req, res));
         return;
       }
 

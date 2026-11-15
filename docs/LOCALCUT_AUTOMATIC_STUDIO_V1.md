@@ -17,3 +17,23 @@ Valide, autorize e escolha o destino MP4 pelo seletor Android. O vídeo é compo
 
 ## QA
 AutomaticVideoPlanTest (JVM): ordem, duração, referências inválidas, overflow, mais de 35 cenas. AutomaticVideoRecipeSmokeTest (Android): parsing estrito, versão, duplicidade, tipo, campo desconhecido, referências inválidas, conteúdo extra e limite de tamanho. O teste Android existente de multitrack cobre o motor compartilhado; o fluxo novo de UI/MP4 exige teste físico separado.
+
+
+## Portable package v1 — preflight increment
+A local .localcut ZIP contains manifest.json and exactly one media/<id> entry per manifest asset. IDs are lowercase ASCII [a-z0-9][a-z0-9_-]{0,63}; image order determines the existing recipe's 1-based indices. Manifest example (hash and size must match the actual file):
+
+```json
+{
+  "version": 1,
+  "recipe": "{\"version\":1,\"format\":\"9:16\",\"scenes\":[{\"image\":1,\"durationMs\":5000}]}",
+  "images": [
+    {
+      "id": "frame",
+      "mime": "image/png",
+      "bytes": 123,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}
+```
+Optional audio is one object with the same fields (omit if absent). This version only supports still images and optional audio. No external paths or URLs. No archive comments, ZIP64, multi-disk, directories, or extra entries; maximum 128 assets, 64 KiB manifest, 128 MiB per asset, 256 MiB compressed archive and aggregate uncompressed media, 1 MiB central directory. These are technical preflight limits, not production quotas. Read-only validation verifies strict UTF-8 JSON, exact entry set, CRC, lengths, SHA-256, existing recipe and cancellation checkpoints; it does not extract files, decode media, or alter projects. Caller must supply a private immutable local copy and later perform Android media decoding and storage preflight before import. SAF picker, streaming copy/extraction, project integration, physical QA, video assets and return/export are not implemented by this increment. Never treat a successful preflight as full package import.

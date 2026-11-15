@@ -114,6 +114,10 @@ class BridgeCommandExecutor(
     }
 
     private fun executePreviewFrame(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val before = session.state
+        if (command.expectedRevision != null && command.expectedRevision != before.revision) {
+            return error(command, BridgeErrorCode.REVISION_CONFLICT, "project revision changed", retryable = true)
+        }
         val frameResult = previewFramePort.capture()
         if (frameResult.isFailure) {
             return error(
@@ -124,6 +128,13 @@ class BridgeCommandExecutor(
             )
         }
         val frame = frameResult.getOrThrow()
+        val after = session.state
+        if (after.project.id != before.project.id || after.revision != before.revision) {
+            return error(command, BridgeErrorCode.REVISION_CONFLICT, "project changed during preview capture", retryable = true)
+        }
+        if (!BridgePreviewFreshness.bounded(frame)) {
+            return error(command, BridgeErrorCode.PREVIEW_FAILED, "preview exceeds technical bounds", retryable = false)
+        }
         val encoded = Base64.getEncoder().encodeToString(frame.bytes)
         val resultJson = buildString {
             append("{\"mimeType\":")
@@ -136,6 +147,10 @@ class BridgeCommandExecutor(
             append(frame.height)
             append(",\"positionUs\":")
             append(frame.positionUs)
+            append(",\"projectId\":")
+            append(jsonString(before.project.id))
+            append(",\"revision\":")
+            append(before.revision)
             append('}')
         }
         return success(command, resultJson)

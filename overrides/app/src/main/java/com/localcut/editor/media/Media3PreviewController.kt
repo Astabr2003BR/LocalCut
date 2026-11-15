@@ -40,14 +40,18 @@ class Media3PreviewController(
     )
 
     override val state = delegate.state
-    override fun load(project: Project): Result<Unit> = delegate.load(project).also { result ->
+    override fun load(project: Project): Result<Unit> {
+        bridgePreviewFramePort.invalidate()
+        return delegate.load(project).also { result ->
         if (result.isSuccess) {
             lastProject = project
         }
-        scheduleBoundSurfaceRefreshAfterContentLoad(result.isSuccess)
+            scheduleBoundSurfaceRefreshAfterContentLoad(result.isSuccess)
+        }
     }
 
     fun loadRenderedFile(file: File, durationUs: Long, fps: Int): Result<Unit> {
+        bridgePreviewFramePort.invalidate()
         val editorProject = lastProject
         val editorPositionUs = state.value.positionUs
         val result = delegate.loadResult(engine.loadRenderedFile(file, durationUs, fps))
@@ -74,6 +78,7 @@ class Media3PreviewController(
     }
 
     override fun seekToUs(positionUs: Long) {
+        bridgePreviewFramePort.invalidate()
         if (backgroundSession.isSuspended) {
             val targetUs = delegate.seekToUsWhileSuspended(positionUs)
             backgroundSession.updateSuspendedPositionUs(targetUs)
@@ -83,11 +88,15 @@ class Media3PreviewController(
         bridgePreviewFramePort.requestRefresh()
     }
     override fun stepFrames(deltaFrames: Int, fps: Int) {
+        bridgePreviewFramePort.invalidate()
         delegate.stepFrames(deltaFrames, fps)
         bridgePreviewFramePort.requestRefresh()
     }
     override fun setLoopRange(startUs: Long, endUs: Long?) = delegate.setLoopRange(startUs, endUs)
-    override fun release() = delegate.release()
+    override fun release() {
+        bridgePreviewFramePort.invalidate()
+        delegate.release()
+    }
 
     /**
      * Releases the Activity-owned Media3 player while the UI is backgrounded. The project model,
@@ -156,6 +165,7 @@ class Media3PreviewController(
             }
         }
 
+        bridgePreviewFramePort.invalidate()
         delegate.seekToUs(positionUs)
         bridgePreviewFramePort.requestRefresh()
     }

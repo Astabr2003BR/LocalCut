@@ -1,5 +1,25 @@
 package com.localcut.editor.mobile
 
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.media.MediaMetadataRetriever
+import androidx.annotation.OptIn
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.Transformer
+import com.localcut.editor.data.assets.AssetUriResolver
+import com.localcut.editor.media.ProjectCompositionCompiler
+import com.localcut.editor.media.RenderMode
+import com.localcut.editor.domain.model.TrackType
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONObject
@@ -17,6 +37,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 @RunWith(AndroidJUnit4::class)
+@OptIn(UnstableApi::class)
 class PortableStudioPackageSmokeTest {
     private val png = Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGPgEpEDAABoAD1UCKP3AAAAAElFTkSuQmCC")
     private fun digest(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }
@@ -99,6 +120,90 @@ class PortableStudioPackageSmokeTest {
                 }
                 assertTrue(outcome.isFailure)
                 assertTrue(!dir.exists())
+            }
+        }
+    }
+
+    @Test fun exportsPackagedImageAndAudioThroughSharedProjectBuilder() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val image = Bitmap.createBitmap(320, 180, Bitmap.Config.ARGB_8888).let { bitmap ->
+            try {
+                bitmap.eraseColor(Color.GREEN)
+                ByteArrayOutputStream().use { out ->
+                    check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out))
+                    out.toByteArray()
+                }
+            } finally { bitmap.recycle() }
+        }
+        val samples = 44_100 * 2
+        val wav = ByteBuffer.allocate(44 + samples * 2).order(ByteOrder.LITTLE_ENDIAN).apply {
+            put("RIFF".toByteArray(Charsets.US_ASCII)); putInt(36 + samples * 2)
+            put("WAVEfmt ".toByteArray(Charsets.US_ASCII)); putInt(16)
+            putShort(1.toShort()); putShort(1.toShort()); putInt(44_100); putInt(88_200)
+            putShort(2.toShort()); putShort(16.toShort())
+            put("data".toByteArray(Charsets.US_ASCII)); putInt(samples * 2)
+            repeat(samples) { index -> putShort((kotlin.math.sin(index * 2.0 * kotlin.math.PI / 100.0) * 4000).toInt().toShort()) }
+        }.array()
+        val recipe = """{"version":1,"format":"16:9","scenes":[{"image":1,"durationMs":1000}]}"""
+        val json = JSONObject().put("version", 1).put("recipe", recipe)
+            .put("images", JSONArray().put(asset(bytes = image.size.toLong(), sha = digest(image))))
+            .put("audio", JSONObject().put("id", "tone").put("mime", "audio/wav").put("bytes", wav.size).put("sha256", digest(wav)))
+        withArchive(json.toString(), listOf("media/frame" to image, "media/tone" to wav)) { archive ->
+            val stageDir = File(File(context.cacheDir, "portable-studio"), UUID.randomUUID().toString())
+            val workDir = File(context.cacheDir, "automatic-smoke-${UUID.randomUUID()}")
+            val output = File(context.cacheDir, "portable-export-${UUID.randomUUID()}.mp4")
+            val running = AtomicReference<Transformer?>()
+            try {
+                val staged = PortableStudioStager.stage(stageDir, { archive.inputStream() })
+                val authority = "${context.packageName}.remote-media"
+                val selected = staged.images.map { FileProvider.getUriForFile(context, authority, it).toString() }
+                val audio = FileProvider.getUriForFile(context, authority, requireNotNull(staged.audio)).toString()
+                val plan = AutomaticVideoRecipe.parse(staged.recipe, selected.size)
+                val project = AutomaticVideoProjectBuilder.build(context, plan, selected, audio, staged.audioMime, workDir)
+                assertEquals(1_000_000L, project.tracks.first { it.type == TrackType.VISUAL }.clips.single().durationUs)
+                assertEquals(1_000_000L, project.tracks.first { it.type == TrackType.AUDIO }.clips.single().durationUs)
+                val composition = ProjectCompositionCompiler(AssetUriResolver(context.contentResolver)).compile(project, RenderMode.EXPORT).getOrThrow()
+                val completed = CountDownLatch(1)
+                val failure = AtomicReference<Throwable?>()
+                instrumentation.runOnMainSync {
+                    val transformer = Transformer.Builder(context)
+                        .setVideoMimeType(MimeTypes.VIDEO_H264)
+                        .setAudioMimeType(MimeTypes.AUDIO_AAC)
+                        .addListener(object : Transformer.Listener {
+                            override fun onCompleted(composition: Composition, exportResult: ExportResult) { completed.countDown() }
+                            override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+                                failure.set(exportException)
+                                completed.countDown()
+                            }
+                        }).build()
+                    running.set(transformer)
+                    transformer.start(composition, output.absolutePath)
+                }
+                assertTrue("Portable export timed out", completed.await(120, TimeUnit.SECONDS))
+                failure.get()?.let { throw AssertionError("Portable export failed", it) }
+                assertTrue(output.isFile && output.length() > 0)
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(output.absolutePath)
+                    assertEquals("yes", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO))
+                    assertEquals(1920, retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt())
+                    assertEquals(1080, retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt())
+                    val duration = requireNotNull(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)).toLong()
+                    assertTrue("Unexpected duration: $duration", duration in 900L..1150L)
+                    val frame = requireNotNull(retriever.getFrameAtTime(500_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC))
+                    try {
+                        val center = frame.getPixel(frame.width / 2, frame.height / 2)
+                        assertTrue(Color.green(center) > Color.red(center) + 40 && Color.green(center) > Color.blue(center) + 40)
+                    } finally { frame.recycle() }
+                } finally { retriever.release() }
+                assertEquals(digest(image), digest(staged.images.single().readBytes()))
+                assertEquals(digest(wav), digest(requireNotNull(staged.audio).readBytes()))
+            } finally {
+                running.get()?.let { transformer -> instrumentation.runOnMainSync { transformer.cancel() } }
+                stageDir.deleteRecursively()
+                workDir.deleteRecursively()
+                output.delete()
             }
         }
     }

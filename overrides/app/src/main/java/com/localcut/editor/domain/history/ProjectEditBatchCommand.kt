@@ -477,11 +477,11 @@ private fun patchClip(project: Project, operation: ProjectEditOperation.PatchCli
         y = operation.y ?: baseTransform.y,
         scale = operation.scale ?: baseTransform.scale,
         rotationDeg = operation.rotationDeg ?: baseTransform.rotationDeg,
-        opacity = operation.opacity ?: baseTransform.opacity,
     )
     val next = current.copy(
         startUs = operation.startUs ?: current.startUs,
         transform = nextTransform,
+        opacity = operation.opacity ?: current.opacity,
         volume = operation.volume ?: current.volume,
     )
     val clips = track.clips.toMutableList().also { it[clipIndex] = next }

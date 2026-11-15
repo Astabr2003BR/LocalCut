@@ -108,3 +108,7 @@ Parent 799fa60efa872d8201ee03d62ae250eb92f978dc: all four CI PASS (2067,1898,172
 
 ## Hybrid existing-project Editor IA local approval — 2026-11-15
 Parent 2163a67ee28fb3ff65b4d17cbfbe7cd19e88c0d1: four CI PASS (2068,1899,1722,868), PR draft/open. Added Editor IA entry beside carousel and dialog for existing project, copy bounded context (no private URI), paste revision-bound visual plan, immutable dry-run, single-use explicit approval and exact project/revision check, existing history and snapshot refresh. Reuses existing typed parser and automatic studio entry. Added JVM tests (not executed locally); CI pending. Approval in memory only, no remote permission changes, no audio/timing/delete in local visual correction. External GPT/Bridge still required for actual vision and remote review; no physical test. No main/deployment/install/phase2.
+
+
+### Editor IA regression fix — 2026-11-15
+Android Debug APK #2069 executed 1511 tests, one failure at EditorAiApprovalGateTest.kt:46: expected clip.opacity 0.8. Inspection confirmed PatchClip wrote operation.opacity into TransformValue.opacity rather than Clip.opacity, unlike AddClip and SetClipOpacityCommand. Corrected the explicit opacity field to Clip.opacity; preserve transform opacity, keyframes, other properties and undo. Added domain regression for separate opacity values, exact preservation/undo and invalid range. CI pending on corrective SHA. No physical test or publication.

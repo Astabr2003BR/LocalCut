@@ -72,6 +72,24 @@ class ProjectEditBatchCommandTest {
     }
 
     @Test
+    fun patchClipOpacityUsesClipPropertyWithoutOverwritingTransformOpacityOrKeyframes() {
+        val original = fixtureProject()
+        val video = requireNotNull(original.findClip("video-clip"))
+        val withTransformOpacity = original.copy(tracks = original.tracks.map { track ->
+            track.copy(clips = track.clips.map { clip ->
+                if (clip.id == video.id) clip.copy(transform = clip.transform.copy(opacity = 0.6), opacity = 0.9) else clip
+            })
+        })
+        val before = requireNotNull(withTransformOpacity.findClip(video.id))
+        val result = ProjectEditBatchCommand(listOf(ProjectEditOperation.PatchClip(video.id, opacity = 0.8))).apply(withTransformOpacity)
+        val after = requireNotNull(result.project.findClip(video.id))
+        assertEquals(0.8, after.opacity, 0.0)
+        assertEquals(before.copy(opacity = 0.8), after)
+        assertEquals(withTransformOpacity, result.inverse.apply(result.project).project)
+        assertTrue(runCatching { ProjectEditBatchCommand(listOf(ProjectEditOperation.PatchClip(video.id, opacity = 1.1))).apply(withTransformOpacity) }.isFailure)
+    }
+
+    @Test
     fun mixedPatchUpdatesOnlySpecifiedFields() {
         val original = fixtureProject()
         val result = ProjectEditBatchCommand(

@@ -10,6 +10,7 @@ export type OpenAIFileParam = {
   file_id: string;
   mime_type?: string;
   file_name?: string;
+  expected_sha256?: string;
 };
 
 export type AttachmentStageResult = {
@@ -53,6 +54,10 @@ export function createAttachmentStager(options: AttachmentStagerOptions) {
   const tokenGenerator = options.tokenGenerator ?? (() => randomBytes(32).toString("base64url"));
 
   return async function stageAttachment(file: OpenAIFileParam): Promise<AttachmentStageResult> {
+    const expected = file.expected_sha256;
+    if (expected !== undefined && (typeof expected !== "string" || !/^[a-f0-9]{64}$/.test(expected))) {
+      throw new Error("ATTACHMENT_HASH_INVALID");
+    }
     const sourceUrl = validateSourceUrl(file.download_url);
     checkOrigin(sourceUrl);
 
@@ -93,6 +98,10 @@ export function createAttachmentStager(options: AttachmentStagerOptions) {
       throw error;
     }
 
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    if (expected !== undefined && expected !== sha256) {
+      throw new Error("ATTACHMENT_HASH_MISMATCH");
+    }
     const token = tokenGenerator();
     let staged;
     try {
@@ -115,7 +124,7 @@ export function createAttachmentStager(options: AttachmentStagerOptions) {
       fileName: file.file_name ?? null,
       mimeType,
       sizeBytes: bytes.length,
-      sha256: createHash("sha256").update(bytes).digest("hex"),
+      sha256,
       expiresAtEpochMs: staged.expiresAtEpochMs,
       relayUrl,
       handoffUrl: handoff.toString(),

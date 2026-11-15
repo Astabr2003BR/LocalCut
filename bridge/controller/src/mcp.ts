@@ -82,6 +82,7 @@ export function buildAttachmentInputSchema() {
       file_id: z.string().min(1).max(512),
       mime_type: z.string().min(1).max(255).optional(),
       file_name: z.string().min(1).max(512).optional(),
+      expected_sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
     }).strict(),
   }).strict();
 }

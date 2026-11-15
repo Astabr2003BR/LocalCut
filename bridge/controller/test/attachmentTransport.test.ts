@@ -11,6 +11,7 @@ function file(overrides: Partial<{
   file_id: string;
   mime_type: string;
   file_name: string;
+  expected_sha256: string;
 }> = {}) {
   return {
     download_url: "https://files.example/private/item",
@@ -241,4 +242,29 @@ test("configured attachment origins match exactly and empty configuration denies
   assert.equal(calls, 1);
   assert.throws(() => createAttachmentStager({ ...base, allowedSourceOrigins: ["https://files.example/path"] }), /ATTACHMENT_SOURCE_ORIGIN_INVALID/);
   assert.throws(() => createAttachmentStager({ ...base, allowedSourceOrigins: ["https://files.example/?x=1"] }), /ATTACHMENT_SOURCE_ORIGIN_INVALID/);
+});
+
+
+test("expected digest validates before network and rejects mismatches before staging", async () => {
+  const store = createTransientMediaStore();
+  let calls = 0;
+  const stager = createAttachmentStager({
+    publicBaseUrl: "https://localcut-bridge.example",
+    transientMediaStore: store,
+    tokenGenerator: () => TOKEN,
+    fetchImpl: async () => {
+      calls++;
+      return new Response("image-bytes", { headers: { "content-type": "image/png" } });
+    },
+  });
+  for (const expected_sha256 of ["", "a".repeat(63), "G".repeat(64), "A".repeat(64)]) {
+    await assert.rejects(stager(file({ expected_sha256 })), /ATTACHMENT_HASH_INVALID/);
+  }
+  assert.equal(calls, 0);
+  await assert.rejects(stager(file({ expected_sha256: "0".repeat(64) })), /ATTACHMENT_HASH_MISMATCH/);
+  assert.equal(store.take(TOKEN), null);
+  const expected_sha256 = createHash("sha256").update("image-bytes").digest("hex");
+  assert.equal((await stager(file({ expected_sha256 }))).sha256, expected_sha256);
+  assert.ok(store.take(TOKEN));
+  assert.equal(calls, 2);
 });

@@ -52,6 +52,14 @@ internal object ProjectEditPayloadParser {
             item.requireOnly("op", "clipId")
             ProjectEditOperation.DeleteClip(item.requiredNonBlankString("clipId"))
         }
+        "trimClip" -> {
+            item.requireOnly("op", "clipId", "newStartUs", "newEndUs")
+            val start = item.optionalLong("newStartUs")
+            val end = item.optionalLong("newEndUs")
+            require((start == null) != (end == null)) { "provide exactly one of newStartUs/newEndUs" }
+            require((start ?: end!!) >= 0L) { "trim edge must be non-negative" }
+            ProjectEditOperation.TrimClip(item.requiredNonBlankString("clipId"), start, end)
+        }
         "deleteText" -> {
             item.requireOnly("op", "overlayId")
             ProjectEditOperation.DeleteText(item.requiredNonBlankString("overlayId"))

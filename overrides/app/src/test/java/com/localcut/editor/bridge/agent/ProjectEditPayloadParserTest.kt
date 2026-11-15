@@ -48,6 +48,23 @@ class ProjectEditPayloadParserTest {
     }
 
     @Test
+    fun parsesTrimAndRejectsInvalidEdges() {
+        val operations = ProjectEditPayloadParser.parse("""{"operations":[{"op":"trimClip","clipId":"v","newStartUs":200000},{"op":"trimClip","clipId":"v","newEndUs":700000}]}""")
+        assertEquals(ProjectEditOperation.TrimClip("v", newStartUs = 200_000L), operations[0])
+        assertEquals(ProjectEditOperation.TrimClip("v", newEndUs = 700_000L), operations[1])
+        val invalid = listOf(
+            """{"op":"trimClip","clipId":"v"}""",
+            """{"op":"trimClip","clipId":"v","newStartUs":0,"newEndUs":5}""",
+            """{"op":"trimClip","clipId":"v","newStartUs":-1}""",
+            """{"op":"trimClip","clipId":"v","newEndUs":"5"}""",
+            """{"op":"trimClip","clipId":"v","newEndUs":5,"unexpected":true}""",
+        )
+        invalid.forEach { item ->
+            assertTrue(runCatching { ProjectEditPayloadParser.parse("{\"operations\":[$item]}") }.isFailure)
+        }
+    }
+
+    @Test
     fun unknownFieldsFailClosed() {
         val result = runCatching {
             ProjectEditPayloadParser.parse(

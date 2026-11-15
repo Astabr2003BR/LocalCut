@@ -220,6 +220,39 @@ class BridgeCommandExecutorTest {
     }
 
     @Test
+    fun trimAndPatchBatchUsesOneRevisionWithUndoAndStaleRevisionProtection() {
+        val fixture = fixture()
+        val original = fixture.session.state.project
+        val payload = """{"operations":[{"op":"trimClip","clipId":"clip-1","newEndUs":2000000},{"op":"patchText","overlayId":"text-1","text":"Novo"}]}"""
+        val result = fixture.executor.execute(command(BridgeCapability.PROJECT_EDIT, payload = payload, expectedRevision = 5L))
+        assertTrue(result.success)
+        assertEquals(6L, fixture.session.state.revision)
+        assertEquals(2_000_000L, fixture.session.state.project.findClip("clip-1")!!.durationUs)
+        assertEquals(original.findClip("audio-clip"), fixture.session.state.project.findClip("audio-clip"))
+        assertEquals(original.designElements, fixture.session.state.project.designElements)
+        val stale = fixture.executor.execute(command(BridgeCapability.PROJECT_EDIT, payload = payload, messageId = "stale-batch", expectedRevision = 5L))
+        assertFalse(stale.success)
+        assertEquals(BridgeErrorCode.REVISION_CONFLICT, stale.code)
+        assertEquals(6L, fixture.session.state.revision)
+        val undo = fixture.executor.execute(command(BridgeCapability.UNDO, messageId = "undo-trim-batch", expectedRevision = 6L))
+        assertTrue(undo.success)
+        assertEquals(7L, fixture.session.state.revision)
+        assertEquals(original, fixture.session.state.project)
+    }
+
+    @Test
+    fun lockedLayerRejectsBatchWithoutPartialTextChange() {
+        val fixture = fixture(locked = true)
+        val original = fixture.session.state.project
+        val result = fixture.executor.execute(command(BridgeCapability.PROJECT_EDIT,
+            payload = """{"operations":[{"op":"patchText","overlayId":"text-1","text":"Not committed"},{"op":"deleteClip","clipId":"clip-1"}]}""",
+            expectedRevision = 5L))
+        assertFalse(result.success)
+        assertEquals(5L, fixture.session.state.revision)
+        assertEquals(original, fixture.session.state.project)
+    }
+
+    @Test
     fun invalidProjectEditBatchDoesNotAdvanceRevisionOrMutateProject() {
         val fixture = fixture()
         val baseline = fixture.session.state.project

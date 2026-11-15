@@ -4,6 +4,9 @@ import com.localcut.editor.BuildContract
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
+import com.localcut.editor.domain.model.CompositionGraph
+import com.localcut.editor.domain.model.CompositionNode
+import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.DesignElement
 import com.localcut.editor.domain.model.PathPoint
 import com.localcut.editor.domain.model.ShapeKind
@@ -198,6 +201,70 @@ class ProjectEditBatchCommandTest {
         }
         assertTrue(failure.isFailure)
         assertEquals(1.0, original.designElements.single().transform.scale, 0.0)
+    }
+
+    @Test
+    fun batchTrimAndTextPatchPreserveOtherItemsAndUndoExactly() {
+        val original = fixtureProject()
+        val operations = listOf(
+            ProjectEditOperation.TrimClip("video-clip", newEndUs = 500_000L),
+            ProjectEditOperation.PatchText("text-1", text = "Novo"),
+        )
+        val result = ProjectEditBatchCommand(operations).apply(original)
+        val clip = result.project.findClip("video-clip")!!
+        assertEquals(500_000L, clip.durationUs)
+        assertEquals(500_000L, clip.sourceOutUs)
+        assertEquals(original.findClip("image-clip"), result.project.findClip("image-clip"))
+        assertEquals(original.findClip("audio-clip"), result.project.findClip("audio-clip"))
+        assertEquals(original.assets, result.project.assets)
+        assertEquals("Novo", result.project.textOverlays.single().text)
+        val undo = result.inverse.apply(result.project)
+        assertEquals(original, undo.project)
+        assertEquals(result.project, undo.inverse.apply(undo.project).project)
+    }
+
+    @Test
+    fun clipBatchRejectsTrackAndLayerLocksIncludingBulkDelete() {
+        val baseline = fixtureProject()
+        val lockedTrack = baseline.copy(tracks = baseline.tracks.map {
+            if (it.id == "visual-1") it.copy(locked = true) else it
+        })
+        val lockedLayer = baseline.copy(compositionGraph = CompositionGraph(nodes = listOf(
+            CompositionNode(id = "layer-video", kind = CompositionNodeKind.LAYER,
+                clipId = "video-clip", locked = true),
+        )))
+        val blocked = listOf(
+            ProjectEditOperation.PatchClip("video-clip", volume = 0.5),
+            ProjectEditOperation.TrimClip("video-clip", newEndUs = 500_000L),
+            ProjectEditOperation.DeleteClip("video-clip"),
+            ProjectEditOperation.DeleteByKind(setOf(ProjectItemKind.VIDEO, ProjectItemKind.TEXT)),
+        )
+        for (project in listOf(lockedTrack, lockedLayer)) {
+            for (operation in blocked) {
+                val result = runCatching {
+                    ProjectEditBatchCommand(listOf(ProjectEditOperation.PatchText("text-1", text = "Not committed"), operation)).apply(project)
+                }
+                assertTrue(result.isFailure)
+                assertEquals(baseline.findClip("video-clip"), project.findClip("video-clip"))
+                assertEquals(baseline.textOverlays, project.textOverlays)
+            }
+        }
+    }
+
+    @Test
+    fun trimRejectsMissingAmbiguousNegativeAndOutOfRangeEdgesAtomically() {
+        val project = fixtureProject()
+        val cases = listOf(
+            ProjectEditOperation.TrimClip("video-clip"),
+            ProjectEditOperation.TrimClip("video-clip", 100_000L, 500_000L),
+            ProjectEditOperation.TrimClip("video-clip", newStartUs = -1L),
+            ProjectEditOperation.TrimClip("video-clip", newEndUs = 10_000_000L),
+            ProjectEditOperation.TrimClip("missing", newEndUs = 500_000L),
+        )
+        for (operation in cases) {
+            assertTrue(runCatching { ProjectEditBatchCommand(listOf(operation)).apply(project) }.isFailure)
+        }
+        assertEquals(1_000_000L, project.findClip("video-clip")!!.durationUs)
     }
 
     private fun fixtureProject(): Project {

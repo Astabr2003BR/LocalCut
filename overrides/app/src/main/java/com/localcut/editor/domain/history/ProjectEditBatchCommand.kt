@@ -17,6 +17,7 @@ enum class ProjectItemKind { VIDEO, IMAGE, AUDIO, TEXT, DESIGN, DRAWING }
 sealed interface ProjectEditOperation {
     data class DeleteByKind(val kinds: Set<ProjectItemKind>) : ProjectEditOperation
     data class DeleteClip(val clipId: String) : ProjectEditOperation
+    data class TrimClip(val clipId: String, val newStartUs: Long? = null, val newEndUs: Long? = null) : ProjectEditOperation
     data class DeleteText(val overlayId: String) : ProjectEditOperation
     data class DeleteDesign(val elementId: String) : ProjectEditOperation
     data class AddDesign(val element: DesignElement) : ProjectEditOperation
@@ -107,6 +108,7 @@ data class ProjectEditBatchCommand(
     private fun applyOperation(project: Project, operation: ProjectEditOperation): Project = when (operation) {
         is ProjectEditOperation.DeleteByKind -> deleteByKind(project, operation.kinds)
         is ProjectEditOperation.DeleteClip -> deleteClip(project, operation.clipId)
+        is ProjectEditOperation.TrimClip -> trimClip(project, operation)
         is ProjectEditOperation.DeleteText -> deleteText(project, operation.overlayId)
         is ProjectEditOperation.DeleteDesign -> deleteDesign(project, operation.elementId)
         is ProjectEditOperation.AddDesign -> addDesign(project, operation.element)
@@ -163,8 +165,33 @@ private fun deleteByKind(project: Project, kinds: Set<ProjectItemKind>): Project
     return removeItems(project, clipIds, textIds, designIds)
 }
 
+private fun requireEditableClip(project: Project, clipId: String) {
+    val track = project.tracks.firstOrNull { it.clips.any { clip -> clip.id == clipId } }
+        ?: throw IllegalArgumentException("clip $clipId not found")
+    require(!track.locked) { "track ${track.id} is locked" }
+    require(project.compositionGraph.nodes.none { node ->
+        node.kind == CompositionNodeKind.LAYER && node.clipId == clipId && node.locked
+    }) { "clip $clipId is locked" }
+}
+
+private fun trimClip(project: Project, operation: ProjectEditOperation.TrimClip): Project {
+    requireEditableClip(project, operation.clipId)
+    val start = operation.newStartUs
+    val end = operation.newEndUs
+    require((start == null) != (end == null)) { "provide exactly one of newStartUs/newEndUs" }
+    val command = if (start != null) {
+        require(start >= 0L) { "newStartUs must be non-negative" }
+        TrimClipLeftEdgeCommand(operation.clipId, start)
+    } else {
+        val requiredEnd = requireNotNull(end)
+        require(requiredEnd >= 0L) { "newEndUs must be non-negative" }
+        TrimClipRightEdgeCommand(operation.clipId, requiredEnd)
+    }
+    return command.apply(project).project
+}
+
 private fun deleteClip(project: Project, clipId: String): Project {
-    require(project.findClip(clipId) != null) { "clip $clipId not found" }
+    requireEditableClip(project, clipId)
     return removeItems(project, setOf(clipId), emptySet(), emptySet())
 }
 
@@ -184,6 +211,8 @@ private fun removeItems(
     textIds: Set<String>,
     designIds: Set<String>,
 ): Project {
+    // Check every target before removing any item; a locked target rejects the entire batch.
+    clipIds.forEach { requireEditableClip(project, it) }
     val remainingNodes = project.compositionGraph.nodes.filterNot { node ->
         node.kind == CompositionNodeKind.LAYER && node.clipId?.let { it in clipIds } == true
     }
@@ -360,6 +389,7 @@ private fun validateDesignElement(element: DesignElement) {
 }
 
 private fun patchClip(project: Project, operation: ProjectEditOperation.PatchClip): Project {
+    requireEditableClip(project, operation.clipId)
     val trackIndex = project.tracks.indexOfFirst { track -> track.clips.any { it.id == operation.clipId } }
     require(trackIndex >= 0) { "clip ${operation.clipId} not found" }
     val track = project.tracks[trackIndex]

@@ -203,11 +203,49 @@ class PortableStudioPackageSmokeTest {
                 val videoHash = digest(videoFile.readBytes())
                 val videoUri = FileProvider.getUriForFile(context, authority, videoFile).toString()
                 val videoDir = File(workDir, "video-project")
-                val videoPlan = AutomaticVideoRecipe.parse("""{"version":1,"format":"16:9","scenes":[{"image":1,"durationMs":500}]}""", 1)
+                val videoPlan = AutomaticVideoRecipe.parse("""{"version":1,"format":"16:9","scenes":[{"image":1,"sourceInMs":200,"durationMs":500}]}""", 1)
                 val videoProject = AutomaticVideoProjectBuilder.build(context, videoPlan, listOf(videoUri), null, null, videoDir)
                 assertEquals(com.localcut.editor.domain.model.AssetType.VIDEO, videoProject.assets.single().type)
                 assertEquals(500_000L, videoProject.tracks.first { it.type == TrackType.VISUAL }.clips.single().durationUs)
-                ProjectCompositionCompiler(AssetUriResolver(context.contentResolver)).compile(videoProject, RenderMode.EXPORT).getOrThrow()
+                val clip = videoProject.tracks.first { it.type == TrackType.VISUAL }.clips.single()
+                assertEquals(200_000L, clip.sourceInUs)
+                assertEquals(700_000L, clip.sourceOutUs)
+                val videoComposition = ProjectCompositionCompiler(AssetUriResolver(context.contentResolver)).compile(videoProject, RenderMode.EXPORT).getOrThrow()
+                val editedOutput = File(workDir, "edited.mp4")
+                val editedDone = CountDownLatch(1)
+                val editedFailure = AtomicReference<Throwable?>()
+                instrumentation.runOnMainSync {
+                    val transformer = Transformer.Builder(context)
+                        .setVideoMimeType(MimeTypes.VIDEO_H264)
+                        .setAudioMimeType(MimeTypes.AUDIO_AAC)
+                        .addListener(object : Transformer.Listener {
+                            override fun onCompleted(composition: Composition, exportResult: ExportResult) { editedDone.countDown() }
+                            override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+                                editedFailure.set(exportException)
+                                editedDone.countDown()
+                            }
+                        }).build()
+                    running.set(transformer)
+                    transformer.start(videoComposition, editedOutput.absolutePath)
+                }
+                assertTrue("Edited MP4 export timed out", editedDone.await(120, TimeUnit.SECONDS))
+                editedFailure.get()?.let { throw AssertionError("Edited MP4 export failed", it) }
+                assertTrue(editedOutput.isFile && editedOutput.length() > 0)
+                val edited = MediaMetadataRetriever()
+                try {
+                    edited.setDataSource(editedOutput.absolutePath)
+                    assertEquals("yes", edited.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO))
+                    val duration = requireNotNull(edited.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)).toLong()
+                    assertTrue("Edited duration: $duration", duration in 400L..650L)
+                    val frame = requireNotNull(edited.getFrameAtTime(200_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC))
+                    try {
+                        val center = frame.getPixel(frame.width / 2, frame.height / 2)
+                        assertTrue(Color.green(center) > Color.red(center) + 40 && Color.green(center) > Color.blue(center) + 40)
+                    } finally { frame.recycle() }
+                } finally { edited.release() }
+                val invalidOffset = AutomaticVideoRecipe.parse("""{"version":1,"format":"16:9","scenes":[{"image":1,"sourceInMs":900,"durationMs":500}]}""", 1)
+                assertTrue(runCatching { AutomaticVideoProjectBuilder.build(context, invalidOffset, listOf(videoUri), null, null, File(workDir, "invalid-offset")) }.isFailure)
+                assertTrue(runCatching { AutomaticVideoProjectBuilder.build(context, videoPlan, selected, null, null, File(workDir, "image-offset")) }.isFailure)
                 assertEquals(videoHash, digest(videoFile.readBytes()))
                 val tooLong = AutomaticVideoRecipe.parse("""{"version":1,"format":"16:9","scenes":[{"image":1,"durationMs":5000}]}""", 1)
                 assertTrue(runCatching { AutomaticVideoProjectBuilder.build(context, tooLong, listOf(videoUri), null, null, File(workDir, "too-long")) }.isFailure)

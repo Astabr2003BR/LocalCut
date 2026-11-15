@@ -48,3 +48,7 @@ AutomaticVideoProjectBuilder is now shared by the studio activity and the instru
 
 ### Local MP4 preparation
 The SAF visual picker also accepts MP4. Recipe v1 `image` indexes the visual list; video scenes start at source time zero and must fit the source duration. The private copy is bounded to 128 MiB per video. Portable ZIP v1 remains image/audio only. Existing project editing, embedded audio behavior and video export verification remain pending.
+
+
+### Non-destructive MP4 source trimming
+Recipe v1 accepts optional integer sourceInMs (default 0) on each scene; image remains the existing 1-based visual-source index, durationMs the output length. Example: `{"version":1,"format":"16:9","scenes":[{"image":1,"sourceInMs":200,"durationMs":500}]}` selects [200,700) ms of an existing local MP4. The planner rejects negative/overflowing offsets, and the builder rejects offsets for still images and intervals beyond video duration. Timeline positions remain contiguous; the existing compiler retains embedded video audio by default. New instrumentation reexports the actual fixture MP4, checks output audio track, approximate duration, decoded pixel and unchanged source SHA-256; CI pending. No claim of preserving editable text/layers from flattened MP4, or full editor operation protocol. Portable package v1 still accepts images/audio only; MP4 via local picker.

@@ -136,7 +136,7 @@ class AutomaticVideoActivity : ComponentActivity() {
                         Text(name)
                         TextButton(onClick = { audio = null }, enabled = editable) { Text("Remover áudio") }
                     }
-                    Text("Cole o roteiro do GPT. image = número da mídia visual (imagem ou MP4); durationMs = duração em milissegundos. Formatos: 9:16, 4:5, 16:9, 1:1.")
+                    Text("Cole o roteiro do GPT. image = número da mídia visual (imagem ou MP4); durationMs = duração em milissegundos. Para vídeo, sourceInMs = início do trecho (opcional). Formatos: 9:16, 4:5, 16:9, 1:1.")
                     OutlinedTextField(value = recipe, onValueChange = {
                         if (it.length <= AutomaticVideoRecipe.MAX_CHARS) recipe = it
                         else message = "Roteiro excede o limite técnico de texto."

@@ -16,6 +16,13 @@ class AutomaticVideoRecipeSmokeTest {
         assertEquals(listOf(0L, 2_500_000L), plan.scenes.map { it.startUs })
     }
 
+    @Test fun parsesOptionalSourceOffsetWithoutChangingTimelinePosition() {
+        val plan = AutomaticVideoRecipe.parse("""{"version":1,"format":"16:9","scenes":[{"image":1,"sourceInMs":200,"durationMs":500},{"image":2,"durationMs":1000}]}""", 2)
+        assertEquals(listOf(0L, 500_000L), plan.scenes.map { it.startUs })
+        assertEquals(listOf(200_000L, 0L), plan.scenes.map { it.sourceInUs })
+        assertEquals(listOf(700_000L, 1_000_000L), plan.scenes.map { it.sourceOutUs })
+    }
+
     @Test fun rejectsMalformedDuplicateAndExecutableFields() {
         val bad = listOf(
             "",
@@ -25,6 +32,9 @@ class AutomaticVideoRecipeSmokeTest {
             """{"version":1,"format":"4:5","scenes":[{"image":1,"durationMs":1000,"url":"https://example.com"}]}""",
             """{"version":1,"format":"4:5","scenes":[{"image":3,"durationMs":1000}]}""",
             """{"version":1,"format":"4:5","scenes":[{"image":1,"durationMs":1000}]} {}""",
+            """{"version":1,"format":"4:5","scenes":[{"image":1,"durationMs":1000,"sourceInMs":-1}]}""",
+            """{"version":1,"format":"4:5","scenes":[{"image":1,"durationMs":1000,"sourceInMs":"200"}]}""",
+            """{"version":1,"format":"4:5","scenes":[{"image":1,"durationMs":1000,"sourceInMs":1,"sourceInMs":2}]}""",
             "x".repeat(AutomaticVideoRecipe.MAX_CHARS + 1),
         )
         bad.forEach { assertTrue("Should reject recipe: " + it.take(100), runCatching { AutomaticVideoRecipe.parse(it, 2) }.isFailure) }

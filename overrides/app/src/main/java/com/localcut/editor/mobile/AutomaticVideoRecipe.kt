@@ -35,6 +35,7 @@ internal object AutomaticVideoRecipe {
                             val seen = mutableSetOf<String>()
                             var image: Int? = null
                             var duration: Long? = null
+                            var sourceIn = 0L
                             while (reader.hasNext()) {
                                 val key = reader.nextName()
                                 require(seen.add(key)) { "Campo repetido na cena" }
@@ -45,11 +46,12 @@ internal object AutomaticVideoRecipe {
                                         image = number.toInt()
                                     }
                                     "durationMs" -> duration = integer(reader)
+                                    "sourceInMs" -> sourceIn = integer(reader)
                                     else -> error("Campo de cena não suportado: $key")
                                 }
                             }
                             reader.endObject()
-                            values += AutomaticScene(requireNotNull(image) { "Cena sem image" }, requireNotNull(duration) { "Cena sem durationMs" })
+                            values += AutomaticScene(requireNotNull(image) { "Cena sem image" }, requireNotNull(duration) { "Cena sem durationMs" }, sourceIn)
                         }
                         reader.endArray()
                         scenes = values

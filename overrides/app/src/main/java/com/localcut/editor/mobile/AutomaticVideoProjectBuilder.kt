@@ -37,13 +37,14 @@ internal object AutomaticVideoProjectBuilder {
             if (context.contentResolver.getType(uri) == "video/mp4") {
                 val file = File(dir, "video-$index.mp4")
                 val duration = prepareVideo(context, uri, file, checkCancelled)
-                require(plan.scenes.filter { it.imageIndex == index }.all { it.durationUs <= duration }) {
+                require(plan.scenes.filter { it.imageIndex == index }.all { it.sourceOutUs <= duration }) {
                     "Cena excede a duração do vídeo"
                 }
                 return@map Asset(id = "image-$index", type = AssetType.VIDEO, uri = Uri.fromFile(file).toString(),
                     sourceDurationUs = duration, sizeBytes = file.length(), displayName = file.name,
                     mimeType = "video/mp4", fingerprint = file.name + "-" + file.length())
             }
+            require(plan.scenes.filter { it.imageIndex == index }.all { it.sourceInUs == 0L }) { "Início de trecho só é permitido em vídeo" }
             val file = File(dir, "image-$index.png")
             prepareImage(context, Uri.parse(selected[index]), plan, file)
             Asset(id = "image-$index", type = AssetType.IMAGE, uri = Uri.fromFile(file).toString(),
@@ -52,7 +53,7 @@ internal object AutomaticVideoProjectBuilder {
         }.toMutableList()
         val clips = plan.scenes.mapIndexed { index, scene ->
             Clip(id = "scene-$index", assetId = "image-${scene.imageIndex}", startUs = scene.startUs,
-                durationUs = scene.durationUs, sourceInUs = 0L, sourceOutUs = scene.durationUs)
+                durationUs = scene.durationUs, sourceInUs = scene.sourceInUs, sourceOutUs = scene.sourceOutUs)
         }
         var audioClip: Clip? = null
         if (chosenAudio != null) {

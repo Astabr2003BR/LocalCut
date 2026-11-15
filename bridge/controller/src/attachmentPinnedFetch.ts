@@ -30,6 +30,21 @@ export async function resolveAttachmentIPv4(
   return addresses[0]!;
 }
 
+// Keep actual request configuration testable without external network access.
+export function pinnedAttachmentRequestOptions(url: URL, address: string, signal: AbortSignal): import("node:https").RequestOptions {
+  if (url.protocol !== "https:" || url.port || url.username || url.password || !isPublicAttachmentIPv4(address)) {
+    throw new Error("ATTACHMENT_SOURCE_NOT_ALLOWED");
+  }
+  return {
+      protocol: "https:", hostname: address, port: 443,
+      path: url.pathname + url.search, method: "GET", agent: false,
+      servername: url.hostname, rejectUnauthorized: true,
+      checkServerIdentity: (_host, cert) => checkServerIdentity(url.hostname, cert),
+      signal, headers: { host: url.host, accept: "image/*,audio/*,video/*,application/octet-stream",
+        "accept-encoding": "identity" },
+  };
+}
+
 // Connect to the exact validated address, not a second DNS lookup.
 // Preserve the original hostname for TLS SNI, certificate validation and Host.
 export async function fetchPinnedAttachment(input: string | URL, init?: RequestInit): Promise<Response> {
@@ -44,14 +59,7 @@ export async function fetchPinnedAttachment(input: string | URL, init?: RequestI
     });
   });
   return new Promise<Response>((resolve, reject) => {
-    const req = request({
-      protocol: "https:", hostname: address, port: 443,
-      path: url.pathname + url.search, method: "GET", agent: false,
-      servername: url.hostname, rejectUnauthorized: true,
-      checkServerIdentity: (_host, cert) => checkServerIdentity(url.hostname, cert),
-      signal, headers: { host: url.host, accept: "image/*,audio/*,video/*,application/octet-stream",
-        "accept-encoding": "identity" },
-    }, (res) => {
+    const req = request(pinnedAttachmentRequestOptions(url, address, signal), (res) => {
       const status = res.statusCode ?? 502;
       if (status < 200 || status > 599 || (status >= 300 && status < 400) ||
           (res.headers["content-encoding"] && res.headers["content-encoding"] !== "identity")) {

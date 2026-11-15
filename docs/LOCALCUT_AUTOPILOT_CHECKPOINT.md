@@ -88,3 +88,7 @@ Parent e4a680cd5fed1b64994ef91e21486cfec3ee5aa3: all 4 CI PASS (2062,1893,1716,8
 
 ## Hybrid rendered MP4 technical QA — 2026-11-15
 Parent a3b8e3e8a679ef7a08b1ab17a5d83f9ab14cf9e5: four CI PASS (2063,1894,1717,863), PR draft/open. Added AndroidBridgeExportFileReviewer on existing commit worker, streaming SHA256 and metadata/extractor, three bounded sampled decodes, dimension/duration checks, explicit false visual/audio/full-decode flags, technicalReview only after commit, source project/revision snapshot. Inspection errors preserve successful render; no exported image transfer yet. Unit wrapper and provenance tests, real MP4 portable smoke assertions and corrupt negative. CI pending; no local/device claim. No publication/deployment/install/main/phase2. Next: actual exported sample image review, Android Editor IA UI and end-to-end QA.
+
+
+## Rendered sample dark-frame warning — 2026-11-15
+Parent 4439b4440778e958df67a7f5c51b2adf3921b3b5: four CI PASS (2064,1895,1718,864), PR draft, push permission confirmed. Added bounded 16x16 RGB sampling of already decoded frames, near-black timestamps and conservative needs_review status; no visual approval or image transfer. Android instrumentation covers black/green and real green MP4 report. CI pending; no local execution. Intentional fades/night scenes can trigger warning; sparse samples cannot establish continuity. Next exported image return and UI; no phase 2/install/main.

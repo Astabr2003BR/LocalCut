@@ -198,6 +198,8 @@ class PortableStudioPackageSmokeTest {
                 if (android.os.Build.VERSION.SDK_INT >= 27) {
                     assertEquals("decoded", report.getString("sampleStatus"))
                     assertEquals(3, report.getInt("decodedFrames"))
+                    assertEquals(0, report.getJSONArray("nearBlackSamplePositionsUs").length())
+                    assertTrue(report.getBoolean("nearBlackHeuristicOnly"))
                 }
                 val corrupt = File(workDir, "corrupt.mp4").apply { writeBytes(byteArrayOf(1, 2, 3)) }
                 assertTrue(runCatching { com.localcut.editor.bridge.agent.AndroidBridgeExportFileReviewer.inspect(corrupt, project) }.isFailure)
@@ -276,6 +278,16 @@ class PortableStudioPackageSmokeTest {
                 output.delete()
             }
         }
+    }
+
+    @Test fun nearBlackHeuristicDistinguishesDarkAndGreenSamples() {
+        val bitmap = android.graphics.Bitmap.createBitmap(32, 32, android.graphics.Bitmap.Config.ARGB_8888)
+        try {
+            bitmap.eraseColor(Color.BLACK)
+            assertTrue(com.localcut.editor.bridge.agent.AndroidBridgeExportFileReviewer.isNearBlackSample(bitmap))
+            bitmap.eraseColor(Color.GREEN)
+            assertTrue(!com.localcut.editor.bridge.agent.AndroidBridgeExportFileReviewer.isNearBlackSample(bitmap))
+        } finally { bitmap.recycle() }
     }
 
     @Test fun rejectsTruncatedZipAndHonorsCancellation() {

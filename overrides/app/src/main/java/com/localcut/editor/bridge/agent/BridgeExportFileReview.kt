@@ -93,18 +93,24 @@ object AndroidBridgeExportFileReviewer : BridgeExportFileReviewer {
             // no full-resolution bitmap or image data is retained in the job registry.
             val positions = listOf(0L, durationUs / 2L, (durationUs - 1_000L).coerceAtLeast(0L)).distinct()
             var decoded = 0
+            val darkSamplePositions = mutableListOf<Long>()
             if (Build.VERSION.SDK_INT >= 27) {
                 for (position in positions) {
                     val frame = runCatching {
                         retriever.getScaledFrameAtTime(position, MediaMetadataRetriever.OPTION_CLOSEST, 320, 320)
                     }.getOrNull()
                     if (frame != null) {
-                        try { if (frame.width > 0 && frame.height > 0) decoded++ } finally { frame.recycle() }
+                        try {
+                            if (frame.width > 0 && frame.height > 0) {
+                                decoded++
+                                if (isNearBlackSample(frame)) darkSamplePositions.add(position)
+                            }
+                        } finally { frame.recycle() }
                     }
                 }
             }
             val sampleStatus = if (Build.VERSION.SDK_INT < 27) "unsupported" else if (decoded == positions.size) "decoded" else "incomplete"
-            val status = if (durationMatches && resolutionMatches && sampleStatus == "decoded") "technical_checks_passed" else "needs_review"
+            val status = if (durationMatches && resolutionMatches && sampleStatus == "decoded" && darkSamplePositions.isEmpty()) "technical_checks_passed" else "needs_review"
             return buildString {
                 append("{\"status\":"); append(jsonString(status))
                 append(",\"scope\":\"rendered_file_metadata_and_sample_decode\"")
@@ -128,9 +134,25 @@ object AndroidBridgeExportFileReviewer : BridgeExportFileReviewer {
                 append(",\"sampleStatus\":"); append(jsonString(sampleStatus))
                 append(",\"sampledFrames\":"); append(positions.size)
                 append(",\"decodedFrames\":"); append(decoded)
+                append(",\"nearBlackSamplePositionsUs\":["); append(darkSamplePositions.joinToString(",")); append("]")
+                append(",\"nearBlackHeuristicOnly\":true")
                 append(",\"visualQualityVerified\":false,\"audioSyncVerified\":false,\"fullDecodeVerified\":false}")
             }
         } finally { retriever.release() }
+    }
+
+    /** Sparse RGB sampling: a warning, not proof of an unintended black frame. */
+    internal fun isNearBlackSample(frame: android.graphics.Bitmap): Boolean {
+        var dark = 0
+        var count = 0
+        for (y in 0 until 16) for (x in 0 until 16) {
+            val pixel = frame.getPixel(x * (frame.width - 1) / 15, y * (frame.height - 1) / 15)
+            if (android.graphics.Color.red(pixel) <= 16 &&
+                android.graphics.Color.green(pixel) <= 16 &&
+                android.graphics.Color.blue(pixel) <= 16) dark++
+            count++
+        }
+        return dark * 100 >= count * 98
     }
 
     private fun MediaFormat.longOrNull(key: String): Long? =

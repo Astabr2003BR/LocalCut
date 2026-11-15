@@ -10,7 +10,8 @@ import {
   revisionRequiredCapabilities,
 } from "./protocol.ts";
 import { registerTermuxTools } from "./termuxMcp.ts";
-import { MAX_REVIEW_FRAMES, PreviewReviewCoordinator, previewReviewToolResult } from "./previewReview.ts";
+import { MAX_REVIEW_FRAMES } from "./previewReview.ts";
+import { MAX_CORRECTION_OPERATIONS, ReviewCorrectionCoordinator, correctionToolResult } from "./reviewCorrection.ts";
 
 const MAX_PREVIEW_BASE64_CHARS = 2_000_000;
 const ACTIVE_PROJECT_SENTINEL = "__localcut_active_project__";
@@ -142,7 +143,7 @@ export function createLocalCutMcpServer(
   router: CommandRouter,
   controllerId: string,
   admin?: ControllerAdminActions,
-  review?: { coordinator: PreviewReviewCoordinator; authorizedDeviceId: () => string | null },
+  review?: { coordinator: ReviewCorrectionCoordinator; authorizedDeviceId: () => string | null },
 ): McpServer {
   if (!controllerId) throw new Error("controllerId is required");
   const server = new McpServer({ name: "LocalCut Controller", version: "0.1.0" });
@@ -183,7 +184,23 @@ export function createLocalCutMcpServer(
       _meta: oauthToolMeta(["localcut:read", "localcut:write"]),
     }, async input => {
       const parsed = reviewSchema.parse(input);
-      return previewReviewToolResult(await review.coordinator.collect(router, controllerId, parsed, review.authorizedDeviceId));
+      return correctionToolResult(await review.coordinator.review(router, controllerId, parsed, review.authorizedDeviceId));
+    });
+
+    const correctionSchema = z.object({
+      deviceId: z.string().min(1).max(128), projectId: z.string().min(1).max(256),
+      expectedRevision: z.number().int().nonnegative(), reviewId: z.string().uuid(),
+      operations: z.array(z.record(z.string(), z.unknown())).min(1).max(MAX_CORRECTION_OPERATIONS),
+    }).strict();
+    server.registerTool("apply_review_correction", {
+      title: "LocalCut: apply visual correction and recheck",
+      description: "After visually inspecting review_preview_frames and receiving user authorization for the requested changes, apply one atomic visual-only correction batch to its exact revision using the single-use reviewId. Supports patchClip transform, patchText, addEffect, patchEffect, setEffectKeyframe; no deletes, trims, audio or timing changes. Returns fresh images at the same positions when possible, with the new revision and next reviewId. At most three corrections per review chain. If applied is unknown, read project state and do not retry the edit. If verification is unavailable, the edit may already be committed. Never claim visual approval without inspecting the images.",
+      inputSchema: correctionSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      _meta: oauthToolMeta(["localcut:read", "localcut:write"]),
+    }, async input => {
+      const parsed = correctionSchema.parse(input);
+      return correctionToolResult(await review.coordinator.apply(router, controllerId, parsed, review.authorizedDeviceId));
     });
   }
 

@@ -1,6 +1,7 @@
 import { createPublicKey, timingSafeEqual, verify } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { PreviewReviewCoordinator } from "./previewReview.ts";
+import { ReviewCorrectionCoordinator } from "./reviewCorrection.ts";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { pathToFileURL } from "node:url";
 import { createMcpHandler } from "@modelcontextprotocol/server";
@@ -99,7 +100,7 @@ export function createControllerServer(options: ControllerServerOptions): Contro
   });
   const wss = new WebSocketServer({ noServer: true, clientTracking: false });
   const reviewAuth = new AsyncLocalStorage<string>();
-  const reviewCoordinator = new PreviewReviewCoordinator();
+  const reviewCoordinator = new ReviewCorrectionCoordinator(new PreviewReviewCoordinator());
   const mcpHandler = createMcpHandler(() => createLocalCutMcpServer(
     router,
     options.controllerId,

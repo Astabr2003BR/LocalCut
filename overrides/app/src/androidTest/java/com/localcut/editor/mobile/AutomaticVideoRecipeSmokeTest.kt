@@ -8,6 +8,17 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AutomaticVideoRecipeSmokeTest {
+    @Test fun approvalDescribesExactPlanAndPreservation() {
+        val plan = AutomaticVideoRecipe.parse("""{"version":1,"format":"4:5","scenes":[{"image":1,"durationMs":500},{"image":1,"durationMs":1000}]}""", 1)
+        val summary = AutomaticVideoApproval.describe(plan, true)
+        assertTrue(summary.contains("1080 × 1350"))
+        assertTrue(summary.contains("2 cenas • 1500 ms"))
+        assertTrue(summary.contains("1 mídias visuais utilizadas"))
+        assertTrue(summary.contains("Com áudio adicional"))
+        assertTrue(summary.contains("arquivos originais serão preservados"))
+        assertTrue(AutomaticVideoApproval.describe(plan, false).contains("Sem áudio adicional"))
+    }
+
     @Test fun parsesStrictRecipeOnAndroid() {
         val plan = AutomaticVideoRecipe.parse("""{"version":1,"format":"4:5","scenes":[{"image":2,"durationMs":2500},{"image":1,"durationMs":5000}]}""", 2)
         assertEquals(1350, plan.height)

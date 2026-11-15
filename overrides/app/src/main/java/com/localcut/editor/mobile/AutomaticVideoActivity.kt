@@ -81,11 +81,12 @@ class AutomaticVideoActivity : ComponentActivity() {
         }
         val output = registerForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { uri ->
             choosingOutput = false
-            val plan = approvedPlan ?: runCatching { AutomaticVideoRecipe.parse(recipe, images.size) }.getOrNull()
+            val plan = approvedPlan
+            // A recreated Activity must not infer consent from an unapproved draft.
             approvedPlan = null
             if (uri != null && !busy) {
                 if (plan != null) export(plan, uri)
-                else { message = "Roteiro inválido. Nenhum vídeo criado; confira o destino selecionado." }
+                else { message = "Autorização anterior indisponível. Nenhum vídeo renderizado; valide e autorize novamente. O seletor pode ter criado um arquivo vazio." }
             }
         }
         setContent {
@@ -100,8 +101,8 @@ class AutomaticVideoActivity : ComponentActivity() {
                 if (showApproval) AlertDialog(
                     onDismissRequest = { showApproval = false; approvedPlan = null },
                     title = { Text("Criar vídeo local") },
-                    text = { Text("Criar um novo MP4 com ${approvedPlan?.scenes?.size ?: 0} cenas, ${approvedPlan?.durationUs?.div(1000) ?: 0} ms, ${if (audio == null) "sem áudio adicional" else "com áudio adicional"}. O projeto do editor não será alterado.") },
-                    confirmButton = { TextButton(onClick = {
+                    text = { Text(approvedPlan?.let { AutomaticVideoApproval.describe(it, audio != null) } ?: "Plano indisponível. Cancele e valide novamente.") },
+                    confirmButton = { TextButton(enabled = approvedPlan != null, onClick = {
                         showApproval = false
                         choosingOutput = true
                         output.launch("LocalCut-Automatico-${System.currentTimeMillis()}.mp4")
@@ -110,8 +111,9 @@ class AutomaticVideoActivity : ComponentActivity() {
                 )
                 BackHandler(enabled = busy) { message = if (importingPackage) "Use Cancelar importação." else "Exportação em andamento. Mantenha esta tela aberta." }
                 Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Estúdio automático", style = MaterialTheme.typography.headlineSmall)
-                    Text("Vídeo offline a partir de imagens e MP4 locais, roteiro JSON e áudio opcional. Sem IA interna ou créditos.")
+                    Text("Editor IA", style = MaterialTheme.typography.headlineSmall)
+                    Text("GPT externo • renderização local Android. Crie um novo vídeo com mídias locais e roteiro JSON, sem alterar o projeto aberto.")
+                    Text("MP4 achatado: não recupera automaticamente texto, áudio ou cenário em camadas independentes.", style = MaterialTheme.typography.bodySmall)
                     val editable = !busy && !choosingOutput
                     TextButton(onClick = { finish() }, enabled = editable) { Text("Voltar") }
                     Button(onClick = {

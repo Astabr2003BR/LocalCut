@@ -268,3 +268,25 @@ test("expected digest validates before network and rejects mismatches before sta
   assert.ok(store.take(TOKEN));
   assert.equal(calls, 2);
 });
+
+
+test("attachment rejects partial and encoded upstream responses before relay staging", async () => {
+  const scenarios: Array<{ status: number; headers: Record<string, string>; error: string }> = [
+    { status: 206, headers: { "content-range": "bytes 0-2/10" }, error: "ATTACHMENT_DOWNLOAD_FAILED" },
+    { status: 200, headers: { "content-range": "bytes 0-2/10" }, error: "ATTACHMENT_DOWNLOAD_FAILED" },
+    { status: 200, headers: { "content-encoding": "gzip" }, error: "ATTACHMENT_CONTENT_ENCODING_UNSUPPORTED" },
+  ];
+  for (const {status, headers, error} of scenarios) {
+    const store = createTransientMediaStore();
+    let cancelled = 0;
+    const body = new ReadableStream<Uint8Array>({ cancel() { cancelled++; } });
+    const stager = createAttachmentStager({
+      publicBaseUrl: "https://localcut-bridge.example", transientMediaStore: store,
+      tokenGenerator: () => TOKEN,
+      fetchImpl: async () => new Response(body, { status, headers: { "content-type": "image/png", ...headers } }),
+    });
+    await assert.rejects(stager(file()), new RegExp(error));
+    assert.equal(cancelled, 1);
+    assert.equal(store.take(TOKEN), null);
+  }
+});

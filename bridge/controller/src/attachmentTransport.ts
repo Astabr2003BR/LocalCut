@@ -77,7 +77,13 @@ export function createAttachmentStager(options: AttachmentStagerOptions) {
     let mimeType: string;
     let bytes: Buffer;
     try {
-      if (!response.ok) throw new Error("ATTACHMENT_DOWNLOAD_FAILED");
+      if (response.status !== 200 || response.headers.has("content-range")) {
+        throw new Error("ATTACHMENT_DOWNLOAD_FAILED");
+      }
+      const encoding = response.headers.get("content-encoding");
+      if (encoding && encoding.trim().toLowerCase() !== "identity") {
+        throw new Error("ATTACHMENT_CONTENT_ENCODING_UNSUPPORTED");
+      }
       if (response.url) {
         const finalUrl = validateSourceUrl(response.url);
         checkOrigin(finalUrl);

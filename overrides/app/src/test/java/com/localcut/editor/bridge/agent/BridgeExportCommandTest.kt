@@ -122,6 +122,27 @@ class BridgeExportCommandTest {
         assertTrue(registry.reviewFrames(second, "p", 6L) != null)
     }
 
+    @Test
+    fun statusAndCancelCannotTargetUnrelatedOrFinishedJob() {
+        val fixture = fixture()
+        val first = jobId(fixture.executor.execute(exportCommand("first")).resultJson)
+        fixture.exportPort.listener!!.onCompleted("{}")
+        val second = jobId(fixture.executor.execute(exportCommand("second")).resultJson)
+        val cancel = exportCommand("cancel").copy(capability = BridgeCapability.CANCEL_EXPORT, expectedRevision = null)
+        assertFalse(fixture.executor.execute(cancel.copy(payloadJson = """{"jobId":"$first"}""")).success)
+        assertEquals(0, fixture.exportPort.cancelCalls)
+        val unknown = fixture.executor.execute(cancel.copy(capability = BridgeCapability.GET_EXPORT_STATUS, payloadJson = """{"jobId":"unknown"}"""))
+        assertEquals("""{"job":null}""", unknown.resultJson)
+        assertTrue(fixture.executor.execute(cancel.copy(payloadJson = """{"jobId":"$second"}""")).success)
+        assertEquals(1, fixture.exportPort.cancelCalls)
+        assertEquals(BridgeJobState.QUEUED, fixture.jobs.get(second)!!.state)
+        fixture.exportPort.listener!!.onCancelled()
+        assertEquals(BridgeJobState.CANCELLED, fixture.jobs.latest.value!!.state)
+        fixture.exportPort.listener!!.onProgress(99)
+        fixture.exportPort.listener!!.onCompleted("{}")
+        assertEquals(BridgeJobState.CANCELLED, fixture.jobs.latest.value!!.state)
+    }
+
     private data class Fixture(
         val executor: BridgeCommandExecutor,
         val exportPort: FakeExportPort,
@@ -166,6 +187,7 @@ class BridgeExportCommandTest {
 
     private class FakeExportPort : BridgeExportPort {
         var startCalls = 0
+        var cancelCalls = 0
         var listener: BridgeExportListener? = null
         var startFailure: Throwable? = null
 
@@ -176,7 +198,7 @@ class BridgeExportCommandTest {
             return Result.success(Unit)
         }
 
-        override fun cancel(): Result<Unit> = Result.success(Unit)
+        override fun cancel(): Result<Unit> { cancelCalls++; return Result.success(Unit) }
     }
 
     private fun exportCommand(messageId: String) = BridgeCommandEnvelope(

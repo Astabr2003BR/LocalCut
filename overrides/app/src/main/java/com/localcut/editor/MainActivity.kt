@@ -212,6 +212,7 @@ class MainActivity : ComponentActivity() {
                             session = runtime.session,
                             state = editorSession,
                             bridgeState = bridgeState,
+                            jobs = runtime.bridgeJobs,
                             busy = exportState.running || bridgeState.phase == com.localcut.editor.bridge.agent.BridgeUiPhase.EXPORTING,
                             onCopyContext = { contextText ->
                                 (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)

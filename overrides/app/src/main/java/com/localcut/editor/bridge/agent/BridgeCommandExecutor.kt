@@ -372,7 +372,9 @@ class BridgeCommandExecutor(
         }
     }
 
-    private fun executeExport(command: BridgeCommandEnvelope): BridgeResultEnvelope = when (val reservation = jobs.reserveExport(command.messageId)) {
+    private fun executeExport(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val source = session.state
+        return when (val reservation = jobs.reserveExport(command.messageId, source.project.id, source.revision)) {
         is BridgeJobReservation.Existing -> success(command, jobJson(reservation.job))
         is BridgeJobReservation.Busy -> error(
             command,
@@ -383,7 +385,6 @@ class BridgeCommandExecutor(
         )
         is BridgeJobReservation.Started -> {
             val jobId = reservation.job.jobId
-            val source = session.state
             val listener = object : BridgeExportListener {
                 override fun onStarted() {
                     jobs.markRunning(jobId)
@@ -420,9 +421,13 @@ class BridgeCommandExecutor(
         }
     }
 
+    }
+
     private fun executeCancelExport(command: BridgeCommandEnvelope): BridgeResultEnvelope {
         val jobId = payload(command).requiredString("jobId")
-        val job = jobs.get(jobId) ?: return error(command, BridgeErrorCode.INVALID_ARGUMENT, "job not found", false)
+        val job = jobs.get(jobId)?.takeIf { it.sourceProjectId == command.projectId }
+            ?: return error(command, BridgeErrorCode.INVALID_ARGUMENT, "job not found", false)
+        if (jobs.active()?.jobId != jobId) return error(command, BridgeErrorCode.INVALID_ARGUMENT, "job is not active", false)
         val cancelled = exportPort.cancel()
         if (cancelled.isFailure) {
             return error(
@@ -432,7 +437,7 @@ class BridgeCommandExecutor(
                 retryable = true,
             )
         }
-        jobs.cancel(jobId)
+        // Cancellation is a request. Completion/cancel/failure callback owns terminal state.
         return success(command, jobJson(requireNotNull(jobs.get(job.jobId))))
     }
 

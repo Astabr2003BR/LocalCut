@@ -214,7 +214,8 @@ class BridgeProjectReader(
     }
 
     fun exportStatusJson(jobId: String?): String {
-        val job = jobId?.let(jobs::get) ?: jobs.active()
+        val projectId = session.state.project.id
+        val job = (if (jobId == null) jobs.active() else jobs.get(jobId))?.takeIf { it.sourceProjectId == projectId }
         if (job == null) return "{\"job\":null}"
         return buildString {
             append("{\"job\":{")

@@ -2,6 +2,9 @@ package com.localcut.editor.bridge.agent
 
 import com.localcut.editor.bridge.protocol.BridgeErrorCode
 import java.util.UUID
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 enum class BridgeJobState { QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED }
 
@@ -13,6 +16,8 @@ data class BridgeJobSnapshot(
     val errorCode: BridgeErrorCode? = null,
     val message: String? = null,
     val resultJson: String? = null,
+    val sourceProjectId: String? = null,
+    val sourceRevision: Long? = null,
 )
 
 sealed interface BridgeJobReservation {
@@ -27,9 +32,11 @@ class BridgeJobRegistry(private val monotonicMs: () -> Long = { System.nanoTime(
     private var activeJobId: String? = null
     private var latestEvidence: BridgeExportEvidence? = null
     private var evidenceAtMs: Long = 0L
+    private val mutableLatest = MutableStateFlow<BridgeJobSnapshot?>(null)
+    val latest: StateFlow<BridgeJobSnapshot?> = mutableLatest.asStateFlow()
 
     @Synchronized
-    fun reserveExport(messageId: String): BridgeJobReservation {
+    fun reserveExport(messageId: String, sourceProjectId: String? = null, sourceRevision: Long? = null): BridgeJobReservation {
         messageToJobId[messageId]?.let { jobId ->
             jobs[jobId]?.let { return BridgeJobReservation.Existing(it) }
         }
@@ -44,10 +51,13 @@ class BridgeJobRegistry(private val monotonicMs: () -> Long = { System.nanoTime(
             messageId = messageId,
             state = BridgeJobState.QUEUED,
             progressPercent = 0,
+            sourceProjectId = sourceProjectId,
+            sourceRevision = sourceRevision,
         )
         jobs[job.jobId] = job
         messageToJobId[messageId] = job.jobId
         activeJobId = job.jobId
+        mutableLatest.value = job
         return BridgeJobReservation.Started(job)
     }
 
@@ -126,7 +136,11 @@ class BridgeJobRegistry(private val monotonicMs: () -> Long = { System.nanoTime(
 
     private fun update(jobId: String, transform: (BridgeJobSnapshot) -> BridgeJobSnapshot) {
         val current = jobs[jobId] ?: throw IllegalArgumentException("job $jobId not found")
-        jobs[jobId] = transform(current)
+        // Terminal callbacks are final: late progress/failure cannot rewrite the UI or job result.
+        if (current.state.isTerminal()) return
+        val next = transform(current)
+        jobs[jobId] = next
+        if (mutableLatest.value?.jobId == jobId) mutableLatest.value = next
     }
 
     private fun clearActiveIf(jobId: String) {

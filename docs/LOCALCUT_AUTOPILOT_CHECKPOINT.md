@@ -112,3 +112,7 @@ Parent 2163a67ee28fb3ff65b4d17cbfbe7cd19e88c0d1: four CI PASS (2068,1899,1722,86
 
 ### Editor IA regression fix — 2026-11-15
 Android Debug APK #2069 executed 1511 tests, one failure at EditorAiApprovalGateTest.kt:46: expected clip.opacity 0.8. Inspection confirmed PatchClip wrote operation.opacity into TransformValue.opacity rather than Clip.opacity, unlike AddClip and SetClipOpacityCommand. Corrected the explicit opacity field to Clip.opacity; preserve transform opacity, keyframes, other properties and undo. Added domain regression for separate opacity values, exact preservation/undo and invalid range. CI pending on corrective SHA. No physical test or publication.
+
+
+## Hybrid Editor IA export review panel — 2026-11-15
+Parent 45fb18936cf4a2376a0b0b4ba10755c2ca6a717e: all four CI PASS (2070,1901,1724,870), PR open/draft. Added observable latest Bridge export with source project/revision and terminal stability, UI metadata/warnings/stale revision and explicit copy GPT review request for matching complete samples. No raw error/image data in UI. Fixed unknown job status fallback and terminal/foreign cancel; cancellation terminal state from renderer callback. JVM tests added for report policy and job lifecycle, CI pending; no local/device claim. Manual exports not covered, no live GPT result history or final visual approval; next integrated review/history, actual intro fixture, scoped transport and QA. No main/deployment/install/phase2.

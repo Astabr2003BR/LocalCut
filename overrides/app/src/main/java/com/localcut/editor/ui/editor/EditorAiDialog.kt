@@ -14,6 +14,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.localcut.editor.bridge.agent.BridgeUiState
+import com.localcut.editor.bridge.agent.BridgeJobRegistry
 import com.localcut.editor.session.ProjectSession
 import com.localcut.editor.session.ProjectSessionState
 
@@ -29,12 +31,15 @@ internal fun EditorAiDialog(
     session: ProjectSession,
     state: ProjectSessionState,
     bridgeState: BridgeUiState,
+    jobs: BridgeJobRegistry,
     busy: Boolean,
     onCopyContext: (String) -> Unit,
     onCreateVideo: () -> Unit,
     onApplied: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val latestJob by jobs.latest.collectAsState()
+    val report = remember(latestJob, state.project.id, state.revision) { EditorAiExportReview.from(latestJob, state.project.id, state.revision) }
     val gate = remember { EditorAiApprovalGate() }
     var draft by remember { mutableStateOf("") }
     var approval by remember { mutableStateOf<EditorAiApprovalGate.Approval?>(null) }
@@ -69,7 +74,14 @@ internal fun EditorAiDialog(
                         .onFailure { message = "Plano rejeitado: ${it.message?.take(180) ?: "confira o JSON"}" }
                 }, enabled = !busy && draft.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Validar plano") }
                 if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
-                Text("Após aplicar, volte à timeline para conferir a prévia. Use o Bridge para revisão de quadros e exportação. A inspeção do MP4 não garante qualidade visual ou sincronização completas.",
+                Text("Revisão do MP4 exportado", style = MaterialTheme.typography.titleSmall)
+                Text(report.title, style = MaterialTheme.typography.bodyMedium)
+                Text(report.detail, style = MaterialTheme.typography.bodySmall)
+                report.request?.let { request ->
+                    OutlinedButton(onClick = { onCopyContext(request); message = "Pedido de revisão copiado. Envie ao GPT conectado." },
+                        enabled = !busy && BridgePanelUiPolicy.agentReady(bridgeState), modifier = Modifier.fillMaxWidth()) { Text("Copiar pedido de revisão visual") }
+                }
+                Text("Após aplicar, volte à timeline para conferir a prévia. O GPT externo analisa os quadros pelo Bridge; esta tela não executa uma IA local.",
                     style = MaterialTheme.typography.bodySmall)
             }
         },

@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { isIP } from "node:net";
+import { fetchPinnedAttachment } from "./attachmentPinnedFetch.ts";
 import {
   isAllowedTransientMediaType,
   type TransientMediaStore,
@@ -36,7 +37,7 @@ export type AttachmentStagerOptions = {
 
 export function createAttachmentStager(options: AttachmentStagerOptions) {
   const publicBaseUrl = normalizePublicBaseUrl(options.publicBaseUrl);
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? fetchPinnedAttachment;
   const allowedOrigins = options.allowedSourceOrigins === undefined ? undefined : new Set(
     options.allowedSourceOrigins.map((value) => {
       const url = validateSourceUrl(value);

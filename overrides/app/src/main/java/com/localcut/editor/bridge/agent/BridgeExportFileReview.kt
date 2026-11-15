@@ -8,16 +8,59 @@ import com.localcut.editor.data.project.jsonString
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.timeline.TimelineMath
 import java.io.File
+import java.io.ByteArrayOutputStream
+import java.util.Base64
 import java.security.MessageDigest
 
 fun interface BridgeExportFileReviewer {
     /** Inspects the private rendered file on the export commit worker, never a caller-supplied path. */
     fun inspect(file: File, project: Project): String
+    fun inspectWithSamples(file: File, project: Project): BridgeExportInspection =
+        BridgeExportInspection(inspect(file, project))
+}
+
+data class BridgeExportSample(val requestedUs: Long, val width: Int, val height: Int, val jpeg: ByteArray) {
+    init {
+        require(requestedUs >= 0L && width in 1..320 && height in 1..320)
+        require(jpeg.size in 4..65_536)
+        require(jpeg[0].toInt() and 255 == 255 && jpeg[1].toInt() and 255 == 216)
+        require(jpeg[jpeg.size - 2].toInt() and 255 == 255 && jpeg.last().toInt() and 255 == 217)
+    }
+}
+
+data class BridgeExportInspection(val reportJson: String, val sha256: String? = null, val samples: List<BridgeExportSample> = emptyList()) {
+    init {
+        require(samples.size <= 3)
+        require(samples.zipWithNext().all { (a, b) -> a.requestedUs < b.requestedUs })
+        require(samples.isEmpty() || sha256?.matches(Regex("[a-f0-9]{64}")) == true)
+    }
+}
+
+internal data class BridgeExportEvidence(val jobId: String, val projectId: String, val revision: Long,
+    val sha256: String, val samples: List<BridgeExportSample>) {
+    fun toJson(): String = buildString {
+        append("{\"jobId\":"); append(jsonString(jobId))
+        append(",\"sourceProjectId\":"); append(jsonString(projectId))
+        append(",\"sourceRevision\":"); append(revision)
+        append(",\"sha256\":"); append(jsonString(sha256))
+        append(",\"source\":\"rendered_mp4\",\"frameAccurate\":false,\"frames\":[")
+        samples.forEachIndexed { i, sample ->
+            if (i > 0) append(',')
+            append("{\"requestedUs\":"); append(sample.requestedUs)
+            append(",\"width\":"); append(sample.width)
+            append(",\"height\":"); append(sample.height)
+            append(",\"mimeType\":\"image/jpeg\",\"base64\":")
+            append(jsonString(Base64.getEncoder().encodeToString(sample.jpeg))); append('}')
+        }
+        append("]}")
+    }
 }
 
 /** Metadata and sampled decode only, not visual quality, complete decode or A/V sync certification. */
 object AndroidBridgeExportFileReviewer : BridgeExportFileReviewer {
-    override fun inspect(file: File, project: Project): String {
+    override fun inspect(file: File, project: Project): String = inspectWithSamples(file, project).reportJson
+
+    override fun inspectWithSamples(file: File, project: Project): BridgeExportInspection {
         require(file.isFile && file.length() > 0L) { "empty rendered file" }
         val bytes = file.length()
         val digest = MessageDigest.getInstance("SHA-256")
@@ -94,6 +137,7 @@ object AndroidBridgeExportFileReviewer : BridgeExportFileReviewer {
             val positions = listOf(0L, durationUs / 2L, (durationUs - 1_000L).coerceAtLeast(0L)).distinct()
             var decoded = 0
             val darkSamplePositions = mutableListOf<Long>()
+            val samples = mutableListOf<BridgeExportSample>()
             if (Build.VERSION.SDK_INT >= 27) {
                 for (position in positions) {
                     val frame = runCatching {
@@ -104,6 +148,7 @@ object AndroidBridgeExportFileReviewer : BridgeExportFileReviewer {
                             if (frame.width > 0 && frame.height > 0) {
                                 decoded++
                                 if (isNearBlackSample(frame)) darkSamplePositions.add(position)
+                                runCatching { encodeSample(frame, position) }.getOrNull()?.let(samples::add)
                             }
                         } finally { frame.recycle() }
                     }
@@ -111,7 +156,7 @@ object AndroidBridgeExportFileReviewer : BridgeExportFileReviewer {
             }
             val sampleStatus = if (Build.VERSION.SDK_INT < 27) "unsupported" else if (decoded == positions.size) "decoded" else "incomplete"
             val status = if (durationMatches && resolutionMatches && sampleStatus == "decoded" && darkSamplePositions.isEmpty()) "technical_checks_passed" else "needs_review"
-            return buildString {
+            val report = buildString {
                 append("{\"status\":"); append(jsonString(status))
                 append(",\"scope\":\"rendered_file_metadata_and_sample_decode\"")
                 append(",\"bytes\":"); append(bytes)
@@ -136,9 +181,23 @@ object AndroidBridgeExportFileReviewer : BridgeExportFileReviewer {
                 append(",\"decodedFrames\":"); append(decoded)
                 append(",\"nearBlackSamplePositionsUs\":["); append(darkSamplePositions.joinToString(",")); append("]")
                 append(",\"nearBlackHeuristicOnly\":true")
+                append(",\"encodedSampleFrames\":"); append(samples.size)
                 append(",\"visualQualityVerified\":false,\"audioSyncVerified\":false,\"fullDecodeVerified\":false}")
             }
+            return BridgeExportInspection(report, sha, if (samples.size == positions.size) samples.toList() else emptyList())
         } finally { retriever.release() }
+    }
+
+    private fun encodeSample(frame: android.graphics.Bitmap, position: Long): BridgeExportSample? {
+        if (frame.width !in 1..320 || frame.height !in 1..320) return null
+        for (quality in listOf(82, 60, 40)) {
+            val bytes = ByteArrayOutputStream().use { out ->
+                if (!frame.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, out)) return null
+                out.toByteArray()
+            }
+            if (bytes.size <= 65_536) return BridgeExportSample(position, frame.width, frame.height, bytes)
+        }
+        return null
     }
 
     /** Sparse RGB sampling: a warning, not proof of an unintended black frame. */

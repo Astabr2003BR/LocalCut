@@ -92,3 +92,7 @@ Parent a3b8e3e8a679ef7a08b1ab17a5d83f9ab14cf9e5: four CI PASS (2063,1894,1717,86
 
 ## Rendered sample dark-frame warning — 2026-11-15
 Parent 4439b4440778e958df67a7f5c51b2adf3921b3b5: four CI PASS (2064,1895,1718,864), PR draft, push permission confirmed. Added bounded 16x16 RGB sampling of already decoded frames, near-black timestamps and conservative needs_review status; no visual approval or image transfer. Android instrumentation covers black/green and real green MP4 report. CI pending; no local execution. Intentional fades/night scenes can trigger warning; sparse samples cannot establish continuity. Next exported image return and UI; no phase 2/install/main.
+
+
+## Hybrid rendered MP4 visual sample handoff — 2026-11-15
+Parent e61a4ef5a57010da63032335fdf8368b7866f518: four CI PASS (2065,1896,1719,865); automatic round completed, PR open/draft. Added bounded JPEG samples to successful Bridge export evidence, single latest job cache with 10-minute read expiry, source job/project/revision/hash checks, read capability get_export_review_frames with OAuth device scope and MCP image parts, no persistent file or public route, image replay cache redaction. Tests for expiry/late callbacks/foreign revision/invalid payload, Node JPEG header/provenance, real MP4 JPEG decode and green pixels. CI pending. Sample timestamps approximate, no visual/audio sync certification or physical test. Next Editor IA UI and end-to-end/regression; no deployment/main/install/phase2.

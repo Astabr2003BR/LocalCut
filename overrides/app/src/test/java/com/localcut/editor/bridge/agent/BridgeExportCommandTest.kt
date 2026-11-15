@@ -82,6 +82,46 @@ class BridgeExportCommandTest {
         assertTrue(result.resultJson.contains("open LocalCut"))
     }
 
+    @Test
+    fun exportSamplesAreBoundToJobAndSourceRevisionAndNeverInStatus() {
+        val fixture = fixture()
+        val start = fixture.executor.execute(exportCommand("export-samples"))
+        val id = jobId(start.resultJson)
+        val sample = BridgeExportSample(0L, 1, 1, byteArrayOf(-1, -40, -1, -39))
+        fixture.exportPort.listener!!.onCompletedWithReview("""{"destination":"LOCALCUT_MEDIASTORE"}""",
+            BridgeExportInspection("{}", "a".repeat(64), listOf(sample)))
+        val query = exportCommand("read-samples").copy(capability = BridgeCapability.GET_EXPORT_REVIEW_FRAMES,
+            expectedRevision = null, payloadJson = """{"jobId":"$id","sourceRevision":5}""")
+        val result = fixture.executor.execute(query)
+        assertTrue(result.success)
+        assertTrue(result.resultJson.contains("\"sourceRevision\":5"))
+        assertTrue(result.resultJson.contains("\"base64\":"))
+        assertFalse(requireNotNull(fixture.jobs.get(id)!!.resultJson).contains("base64"))
+        assertFalse(fixture.executor.execute(query.copy(payloadJson = """{"jobId":"$id","sourceRevision":6}""")).success)
+        assertFalse(fixture.executor.execute(query.copy(projectId = "other")).success)
+        assertFalse(fixture.executor.execute(query.copy(payloadJson = """{"jobId":"$id","sourceRevision":5,"path":"bad"}""")).success)
+        fixture.executor.execute(exportCommand("new-export"))
+        assertFalse(fixture.executor.execute(query).success)
+    }
+
+    @Test
+    fun exportEvidenceExpiresAndCannotBeReplacedByLateOldJob() {
+        var now = 1000L
+        val registry = BridgeJobRegistry { now }
+        val first = (registry.reserveExport("one") as BridgeJobReservation.Started).job.jobId
+        val sample = BridgeExportSample(0L, 1, 1, byteArrayOf(-1, -40, -1, -39))
+        val review = BridgeExportInspection("{}", "a".repeat(64), listOf(sample))
+        registry.succeedWithReview(first, "{}", "p", 5L, review)
+        assertTrue(registry.reviewFrames(first, "p", 5L) != null)
+        now += 600_001L
+        assertTrue(registry.reviewFrames(first, "p", 5L) == null)
+        val second = (registry.reserveExport("two") as BridgeJobReservation.Started).job.jobId
+        registry.succeedWithReview(first, "{}", "p", 5L, review)
+        assertTrue(registry.reviewFrames(first, "p", 5L) == null)
+        registry.succeedWithReview(second, "{}", "p", 6L, review)
+        assertTrue(registry.reviewFrames(second, "p", 6L) != null)
+    }
+
     private data class Fixture(
         val executor: BridgeCommandExecutor,
         val exportPort: FakeExportPort,

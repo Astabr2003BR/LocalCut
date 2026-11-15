@@ -35,13 +35,13 @@ class Media3BridgeExportPort(
                 return Result.failure(IllegalStateException("another bridge export is already running"))
             }
             val target = targetFactory.create(project).getOrElse { return Result.failure(it) }
-            val report = AtomicReference<String?>(null)
+            val report = AtomicReference<BridgeExportInspection?>(null)
             val destination = if (reviewer == null) target.destination else object : ExportDestination {
                 override fun commitFrom(tempFile: File): Result<Unit> {
                     // Inspection is best effort and runs on the existing commit worker.
                     // A diagnostic failure must not destroy a valid render.
-                    val inspected = runCatching { reviewer.inspect(tempFile, project) }.getOrElse {
-                        """{"status":"unavailable","visualQualityVerified":false,"audioSyncVerified":false,"fullDecodeVerified":false}"""
+                    val inspected = runCatching { reviewer.inspectWithSamples(tempFile, project) }.getOrElse {
+                        BridgeExportInspection("""{"status":"unavailable","visualQualityVerified":false,"audioSyncVerified":false,"fullDecodeVerified":false}""")
                     }
                     return target.destination.commitFrom(tempFile).also { result ->
                         if (result.isSuccess) report.set(inspected)
@@ -58,9 +58,9 @@ class Media3BridgeExportPort(
                             ExportEvent.Completed -> {
                                 val metadata = report.get()
                                 val result = if (reviewer == null) target.resultJson else appendBridgeExportMetadata(
-                                    target.resultJson, "\"technicalReview\":" + (metadata ?: """{"status":"unavailable"}"""),
+                                    target.resultJson, "\"technicalReview\":" + (metadata?.reportJson ?: """{"status":"unavailable"}"""),
                                 )
-                                listener.onCompleted(result)
+                                listener.onCompletedWithReview(result, metadata)
                             }
                             ExportEvent.Cancelled -> listener.onCancelled()
                             is ExportEvent.Failed -> listener.onFailed(event.message)

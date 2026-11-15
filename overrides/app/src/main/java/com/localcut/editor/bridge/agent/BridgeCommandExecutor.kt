@@ -80,6 +80,7 @@ class BridgeCommandExecutor(
                     success(command, reader.exportStatusJson(payload.optionalString("jobId")))
                 }
                 BridgeCapability.GET_PREVIEW_FRAME -> executePreviewFrame(command)
+                BridgeCapability.GET_EXPORT_REVIEW_FRAMES -> executeExportReviewFrames(command)
                 BridgeCapability.SEEK -> executeSeek(command)
                 BridgeCapability.SELECT_CLIP -> executeSelect(command)
                 BridgeCapability.MOVE_CLIP -> executeMove(command)
@@ -111,6 +112,17 @@ class BridgeCommandExecutor(
         } catch (error: Throwable) {
             error(command, BridgeErrorCode.INTERNAL_ERROR, error.message ?: "internal error", retryable = false)
         }
+    }
+
+    private fun executeExportReviewFrames(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val fields = payload(command)
+        require(fields.fields.keys == setOf("jobId", "sourceRevision")) { "expected jobId and sourceRevision" }
+        val jobId = fields.requiredString("jobId")
+        val revision = fields.requiredLong("sourceRevision")
+        require(revision >= 0L && jobId.length <= 128) { "invalid export evidence reference" }
+        val json = jobs.reviewFrames(jobId, command.projectId, revision)
+            ?: return error(command, BridgeErrorCode.PREVIEW_FAILED, "export sample evidence unavailable", false)
+        return success(command, json)
     }
 
     private fun executePreviewFrame(command: BridgeCommandEnvelope): BridgeResultEnvelope {
@@ -381,9 +393,12 @@ class BridgeCommandExecutor(
                     jobs.updateProgress(jobId, percent.coerceIn(0, 100))
                 }
 
-                override fun onCompleted(resultJson: String) {
-                    jobs.succeed(jobId, appendBridgeExportMetadata(resultJson,
-                        "\"sourceProjectId\":" + jsonString(source.project.id) + ",\"sourceRevision\":" + source.revision))
+                override fun onCompleted(resultJson: String) = onCompletedWithReview(resultJson, null)
+
+                override fun onCompletedWithReview(resultJson: String, review: BridgeExportInspection?) {
+                    jobs.succeedWithReview(jobId, appendBridgeExportMetadata(resultJson,
+                        "\"sourceProjectId\":" + jsonString(source.project.id) + ",\"sourceRevision\":" + source.revision),
+                        source.project.id, source.revision, review)
                 }
 
                 override fun onFailed(message: String) {

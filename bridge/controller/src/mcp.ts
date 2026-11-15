@@ -10,6 +10,7 @@ import {
   revisionRequiredCapabilities,
 } from "./protocol.ts";
 import { registerTermuxTools } from "./termuxMcp.ts";
+import { exportReviewToolResult, validExportReviewPayload } from "./exportReview.ts";
 import { MAX_REVIEW_FRAMES } from "./previewReview.ts";
 import { MAX_CORRECTION_OPERATIONS, ReviewCorrectionCoordinator, correctionToolResult } from "./reviewCorrection.ts";
 
@@ -27,6 +28,7 @@ const READ_ONLY_CAPABILITIES = new Set<BridgeCapability>([
   "get_export_status",
   "get_errors",
   "get_preview_frame",
+  "get_export_review_frames",
 ]);
 
 const routingFields = {
@@ -223,6 +225,10 @@ export function createLocalCutMcpServer(
       },
       async (input: unknown) => {
         const parsed = inputSchema.parse(input);
+        if (capability === "get_export_review_frames") {
+          if (review?.authorizedDeviceId() !== parsed.deviceId) return toolResult({ success: false, code: "AUTH_REQUIRED" }, true);
+          if (!validExportReviewPayload(parsed.payload)) return toolResult({ success: false, code: "INVALID_ARGUMENT" }, true);
+        }
         const now = Date.now();
         const command: BridgeCommandEnvelope = {
           protocolVersion: 1,
@@ -238,6 +244,10 @@ export function createLocalCutMcpServer(
           payload: parsed.payload,
         };
         const result = await router.execute(controllerId, command);
+        if (capability === "get_export_review_frames") {
+          if (review?.authorizedDeviceId() !== parsed.deviceId) return toolResult({ success: false, code: "AUTH_REQUIRED" }, true);
+          return exportReviewToolResult(result, parsed.projectId, parsed.payload);
+        }
         return toolResultForCapability(capability, result, !result.success);
       },
     );
@@ -374,6 +384,9 @@ function titleFor(capability: BridgeCapability): string {
 }
 
 function descriptionFor(capability: BridgeCapability): string {
+  if (capability === "get_export_review_frames") {
+    return "Read sampled images from the latest completed Bridge-exported MP4 on your authorized device, not editor preview. Use payload {jobId,sourceRevision} from get_export_status. Current project must match the source project; sourceRevision is the immutable export revision, not current editor revision. Evidence is temporary, up to three approximate sampled JPEG frames, not full video/audio QA.";
+  }
   if (capability === "get_preview_frame") {
     return "Capture the latest bounded LocalCut preview frame from the paired APK so an agent can visually inspect the current edit. The response includes image content plus frame metadata.";
   }

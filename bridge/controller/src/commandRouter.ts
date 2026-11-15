@@ -94,7 +94,10 @@ export class CommandRouter {
       if (result.messageId !== command.messageId) {
         return failure(command.messageId, "INTERNAL_ERROR", true);
       }
-      this.rememberCompleted(key, result);
+      // Image evidence is ephemeral. Cache only a retryable failure for duplicate
+      // message IDs, never the image bytes or a stale successful image response.
+      this.rememberCompleted(key, command.capability === "get_export_review_frames" && result.success
+        ? failure(command.messageId, "PREVIEW_FAILED", true) : result);
       return structuredClone(result);
     } catch {
       return failure(command.messageId, "DEVICE_OFFLINE", true);

@@ -183,7 +183,8 @@ class PortableStudioPackageSmokeTest {
                 assertTrue("Portable export timed out", completed.await(120, TimeUnit.SECONDS))
                 failure.get()?.let { throw AssertionError("Portable export failed", it) }
                 assertTrue(output.isFile && output.length() > 0)
-                val report = JSONObject(com.localcut.editor.bridge.agent.AndroidBridgeExportFileReviewer.inspect(output, project))
+                val inspection = com.localcut.editor.bridge.agent.AndroidBridgeExportFileReviewer.inspectWithSamples(output, project)
+                val report = JSONObject(inspection.reportJson)
                 assertEquals(1920, report.getInt("width"))
                 assertEquals(1080, report.getInt("height"))
                 assertEquals(1, report.getInt("videoTracks"))
@@ -200,6 +201,18 @@ class PortableStudioPackageSmokeTest {
                     assertEquals(3, report.getInt("decodedFrames"))
                     assertEquals(0, report.getJSONArray("nearBlackSamplePositionsUs").length())
                     assertTrue(report.getBoolean("nearBlackHeuristicOnly"))
+                    assertEquals(3, inspection.samples.size)
+                    assertEquals(report.getString("sha256"), inspection.sha256)
+                    inspection.samples.forEach { sample ->
+                        assertTrue(sample.jpeg.size <= 65_536)
+                        val bitmap = requireNotNull(android.graphics.BitmapFactory.decodeByteArray(sample.jpeg, 0, sample.jpeg.size))
+                        try {
+                            assertEquals(sample.width, bitmap.width)
+                            assertEquals(sample.height, bitmap.height)
+                            val pixel = bitmap.getPixel(bitmap.width / 2, bitmap.height / 2)
+                            assertTrue(Color.green(pixel) > Color.red(pixel) + 40 && Color.green(pixel) > Color.blue(pixel) + 40)
+                        } finally { bitmap.recycle() }
+                    }
                 }
                 val corrupt = File(workDir, "corrupt.mp4").apply { writeBytes(byteArrayOf(1, 2, 3)) }
                 assertTrue(runCatching { com.localcut.editor.bridge.agent.AndroidBridgeExportFileReviewer.inspect(corrupt, project) }.isFailure)

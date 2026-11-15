@@ -9,6 +9,7 @@ export const bridgeCapabilities = [
   "get_export_status",
   "get_errors",
   "get_preview_frame",
+  "get_export_review_frames",
   "seek",
   "select_clip",
   "split_clip",

@@ -21,10 +21,12 @@ sealed interface BridgeJobReservation {
     data class Busy(val activeJob: BridgeJobSnapshot) : BridgeJobReservation
 }
 
-class BridgeJobRegistry {
+class BridgeJobRegistry(private val monotonicMs: () -> Long = { System.nanoTime() / 1_000_000L }) {
     private val jobs = LinkedHashMap<String, BridgeJobSnapshot>()
     private val messageToJobId = mutableMapOf<String, String>()
     private var activeJobId: String? = null
+    private var latestEvidence: BridgeExportEvidence? = null
+    private var evidenceAtMs: Long = 0L
 
     @Synchronized
     fun reserveExport(messageId: String): BridgeJobReservation {
@@ -36,6 +38,7 @@ class BridgeJobRegistry {
                 if (!active.state.isTerminal()) return BridgeJobReservation.Busy(active)
             }
         }
+        latestEvidence = null // retain only the latest export's bounded samples
         val job = BridgeJobSnapshot(
             jobId = UUID.randomUUID().toString(),
             messageId = messageId,
@@ -80,6 +83,27 @@ class BridgeJobRegistry {
             message = null,
         ) }
         clearActiveIf(jobId)
+    }
+
+    @Synchronized
+    internal fun succeedWithReview(jobId: String, resultJson: String, projectId: String, revision: Long, review: BridgeExportInspection?) {
+        // A late callback from an older job must not replace a newer export's evidence.
+        if (activeJobId == jobId && review != null && review.samples.isNotEmpty() && review.sha256 != null) {
+            latestEvidence = BridgeExportEvidence(jobId, projectId, revision, review.sha256,
+                review.samples.map { it.copy(jpeg = it.jpeg.copyOf()) })
+            evidenceAtMs = monotonicMs()
+        }
+        succeed(jobId, resultJson)
+    }
+
+    @Synchronized
+    internal fun reviewFrames(jobId: String, projectId: String, revision: Long): String? {
+        val evidence = latestEvidence ?: return null
+        val age = monotonicMs() - evidenceAtMs
+        if (age < 0L || age > 600_000L) { latestEvidence = null; return null }
+        if (evidence.jobId != jobId || evidence.projectId != projectId || evidence.revision != revision ||
+            jobs[jobId]?.state != BridgeJobState.SUCCEEDED) return null
+        return evidence.toJson()
     }
 
     @Synchronized

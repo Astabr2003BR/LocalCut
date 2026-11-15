@@ -15,6 +15,7 @@ enum class BridgeCapability(
     GET_EXPORT_STATUS("get_export_status"),
     GET_ERRORS("get_errors"),
     GET_PREVIEW_FRAME("get_preview_frame"),
+    GET_EXPORT_REVIEW_FRAMES("get_export_review_frames"),
     SEEK("seek"),
     SELECT_CLIP("select_clip"),
     SPLIT_CLIP("split_clip", mutatesProject = true),

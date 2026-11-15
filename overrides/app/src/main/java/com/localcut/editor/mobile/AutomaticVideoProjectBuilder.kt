@@ -33,6 +33,17 @@ internal object AutomaticVideoProjectBuilder {
         check(dir.mkdirs())
         val assets = plan.scenes.map { it.imageIndex }.distinct().map { index ->
             checkCancelled()
+            val uri = Uri.parse(selected[index])
+            if (context.contentResolver.getType(uri) == "video/mp4") {
+                val file = File(dir, "video-$index.mp4")
+                val duration = prepareVideo(context, uri, file, checkCancelled)
+                require(plan.scenes.filter { it.imageIndex == index }.all { it.durationUs <= duration }) {
+                    "Cena excede a duração do vídeo"
+                }
+                return@map Asset(id = "image-$index", type = AssetType.VIDEO, uri = Uri.fromFile(file).toString(),
+                    sourceDurationUs = duration, sizeBytes = file.length(), displayName = file.name,
+                    mimeType = "video/mp4", fingerprint = file.name + "-" + file.length())
+            }
             val file = File(dir, "image-$index.png")
             prepareImage(context, Uri.parse(selected[index]), plan, file)
             Asset(id = "image-$index", type = AssetType.IMAGE, uri = Uri.fromFile(file).toString(),
@@ -86,6 +97,37 @@ internal object AutomaticVideoProjectBuilder {
                 else -> it
             }
         })
+    }
+
+    private fun prepareVideo(context: Context, uri: Uri, file: File, checkCancelled: () -> Unit): Long {
+        val limit = 128L * 1024 * 1024
+        val reserve = 16L * 1024 * 1024
+        var total = 0L
+        (context.contentResolver.openInputStream(uri) ?: error("Vídeo indisponível")).use { input ->
+            file.outputStream().use { output ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    checkCancelled()
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    require(count > 0 && total <= limit - count) { "Vídeo excede limite técnico de importação" }
+                    require(file.parentFile!!.usableSpace >= reserve + count) { "Espaço insuficiente" }
+                    output.write(buffer, 0, count)
+                    total += count
+                }
+            }
+        }
+        require(total > 0) { "Vídeo vazio" }
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(file.absolutePath)
+            require(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO) == "yes") { "Arquivo sem vídeo" }
+            val ms = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                ?: error("Duração do vídeo desconhecida")
+            require(ms in 1L..Long.MAX_VALUE / 1000L)
+            checkCancelled()
+            return ms * 1000L
+        } finally { retriever.release() }
     }
 
     private fun prepareImage(context: Context, uri: Uri, plan: AutomaticVideoPlan, file: File) {

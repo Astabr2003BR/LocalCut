@@ -197,6 +197,20 @@ class PortableStudioPackageSmokeTest {
                         assertTrue(Color.green(center) > Color.red(center) + 40 && Color.green(center) > Color.blue(center) + 40)
                     } finally { frame.recycle() }
                 } finally { retriever.release() }
+                // Reuse the actual rendered MP4 as an existing local video source.
+                val videoFile = File(stageDir, "existing.mp4")
+                output.copyTo(videoFile)
+                val videoHash = digest(videoFile.readBytes())
+                val videoUri = FileProvider.getUriForFile(context, authority, videoFile).toString()
+                val videoDir = File(workDir, "video-project")
+                val videoPlan = AutomaticVideoRecipe.parse("""{"version":1,"format":"16:9","scenes":[{"image":1,"durationMs":500}]}""", 1)
+                val videoProject = AutomaticVideoProjectBuilder.build(context, videoPlan, listOf(videoUri), null, null, videoDir)
+                assertEquals(com.localcut.editor.domain.model.AssetType.VIDEO, videoProject.assets.single().type)
+                assertEquals(500_000L, videoProject.tracks.first { it.type == TrackType.VISUAL }.clips.single().durationUs)
+                ProjectCompositionCompiler(AssetUriResolver(context.contentResolver)).compile(videoProject, RenderMode.EXPORT).getOrThrow()
+                assertEquals(videoHash, digest(videoFile.readBytes()))
+                val tooLong = AutomaticVideoRecipe.parse("""{"version":1,"format":"16:9","scenes":[{"image":1,"durationMs":5000}]}""", 1)
+                assertTrue(runCatching { AutomaticVideoProjectBuilder.build(context, tooLong, listOf(videoUri), null, null, File(workDir, "too-long")) }.isFailure)
                 assertEquals(digest(image), digest(staged.images.single().readBytes()))
                 assertEquals(digest(wav), digest(requireNotNull(staged.audio).readBytes()))
             } finally {

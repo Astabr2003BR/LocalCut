@@ -45,3 +45,6 @@ The Estúdio automático now has an Abrir pacote .localcut SAF picker; selecting
 
 ### Portable package to MP4 — shared preparation and smoke
 AutomaticVideoProjectBuilder is now shared by the studio activity and the instrumentation test. The smoke builds a package containing an original green image and a 2-second PCM tone, stages it through the private FileProvider, prepares the existing editor project for a 1-second 16:9 recipe, exports using the existing Media3 composition compiler and Transformer, and checks actual output duration, resolution, audio track, visible green frame and unchanged source hashes. It does not test the SAF picker interaction, production export destination/controller, physical device or persistent project recovery. CI pending until observed.
+
+### Local MP4 preparation
+The SAF visual picker also accepts MP4. Recipe v1 `image` indexes the visual list; video scenes start at source time zero and must fit the source duration. The private copy is bounded to 128 MiB per video. Portable ZIP v1 remains image/audio only. Existing project editing, embedded audio behavior and video export verification remain pending.

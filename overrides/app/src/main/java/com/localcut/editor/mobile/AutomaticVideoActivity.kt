@@ -61,12 +61,12 @@ class AutomaticVideoActivity : ComponentActivity() {
         }
         val imagePicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
             if (!busy && !choosingOutput && uris.isNotEmpty()) {
-                val valid = uris.filter { it.scheme == "content" && runCatching { contentResolver.getType(it)?.startsWith("image/") == true }.getOrDefault(false) }
+                val valid = uris.filter { it.scheme == "content" && runCatching { contentResolver.getType(it)?.let { mime -> mime.startsWith("image/") || mime == "video/mp4" } == true }.getOrDefault(false) }
                 if (valid.size != uris.size) message = "Seleção contém mídia não reconhecida; nada alterado."
                 else {
                     valid.forEach(::persist)
                     images = (images + valid.map(Uri::toString)).distinct()
-                    message = "${images.size} imagens selecionadas. A numeração segue a lista abaixo."
+                    message = "${images.size} mídias visuais selecionadas. A numeração segue a lista abaixo."
                 }
             }
         }
@@ -100,7 +100,7 @@ class AutomaticVideoActivity : ComponentActivity() {
                 if (showApproval) AlertDialog(
                     onDismissRequest = { showApproval = false; approvedPlan = null },
                     title = { Text("Criar vídeo local") },
-                    text = { Text("Criar um novo MP4 com ${approvedPlan?.scenes?.size ?: 0} cenas, ${approvedPlan?.durationUs?.div(1000) ?: 0} ms, ${if (audio == null) "sem áudio" else "com áudio local"}. O projeto do editor não será alterado.") },
+                    text = { Text("Criar um novo MP4 com ${approvedPlan?.scenes?.size ?: 0} cenas, ${approvedPlan?.durationUs?.div(1000) ?: 0} ms, ${if (audio == null) "sem áudio adicional" else "com áudio adicional"}. O projeto do editor não será alterado.") },
                     confirmButton = { TextButton(onClick = {
                         showApproval = false
                         choosingOutput = true
@@ -111,7 +111,7 @@ class AutomaticVideoActivity : ComponentActivity() {
                 BackHandler(enabled = busy) { message = if (importingPackage) "Use Cancelar importação." else "Exportação em andamento. Mantenha esta tela aberta." }
                 Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Estúdio automático", style = MaterialTheme.typography.headlineSmall)
-                    Text("Vídeo offline a partir de imagens, roteiro JSON e áudio opcional. Sem IA interna ou créditos.")
+                    Text("Vídeo offline a partir de imagens e MP4 locais, roteiro JSON e áudio opcional. Sem IA interna ou créditos.")
                     val editable = !busy && !choosingOutput
                     TextButton(onClick = { finish() }, enabled = editable) { Text("Voltar") }
                     Button(onClick = {
@@ -119,7 +119,7 @@ class AutomaticVideoActivity : ComponentActivity() {
                         else packagePicker.launch(arrayOf("*/*"))
                     }, enabled = editable) { Text("Abrir pacote .localcut") }
                     if (importingPackage) TextButton(onClick = { packageJob?.cancel() }) { Text("Cancelar importação") }
-                    Button(onClick = { imagePicker.launch(arrayOf("image/*")) }, enabled = editable) { Text("Adicionar imagens locais") }
+                    Button(onClick = { imagePicker.launch(arrayOf("image/*", "video/mp4")) }, enabled = editable) { Text("Adicionar imagens ou MP4") }
                     images.forEachIndexed { index, source ->
                         Row(Modifier.fillMaxWidth()) {
                             val name by produceState("Mídia local", source) { value = withContext(Dispatchers.IO) { sourceName(source) } }
@@ -136,7 +136,7 @@ class AutomaticVideoActivity : ComponentActivity() {
                         Text(name)
                         TextButton(onClick = { audio = null }, enabled = editable) { Text("Remover áudio") }
                     }
-                    Text("Cole o roteiro do GPT. image = número da imagem; durationMs = duração em milissegundos. Formatos: 9:16, 4:5, 16:9, 1:1.")
+                    Text("Cole o roteiro do GPT. image = número da mídia visual (imagem ou MP4); durationMs = duração em milissegundos. Formatos: 9:16, 4:5, 16:9, 1:1.")
                     OutlinedTextField(value = recipe, onValueChange = {
                         if (it.length <= AutomaticVideoRecipe.MAX_CHARS) recipe = it
                         else message = "Roteiro excede o limite técnico de texto."

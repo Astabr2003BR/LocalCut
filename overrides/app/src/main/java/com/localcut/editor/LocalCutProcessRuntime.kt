@@ -155,7 +155,13 @@ class LocalCutProcessRuntime private constructor(context: Context) {
             playback = playbackPort,
             jobs = bridgeJobs,
             exportPort = bridgeExportPort,
-            previewFramePort = previewController.bridgePreviewFramePort,
+            previewFramePort = com.localcut.editor.bridge.agent.BridgePreviewFramePort {
+                if (previewController.isEditorPreviewFor(session.state.project)) {
+                    previewController.bridgePreviewFramePort.capture()
+                } else {
+                    Result.failure(IllegalStateException("preview does not match current editor project"))
+                }
+            },
         )
         bridgeTermuxAgentPort = AsyncBridgeTermuxAgentTaskPort(
             scope = processScope,

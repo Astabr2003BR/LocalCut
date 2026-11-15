@@ -33,6 +33,7 @@ class Media3PreviewController(
     private val delegate = DefaultPreviewController(engine, AndroidPreviewTicker())
     private val backgroundSession = PreviewBackgroundSession()
     private var lastProject: Project? = null
+    private var bridgeEditorPreviewReady = false
     @Volatile
     private var boundViewRef: WeakReference<PlayerView>? = null
     val bridgePreviewFramePort = AndroidPlayerPreviewFramePort(
@@ -41,16 +42,22 @@ class Media3PreviewController(
 
     override val state = delegate.state
     override fun load(project: Project): Result<Unit> {
+        bridgeEditorPreviewReady = false
         bridgePreviewFramePort.invalidate()
         return delegate.load(project).also { result ->
-        if (result.isSuccess) {
-            lastProject = project
-        }
+            if (result.isSuccess) {
+                lastProject = project
+                bridgeEditorPreviewReady = true
+            }
             scheduleBoundSurfaceRefreshAfterContentLoad(result.isSuccess)
         }
     }
 
+    // Main-thread runtime only. A rendered-file preview has no revision provenance.
+    fun isEditorPreviewFor(project: Project): Boolean = bridgeEditorPreviewReady && lastProject == project
+
     fun loadRenderedFile(file: File, durationUs: Long, fps: Int): Result<Unit> {
+        bridgeEditorPreviewReady = false
         bridgePreviewFramePort.invalidate()
         val editorProject = lastProject
         val editorPositionUs = state.value.positionUs
@@ -94,6 +101,7 @@ class Media3PreviewController(
     }
     override fun setLoopRange(startUs: Long, endUs: Long?) = delegate.setLoopRange(startUs, endUs)
     override fun release() {
+        bridgeEditorPreviewReady = false
         bridgePreviewFramePort.invalidate()
         delegate.release()
     }
@@ -106,6 +114,8 @@ class Media3PreviewController(
         if (!PreviewBackgroundMemoryPolicy.shouldSuspend(state.value.durationUs, changingConfigurations)) return
         if (!backgroundSession.beginSuspend(state.value.positionUs)) return
 
+        bridgeEditorPreviewReady = false
+        bridgePreviewFramePort.invalidate()
         delegate.suspendForBackground()
         boundViewRef?.get()?.let { view ->
             bridgePreviewFramePort.detach(view)

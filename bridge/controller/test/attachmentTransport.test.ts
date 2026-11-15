@@ -6,6 +6,15 @@ import { createTransientMediaStore } from "../src/transientMediaHttp.ts";
 
 const TOKEN = "C".repeat(43);
 
+// Original 1x1 RGB PNG and one silent 16-bit PCM WAV sample.
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGPgEpEDAABoAD1UCKP3AAAAAElFTkSuQmCC", "base64");
+const WAV = Buffer.alloc(46);
+WAV.write("RIFF"); WAV.writeUInt32LE(38, 4); WAV.write("WAVEfmt ", 8);
+WAV.writeUInt32LE(16, 16); WAV.writeUInt16LE(1, 20); WAV.writeUInt16LE(1, 22);
+WAV.writeUInt32LE(8000, 24); WAV.writeUInt32LE(16000, 28);
+WAV.writeUInt16LE(2, 32); WAV.writeUInt16LE(16, 34); WAV.write("data", 36); WAV.writeUInt32LE(2, 40);
+
+
 function file(overrides: Partial<{
   download_url: string;
   file_id: string;
@@ -28,7 +37,7 @@ test("attachment stager fetches a ChatGPT file and stages it without exposing so
     publicBaseUrl: "https://localcut-bridge.example",
     transientMediaStore: store,
     tokenGenerator: () => TOKEN,
-    fetchImpl: async () => new Response(Buffer.from("image-bytes"), {
+    fetchImpl: async () => new Response(PNG, {
       status: 200,
       headers: { "content-type": "image/png" },
     }),
@@ -39,8 +48,8 @@ test("attachment stager fetches a ChatGPT file and stages it without exposing so
   assert.equal(result.fileId, "file_123");
   assert.equal(result.fileName, "frame.png");
   assert.equal(result.mimeType, "image/png");
-  assert.equal(result.sizeBytes, 11);
-  assert.equal(result.sha256, createHash("sha256").update("image-bytes").digest("hex"));
+  assert.equal(result.sizeBytes, PNG.length);
+  assert.equal(result.sha256, createHash("sha256").update(PNG).digest("hex"));
   assert.equal(result.relayUrl, `https://localcut-bridge.example/v1/mobile-media/${TOKEN}`);
   assert.equal(
     result.handoffUrl,
@@ -52,7 +61,7 @@ test("attachment stager fetches a ChatGPT file and stages it without exposing so
   const entry = store.take(TOKEN);
   assert.ok(entry);
   assert.equal(entry?.contentType, "image/png");
-  assert.deepEqual(entry?.bytes, Buffer.from("image-bytes"));
+  assert.deepEqual(entry?.bytes, PNG);
   assert.equal(result.sha256, createHash("sha256").update(entry.bytes).digest("hex"));
   assert.equal(store.take(TOKEN), null, "relay entry must be one-time");
 });
@@ -133,7 +142,7 @@ test("attachment stager falls back to declared media MIME only for generic upstr
     publicBaseUrl: "https://localcut-bridge.example",
     transientMediaStore: store,
     tokenGenerator: () => TOKEN,
-    fetchImpl: async () => new Response(Buffer.from("audio"), {
+    fetchImpl: async () => new Response(WAV, {
       status: 200,
       headers: { "content-type": "application/octet-stream" },
     }),
@@ -229,7 +238,7 @@ test("configured attachment origins match exactly and empty configuration denies
     transientMediaStore: createTransientMediaStore(),
     fetchImpl: async () => {
       calls++;
-      return new Response("image", { headers: { "content-type": "image/png" } });
+      return new Response(PNG, { headers: { "content-type": "image/png" } });
     },
   };
   const stager = createAttachmentStager({ ...base, allowedSourceOrigins: ["https://files.example"] });
@@ -254,7 +263,7 @@ test("expected digest validates before network and rejects mismatches before sta
     tokenGenerator: () => TOKEN,
     fetchImpl: async () => {
       calls++;
-      return new Response("image-bytes", { headers: { "content-type": "image/png" } });
+      return new Response(PNG, { headers: { "content-type": "image/png" } });
     },
   });
   for (const expected_sha256 of ["", "a".repeat(63), "G".repeat(64), "A".repeat(64)]) {
@@ -263,7 +272,7 @@ test("expected digest validates before network and rejects mismatches before sta
   assert.equal(calls, 0);
   await assert.rejects(stager(file({ expected_sha256: "0".repeat(64) })), /ATTACHMENT_HASH_MISMATCH/);
   assert.equal(store.take(TOKEN), null);
-  const expected_sha256 = createHash("sha256").update("image-bytes").digest("hex");
+  const expected_sha256 = createHash("sha256").update(PNG).digest("hex");
   assert.equal((await stager(file({ expected_sha256 }))).sha256, expected_sha256);
   assert.ok(store.take(TOKEN));
   assert.equal(calls, 2);
@@ -311,8 +320,28 @@ test("attachment validates declared length against actual bytes before staging",
   const stager = createAttachmentStager({
     publicBaseUrl: "https://localcut-bridge.example", transientMediaStore: store,
     tokenGenerator: () => TOKEN,
-    fetchImpl: async () => new Response("abc", { headers: { "content-type": "image/png", "content-length": "3" } }),
+    fetchImpl: async () => new Response(PNG, { headers: { "content-type": "image/png", "content-length": String(PNG.length) } }),
   });
-  assert.equal((await stager(file())).sizeBytes, 3);
-  assert.deepEqual(store.take(TOKEN)?.bytes, Buffer.from("abc"));
+  assert.equal((await stager(file())).sizeBytes, PNG.length);
+  assert.deepEqual(store.take(TOKEN)?.bytes, PNG);
+});
+
+test("attachment rejects spoofed and truncated media before relay staging", async () => {
+  for (const [mime, bytes, error] of [
+    ["image/png", Buffer.from("<html>fake</html>"), "MISMATCH"],
+    ["image/png", PNG.subarray(0, 20), "MISMATCH"],
+    ["audio/wav", PNG, "MISMATCH"],
+    ["audio/wav", WAV.subarray(0, 44), "MISMATCH"],
+    ["video/mp4", Buffer.from("not a video"), "MISMATCH"],
+    ["image/svg+xml", Buffer.from("<svg/>"), "UNSUPPORTED"],
+  ] as const) {
+    const store = createTransientMediaStore();
+    const stager = createAttachmentStager({
+      publicBaseUrl: "https://localcut-bridge.example",
+      transientMediaStore: store, tokenGenerator: () => TOKEN,
+      fetchImpl: async () => new Response(Buffer.from(bytes), {headers: {"content-type": mime}}),
+    });
+    await assert.rejects(stager(file({ mime_type: mime })), new RegExp("ATTACHMENT_MEDIA_SIGNATURE_" + error));
+    assert.equal(store.take(TOKEN), null);
+  }
 });

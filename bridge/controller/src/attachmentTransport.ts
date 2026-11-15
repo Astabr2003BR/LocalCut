@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { isIP } from "node:net";
 import { fetchPinnedAttachment } from "./attachmentPinnedFetch.ts";
+import { assertAttachmentMediaSignature } from "./attachmentMediaSignature.ts";
 import {
   isAllowedTransientMediaType,
   type TransientMediaStore,
@@ -96,6 +97,7 @@ export function createAttachmentStager(options: AttachmentStagerOptions) {
       );
       bytes = await readBoundedResponseBody(response, options.transientMediaStore.maxBytes);
       if (bytes.length === 0) throw new Error("ATTACHMENT_BODY_EMPTY");
+      assertAttachmentMediaSignature(mimeType, bytes);
     } catch (error) {
       // Release the upstream connection even when headers fail validation.
       // Cancellation is best effort and must not mask the original error.

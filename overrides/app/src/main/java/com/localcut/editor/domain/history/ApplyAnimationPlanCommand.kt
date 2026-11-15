@@ -16,6 +16,7 @@ data class ApplyAnimationPlanCommand(
         val targetIds = (plan.patches.map { it.clipId } + plan.effectPatches.map { it.clipId }).distinct()
         val targets = locateTargets(project, targetIds)
         targets.values.forEach { target -> TrackEditGuard.requireUnlocked(project.tracks[target.trackIndex]) }
+        targetIds.forEach { requireEditableProjectClip(project, it) }
 
         val previousAnimations = linkedMapOf<String, List<PropertyAnimation>>()
         val afterAnimations = linkedMapOf<String, List<PropertyAnimation>>()

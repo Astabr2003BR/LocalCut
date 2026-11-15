@@ -2,6 +2,12 @@ package com.localcut.editor.domain.history
 
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
+import com.localcut.editor.domain.model.EffectInstance
+import com.localcut.editor.domain.model.EffectParameter
+import com.localcut.editor.domain.model.PropertyAnimation
+import com.localcut.editor.domain.model.PropertyKeyframe
+import com.localcut.editor.domain.model.PropertyValue
+import com.localcut.editor.effects.EffectRegistry
 import com.localcut.editor.domain.model.DesignElement
 import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.Project
@@ -17,6 +23,9 @@ enum class ProjectItemKind { VIDEO, IMAGE, AUDIO, TEXT, DESIGN, DRAWING }
 sealed interface ProjectEditOperation {
     data class DeleteByKind(val kinds: Set<ProjectItemKind>) : ProjectEditOperation
     data class DeleteClip(val clipId: String) : ProjectEditOperation
+    data class AddEffect(val clipId: String, val effectId: String, val typeId: String, val numbers: Map<String, Double> = emptyMap()) : ProjectEditOperation
+    data class PatchEffect(val clipId: String, val effectId: String, val enabled: Boolean? = null, val numbers: Map<String, Double> = emptyMap()) : ProjectEditOperation
+    data class SetEffectKeyframe(val clipId: String, val effectId: String, val parameter: String, val offsetUs: Long, val value: Double) : ProjectEditOperation
     data class TrimClip(val clipId: String, val newStartUs: Long? = null, val newEndUs: Long? = null) : ProjectEditOperation
     data class DeleteText(val overlayId: String) : ProjectEditOperation
     data class DeleteDesign(val elementId: String) : ProjectEditOperation
@@ -108,6 +117,40 @@ data class ProjectEditBatchCommand(
     private fun applyOperation(project: Project, operation: ProjectEditOperation): Project = when (operation) {
         is ProjectEditOperation.DeleteByKind -> deleteByKind(project, operation.kinds)
         is ProjectEditOperation.DeleteClip -> deleteClip(project, operation.clipId)
+        is ProjectEditOperation.AddEffect -> editEffects(project, operation.clipId) { clip ->
+            require(clip.effects.none { it.id == operation.effectId }) { "effect id already exists" }
+            val effect = EffectInstance(operation.effectId, operation.typeId, parameters = numericParameters(operation.numbers))
+            validateKnownEffect(effect)
+            clip.effects + effect
+        }
+        is ProjectEditOperation.PatchEffect -> editEffects(project, operation.clipId) { clip ->
+            require(operation.enabled != null || operation.numbers.isNotEmpty()) { "empty effect patch" }
+            patchNamedEffect(clip, operation.effectId) { existing ->
+                require(existing.animations.none { it.propertyId in operation.numbers }) { "animated parameter requires setEffectKeyframe" }
+                existing.copy(enabled = operation.enabled ?: existing.enabled,
+                    parameters = existing.parameters + numericParameters(operation.numbers))
+            }
+        }
+        is ProjectEditOperation.SetEffectKeyframe -> editEffects(project, operation.clipId) { clip ->
+            require(operation.offsetUs in 0L..clip.durationUs) { "effect keyframe outside clip" }
+            require(operation.value.isFinite()) { "effect keyframe must be finite" }
+            patchNamedEffect(clip, operation.effectId) { effect ->
+                require(EffectRegistry.definition(effect.typeId)?.parametersByName?.get(operation.parameter)?.type ==
+                    com.localcut.editor.effects.EffectParameterType.NUMBER) { "unknown numeric effect parameter" }
+                val previous = effect.animations.singleOrNull { it.propertyId == operation.parameter }
+                require(effect.animations.count { it.propertyId == operation.parameter } <= 1) { "duplicate effect animation" }
+                val frames = previous?.keyframes.orEmpty()
+                val at = frames.firstOrNull { it.offsetUs == operation.offsetUs }
+                val next = at?.copy(value = PropertyValue.Scalar(operation.value)) ?: PropertyKeyframe(
+                    id = "edit-${operation.parameter}-${operation.offsetUs}", offsetUs = operation.offsetUs,
+                    value = PropertyValue.Scalar(operation.value))
+                val animation = PropertyAnimation(operation.parameter,
+                    (frames.filterNot { it.offsetUs == operation.offsetUs } + next).sortedBy { it.offsetUs })
+                val animations = if (previous == null) effect.animations + animation
+                    else effect.animations.map { if (it.propertyId == operation.parameter) animation else it }
+                effect.copy(animations = animations)
+            }
+        }
         is ProjectEditOperation.TrimClip -> trimClip(project, operation)
         is ProjectEditOperation.DeleteText -> deleteText(project, operation.overlayId)
         is ProjectEditOperation.DeleteDesign -> deleteDesign(project, operation.elementId)
@@ -165,17 +208,50 @@ private fun deleteByKind(project: Project, kinds: Set<ProjectItemKind>): Project
     return removeItems(project, clipIds, textIds, designIds)
 }
 
-private fun requireEditableClip(project: Project, clipId: String) {
+internal fun requireEditableProjectClip(project: Project, clipId: String) {
     val track = project.tracks.firstOrNull { it.clips.any { clip -> clip.id == clipId } }
         ?: throw IllegalArgumentException("clip $clipId not found")
     require(!track.locked) { "track ${track.id} is locked" }
-    require(project.compositionGraph.nodes.none { node ->
-        node.kind == CompositionNodeKind.LAYER && node.clipId == clipId && node.locked
-    }) { "clip $clipId is locked" }
+    val nodes = project.compositionGraph.nodes.associateBy { it.id }
+    project.compositionGraph.nodes.filter { it.kind == CompositionNodeKind.LAYER && it.clipId == clipId }.forEach { layer ->
+        var current: com.localcut.editor.domain.model.CompositionNode? = layer
+        val visited = mutableSetOf<String>()
+        while (current != null) {
+            val node = current
+            require(visited.add(node.id)) { "invalid composition hierarchy" }
+            require(!node.locked) { "clip $clipId is locked" }
+            current = node.parentId?.let { requireNotNull(nodes[it]) { "invalid composition parent" } }
+        }
+    }
+}
+
+private fun numericParameters(numbers: Map<String, Double>): Map<String, EffectParameter> {
+    require(numbers.size <= 32 && numbers.keys.all { it.isNotBlank() } && numbers.values.all { it.isFinite() }) { "invalid numeric parameters" }
+    return numbers.mapValues { EffectParameter.Number(it.value) }
+}
+
+private fun validateKnownEffect(effect: EffectInstance) {
+    require(EffectRegistry.definition(effect.typeId) != null) { "unknown effect type" }
+    val issues = EffectRegistry.validationIssues(effect)
+    require(issues.isEmpty()) { "invalid effect: ${issues.first()}" }
+}
+
+private fun patchNamedEffect(clip: Clip, effectId: String, edit: (EffectInstance) -> EffectInstance): List<EffectInstance> {
+    require(clip.effects.count { it.id == effectId } == 1) { "effect not found or ambiguous" }
+    return clip.effects.map { existing ->
+        if (existing.id != effectId) existing else edit(existing).also(::validateKnownEffect)
+    }
+}
+
+private fun editEffects(project: Project, clipId: String, edit: (Clip) -> List<EffectInstance>): Project {
+    requireEditableProjectClip(project, clipId)
+    val clip = requireNotNull(project.findClip(clipId))
+    require(project.assets.any { it.id == clip.assetId && it.type != AssetType.AUDIO }) { "effect requires visual clip" }
+    return SetClipEffectsCommand(clipId, edit(clip)).apply(project).project
 }
 
 private fun trimClip(project: Project, operation: ProjectEditOperation.TrimClip): Project {
-    requireEditableClip(project, operation.clipId)
+    requireEditableProjectClip(project, operation.clipId)
     val start = operation.newStartUs
     val end = operation.newEndUs
     require((start == null) != (end == null)) { "provide exactly one of newStartUs/newEndUs" }
@@ -191,7 +267,7 @@ private fun trimClip(project: Project, operation: ProjectEditOperation.TrimClip)
 }
 
 private fun deleteClip(project: Project, clipId: String): Project {
-    requireEditableClip(project, clipId)
+    requireEditableProjectClip(project, clipId)
     return removeItems(project, setOf(clipId), emptySet(), emptySet())
 }
 
@@ -212,7 +288,7 @@ private fun removeItems(
     designIds: Set<String>,
 ): Project {
     // Check every target before removing any item; a locked target rejects the entire batch.
-    clipIds.forEach { requireEditableClip(project, it) }
+    clipIds.forEach { requireEditableProjectClip(project, it) }
     val remainingNodes = project.compositionGraph.nodes.filterNot { node ->
         node.kind == CompositionNodeKind.LAYER && node.clipId?.let { it in clipIds } == true
     }
@@ -389,7 +465,7 @@ private fun validateDesignElement(element: DesignElement) {
 }
 
 private fun patchClip(project: Project, operation: ProjectEditOperation.PatchClip): Project {
-    requireEditableClip(project, operation.clipId)
+    requireEditableProjectClip(project, operation.clipId)
     val trackIndex = project.tracks.indexOfFirst { track -> track.clips.any { it.id == operation.clipId } }
     require(trackIndex >= 0) { "clip ${operation.clipId} not found" }
     val track = project.tracks[trackIndex]

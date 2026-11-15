@@ -60,6 +60,21 @@ internal object ProjectEditPayloadParser {
             require((start ?: end!!) >= 0L) { "trim edge must be non-negative" }
             ProjectEditOperation.TrimClip(item.requiredNonBlankString("clipId"), start, end)
         }
+        "addEffect" -> {
+            item.requireOnly("op", "clipId", "effectId", "typeId", "numbers")
+            ProjectEditOperation.AddEffect(item.requiredNonBlankString("clipId"), item.requiredNonBlankString("effectId"),
+                item.requiredNonBlankString("typeId"), item.numericParameters())
+        }
+        "patchEffect" -> {
+            item.requireOnly("op", "clipId", "effectId", "enabled", "numbers")
+            ProjectEditOperation.PatchEffect(item.requiredNonBlankString("clipId"), item.requiredNonBlankString("effectId"),
+                item.optionalBoolean("enabled"), item.numericParameters())
+        }
+        "setEffectKeyframe" -> {
+            item.requireOnly("op", "clipId", "effectId", "parameter", "offsetUs", "value")
+            ProjectEditOperation.SetEffectKeyframe(item.requiredNonBlankString("clipId"), item.requiredNonBlankString("effectId"),
+                item.requiredNonBlankString("parameter"), item.requiredLong("offsetUs"), item.requiredDouble("value"))
+        }
         "deleteText" -> {
             item.requireOnly("op", "overlayId")
             ProjectEditOperation.DeleteText(item.requiredNonBlankString("overlayId"))
@@ -218,6 +233,12 @@ internal object ProjectEditPayloadParser {
             )
         }
         else -> throw IllegalArgumentException("unsupported project edit op '$op'")
+    }
+
+    private fun JObject.numericParameters(): Map<String, Double> {
+        val fields = optional("numbers")?.asObject()?.fields.orEmpty()
+        require(fields.size <= 32) { "too many numeric parameters" }
+        return fields.mapValues { (_, raw) -> raw.asDouble().also { require(it.isFinite()) } }
     }
 
     private fun JObject.requireOnly(vararg keys: String) {

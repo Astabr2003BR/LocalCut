@@ -65,6 +65,22 @@ class ProjectEditPayloadParserTest {
     }
 
     @Test
+    fun parsesPointwiseEffectOperationsAndRejectsNonNumericValues() {
+        val operations = ProjectEditPayloadParser.parse("""{"operations":[{"op":"addEffect","clipId":"v","effectId":"e","typeId":"localcut.color.brightness","numbers":{"amount":0.2}},{"op":"patchEffect","clipId":"v","effectId":"e","enabled":false},{"op":"setEffectKeyframe","clipId":"v","effectId":"e","parameter":"amount","offsetUs":1000,"value":0.4}]}""")
+        assertEquals(ProjectEditOperation.AddEffect("v", "e", "localcut.color.brightness", mapOf("amount" to 0.2)), operations[0])
+        assertEquals(ProjectEditOperation.PatchEffect("v", "e", enabled = false), operations[1])
+        assertEquals(ProjectEditOperation.SetEffectKeyframe("v", "e", "amount", 1000L, 0.4), operations[2])
+        val invalid = listOf(
+            """{"op":"patchEffect","clipId":"v","effectId":"e","numbers":{"amount":"0.4"}}""",
+            """{"op":"patchEffect","clipId":"v","effectId":"e","typeId":"new"}""",
+            """{"op":"setEffectKeyframe","clipId":"v","effectId":"e","parameter":"amount","offsetUs":0,"value":true}""",
+        )
+        invalid.forEach { item ->
+            assertTrue(runCatching { ProjectEditPayloadParser.parse("{\"operations\":[$item]}") }.isFailure)
+        }
+    }
+
+    @Test
     fun unknownFieldsFailClosed() {
         val result = runCatching {
             ProjectEditPayloadParser.parse(

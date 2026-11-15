@@ -3,6 +3,9 @@ package com.localcut.editor
 import android.Manifest
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -15,17 +18,23 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.localcut.editor.mobile.TikTokCarouselActivity
+import com.localcut.editor.mobile.AutomaticVideoActivity
+import com.localcut.editor.ui.editor.EditorAiDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -140,6 +149,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             val exportState by exportUiState.collectAsState()
             val bridgeState by runtime.bridgeControl.state.collectAsState()
+            val editorSession by editorViewModel.sessionState.collectAsState()
+            var showEditorAi by remember { mutableStateOf(false) }
 
             LaunchedEffect(exportState.running, exportState.message) {
                 val completedMessage = exportState.message
@@ -184,15 +195,39 @@ class MainActivity : ComponentActivity() {
                         onRevokePairing = runtime.bridgeControl::revokePairing,
                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
                     )
-                    TextButton(
-                        enabled = !exportState.running,
-                        onClick = {
-                            if (Build.VERSION.SDK_INT >= 29) {
-                                editorViewModel.pause()
-                                startActivity(Intent(this@MainActivity, TikTokCarouselActivity::class.java))
-                            } else showError("Carrossel requer Android 10 ou superior.")
-                        },
-                    ) { Text("Carrossel TikTok") }
+                    Row {
+                        TextButton(
+                            enabled = !exportState.running,
+                            onClick = {
+                                if (Build.VERSION.SDK_INT >= 29) {
+                                    editorViewModel.pause()
+                                    startActivity(Intent(this@MainActivity, TikTokCarouselActivity::class.java))
+                                } else showError("Carrossel requer Android 10 ou superior.")
+                            },
+                        ) { Text("Carrossel TikTok") }
+                        TextButton(enabled = !exportState.running, onClick = { showEditorAi = true }) { Text("Editor IA") }
+                    }
+                    if (showEditorAi) {
+                        EditorAiDialog(
+                            session = runtime.session,
+                            state = editorSession,
+                            bridgeState = bridgeState,
+                            busy = exportState.running || bridgeState.phase == com.localcut.editor.bridge.agent.BridgeUiPhase.EXPORTING,
+                            onCopyContext = { contextText ->
+                                (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                                    .setPrimaryClip(ClipData.newPlainText("LocalCut Editor IA", contextText))
+                            },
+                            onCreateVideo = {
+                                if (Build.VERSION.SDK_INT >= 29) {
+                                    showEditorAi = false
+                                    editorViewModel.pause()
+                                    startActivity(Intent(this@MainActivity, AutomaticVideoActivity::class.java))
+                                } else showError("Criação de vídeo requer Android 10 ou superior.")
+                            },
+                            onApplied = { editorViewModel.refreshSnapshot() },
+                            onDismiss = { showEditorAi = false },
+                        )
+                    }
                     Box(modifier = Modifier.weight(1f)) {
                         EditorScreen(
                             viewModel = editorViewModel,

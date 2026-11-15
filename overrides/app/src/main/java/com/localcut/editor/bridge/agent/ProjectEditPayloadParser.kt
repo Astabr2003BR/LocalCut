@@ -30,6 +30,11 @@ internal object ProjectEditPayloadParser {
         require(payloadJson.isNotBlank() && payloadJson.length <= MAX_PAYLOAD_CHARS) { "project edit payload size invalid" }
         val root = MiniJson.parse(payloadJson).asObject()
         root.requireOnly("operations")
+        return parseOperations(root)
+    }
+
+    // Local Editor IA uses the same typed operation parser, with its own envelope.
+    internal fun parseOperations(root: JObject): List<ProjectEditOperation> {
         val rawOperations = root.required("operations").asArray().values
         require(rawOperations.isNotEmpty()) { "project edit requires operations" }
         require(rawOperations.size <= ProjectEditBatchCommand.MAX_OPERATIONS) { "too many project edit operations" }

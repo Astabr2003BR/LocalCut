@@ -88,3 +88,7 @@ Bridge export review encodes the existing sampled frames as up to three JPEGs (m
 
 ### Editor IA approval UI
 The local studio displays Editor IA and an exact parsed-plan summary before choosing the output. A lost in-memory approval after Activity recreation requires revalidation; a SAF provider may already have created an empty destination. Flattened MP4 does not expose original layers. This is not the full existing-project editing UI.
+
+
+### Existing-project Editor IA local approval
+MainActivity exposes Editor IA beside Carrossel TikTok. Existing timeline remains underneath the dialog. Copy bounded non-URI project context to clipboard only on user action, paste GPT JSON {projectId,expectedRevision,operations}, validate typed visual-only operations (1–8 / 8 KiB), dry-run immutable ProjectEditBatchCommand, display exact draft and operation summary, explicit single-use approval. Recheck current session revision and full project snapshot on main-thread apply; use existing history and refresh snapshot. No timing/audio/deletion in this path, no persistent consent after rotation, no automatic remote calls. New-video button reuses AutomaticVideoActivity. Bridge review/export tools remain external; local approval does not gate existing authorized remote operations. JVM tests cover read-only validation, undo, stale, cancellation, duplicate, invalid, privacy. UI/emulator and actual device flow pending.

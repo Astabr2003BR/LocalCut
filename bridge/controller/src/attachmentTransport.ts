@@ -206,14 +206,19 @@ function normalizedContentType(value: string): string {
 
 async function readBoundedResponseBody(response: Response, maxBytes: number): Promise<Buffer> {
   const contentLengthRaw = response.headers.get("content-length");
-  if (contentLengthRaw) {
-    const contentLength = Number(contentLengthRaw);
-    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+  let declaredLength: number | undefined;
+  if (contentLengthRaw !== null) {
+    if (!/^\d+$/.test(contentLengthRaw)) throw new Error("ATTACHMENT_LENGTH_INVALID");
+    declaredLength = Number(contentLengthRaw);
+    if (!Number.isSafeInteger(declaredLength) || declaredLength > maxBytes) {
       throw new Error("ATTACHMENT_TOO_LARGE");
     }
   }
 
-  if (!response.body) return Buffer.alloc(0);
+  if (!response.body) {
+    if (declaredLength !== undefined && declaredLength !== 0) throw new Error("ATTACHMENT_LENGTH_MISMATCH");
+    return Buffer.alloc(0);
+  }
   const reader = response.body.getReader();
   const chunks: Buffer[] = [];
   let total = 0;
@@ -227,15 +232,17 @@ async function readBoundedResponseBody(response: Response, maxBytes: number): Pr
       if (total > maxBytes) {
         throw new Error("ATTACHMENT_TOO_LARGE");
       }
+      if (declaredLength !== undefined && total > declaredLength) throw new Error("ATTACHMENT_LENGTH_MISMATCH");
       chunks.push(chunk);
     }
   } catch (error) {
     void reader.cancel().catch(() => {});
-    if (error instanceof Error && error.message === "ATTACHMENT_TOO_LARGE") throw error;
+    if (error instanceof Error && ["ATTACHMENT_TOO_LARGE", "ATTACHMENT_LENGTH_MISMATCH"].includes(error.message)) throw error;
     throw new Error("ATTACHMENT_DOWNLOAD_FAILED");
   } finally {
     reader.releaseLock();
   }
 
+  if (declaredLength !== undefined && total !== declaredLength) throw new Error("ATTACHMENT_LENGTH_MISMATCH");
   return Buffer.concat(chunks, total);
 }

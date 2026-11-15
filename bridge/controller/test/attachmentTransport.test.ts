@@ -290,3 +290,29 @@ test("attachment rejects partial and encoded upstream responses before relay sta
     assert.equal(store.take(TOKEN), null);
   }
 });
+
+
+test("attachment validates declared length against actual bytes before staging", async () => {
+  for (const [length, error] of [
+    ["2", "ATTACHMENT_LENGTH_MISMATCH"], ["4", "ATTACHMENT_LENGTH_MISMATCH"],
+    ["-1", "ATTACHMENT_LENGTH_INVALID"], ["3, 3", "ATTACHMENT_LENGTH_INVALID"],
+    ["1e2", "ATTACHMENT_LENGTH_INVALID"], ["9007199254740992", "ATTACHMENT_TOO_LARGE"],
+  ]) {
+    const store = createTransientMediaStore();
+    const stager = createAttachmentStager({
+      publicBaseUrl: "https://localcut-bridge.example", transientMediaStore: store,
+      tokenGenerator: () => TOKEN,
+      fetchImpl: async () => new Response("abc", { headers: { "content-type": "image/png", "content-length": length } }),
+    });
+    await assert.rejects(stager(file()), new RegExp(error));
+    assert.equal(store.take(TOKEN), null);
+  }
+  const store = createTransientMediaStore();
+  const stager = createAttachmentStager({
+    publicBaseUrl: "https://localcut-bridge.example", transientMediaStore: store,
+    tokenGenerator: () => TOKEN,
+    fetchImpl: async () => new Response("abc", { headers: { "content-type": "image/png", "content-length": "3" } }),
+  });
+  assert.equal((await stager(file())).sizeBytes, 3);
+  assert.deepEqual(store.take(TOKEN)?.bytes, Buffer.from("abc"));
+});

@@ -464,6 +464,25 @@ private fun validateDesignElement(element: DesignElement) {
     require(issues.isEmpty()) { issues.first() }
 }
 
+/** Replace only an independently editable still-image clip, never a flattened video. */
+data class ReplaceStillImageAssetCommand(val clipId: String, val expectedAssetId: String, val replacementAssetId: String) : EditorCommand {
+    override fun apply(project: Project): CommandResult {
+        requireEditableProjectClip(project, clipId)
+        val clip = requireNotNull(project.findClip(clipId))
+        require(clip.assetId == expectedAssetId && expectedAssetId != replacementAssetId) { "stale or unchanged asset" }
+        val original = project.assets.singleOrNull { it.id == expectedAssetId }
+        val replacement = project.assets.singleOrNull { it.id == replacementAssetId }
+        require(original?.type == AssetType.IMAGE && replacement?.type == AssetType.IMAGE) { "replacement requires existing still-image assets" }
+        val edited = project.copy(tracks = project.tracks.map { track ->
+            track.copy(clips = track.clips.map { item ->
+                if (item.id == clipId) item.copy(assetId = replacementAssetId) else item
+            })
+        })
+        validate(edited, "still-image replacement")
+        return CommandResult(edited, ReplaceStillImageAssetCommand(clipId, replacementAssetId, expectedAssetId))
+    }
+}
+
 private fun patchClip(project: Project, operation: ProjectEditOperation.PatchClip): Project {
     requireEditableProjectClip(project, operation.clipId)
     val trackIndex = project.tracks.indexOfFirst { track -> track.clips.any { it.id == operation.clipId } }

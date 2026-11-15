@@ -346,6 +346,31 @@ class ProjectEditBatchCommandTest {
         assertEquals(original.textOverlays, withEffect.textOverlays)
     }
 
+    @Test
+    fun replaceStillBackgroundPreservesAllOtherProjectFieldsAndUndo() {
+        val baseline = fixtureProject()
+        val original = baseline.copy(assets = baseline.assets + asset("city-new", AssetType.IMAGE, "city.png", "image/png", null))
+        val command = ReplaceStillImageAssetCommand("image-clip", "image", "city-new")
+        val result = command.apply(original)
+        val expected = original.copy(tracks = original.tracks.map { track ->
+            track.copy(clips = track.clips.map { clip ->
+                if (clip.id == "image-clip") clip.copy(assetId = "city-new") else clip
+            })
+        })
+        assertEquals(expected, result.project)
+        assertEquals(original, result.inverse.apply(result.project).project)
+        assertEquals(expected, command.apply(original).project)
+        val invalid = listOf(
+            ReplaceStillImageAssetCommand("video-clip", "video", "city-new"),
+            ReplaceStillImageAssetCommand("image-clip", "image", "missing"),
+            ReplaceStillImageAssetCommand("image-clip", "wrong", "city-new"),
+            ReplaceStillImageAssetCommand("image-clip", "image", "image"),
+        )
+        invalid.forEach { assertTrue(runCatching { it.apply(original) }.isFailure) }
+        val locked = original.copy(tracks = original.tracks.map { if (it.id == "visual-1") it.copy(locked = true) else it })
+        assertTrue(runCatching { command.apply(locked) }.isFailure)
+    }
+
     private fun fixtureProject(): Project {
         val video = asset("video", AssetType.VIDEO, "video.mp4", "video/mp4", 5_000_000L)
         val image = asset("image", AssetType.IMAGE, "image.png", "image/png", null)

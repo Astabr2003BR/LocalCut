@@ -149,6 +149,7 @@ class LocalCutProcessRuntime private constructor(context: Context) {
             exportController = exportController,
             scope = processScope,
             targetFactory = AndroidMediaStoreBridgeExportTargetFactory(appContext.contentResolver),
+            reviewer = com.localcut.editor.bridge.agent.AndroidBridgeExportFileReviewer,
         )
         bridgeCommandExecutor = BridgeCommandExecutor(
             session = session,

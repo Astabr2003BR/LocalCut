@@ -371,6 +371,7 @@ class BridgeCommandExecutor(
         )
         is BridgeJobReservation.Started -> {
             val jobId = reservation.job.jobId
+            val source = session.state
             val listener = object : BridgeExportListener {
                 override fun onStarted() {
                     jobs.markRunning(jobId)
@@ -381,7 +382,8 @@ class BridgeCommandExecutor(
                 }
 
                 override fun onCompleted(resultJson: String) {
-                    jobs.succeed(jobId, resultJson)
+                    jobs.succeed(jobId, appendBridgeExportMetadata(resultJson,
+                        "\"sourceProjectId\":" + jsonString(source.project.id) + ",\"sourceRevision\":" + source.revision))
                 }
 
                 override fun onFailed(message: String) {
@@ -392,7 +394,7 @@ class BridgeCommandExecutor(
                     jobs.cancel(jobId)
                 }
             }
-            val started = exportPort.start(session.state.project, listener)
+            val started = exportPort.start(source.project, listener)
             if (started.isFailure) {
                 val message = started.exceptionOrNull()?.message ?: "export could not start"
                 jobs.fail(jobId, BridgeErrorCode.EXPORT_FAILED, sanitize(message))

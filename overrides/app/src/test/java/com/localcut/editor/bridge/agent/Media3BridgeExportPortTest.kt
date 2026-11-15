@@ -80,6 +80,51 @@ class Media3BridgeExportPortTest {
         assertEquals(0, controller.exportCalls)
     }
 
+    @Test
+    fun reportsInspectionOnlyAfterSuccessfulCommitAndPreservesExportOnInspectionFailure() {
+        for (inspectionFails in listOf(false, true)) {
+            val temp = File.createTempFile("localcut-review-", ".mp4")
+            try {
+                temp.writeBytes(byteArrayOf(1, 2, 3))
+                var committed = false
+                var report = ""
+                val controller = object : ExportController {
+                    override fun export(project: Project, destination: ExportDestination): Flow<ExportEvent> = flow {
+                        emit(ExportEvent.Started)
+                        destination.commitFrom(temp).getOrThrow()
+                        emit(ExportEvent.Completed)
+                    }
+                    override fun cancel() {}
+                }
+                val target = ExportDestination { file ->
+                    assertEquals(temp, file)
+                    committed = true
+                    Result.success(Unit)
+                }
+                val listener = object : BridgeExportListener {
+                    override fun onStarted() {}
+                    override fun onProgress(percent: Int) {}
+                    override fun onCompleted(resultJson: String) { report = resultJson }
+                    override fun onFailed(message: String) { throw AssertionError(message) }
+                    override fun onCancelled() { throw AssertionError("cancelled") }
+                }
+                val port = Media3BridgeExportPort(controller, CoroutineScope(Dispatchers.Unconfined),
+                    BridgeExportTargetFactory { Result.success(BridgeExportTarget(target, """{"destination":"LOCALCUT_MEDIASTORE"}""")) },
+                    BridgeExportFileReviewer { file, _ ->
+                        assertEquals(temp, file)
+                        assertTrue(!committed)
+                        if (inspectionFails) error("decoder unavailable")
+                        """{"status":"technical_checks_passed"}"""
+                    })
+                assertTrue(port.start(Project.create("Review", 1080, 1920, 30), listener).isSuccess)
+                assertTrue(committed)
+                assertTrue(report.contains("\"technicalReview\":"))
+                assertTrue(report.contains(if (inspectionFails) "unavailable" else "technical_checks_passed"))
+                assertTrue(temp.readBytes().contentEquals(byteArrayOf(1, 2, 3)))
+            } finally { temp.delete() }
+        }
+    }
+
     private fun portFor(events: List<ExportEvent>): Media3BridgeExportPort = Media3BridgeExportPort(
         exportController = FakeController(events),
         scope = CoroutineScope(Dispatchers.Unconfined),

@@ -60,6 +60,9 @@ class BridgeExportCommandTest {
 
         fixture.exportPort.listener!!.onCompleted("{\"destination\":\"LOCALCUT_MEDIASTORE\"}")
         assertEquals(BridgeJobState.SUCCEEDED, fixture.jobs.get(firstJobId)!!.state)
+        val metadata = requireNotNull(fixture.jobs.get(firstJobId)!!.resultJson)
+        assertTrue(metadata.contains("\"sourceProjectId\":\"project-1\""))
+        assertTrue(metadata.contains("\"sourceRevision\":5"))
 
         val next = fixture.executor.execute(exportCommand("msg-export-2"))
         assertTrue(next.success)

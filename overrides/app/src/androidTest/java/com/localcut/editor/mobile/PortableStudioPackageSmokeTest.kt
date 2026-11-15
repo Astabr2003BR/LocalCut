@@ -183,6 +183,24 @@ class PortableStudioPackageSmokeTest {
                 assertTrue("Portable export timed out", completed.await(120, TimeUnit.SECONDS))
                 failure.get()?.let { throw AssertionError("Portable export failed", it) }
                 assertTrue(output.isFile && output.length() > 0)
+                val report = JSONObject(com.localcut.editor.bridge.agent.AndroidBridgeExportFileReviewer.inspect(output, project))
+                assertEquals(1920, report.getInt("width"))
+                assertEquals(1080, report.getInt("height"))
+                assertEquals(1, report.getInt("videoTracks"))
+                assertEquals(1, report.getInt("audioTracks"))
+                assertEquals(digest(output.readBytes()), report.getString("sha256"))
+                assertEquals(output.length(), report.getLong("bytes"))
+                assertTrue(report.getBoolean("durationMatches"))
+                assertTrue(report.getBoolean("resolutionMatches"))
+                assertTrue(!report.getBoolean("visualQualityVerified"))
+                assertTrue(!report.getBoolean("audioSyncVerified"))
+                assertTrue(!report.getBoolean("fullDecodeVerified"))
+                if (android.os.Build.VERSION.SDK_INT >= 27) {
+                    assertEquals("decoded", report.getString("sampleStatus"))
+                    assertEquals(3, report.getInt("decodedFrames"))
+                }
+                val corrupt = File(workDir, "corrupt.mp4").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+                assertTrue(runCatching { com.localcut.editor.bridge.agent.AndroidBridgeExportFileReviewer.inspect(corrupt, project) }.isFailure)
                 val retriever = MediaMetadataRetriever()
                 try {
                     retriever.setDataSource(output.absolutePath)

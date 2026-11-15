@@ -165,7 +165,7 @@ class BridgeProjectReader(
                     field("volume", clip.volume.toString()); comma()
                     field("keyframeCount", clip.keyframes.size.toString()); comma()
                     field("effectCount", clip.effects.size.toString()); comma()
-                    append("\\\"effects\\\":[")
+                    append(jsonString("effects")); append(":[")
                     clip.effects.take(32).forEachIndexed { effectIndex, effect ->
                         if (effectIndex > 0) comma()
                         append('{')

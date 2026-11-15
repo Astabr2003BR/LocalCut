@@ -4,6 +4,11 @@ import com.localcut.editor.bridge.protocol.BridgeCapability
 import com.localcut.editor.bridge.protocol.BridgeCommandEnvelope
 import com.localcut.editor.bridge.protocol.BridgeErrorCode
 import com.localcut.editor.data.project.ProjectStore
+import com.localcut.editor.data.project.MiniJson
+import com.localcut.editor.data.project.asObject
+import com.localcut.editor.data.project.asArray
+import com.localcut.editor.data.project.asString
+import com.localcut.editor.data.project.required
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
@@ -30,6 +35,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BridgeCommandExecutorTest {
+    @Test
+    fun effectInventoryIsValidJsonAndDiscoverableAfterPointwiseEdit() {
+        val fixture = fixture()
+        val edit = fixture.executor.execute(command(BridgeCapability.PROJECT_EDIT,
+            payload = """{"operations":[{"op":"addEffect","clipId":"clip-1","effectId":"bright","typeId":"localcut.color.brightness","numbers":{"amount":0.2}}]}""",
+            expectedRevision = 5L))
+        assertTrue(edit.success)
+        val result = fixture.executor.execute(command(BridgeCapability.LIST_CLIPS, messageId = "list-effects", expectedRevision = null))
+        assertTrue(result.success)
+        val clips = MiniJson.parse(result.resultJson).asObject().required("clips").asArray().values
+        val clip = clips.first { it.asObject().required("id").asString() == "clip-1" }.asObject()
+        val effect = clip.required("effects").asArray().values.single().asObject()
+        assertEquals("bright", effect.required("id").asString())
+        assertEquals("localcut.color.brightness", effect.required("typeId").asString())
+        assertFalse(result.resultJson.contains("content://private/"))
+        assertEquals(6L, fixture.session.state.revision)
+    }
+
     @Test
     fun projectReadIsBoundedAndDoesNotExposeAssetUri() {
         val fixture = fixture()

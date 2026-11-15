@@ -28,16 +28,32 @@ export type AttachmentStagerOptions = {
   publicBaseUrl: string;
   transientMediaStore: TransientMediaStore;
   fetchImpl?: FetchImpl;
+  allowedSourceOrigins?: readonly string[];
   tokenGenerator?: () => string;
 };
 
 export function createAttachmentStager(options: AttachmentStagerOptions) {
   const publicBaseUrl = normalizePublicBaseUrl(options.publicBaseUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
+  const allowedOrigins = options.allowedSourceOrigins === undefined ? undefined : new Set(
+    options.allowedSourceOrigins.map((value) => {
+      const url = validateSourceUrl(value);
+      if (url.pathname !== "/" || url.search || url.hostname.endsWith(".")) {
+        throw new Error("ATTACHMENT_SOURCE_ORIGIN_INVALID");
+      }
+      return url.origin;
+    }),
+  );
+  const checkOrigin = (url: URL) => {
+    if (allowedOrigins && !allowedOrigins.has(url.origin)) {
+      throw new Error("ATTACHMENT_SOURCE_NOT_ALLOWED");
+    }
+  };
   const tokenGenerator = options.tokenGenerator ?? (() => randomBytes(32).toString("base64url"));
 
   return async function stageAttachment(file: OpenAIFileParam): Promise<AttachmentStageResult> {
     const sourceUrl = validateSourceUrl(file.download_url);
+    checkOrigin(sourceUrl);
 
     let response: Response;
     try {
@@ -55,7 +71,11 @@ export function createAttachmentStager(options: AttachmentStagerOptions) {
     let bytes: Buffer;
     try {
       if (!response.ok) throw new Error("ATTACHMENT_DOWNLOAD_FAILED");
-      if (response.url) validateSourceUrl(response.url);
+      if (response.url) {
+        const finalUrl = validateSourceUrl(response.url);
+        checkOrigin(finalUrl);
+        if (finalUrl.origin !== sourceUrl.origin) throw new Error("ATTACHMENT_SOURCE_NOT_ALLOWED");
+      }
 
       mimeType = resolveMediaType(
         normalizedContentType(response.headers.get("content-type") ?? ""),

@@ -216,3 +216,26 @@ test("attachment source rejects literal IP aliases, local names, ports and fragm
   }
   assert.equal(calls, 0);
 });
+
+
+test("configured attachment origins match exactly and empty configuration denies all", async () => {
+  let calls = 0;
+  const base = {
+    publicBaseUrl: "https://localcut-bridge.example",
+    transientMediaStore: createTransientMediaStore(),
+    fetchImpl: async () => {
+      calls++;
+      return new Response("image", { headers: { "content-type": "image/png" } });
+    },
+  };
+  const stager = createAttachmentStager({ ...base, allowedSourceOrigins: ["https://files.example"] });
+  for (const download_url of ["https://files.example.evil.example/a", "https://sub.files.example/a", "https://files.example./a"]) {
+    await assert.rejects(stager(file({ download_url })), /ATTACHMENT_SOURCE_NOT_ALLOWED/);
+  }
+  await assert.rejects(createAttachmentStager({ ...base, allowedSourceOrigins: [] })(file()), /ATTACHMENT_SOURCE_NOT_ALLOWED/);
+  assert.equal(calls, 0);
+  await stager(file());
+  assert.equal(calls, 1);
+  assert.throws(() => createAttachmentStager({ ...base, allowedSourceOrigins: ["https://files.example/path"] }), /ATTACHMENT_SOURCE_ORIGIN_INVALID/);
+  assert.throws(() => createAttachmentStager({ ...base, allowedSourceOrigins: ["https://files.example/?x=1"] }), /ATTACHMENT_SOURCE_ORIGIN_INVALID/);
+});

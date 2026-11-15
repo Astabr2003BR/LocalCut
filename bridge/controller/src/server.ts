@@ -39,6 +39,7 @@ export type ControllerServerOptions = {
   controllerApiToken: string;
   controllerId: string;
   publicBaseUrl?: string;
+  attachmentSourceOrigins?: readonly string[];
   store: BridgeStore;
   pairing: PairingService;
   sessions: DeviceSessionService;
@@ -64,7 +65,7 @@ export function createControllerServer(options: ControllerServerOptions): Contro
   const registry = options.registry ?? new DeviceRegistry();
   const router = options.router ?? new CommandRouter(options.store, registry);
   const transientMediaStore = createTransientMediaStore({ nowEpochMs });
-  const stageAttachment = createAttachmentStager({ publicBaseUrl, transientMediaStore });
+  const stageAttachment = createAttachmentStager({ publicBaseUrl, transientMediaStore, allowedSourceOrigins: options.attachmentSourceOrigins });
   const mobileClaimNonces = new Map<string, number>();
   const recoveryNonces = new Map<string, number>();
   const recoveryTokens = new DeviceRecoveryTokenService(options.controllerApiToken);
@@ -706,6 +707,9 @@ export function startControllerServerFromEnv(): ControllerServerRuntime {
     controllerApiToken,
     controllerId,
     publicBaseUrl,
+    attachmentSourceOrigins: process.env.LOCALCUT_ATTACHMENT_SOURCE_ORIGINS === undefined
+      ? undefined
+      : process.env.LOCALCUT_ATTACHMENT_SOURCE_ORIGINS.split(",").map((value) => value.trim()).filter(Boolean),
     store,
     pairing,
     sessions,

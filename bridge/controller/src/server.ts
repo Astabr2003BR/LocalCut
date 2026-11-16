@@ -108,6 +108,17 @@ export function createControllerServer(options: ControllerServerOptions): Contro
       stageAttachment(file) {
         return stageAttachment(file);
       },
+      stagePackage(file) {
+        // Recheck this request's OAuth device authorization immediately before staging.
+        const token = reviewAuth.getStore();
+        if (!token) throw new Error("OAUTH_TOKEN_INVALID");
+        const deviceId = oauth.verifyAccessToken(token, ["localcut:read", "localcut:write"]).deviceId;
+        return stageAttachment(file, { authorize() {
+          if (oauth.verifyAccessToken(token, ["localcut:read", "localcut:write"]).deviceId !== deviceId || !isDeviceAuthorized(deviceId)) {
+            throw new Error("OAUTH_TOKEN_INVALID");
+          }
+        } });
+      },
       claimPairing(code) {
         const claimed = options.pairing.claim(code, options.controllerId, nowEpochMs());
         return {

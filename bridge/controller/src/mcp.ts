@@ -43,6 +43,7 @@ export interface ControllerAdminActions {
   claimPairing(code: string): Promise<unknown> | unknown;
   revokeDevice(deviceId: string): Promise<unknown> | unknown;
   stageAttachment(file: OpenAIFileParam): Promise<unknown> | unknown;
+  stagePackage?(file: OpenAIFileParam): Promise<unknown> | unknown;
 }
 
 export function controllerToolNames(): string[] {
@@ -50,7 +51,7 @@ export function controllerToolNames(): string[] {
 }
 
 export function controllerManagementToolNames(): string[] {
-  return ["claim_pairing", "discover_active_contexts", "revoke_device", "stage_attachment"];
+  return ["claim_pairing", "discover_active_contexts", "revoke_device", "stage_attachment", "stage_package"];
 }
 
 export function securityScopesForCapability(capability: BridgeCapability): [string] {
@@ -273,6 +274,24 @@ export function createLocalCutMcpServer(
         }
       },
     );
+
+    if (admin.stagePackage) {
+      server.registerTool(
+        "stage_package",
+        {
+          title: "LocalCut: stage portable studio package",
+          description: "Send one .localcut file (explicit MIME application/vnd.localcut.package, up to 20 MiB) through the authenticated one-time relay. Returns a temporary link requiring confirmation in Editor IA. Do not share the link with other people. Android verifies the entire archive and its media before opening. No project is edited or exported by this tool.",
+          inputSchema: attachmentSchema,
+          annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+          _meta: attachmentToolMeta(["localcut:write"]),
+        },
+        async input => {
+          const parsed = attachmentSchema.parse(input);
+          try { return toolResult(await admin.stagePackage!(parsed.file), false); }
+          catch (error) { return toolResult({ code: safeAdminError(error) }, true); }
+        },
+      );
+    }
 
     const claimSchema = z.object({ code: z.string().regex(/^\d{6}$/) }).strict();
     server.registerTool(

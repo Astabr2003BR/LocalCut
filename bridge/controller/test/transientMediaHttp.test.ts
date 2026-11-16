@@ -114,3 +114,20 @@ test("temporary media expires and cannot be downloaded after TTL", async t => {
   const expired = await fetch(`${fx.baseUrl}${staged.downloadPath}`);
   assert.equal(expired.status, 404);
 });
+
+
+test("package relay remains one-time GET and bounded store rejects excess concurrent entries", async t => {
+  const fx = await fixture(); t.after(()=>fx.close());
+  const id = token();
+  const bytes = Buffer.from("package-test");
+  const staged = fx.store.stage(id,"application/vnd.localcut.package",bytes);
+  const response = await fetch(fx.baseUrl+staged.downloadPath);
+  assert.equal(response.status,200);
+  assert.equal(response.headers.get("content-type"),"application/vnd.localcut.package");
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()),bytes);
+  assert.equal((await fetch(fx.baseUrl+staged.downloadPath)).status,404);
+  const store = createTransientMediaStore({maxEntries:1});
+  const first = token(); store.stage(first,"image/png",Buffer.from("a"));
+  assert.throws(()=>store.stage(token(),"application/vnd.localcut.package",bytes),/MEDIA_STORE_BUSY/);
+  assert.ok(store.take(first)); store.stage(token(),"application/vnd.localcut.package",bytes);
+});

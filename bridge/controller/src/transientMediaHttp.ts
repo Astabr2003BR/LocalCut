@@ -15,6 +15,7 @@ export type TransientMediaHttpOptions = {
   nowEpochMs?: () => number;
   ttlMs?: number;
   maxBytes?: number;
+  maxEntries?: number;
 };
 
 export type TransientMediaStageResult = {
@@ -38,9 +39,11 @@ export function createTransientMediaStore(options: TransientMediaHttpOptions = {
   const ttlMs = options.ttlMs ?? DEFAULT_TRANSIENT_MEDIA_TTL_MS;
   const maxBytes = options.maxBytes ?? DEFAULT_TRANSIENT_MEDIA_MAX_BYTES;
   const entries = new Map<string, TransientMediaEntry>();
+  const maxEntries = options.maxEntries ?? 8;
 
   if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0) throw new Error("INVALID_TTL");
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw new Error("INVALID_MAX_BYTES");
+  if (!Number.isSafeInteger(maxEntries) || maxEntries <= 0) throw new Error("INVALID_MAX_ENTRIES");
 
   return {
     maxBytes,
@@ -56,6 +59,7 @@ export function createTransientMediaStore(options: TransientMediaHttpOptions = {
       const now = nowEpochMs();
       pruneExpired(entries, now);
       if (entries.has(token)) throw new Error("MEDIA_TOKEN_ALREADY_USED");
+      if (entries.size >= maxEntries) throw new Error("MEDIA_STORE_BUSY");
 
       const expiresAtEpochMs = now + ttlMs;
       entries.set(token, { contentType, bytes, expiresAtEpochMs });
@@ -131,7 +135,7 @@ function normalizedContentType(value: string | string[] | undefined): string {
 }
 
 export function isAllowedTransientMediaType(contentType: string): boolean {
-  return contentType.startsWith("image/") ||
+  return contentType === "application/vnd.localcut.package" || contentType.startsWith("image/") ||
     contentType.startsWith("audio/") ||
     contentType.startsWith("video/");
 }

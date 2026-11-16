@@ -17,7 +17,7 @@ test("MCP exposes only allowlisted LocalCut edit tools plus explicit management 
   assert.deepEqual(controllerToolNames().sort(), [...bridgeCapabilities].sort());
   assert.deepEqual(
     controllerManagementToolNames().sort(),
-    ["claim_pairing", "discover_active_contexts", "revoke_device", "stage_attachment"].sort(),
+    ["claim_pairing", "discover_active_contexts", "revoke_device", "stage_attachment", "stage_package"].sort(),
   );
 });
 

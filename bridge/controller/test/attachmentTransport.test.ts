@@ -345,3 +345,79 @@ test("attachment rejects spoofed and truncated media before relay staging", asyn
     assert.equal(store.take(TOKEN), null);
   }
 });
+
+
+// A small real STORED ZIP with CRC32; no external archive library needed.
+function packageZip(entries: Array<[string, Buffer]>): Buffer {
+  const local: Buffer[] = [], central: Buffer[] = [];
+  let offset = 0;
+  for (const [name, data] of entries) {
+    const n = Buffer.from(name);
+    let crc = 0xffffffff;
+    for (const b of data) {
+      crc ^= b;
+      for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+    }
+    crc = (crc ^ 0xffffffff) >>> 0;
+    const l = Buffer.alloc(30);
+    l.writeUInt32LE(0x04034b50); l.writeUInt16LE(20, 4); l.writeUInt32LE(crc, 14);
+    l.writeUInt32LE(data.length, 18); l.writeUInt32LE(data.length, 22); l.writeUInt16LE(n.length, 26);
+    const c = Buffer.alloc(46);
+    c.writeUInt32LE(0x02014b50); c.writeUInt16LE(20, 4); c.writeUInt16LE(20, 6);
+    c.writeUInt32LE(crc, 16); c.writeUInt32LE(data.length, 20); c.writeUInt32LE(data.length, 24);
+    c.writeUInt16LE(n.length, 28); c.writeUInt32LE(offset, 42);
+    local.push(l, n, data); central.push(c, n); offset += l.length + n.length + data.length;
+  }
+  const directory = Buffer.concat(central), e = Buffer.alloc(22);
+  e.writeUInt32LE(0x06054b50); e.writeUInt16LE(entries.length, 8); e.writeUInt16LE(entries.length, 10);
+  e.writeUInt32LE(directory.length, 12); e.writeUInt32LE(offset, 16);
+  return Buffer.concat([...local, directory, e]);
+}
+
+test("explicit package stage creates matching Android handoff and rechecks authorization", async () => {
+  const mime = "application/vnd.localcut.package";
+  const manifest = Buffer.from(JSON.stringify({ version: 1, recipe: JSON.stringify({version:1,format:"9:16",scenes:[{image:1,durationMs:1000}]}),
+    images: [{id:"frame", mime:"image/png", bytes:PNG.length, sha256:createHash("sha256").update(PNG).digest("hex")}] }));
+  const zip = packageZip([["manifest.json", manifest], ["media/frame", PNG]]);
+  const store = createTransientMediaStore();
+  const stage = createAttachmentStager({publicBaseUrl:"https://localcut-bridge-v1.onrender.com", transientMediaStore:store,
+    tokenGenerator:()=>TOKEN, fetchImpl:async()=>new Response(zip,{headers:{"content-type":"application/zip"}})});
+  const input = file({mime_type:mime,file_name:"intro.localcut",expected_sha256:createHash("sha256").update(zip).digest("hex")});
+  let checks = 0;
+  const result = await stage(input,{authorize(){checks++;}});
+  assert.equal(checks,2);
+  assert.equal(result.mimeType,mime);
+  const link = new URL(result.handoffUrl);
+  assert.equal(link.searchParams.get("action"),"open_package");
+  assert.equal(link.searchParams.get("url"),result.relayUrl);
+  assert.equal(link.searchParams.get("sha256"),result.sha256);
+  assert.equal(link.searchParams.get("bytes"),String(zip.length));
+  assert.deepEqual(store.take(TOKEN)?.bytes,zip);
+  assert.equal(store.take(TOKEN),null);
+  await assert.rejects(stage(input), /ATTACHMENT_MEDIA_TYPE_UNSUPPORTED/);
+  await assert.rejects(stage(input,{authorize(){if (++checks > 3) throw Error("OAUTH_TOKEN_INVALID");}}), /OAUTH_TOKEN_INVALID/);
+  assert.equal(store.take(TOKEN),null);
+  await assert.rejects(stage({...input,expected_sha256:"0".repeat(64)},{authorize(){}}),/ATTACHMENT_HASH_MISMATCH/);
+  assert.equal(store.take(TOKEN),null);
+});
+
+test("package preflight rejects traversal duplicate manifest malformed archive and wrong MIME", async () => {
+  const mime = "application/vnd.localcut.package";
+  const input = file({mime_type:mime,file_name:"intro.localcut"});
+  for (const zip of [
+    Buffer.from("not a ZIP"),
+    packageZip([["manifest.json",Buffer.from("{}")],["../frame",PNG]]),
+    packageZip([["manifest.json",Buffer.from("{}")],["manifest.json",PNG]]),
+    packageZip([["media/a",PNG],["media/b",PNG]]),
+  ]) {
+    const store = createTransientMediaStore();
+    const stage = createAttachmentStager({publicBaseUrl:"https://localcut-bridge-v1.onrender.com", transientMediaStore:store,
+      tokenGenerator:()=>TOKEN,fetchImpl:async()=>new Response(zip,{headers:{"content-type":mime}})});
+    await assert.rejects(stage(input,{authorize(){}}),/PACKAGE_ZIP_INVALID/);
+    assert.equal(store.take(TOKEN),null);
+  }
+  const stage = createAttachmentStager({publicBaseUrl:"https://localcut-bridge-v1.onrender.com", transientMediaStore:createTransientMediaStore(),
+    fetchImpl:async()=>new Response(PNG,{headers:{"content-type":"image/png"}})});
+  await assert.rejects(stage(input,{authorize(){}}),/PACKAGE_ATTACHMENT_TYPE_INVALID/);
+  await assert.rejects(stage({...input,file_name:"intro.zip"},{authorize(){}}),/PACKAGE_ATTACHMENT_TYPE_INVALID/);
+});

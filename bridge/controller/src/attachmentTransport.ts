@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { isIP } from "node:net";
 import { fetchPinnedAttachment } from "./attachmentPinnedFetch.ts";
 import { assertAttachmentMediaSignature } from "./attachmentMediaSignature.ts";
+import { assertPortablePackageDirectory, PORTABLE_PACKAGE_MIME } from "./portablePackagePreflight.ts";
 import {
   isAllowedTransientMediaType,
   type TransientMediaStore,
@@ -55,7 +56,11 @@ export function createAttachmentStager(options: AttachmentStagerOptions) {
   };
   const tokenGenerator = options.tokenGenerator ?? (() => randomBytes(32).toString("base64url"));
 
-  return async function stageAttachment(file: OpenAIFileParam): Promise<AttachmentStageResult> {
+  return async function stageAttachment(file: OpenAIFileParam, packageOptions?: { authorize: () => void }): Promise<AttachmentStageResult> {
+    const packageMode = packageOptions !== undefined;
+    packageOptions?.authorize();
+    if (packageMode && (normalizedContentType(file.mime_type ?? "") !== PORTABLE_PACKAGE_MIME ||
+        !file.file_name?.toLowerCase().endsWith(".localcut"))) throw new Error("PACKAGE_ATTACHMENT_TYPE_INVALID");
     const expected = file.expected_sha256;
     if (expected !== undefined && (typeof expected !== "string" || !/^[a-f0-9]{64}$/.test(expected))) {
       throw new Error("ATTACHMENT_HASH_INVALID");
@@ -69,7 +74,7 @@ export function createAttachmentStager(options: AttachmentStagerOptions) {
         method: "GET",
         redirect: "error",
         signal: AbortSignal.timeout(30_000),
-        headers: { accept: "image/*,audio/*,video/*,application/octet-stream" },
+        headers: { accept: packageMode ? PORTABLE_PACKAGE_MIME + ",application/zip,application/octet-stream" : "image/*,audio/*,video/*,application/octet-stream" },
       });
     } catch {
       throw new Error("ATTACHMENT_DOWNLOAD_FAILED");
@@ -91,13 +96,19 @@ export function createAttachmentStager(options: AttachmentStagerOptions) {
         if (finalUrl.origin !== sourceUrl.origin) throw new Error("ATTACHMENT_SOURCE_NOT_ALLOWED");
       }
 
-      mimeType = resolveMediaType(
-        normalizedContentType(response.headers.get("content-type") ?? ""),
-        normalizedContentType(file.mime_type ?? ""),
-      );
-      bytes = await readBoundedResponseBody(response, options.transientMediaStore.maxBytes);
+      const responseMime = normalizedContentType(response.headers.get("content-type") ?? "");
+      if (packageMode) {
+        if (![PORTABLE_PACKAGE_MIME, "application/zip", "application/octet-stream"].includes(responseMime)) {
+          throw new Error("PACKAGE_ATTACHMENT_TYPE_INVALID");
+        }
+        mimeType = PORTABLE_PACKAGE_MIME;
+      } else {
+        mimeType = resolveMediaType(responseMime, normalizedContentType(file.mime_type ?? ""));
+      }
+      bytes = await readBoundedResponseBody(response, Math.min(options.transientMediaStore.maxBytes, packageMode ? 20 * 1024 * 1024 : Number.MAX_SAFE_INTEGER));
       if (bytes.length === 0) throw new Error("ATTACHMENT_BODY_EMPTY");
-      assertAttachmentMediaSignature(mimeType, bytes);
+      if (packageMode) assertPortablePackageDirectory(bytes);
+      else assertAttachmentMediaSignature(mimeType, bytes);
     } catch (error) {
       // Release the upstream connection even when headers fail validation.
       // Cancellation is best effort and must not mask the original error.
@@ -111,6 +122,8 @@ export function createAttachmentStager(options: AttachmentStagerOptions) {
     if (expected !== undefined && expected !== sha256) {
       throw new Error("ATTACHMENT_HASH_MISMATCH");
     }
+    // OAuth may expire or be revoked while the external download runs.
+    packageOptions?.authorize();
     const token = tokenGenerator();
     let staged;
     try {
@@ -124,8 +137,12 @@ export function createAttachmentStager(options: AttachmentStagerOptions) {
 
     const relayUrl = new URL(staged.downloadPath, publicBaseUrl).toString();
     const handoff = new URL("/open", publicBaseUrl);
-    handoff.searchParams.set("action", "import_url");
+    handoff.searchParams.set("action", packageMode ? "open_package" : "import_url");
     handoff.searchParams.set("url", relayUrl);
+    if (packageMode) {
+      handoff.searchParams.set("sha256", sha256);
+      handoff.searchParams.set("bytes", String(bytes.length));
+    }
     handoff.searchParams.set("returnTo", "chatgpt");
 
     return {
@@ -181,8 +198,8 @@ function validateSourceUrl(value: string): URL {
 }
 
 function resolveMediaType(responseMime: string, declaredMime: string): string {
-  const responseAllowed = isAllowedTransientMediaType(responseMime);
-  const declaredAllowed = isAllowedTransientMediaType(declaredMime);
+  const responseAllowed = responseMime !== PORTABLE_PACKAGE_MIME && isAllowedTransientMediaType(responseMime);
+  const declaredAllowed = declaredMime !== PORTABLE_PACKAGE_MIME && isAllowedTransientMediaType(declaredMime);
 
   if (responseAllowed) {
     if (declaredAllowed && mediaFamily(responseMime) !== mediaFamily(declaredMime)) {

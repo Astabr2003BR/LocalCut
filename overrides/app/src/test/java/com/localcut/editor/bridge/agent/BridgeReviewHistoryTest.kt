@@ -93,6 +93,26 @@ class BridgeReviewHistoryTest {
         assertFalse(storage.raw!!.contains("content://secret"))
     }
 
+    @Test fun durableStateRequiresPreviouslyAppliedRevisionAndMatchingResult() {
+        val store = Memory()
+        val history = BridgeReviewHistory(store)
+        val p = proposal()
+        history.received(p)
+        history.transition(p.id, ReviewHistoryStatus.SAVED_TO_DISK, 6L)
+        assertEquals(ReviewHistoryStatus.RECEIVED, history.view.value.entries.single().status)
+        history.transition(p.id, ReviewHistoryStatus.LOADED)
+        history.transition(p.id, ReviewHistoryStatus.SAVED_TO_DISK, 6L)
+        assertEquals(ReviewHistoryStatus.LOADED, history.view.value.entries.single().status)
+        history.transition(p.id, ReviewHistoryStatus.APPLIED_IN_EDITOR, 6L)
+        history.transition(p.id, ReviewHistoryStatus.SAVED_TO_DISK, 7L)
+        assertEquals(ReviewHistoryStatus.APPLIED_IN_EDITOR, history.view.value.entries.single().status)
+        history.transition(p.id, ReviewHistoryStatus.SAVED_TO_DISK, 6L)
+        assertEquals(ReviewHistoryStatus.SAVED_TO_DISK, BridgeReviewHistory(store).view.value.entries.single().status)
+        history.transition(p.id, ReviewHistoryStatus.DISCARDED)
+        assertEquals(ReviewHistoryStatus.SAVED_TO_DISK, history.view.value.entries.single().status)
+        assertFalse(store.raw!!.contains("privatePlan"))
+    }
+
     @Test fun registryJournalsReceiptLoadAndNewExportWithoutPersistingProposal() {
         val storage = Memory()
         val history = BridgeReviewHistory(storage)

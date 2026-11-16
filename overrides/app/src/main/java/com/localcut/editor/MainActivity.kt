@@ -225,7 +225,10 @@ class MainActivity : ComponentActivity() {
                                     startActivity(Intent(this@MainActivity, AutomaticVideoActivity::class.java))
                                 } else showError("Criação de vídeo requer Android 10 ou superior.")
                             },
-                            onApplied = { editorViewModel.refreshSnapshot() },
+                            onApplied = {
+                                editorViewModel.refreshSnapshot()
+                                runtime.flushAutosave()
+                            },
                             onDismiss = { showEditorAi = false },
                         )
                     }

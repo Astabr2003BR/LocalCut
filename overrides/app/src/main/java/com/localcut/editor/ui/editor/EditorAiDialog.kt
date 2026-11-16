@@ -39,7 +39,7 @@ internal fun EditorAiDialog(
     busy: Boolean,
     onCopyContext: (String) -> Unit,
     onCreateVideo: () -> Unit,
-    onApplied: () -> Unit,
+    onApplied: () -> Result<Unit>,
     onDismiss: () -> Unit,
 ) {
     val latestJob by jobs.latest.collectAsState()
@@ -49,6 +49,7 @@ internal fun EditorAiDialog(
     var draft by remember { mutableStateOf("") }
     var approval by remember { mutableStateOf<EditorAiApprovalGate.Approval?>(null) }
     var message by remember { mutableStateOf("") }
+    var unsavedRevision by remember { mutableStateOf<Pair<Long, String?>?>(null) }
     // Keep a stable State holder so the disposal callback sees the latest proposal
     // even if the dialog closes before a new Compose recomposition.
     val loadedProposalState = remember { mutableStateOf<BridgeReviewProposal?>(null) }
@@ -144,6 +145,18 @@ internal fun EditorAiDialog(
                         .onFailure { message = "Plano rejeitado: ${it.message?.take(180) ?: "confira o JSON"}" }
                 }, enabled = !busy && draft.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Validar plano") }
                 if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
+                unsavedRevision?.let { (revision, proposalId) ->
+                    Text("A edição está na memória, mas o salvamento não foi confirmado. Não encerre o aplicativo antes de salvar.", style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(enabled = !busy && session.state.revision == revision, onClick = {
+                        val saved = EditorAiApplyPersistence(history, onApplied).retry(proposalId, revision, session)
+                        if (saved) {
+                            unsavedRevision = null
+                            message = "Projeto salvo no dispositivo na revisão $revision."
+                        } else message = if (session.state.revision != revision)
+                            "O projeto mudou. Não é possível certificar a revisão anterior; confira o salvamento atual."
+                            else "Falha ao salvar. Verifique o espaço livre e tente novamente."
+                    }, modifier = Modifier.fillMaxWidth()) { Text("Tentar salvar novamente") }
+                }
                 Text("Revisão do MP4 exportado", style = MaterialTheme.typography.titleSmall)
                 Text(report.title, style = MaterialTheme.typography.bodyMedium)
                 Text(report.detail, style = MaterialTheme.typography.bodySmall)
@@ -166,7 +179,8 @@ internal fun EditorAiDialog(
                     val label = when (entry.status) {
                         ReviewHistoryStatus.RECEIVED -> "Recebida"
                         ReviewHistoryStatus.LOADED -> "Carregada • não aplicada"
-                        ReviewHistoryStatus.APPLIED_IN_EDITOR -> "Aplicada no editor • revisão ${entry.resultRevision}"
+                        ReviewHistoryStatus.APPLIED_IN_EDITOR -> "Aplicada no editor • salvamento não confirmado • revisão ${entry.resultRevision}"
+                        ReviewHistoryStatus.SAVED_TO_DISK -> "Salva no dispositivo • revisão ${entry.resultRevision}"
                         ReviewHistoryStatus.DISCARDED -> "Descartada"
                         ReviewHistoryStatus.REJECTED -> "Rejeitada"
                         ReviewHistoryStatus.SUPERSEDED -> "Substituída/expirada"
@@ -183,11 +197,16 @@ internal fun EditorAiDialog(
             TextButton(enabled = prepared != null && !stale && !busy, onClick = {
                 val accepted = approval ?: return@TextButton
                 approval = null
-                gate.apply(accepted, draft, session, currentReviewSource()).onSuccess {
-                    finishLoaded(ReviewHistoryStatus.APPLIED_IN_EDITOR, it)
-                    onApplied()
-                    message = "Aplicado na revisão $it. Confira a prévia; Desfazer continua disponível." +
-                        if (accepted.reviewSource != null) " Exporte novamente para avaliar a correção; a análise anterior não valida esta revisão." else ""
+                val proposalId = loadedProposal?.id
+                EditorAiApplyPersistence(history, onApplied).apply(
+                    gate, accepted, draft, session, currentReviewSource(), proposalId
+                ).onSuccess { result ->
+                    loadedProposal = null
+                    unsavedRevision = if (result.saved) null else result.revision to proposalId
+                    message = if (result.saved)
+                        "Alteração salva no dispositivo na revisão ${result.revision}. Confira a prévia; Desfazer continua disponível."
+                        else "Alteração aplicada na revisão ${result.revision}, mas o salvamento FALHOU. Não feche o aplicativo; tente salvar novamente."
+                    if (accepted.reviewSource != null) message += " Exporte novamente para avaliar a correção."
                     draft = ""
                 }.onFailure {
                     finishLoaded(ReviewHistoryStatus.REJECTED)

@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
-internal enum class ReviewHistoryStatus { RECEIVED, LOADED, APPLIED_IN_EDITOR, DISCARDED, REJECTED, SUPERSEDED, INTERRUPTED }
+internal enum class ReviewHistoryStatus { RECEIVED, LOADED, APPLIED_IN_EDITOR, SAVED_TO_DISK, DISCARDED, REJECTED, SUPERSEDED, INTERRUPTED }
 internal data class ReviewHistoryEntry(val proposalId: String, val source: EditorAiReviewSource,
     val status: ReviewHistoryStatus, val resultRevision: Long = -1L)
 internal data class ReviewHistoryView(val entries: List<ReviewHistoryEntry> = emptyList(), val storageOk: Boolean = true)
@@ -63,6 +63,8 @@ internal class BridgeReviewHistory(private val storage: ReviewHistoryStorage) {
             ReviewHistoryStatus.RECEIVED -> status in setOf(ReviewHistoryStatus.LOADED, ReviewHistoryStatus.DISCARDED, ReviewHistoryStatus.SUPERSEDED)
             ReviewHistoryStatus.LOADED -> status in setOf(ReviewHistoryStatus.APPLIED_IN_EDITOR, ReviewHistoryStatus.DISCARDED,
                 ReviewHistoryStatus.REJECTED, ReviewHistoryStatus.SUPERSEDED, ReviewHistoryStatus.INTERRUPTED)
+            ReviewHistoryStatus.APPLIED_IN_EDITOR -> status == ReviewHistoryStatus.SAVED_TO_DISK &&
+                resultRevision == old.resultRevision
             else -> false
         }
         val updated = old.copy(status = status, resultRevision = resultRevision)
@@ -111,6 +113,7 @@ internal class BridgeReviewHistory(private val storage: ReviewHistoryStorage) {
         return runCatching { UUID.fromString(entry.proposalId).toString() == entry.proposalId }.getOrDefault(false) &&
             s.projectId.isNotBlank() && s.projectId.length <= 256 && s.jobId.isNotBlank() && s.jobId.length <= 128 &&
             s.revision >= 0L && s.sha256.matches(Regex("[a-f0-9]{64}")) &&
-            (if (entry.status == ReviewHistoryStatus.APPLIED_IN_EDITOR) entry.resultRevision > s.revision else entry.resultRevision == -1L)
+            (if (entry.status == ReviewHistoryStatus.APPLIED_IN_EDITOR || entry.status == ReviewHistoryStatus.SAVED_TO_DISK)
+                entry.resultRevision > s.revision else entry.resultRevision == -1L)
     }
 }

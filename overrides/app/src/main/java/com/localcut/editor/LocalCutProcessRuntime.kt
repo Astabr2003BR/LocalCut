@@ -195,9 +195,8 @@ class LocalCutProcessRuntime private constructor(context: Context) {
         bridgeControl = LocalCutBridgeControl(appContext, processScope)
     }
 
-    fun flushAutosave() {
-        autosave.flushNow()
-    }
+    /** Report persistence failure instead of silently discarding the result. */
+    fun flushAutosave(): Result<Unit> = autosave.flushNow()
 
     companion object {
         @Volatile

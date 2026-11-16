@@ -60,6 +60,23 @@ private class FlakyStore: ProjectStore {
     override fun load():Result<Project> = Result.failure(IllegalStateException("unused"))
 }
 
+private class ThrowingStore: ProjectStore {
+    var throwNext=true
+    var attempts=0
+    var persisted:Project?=null
+    override fun save(project:Project):Result<Unit> {
+        attempts++
+        if(throwNext) {
+            throwNext=false
+            throw IllegalStateException("simulated storage I/O exception")
+        }
+        persisted=project
+        return Result.success(Unit)
+    }
+    override fun load():Result<Project> = persisted?.let { Result.success(it) }
+        ?: Result.failure(IllegalStateException("not yet saved"))
+}
+
 fun main(){
     test("flushNow persists pending edit before debounce fires"){
         val scheduler=ManualScheduler(); val store=FlakyStore().apply { failNext=false }
@@ -97,6 +114,46 @@ fun main(){
         assertTrue(retry.isSuccess)
         assertEquals(2,store.saves)
         assertEquals(p,store.last)
+    }
+    test("throwing store is a recorded failure and scheduled retry preserves pending project"){
+        val scheduler=ManualScheduler(); val store=ThrowingStore()
+        val saver=DebouncedProjectSaver(store,scheduler,0L)
+        val p=Project.create("throwing-scheduled",1080,1920,30)
+        saver.submit(p)
+        // The scheduler callback must not escape with an unhandled exception.
+        scheduler.fire()
+        assertTrue(saver.lastResult?.isFailure==true,"lastResult must record storage exception")
+        assertTrue(scheduler.action!=null,"one automatic retry should be scheduled")
+        assertEquals(null,store.persisted)
+        scheduler.fire()
+        assertTrue(saver.lastResult?.isSuccess==true)
+        assertEquals(2,store.attempts)
+        assertEquals(p,store.persisted)
+    }
+    test("manual flush handles throwing store and allows explicit retry without a new edit"){
+        val scheduler=ManualScheduler(); val store=ThrowingStore()
+        val saver=DebouncedProjectSaver(store,scheduler,450L)
+        val p=Project.create("throwing-manual",1080,1920,30)
+        saver.submit(p)
+        val first=saver.flushNow()
+        assertTrue(first.isFailure,"flushNow must return failure, not throw")
+        assertEquals(null,store.persisted)
+        assertEquals(1,store.attempts)
+        assertTrue(saver.flushNow().isSuccess,"retry should save retained pending project")
+        assertEquals(p,store.persisted)
+        assertEquals(2,store.attempts)
+        assertTrue(scheduler.action==null,"manual retry must cancel a pending timer")
+    }
+    test("storage exception does not overwrite a newer edit"){
+        val scheduler=ManualScheduler(); val store=ThrowingStore()
+        val saver=DebouncedProjectSaver(store,scheduler,0L)
+        saver.submit(Project.create("old-not-saved",1080,1920,30))
+        scheduler.fire()
+        assertTrue(saver.lastResult?.isFailure==true)
+        val newer=Project.create("newer-wins",1080,1920,30)
+        saver.submit(newer)
+        assertTrue(saver.flushNow().isSuccess)
+        assertEquals(newer,store.persisted)
     }
     test("newer edit replaces retained failed autosave before retry"){
         val scheduler=ManualScheduler(); val store=FlakyStore()

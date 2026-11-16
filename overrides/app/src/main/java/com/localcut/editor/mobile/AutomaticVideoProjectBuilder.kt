@@ -31,69 +31,77 @@ internal object AutomaticVideoProjectBuilder {
         require(plan.scenes.all { it.imageIndex in selected.indices }) { "Imagem indisponível" }
         checkCancelled()
         check(dir.mkdirs())
-        val assets = plan.scenes.map { it.imageIndex }.distinct().map { index ->
-            checkCancelled()
-            val uri = Uri.parse(selected[index])
-            if (context.contentResolver.getType(uri) == "video/mp4") {
-                val file = File(dir, "video-$index.mp4")
-                val duration = prepareVideo(context, uri, file, checkCancelled)
-                require(plan.scenes.filter { it.imageIndex == index }.all { it.sourceOutUs <= duration }) {
-                    "Cena excede a duração do vídeo"
+        var completed = false
+        try {
+            val assets = plan.scenes.map { it.imageIndex }.distinct().map { index ->
+                checkCancelled()
+                val uri = Uri.parse(selected[index])
+                if (context.contentResolver.getType(uri) == "video/mp4") {
+                    val file = File(dir, "video-$index.mp4")
+                    val duration = prepareVideo(context, uri, file, checkCancelled)
+                    require(plan.scenes.filter { it.imageIndex == index }.all { it.sourceOutUs <= duration }) {
+                        "Cena excede a duração do vídeo"
+                    }
+                    return@map Asset(id = "image-$index", type = AssetType.VIDEO, uri = Uri.fromFile(file).toString(),
+                        sourceDurationUs = duration, sizeBytes = file.length(), displayName = file.name,
+                        mimeType = "video/mp4", fingerprint = file.name + "-" + file.length())
                 }
-                return@map Asset(id = "image-$index", type = AssetType.VIDEO, uri = Uri.fromFile(file).toString(),
+                require(plan.scenes.filter { it.imageIndex == index }.all { it.sourceInUs == 0L }) { "Início de trecho só é permitido em vídeo" }
+                val file = File(dir, "image-$index.png")
+                prepareImage(context, uri, plan, file, checkCancelled)
+                Asset(id = "image-$index", type = AssetType.IMAGE, uri = Uri.fromFile(file).toString(),
+                    sourceDurationUs = null, sizeBytes = file.length(), displayName = file.name,
+                    mimeType = "image/png", fingerprint = "${file.name}-${file.length()}")
+            }.toMutableList()
+            val clips = plan.scenes.mapIndexed { index, scene ->
+                Clip(id = "scene-$index", assetId = "image-${scene.imageIndex}", startUs = scene.startUs,
+                    durationUs = scene.durationUs, sourceInUs = scene.sourceInUs, sourceOutUs = scene.sourceOutUs)
+            }
+            var audioClip: Clip? = null
+            if (chosenAudio != null) {
+                val uri = Uri.parse(chosenAudio)
+                val mime = (audioMime ?: context.contentResolver.getType(uri))
+                    ?.takeIf { it.startsWith("audio/") } ?: error("Áudio inválido")
+                val extension = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)?.takeIf { it.matches(Regex("[A-Za-z0-9]{1,8}")) } ?: "audio"
+                val file = File(dir, "audio.$extension")
+                (context.contentResolver.openInputStream(uri) ?: error("Áudio indisponível")).use { input ->
+                    file.outputStream().use { out ->
+                        copyStudioMedia(input, out, checkCancelled, availableBytes = { dir.usableSpace })
+                    }
+                }
+                checkCancelled()
+                val retriever = MediaMetadataRetriever()
+                val duration = try {
+                    retriever.setDataSource(file.absolutePath)
+                    check(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO) == "yes") { "Arquivo sem trilha de áudio" }
+                    val ms = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: error("Duração do áudio desconhecida")
+                    check(ms in 1L..Long.MAX_VALUE / 1000L)
+                    ms * 1000L
+                } finally { retriever.release() }
+                checkCancelled()
+                assets += Asset(id = "audio", type = AssetType.AUDIO, uri = Uri.fromFile(file).toString(),
                     sourceDurationUs = duration, sizeBytes = file.length(), displayName = file.name,
-                    mimeType = "video/mp4", fingerprint = file.name + "-" + file.length())
+                    mimeType = mime, fingerprint = "${file.name}-${file.length()}")
+                val end = minOf(duration, plan.durationUs)
+                audioClip = Clip(id = "audio-clip", assetId = "audio", startUs = 0L, durationUs = end, sourceInUs = 0L, sourceOutUs = end)
             }
-            require(plan.scenes.filter { it.imageIndex == index }.all { it.sourceInUs == 0L }) { "Início de trecho só é permitido em vídeo" }
-            val file = File(dir, "image-$index.png")
-            prepareImage(context, uri, plan, file, checkCancelled)
-            Asset(id = "image-$index", type = AssetType.IMAGE, uri = Uri.fromFile(file).toString(),
-                sourceDurationUs = null, sizeBytes = file.length(), displayName = file.name,
-                mimeType = "image/png", fingerprint = "${file.name}-${file.length()}")
-        }.toMutableList()
-        val clips = plan.scenes.mapIndexed { index, scene ->
-            Clip(id = "scene-$index", assetId = "image-${scene.imageIndex}", startUs = scene.startUs,
-                durationUs = scene.durationUs, sourceInUs = scene.sourceInUs, sourceOutUs = scene.sourceOutUs)
-        }
-        var audioClip: Clip? = null
-        if (chosenAudio != null) {
-            val uri = Uri.parse(chosenAudio)
-            val mime = (audioMime ?: context.contentResolver.getType(uri))
-                ?.takeIf { it.startsWith("audio/") } ?: error("Áudio inválido")
-            val extension = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)?.takeIf { it.matches(Regex("[A-Za-z0-9]{1,8}")) } ?: "audio"
-            val file = File(dir, "audio.$extension")
-            (context.contentResolver.openInputStream(uri) ?: error("Áudio indisponível")).use { input ->
-                file.outputStream().use { out ->
-                    copyStudioMedia(input, out, checkCancelled, availableBytes = { dir.usableSpace })
+            checkCancelled()
+            val base = Project.create("Estúdio automático", plan.width, plan.height, 30, id = UUID.randomUUID().toString())
+            val visual = base.tracks.first { it.type == TrackType.VISUAL }.id
+            val sound = base.tracks.first { it.type == TrackType.AUDIO }.id
+            val project = base.copy(assets = assets, tracks = base.tracks.map {
+                when (it.id) {
+                    visual -> it.copy(clips = clips)
+                    sound -> it.copy(clips = listOfNotNull(audioClip))
+                    else -> it
                 }
-            }
-            checkCancelled()
-            val retriever = MediaMetadataRetriever()
-            val duration = try {
-                retriever.setDataSource(file.absolutePath)
-                check(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO) == "yes") { "Arquivo sem trilha de áudio" }
-                val ms = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: error("Duração do áudio desconhecida")
-                check(ms in 1L..Long.MAX_VALUE / 1000L)
-                ms * 1000L
-            } finally { retriever.release() }
-            checkCancelled()
-            assets += Asset(id = "audio", type = AssetType.AUDIO, uri = Uri.fromFile(file).toString(),
-                sourceDurationUs = duration, sizeBytes = file.length(), displayName = file.name,
-                mimeType = mime, fingerprint = "${file.name}-${file.length()}")
-            val end = minOf(duration, plan.durationUs)
-            audioClip = Clip(id = "audio-clip", assetId = "audio", startUs = 0L, durationUs = end, sourceInUs = 0L, sourceOutUs = end)
+            })
+            completed = true
+            return project
+        } finally {
+            // Only clean the directory created by this invocation; never an existing project.
+            if (!completed) dir.deleteRecursively()
         }
-        checkCancelled()
-        val base = Project.create("Estúdio automático", plan.width, plan.height, 30, id = UUID.randomUUID().toString())
-        val visual = base.tracks.first { it.type == TrackType.VISUAL }.id
-        val sound = base.tracks.first { it.type == TrackType.AUDIO }.id
-        return base.copy(assets = assets, tracks = base.tracks.map {
-            when (it.id) {
-                visual -> it.copy(clips = clips)
-                sound -> it.copy(clips = listOfNotNull(audioClip))
-                else -> it
-            }
-        })
     }
 
     private fun prepareVideo(context: Context, uri: Uri, file: File, checkCancelled: () -> Unit): Long {

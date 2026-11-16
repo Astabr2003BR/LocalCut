@@ -169,9 +169,28 @@ class PortableStudioPackageSmokeTest {
                     assertTrue(runCatching {
                         AutomaticVideoProjectBuilder.build(context, plan, listOf(invalidImageUri), null, null, invalidImageWork)
                     }.isFailure)
-                    assertTrue(!File(invalidImageWork, "image-0.png.source").exists())
+                    assertTrue(!invalidImageWork.exists())
                     assertTrue(!File(invalidImageWork, "image-0.png").exists())
                 } finally { invalidImageWork.deleteRecursively() }
+                val cancelledWork = File(context.cacheDir, "cancelled-build-${UUID.randomUUID()}")
+                try {
+                    assertTrue(runCatching {
+                        AutomaticVideoProjectBuilder.build(context, plan, selected, null, null, cancelledWork,
+                            checkCancelled = {
+                                if (File(cancelledWork, "image-0.png").isFile) error("cancelled after image write")
+                            })
+                    }.isFailure)
+                    assertTrue(!cancelledWork.exists())
+                } finally { cancelledWork.deleteRecursively() }
+                val existingWork = File(context.cacheDir, "existing-build-${UUID.randomUUID()}")
+                try {
+                    check(existingWork.mkdirs())
+                    val sentinel = File(existingWork, "preserve.txt").apply { writeText("original") }
+                    assertTrue(runCatching {
+                        AutomaticVideoProjectBuilder.build(context, plan, selected, null, null, existingWork)
+                    }.isFailure)
+                    assertEquals("original", sentinel.readText())
+                } finally { existingWork.deleteRecursively() }
                 val copiedAudio = project.assets.single { it.id == "audio" }
                 assertEquals(digest(wav), digest(File(android.net.Uri.parse(copiedAudio.uri).path!!).readBytes()))
                 assertEquals(2_000_000L, copiedAudio.sourceDurationUs)
@@ -182,6 +201,7 @@ class PortableStudioPackageSmokeTest {
                     assertTrue(runCatching {
                         AutomaticVideoProjectBuilder.build(context, plan, selected, invalidUri, "audio/wav", invalidWork)
                     }.isFailure)
+                    assertTrue(!invalidWork.exists())
                 } finally { invalidWork.deleteRecursively() }
                 assertEquals(1_000_000L, project.tracks.first { it.type == TrackType.VISUAL }.clips.single().durationUs)
                 assertEquals(1_000_000L, project.tracks.first { it.type == TrackType.AUDIO }.clips.single().durationUs)

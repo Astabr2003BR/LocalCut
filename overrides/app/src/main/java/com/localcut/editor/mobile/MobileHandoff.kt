@@ -103,8 +103,11 @@ object MobileHandoffParser {
                 )
             }
             "open_package" -> {
-                require(normalizedScheme == "https" && uri.host == HTTPS_HOST && uri.port == -1 &&
-                    uri.userInfo == null && uri.rawFragment == null) { "PACKAGE_HANDOFF_ORIGIN_INVALID" }
+                // The verified HTTPS app link can fall back through GET /open to
+                // localcut://command. Both routes must carry the same strict relay descriptor.
+                val packageRoute = (normalizedScheme == "https" && uri.host == HTTPS_HOST && uri.rawPath == "/open") ||
+                    (normalizedScheme == "localcut" && uri.host == "command" && uri.rawPath.isNullOrEmpty())
+                require(packageRoute && uri.port == -1 && uri.userInfo == null && uri.rawFragment == null) { "PACKAGE_HANDOFF_ORIGIN_INVALID" }
                 require(params.keys.all { it in setOf("action", "url", "sha256", "bytes", "returnTo") }) { "PACKAGE_HANDOFF_FIELDS_INVALID" }
                 val relay = PortableStudioRelay(requiredText(params, "url", 4096),
                     requiredText(params, "sha256", 64), requiredLong(params, "bytes", 1L))

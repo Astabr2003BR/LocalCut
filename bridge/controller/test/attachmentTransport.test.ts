@@ -393,12 +393,20 @@ test("explicit package stage creates matching Android handoff and rechecks autho
   assert.equal(link.searchParams.get("sha256"),result.sha256);
   assert.equal(link.searchParams.get("bytes"),String(zip.length));
   assert.deepEqual(store.take(TOKEN)?.bytes,zip);
+  assert.equal(checks,3, "authorization must also be checked at redemption");
   assert.equal(store.take(TOKEN),null);
   await assert.rejects(stage(input), /ATTACHMENT_MEDIA_TYPE_UNSUPPORTED/);
-  await assert.rejects(stage(input,{authorize(){if (++checks > 3) throw Error("OAUTH_TOKEN_INVALID");}}), /OAUTH_TOKEN_INVALID/);
+  let expiredChecks = 0;
+  await assert.rejects(stage(input,{authorize(){if (++expiredChecks > 1) throw Error("OAUTH_TOKEN_INVALID");}}), /OAUTH_TOKEN_INVALID/);
   assert.equal(store.take(TOKEN),null);
   await assert.rejects(stage({...input,expected_sha256:"0".repeat(64)},{authorize(){}}),/ATTACHMENT_HASH_MISMATCH/);
   assert.equal(store.take(TOKEN),null);
+  let authorized = true;
+  await stage(input, {authorize(){if (!authorized) throw Error("OAUTH_TOKEN_INVALID");}});
+  authorized = false;
+  assert.equal(store.take(TOKEN),null, "revocation after staging must deny redemption");
+  authorized = true;
+  assert.equal(store.take(TOKEN),null, "a denied token must never resurrect");
 });
 
 test("package preflight rejects traversal duplicate manifest malformed archive and wrong MIME", async () => {

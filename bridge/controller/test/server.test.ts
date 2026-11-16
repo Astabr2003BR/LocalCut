@@ -225,3 +225,19 @@ test("controller rejects public transient media uploads", async t => {
   const absent = await fetch(`${fx.baseUrl}/v1/mobile-media/${token}`);
   assert.equal(absent.status, 404, "rejected upload must not create a relay entry");
 });
+
+
+test("package HTTPS handoff preserves the exact relay descriptor through browser fallback", async t => {
+  const fx = await fixture();
+  t.after(() => fx.runtime.close());
+  const relay = "https://localcut-bridge-v1.onrender.com/v1/mobile-media/" + "A".repeat(43);
+  const query = new URLSearchParams({action:"open_package",url:relay,sha256:"b".repeat(64),bytes:"123",returnTo:"chatgpt"});
+  const response = await fetch(fx.baseUrl + "/open?" + query.toString(), {redirect:"manual"});
+  assert.equal(response.status,302);
+  assert.equal(response.headers.get("cache-control"),"no-store");
+  const location = new URL(response.headers.get("location")!);
+  assert.equal(location.protocol,"localcut:");
+  assert.equal(location.hostname,"command");
+  assert.deepEqual([...location.searchParams],[...query]);
+  assert.equal(location.searchParams.get("url"),relay);
+});

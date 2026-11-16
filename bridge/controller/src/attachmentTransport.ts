@@ -127,7 +127,7 @@ export function createAttachmentStager(options: AttachmentStagerOptions) {
     const token = tokenGenerator();
     let staged;
     try {
-      staged = options.transientMediaStore.stage(token, mimeType, bytes);
+      staged = options.transientMediaStore.stage(token, mimeType, bytes, packageOptions?.authorize);
     } catch (error) {
       if (error instanceof Error && error.message === "BODY_TOO_LARGE") {
         throw new Error("ATTACHMENT_TOO_LARGE");

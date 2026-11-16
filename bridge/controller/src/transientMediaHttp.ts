@@ -9,6 +9,7 @@ type TransientMediaEntry = {
   contentType: string;
   bytes: Buffer;
   expiresAtEpochMs: number;
+  authorizeDownload?: () => void;
 };
 
 export type TransientMediaHttpOptions = {
@@ -30,7 +31,7 @@ export type TransientMediaTakeResult = {
 
 export type TransientMediaStore = {
   readonly maxBytes: number;
-  stage(token: string, contentType: string, bytes: Buffer | Uint8Array): TransientMediaStageResult;
+  stage(token: string, contentType: string, bytes: Buffer | Uint8Array, authorizeDownload?: () => void): TransientMediaStageResult;
   take(token: string): TransientMediaTakeResult | null;
 };
 
@@ -47,7 +48,7 @@ export function createTransientMediaStore(options: TransientMediaHttpOptions = {
 
   return {
     maxBytes,
-    stage(token, rawContentType, inputBytes) {
+    stage(token, rawContentType, inputBytes, authorizeDownload) {
       if (!TOKEN_PATTERN.test(token)) throw new Error("MEDIA_TOKEN_INVALID");
       const contentType = normalizedContentType(rawContentType);
       if (!isAllowedTransientMediaType(contentType)) throw new Error("MEDIA_TYPE_UNSUPPORTED");
@@ -62,7 +63,7 @@ export function createTransientMediaStore(options: TransientMediaHttpOptions = {
       if (entries.size >= maxEntries) throw new Error("MEDIA_STORE_BUSY");
 
       const expiresAtEpochMs = now + ttlMs;
-      entries.set(token, { contentType, bytes, expiresAtEpochMs });
+      entries.set(token, { contentType, bytes, expiresAtEpochMs, authorizeDownload });
       return {
         downloadPath: `${MEDIA_PATH_PREFIX}${token}`,
         expiresAtEpochMs,
@@ -77,7 +78,10 @@ export function createTransientMediaStore(options: TransientMediaHttpOptions = {
         entries.delete(token);
         return null;
       }
+      // Recheck package authorization at redemption, not only when issued.
+      // Consume even on denial so a revoked or expired link cannot resurrect.
       entries.delete(token);
+      try { entry.authorizeDownload?.(); } catch { return null; }
       return {
         contentType: entry.contentType,
         bytes: Buffer.from(entry.bytes),

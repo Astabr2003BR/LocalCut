@@ -28,7 +28,14 @@ class MobileHandoffParserTest {
         assertTrue(MobileHandoffParser.parse(link(bytes = PortableStudioRelay.MAX_BYTES + 1)).isFailure)
         assertTrue(MobileHandoffParser.parse(link() + "&bytes=42").isFailure)
         assertTrue(MobileHandoffParser.parse(link() + "&unknown=1").isFailure)
-        assertTrue(MobileHandoffParser.parse(link().replace("https://localcut-bridge-v1.onrender.com/open", "localcut://command")).isFailure)
+        val fallback = link().replace("https://localcut-bridge-v1.onrender.com/open", "localcut://command")
+        assertEquals(command.studioPackageRelay, MobileHandoffParser.parse(fallback).getOrThrow().studioPackageRelay)
+        for (bad in listOf(fallback.replace("localcut://command", "localcut://command/other"),
+            fallback.replace("localcut://command", "localcut://user@command"),
+            fallback.replace("localcut://command", "localcut://command:443"),
+            fallback + "#fragment")) {
+            assertTrue(bad, MobileHandoffParser.parse(bad).isFailure)
+        }
     }
 
     @Test

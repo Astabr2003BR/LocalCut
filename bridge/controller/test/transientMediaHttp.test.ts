@@ -131,3 +131,24 @@ test("package relay remains one-time GET and bounded store rejects excess concur
   assert.throws(()=>store.stage(token(),"application/vnd.localcut.package",bytes),/MEDIA_STORE_BUSY/);
   assert.ok(store.take(first)); store.stage(token(),"application/vnd.localcut.package",bytes);
 });
+
+
+test("revoked package authorization denies real HTTP redemption without consuming another link", async t => {
+  const fx = await fixture(); t.after(()=>fx.close());
+  let authorized = true;
+  const id = token(), other = token();
+  const data = Buffer.from("package-fixture");
+  const staged = fx.store.stage(id,"application/vnd.localcut.package",data,()=>{
+    if (!authorized) throw Error("OAUTH_TOKEN_INVALID");
+  });
+  const independent = fx.store.stage(other,"image/png",Buffer.from("independent"));
+  authorized = false;
+  const denied = await fetch(fx.baseUrl+staged.downloadPath);
+  assert.equal(denied.status,404);
+  assert.equal(denied.headers.get("cache-control"),"no-store");
+  authorized = true;
+  assert.equal((await fetch(fx.baseUrl+staged.downloadPath)).status,404);
+  const ok = await fetch(fx.baseUrl+independent.downloadPath);
+  assert.equal(ok.status,200);
+  assert.equal(await ok.text(),"independent");
+});

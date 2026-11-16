@@ -22,11 +22,14 @@ class EditorAiExportReviewTest {
         assertTrue(review.request!!.contains("get_export_review_frames"))
         assertTrue(review.request!!.contains(hash))
         assertTrue(review.request!!.contains("\"sourceRevision\":5"))
+        assertEquals(EditorAiReviewSource("p", 5L, "job", hash), review.source)
+        assertTrue(review.request!!.contains("findings"))
     }
     @Test fun staleAndForeignExportNeverOfferCurrentReview() {
         val old = EditorAiExportReview.from(job(), "p", 6L)
         assertTrue(old.detail.contains("não representa a versão atual"))
         assertNull(old.request)
+        assertNull(old.source)
         assertNull(EditorAiExportReview.from(job(), "other", 5L).request)
         assertTrue(EditorAiExportReview.from(job(), "other", 5L).title.contains("Sem exportação"))
     }
@@ -41,6 +44,7 @@ class EditorAiExportReviewTest {
             assertNull(invalid.request)
         }
         assertNull(EditorAiExportReview.from(job(report(encoded = 2)), "p", 5L).request)
+        assertNull(EditorAiExportReview.from(job(report(encoded = 2)), "p", 5L).source)
     }
     @Test fun latestRegistryTracksProgressAndIgnoresOldCallbacks() {
         val registry = BridgeJobRegistry()

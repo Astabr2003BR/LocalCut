@@ -12,11 +12,15 @@ import com.localcut.editor.data.project.optional
 import com.localcut.editor.data.project.required
 import com.localcut.editor.data.project.jsonString
 
+/** Identity of the exact rendered MP4; not a claim that external visual review occurred. */
+internal data class EditorAiReviewSource(val projectId: String, val revision: Long, val jobId: String, val sha256: String)
+
 /** Only metadata, never image bytes, paths or raw remote error messages. */
 internal data class EditorAiExportReview(
     val title: String,
     val detail: String,
     val request: String? = null,
+    val source: EditorAiReviewSource? = null,
 ) {
     companion object {
         fun from(job: BridgeJobSnapshot?, projectId: String, revision: Long): EditorAiExportReview {
@@ -64,16 +68,22 @@ internal data class EditorAiExportReview(
                     warnings.forEach { append("\n"); append(it) }
                     append("\nAmostragem técnica, não aprovação visual ou sincronização completa.")
                 }
-                val request = if (encoded == sampled && encoded > 0 && source == revision) buildString {
+                val identity = if (encoded == sampled && encoded > 0 && source == revision)
+                    EditorAiReviewSource(projectId, source, job.jobId, hash) else null
+                val request = if (identity != null) buildString {
                     append("LocalCut: consulte get_export_review_frames no dispositivo pareado, projeto ")
                     append(jsonString(projectId)); append(" com payload ")
                     append("{\"jobId\":"); append(jsonString(job.jobId)); append(",\"sourceRevision\":"); append(source); append("}. ")
                     append("Confira se SHA-256 do MP4 é $hash. Analise os quadros retornados e descreva os problemas visuais. ")
-                    append("A evidência é temporária (até 10 minutos, substituída pela próxima exportação). Se indisponível, informe; não invente imagens ou aprovação. Não altere o projeto sem minha autorização.")
+                    append("A evidência é temporária (até 10 minutos, substituída pela próxima exportação). Se indisponível, informe; não invente imagens ou aprovação. Não altere o projeto sem minha autorização. ")
+                    append("Se houver correção visual necessária e você tiver inspecionado os quadros, proponha um JSON local com projectId, expectedRevision, operations e review. ")
+                    append("O objeto review deve conter exatamente jobId, sha256 e findings (texto de 1 a 1000 caracteres, descreva o que foi observado e as limitações). ")
+                    append("Use jobId "); append(jsonString(job.jobId)); append(" e sha256 "); append(jsonString(hash))
+                    append(". Não use operações destrutivas. Se não houver correção, responda somente com a análise; não invente alterações. A amostragem não confirma qualidade de todo o vídeo ou sincronização de áudio.")
                 } else null
                 EditorAiExportReview(
                     if (status == "technical_checks_passed" && warnings.isEmpty()) "MP4 exportado • verificações técnicas concluídas" else "MP4 exportado • requer revisão",
-                    detail, request)
+                    detail, request, identity)
             }.getOrElse { unavailable }
         }
     }

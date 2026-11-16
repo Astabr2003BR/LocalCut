@@ -45,7 +45,12 @@ internal fun EditorAiDialog(
     var approval by remember { mutableStateOf<EditorAiApprovalGate.Approval?>(null) }
     var message by remember { mutableStateOf("") }
     val prepared = approval
-    val stale = prepared != null && (prepared.projectId != state.project.id || prepared.revision != state.revision)
+    val stale = prepared != null && (prepared.projectId != state.project.id || prepared.revision != state.revision ||
+        (prepared.reviewSource != null && prepared.reviewSource != report.source))
+    fun currentReviewSource(): EditorAiReviewSource? {
+        val current = session.state
+        return EditorAiExportReview.from(jobs.latest.value, current.project.id, current.revision).source
+    }
     AlertDialog(
         onDismissRequest = { gate.cancel(); onDismiss() },
         title = { Text("Editor IA") },
@@ -67,10 +72,15 @@ internal fun EditorAiDialog(
                 if (prepared != null) {
                     Text("Plano validado • ${prepared.operationCount} operações", style = MaterialTheme.typography.titleSmall)
                     Text(prepared.summary, style = MaterialTheme.typography.bodySmall)
-                    Text(if (stale) "A revisão mudou. Valide novamente." else "Confira o JSON acima antes de aprovar. A validação não alterou o projeto.", style = MaterialTheme.typography.bodySmall)
+                    prepared.reviewFindings?.let {
+                        Text("Análise externa informada (não verificada pelo aplicativo)", style = MaterialTheme.typography.titleSmall)
+                        Text(it, style = MaterialTheme.typography.bodySmall)
+                        Text("Vinculada ao MP4 da revisão ${prepared.reviewSource?.revision}. Confira o conteúdo antes de aprovar.", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text(if (stale) "A revisão ou exportação mudou. Valide novamente." else "Confira o JSON acima antes de aprovar. A validação não alterou o projeto.", style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = { gate.cancel(); approval = null; message = "" }) { Text("Revisar plano") }
                 } else Button(onClick = {
-                    gate.prepare(draft, session.state).onSuccess { approval = it; message = "" }
+                    gate.prepare(draft, session.state, currentReviewSource()).onSuccess { approval = it; message = "" }
                         .onFailure { message = "Plano rejeitado: ${it.message?.take(180) ?: "confira o JSON"}" }
                 }, enabled = !busy && draft.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Validar plano") }
                 if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
@@ -78,7 +88,14 @@ internal fun EditorAiDialog(
                 Text(report.title, style = MaterialTheme.typography.bodyMedium)
                 Text(report.detail, style = MaterialTheme.typography.bodySmall)
                 report.request?.let { request ->
-                    OutlinedButton(onClick = { onCopyContext(request); message = "Pedido de revisão copiado. Envie ao GPT conectado." },
+                    OutlinedButton(onClick = {
+                        val current = session.state
+                        val fresh = EditorAiExportReview.from(jobs.latest.value, current.project.id, current.revision)
+                        if (fresh.source == report.source && fresh.request != null) {
+                            onCopyContext(EditorAiApprovalGate.context(current) + "\n\n" + fresh.request)
+                            message = "Pedido e contexto copiados. Envie ao GPT e cole o plano de revisão retornado."
+                        } else message = "Exportação mudou. Copie o pedido atualizado."
+                    },
                         enabled = !busy && BridgePanelUiPolicy.agentReady(bridgeState), modifier = Modifier.fillMaxWidth()) { Text("Copiar pedido de revisão visual") }
                 }
                 Text("Após aplicar, volte à timeline para conferir a prévia. O GPT externo analisa os quadros pelo Bridge; esta tela não executa uma IA local.",
@@ -89,9 +106,10 @@ internal fun EditorAiDialog(
             TextButton(enabled = prepared != null && !stale && !busy, onClick = {
                 val accepted = approval ?: return@TextButton
                 approval = null
-                gate.apply(accepted, draft, session).onSuccess {
+                gate.apply(accepted, draft, session, currentReviewSource()).onSuccess {
                     onApplied()
-                    message = "Aplicado na revisão $it. Confira a prévia; Desfazer continua disponível."
+                    message = "Aplicado na revisão $it. Confira a prévia; Desfazer continua disponível." +
+                        if (accepted.reviewSource != null) " Exporte novamente para avaliar a correção; a análise anterior não valida esta revisão." else ""
                     draft = ""
                 }.onFailure { message = it.message?.take(180) ?: "Não foi possível aplicar." }
             }) { Text("Aprovar e aplicar") }

@@ -27,22 +27,39 @@ internal class EditorAiApprovalGate {
         val draft: String,
         val operationCount: Int,
         val summary: String,
+        val reviewSource: EditorAiReviewSource? = null,
+        val reviewFindings: String? = null,
     )
     private data class Pending(val approval: Approval, val project: Project, val command: ProjectEditBatchCommand)
     private var pending: Pending? = null
 
     fun cancel() { pending = null }
 
-    fun prepare(draft: String, state: ProjectSessionState): Result<Approval> = runCatching {
+    fun prepare(draft: String, state: ProjectSessionState, reviewSource: EditorAiReviewSource? = null): Result<Approval> = runCatching {
         pending = null
         require(draft.isNotBlank() && draft.length <= MAX_BYTES && draft.toByteArray(Charsets.UTF_8).size <= MAX_BYTES) {
             "Plano vazio ou acima de 8 KiB."
         }
         val root = MiniJson.parse(draft).asObject()
-        require(root.fields.keys == setOf("projectId", "expectedRevision", "operations")) { "Use projectId, expectedRevision e operations." }
+        val baseFields = setOf("projectId", "expectedRevision", "operations")
+        require(root.fields.keys == baseFields || root.fields.keys == baseFields + "review") { "Use projectId, expectedRevision, operations e, para revisão do MP4, review." }
         val id = root.required("projectId").asString()
         val revision = root.required("expectedRevision").asLong()
         require(id == state.project.id && revision == state.revision) { "Projeto ou revisão desatualizados. Copie o contexto novamente." }
+        val boundReview = if ("review" in root.fields) {
+            val review = root.required("review").asObject()
+            require(review.fields.keys == setOf("jobId", "sha256", "findings")) { "Revisão exige jobId, sha256 e findings." }
+            val source = requireNotNull(reviewSource) { "Não há MP4 atual com evidência para esta revisão." }
+            require(source.projectId == id && source.revision == revision &&
+                review.required("jobId").asString() == source.jobId &&
+                review.required("sha256").asString() == source.sha256) { "A revisão não corresponde ao MP4 atual. Copie o pedido novamente." }
+            source
+        } else null
+        val findings = boundReview?.let {
+            root.required("review").asObject().required("findings").asString().also {
+                require(it.isNotBlank() && it.length <= 1000) { "Descreva a análise em 1 a 1000 caracteres." }
+            }
+        }
         val operations = ProjectEditPayloadParser.parseOperations(root)
         require(operations.size in 1..8) { "Use de 1 a 8 operações." }
         val labels = operations.map { operation ->
@@ -72,15 +89,18 @@ internal class EditorAiApprovalGate {
         require(candidate.assets == state.project.assets && TimelineMath.durationUs(candidate) == TimelineMath.durationUs(state.project)) {
             "A correção modificaria mídias ou duração."
         }
-        val approval = Approval(id, revision, draft, operations.size, labels.joinToString("\n"))
+        val approval = Approval(id, revision, draft, operations.size, labels.joinToString("\n"), boundReview, findings)
         pending = Pending(approval, state.project, command)
         approval
     }
 
-    fun apply(approval: Approval, currentDraft: String, session: ProjectSession): Result<Long> = runCatching {
+    fun apply(approval: Approval, currentDraft: String, session: ProjectSession, reviewSource: EditorAiReviewSource? = null): Result<Long> = runCatching {
         val accepted = pending
         pending = null // one attempt only, including conflicts or failures
         require(accepted != null && accepted.approval === approval && currentDraft == approval.draft) { "Aprovação expirada. Valide novamente." }
+        require(approval.reviewSource == null || approval.reviewSource == reviewSource) {
+            "A exportação analisada mudou. Valide novamente."
+        }
         val before = session.state
         require(before.project.id == approval.projectId && before.revision == approval.revision && before.project == accepted.project) {
             "Projeto mudou após a validação. Copie o contexto e valide novamente."

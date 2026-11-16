@@ -98,6 +98,31 @@ class EditorAiApprovalGateTest {
         assertEquals(original, s.state.project)
         assertEquals(5L, s.state.revision)
     }
+    @Test fun exportReviewCorrectionBindsExactJobHashAndRevisionAndRequiresApproval() {
+        val s = fixture(); val original = s.state.project; val gate = EditorAiApprovalGate()
+        val source = EditorAiReviewSource("p", 5L, "export-1", "a".repeat(64))
+        val reviewDraft = plan().dropLast(1) + ""","review":{"jobId":"export-1","sha256":"${source.sha256}","findings":"Quadros amostrados: ajustar opacidade."}}"""
+        assertTrue(gate.prepare(reviewDraft, s.state).isFailure)
+        assertTrue(gate.prepare(reviewDraft, s.state, source.copy(jobId = "other")).isFailure)
+        assertTrue(gate.prepare(reviewDraft, s.state, source.copy(sha256 = "b".repeat(64))).isFailure)
+        assertTrue(gate.prepare(reviewDraft, s.state, source.copy(revision = 4L)).isFailure)
+        assertTrue(gate.prepare(reviewDraft.replace("Quadros amostrados: ajustar opacidade.", ""), s.state, source).isFailure)
+        assertTrue(gate.prepare(reviewDraft.replace("Quadros amostrados: ajustar opacidade.", "x".repeat(1001)), s.state, source).isFailure)
+        val first = gate.prepare(reviewDraft, s.state, source).getOrThrow()
+        assertEquals(source, first.reviewSource)
+        assertEquals("Quadros amostrados: ajustar opacidade.", first.reviewFindings)
+        assertEquals(original, s.state.project)
+        assertTrue(gate.apply(first, reviewDraft, s, source.copy(jobId = "new-export")).isFailure)
+        assertEquals(original, s.state.project)
+        assertTrue(gate.apply(first, reviewDraft, s, source).isFailure)
+        val second = gate.prepare(reviewDraft, s.state, source).getOrThrow()
+        assertEquals(6L, gate.apply(second, reviewDraft, s, source).getOrThrow())
+        assertEquals(0.8, s.state.project.findClip("clip")!!.opacity, 0.0)
+        assertEquals(original.assets, s.state.project.assets)
+        assertTrue(gate.prepare(reviewDraft, s.state, source).isFailure)
+        s.dispatch(EditorAction.Undo)
+        assertEquals(original, s.state.project)
+    }
     @Test fun contextContainsExactRoutingAndNoPrivateMediaPath() {
         val s = fixture()
         val context = EditorAiApprovalGate.context(s.state)

@@ -160,3 +160,7 @@ Parent 45f0e2fe3f1ac12a43c86a6a725d98007885a640: four CI PASS (2080,1911,1734,88
 
 ## Hybrid authenticated studio package sender — 2026-11-16
 Parent 3a3f91aaeeafdd908723df7eb55c693992499639: four CI PASS (2081,1912,1735,881), PR open/draft. Added explicit stage_package MCP tool, OAuth device recheck before and after source download, strict custom MIME/filename, bounded 20 MiB source fetch, ZIP central-directory preflight without extraction, SHA256/bytes in matching Android open_package handoff, one-time GET relay, capped pending entries. Added real ZIP fixture tests and rejected traversal/duplicates/malformed/auth revocation/hash/ordinary media misuse; HTTP one-time/limit regression. CI pending; no local execution/live transfer/deploy. Link is bearer capability not download-device-bound; Android validates full package; physical QA and end-to-end production authorization pending. No main/install/phase2.
+
+
+## Package relay TypeScript regression fix — 2026-11-16
+Parent 5a0b353337e5036b49f95fe5102015cc94cb6adc: Android APK #2082, Export Smoke #1913 and Termux #882 PASS. Bridge #1736 ran 110 tests, all passed; subsequent typecheck failed TS2345 at attachmentTransport.test.ts lines 384 and 415: Buffer<ArrayBufferLike> is incompatible with BodyInit. Convert only the two synthetic ZIP Response bodies to new Uint8Array(zip), which allocates a fresh ArrayBuffer and preserves byte values; no production changes or assertions removed. CI pending on corrective SHA; no local full typecheck/device run. PR stays draft; no main/deploy/install/phase2.

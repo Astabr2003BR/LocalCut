@@ -381,7 +381,7 @@ test("explicit package stage creates matching Android handoff and rechecks autho
   const zip = packageZip([["manifest.json", manifest], ["media/frame", PNG]]);
   const store = createTransientMediaStore();
   const stage = createAttachmentStager({publicBaseUrl:"https://localcut-bridge-v1.onrender.com", transientMediaStore:store,
-    tokenGenerator:()=>TOKEN, fetchImpl:async()=>new Response(zip,{headers:{"content-type":"application/zip"}})});
+    tokenGenerator:()=>TOKEN, fetchImpl:async()=>new Response(new Uint8Array(zip),{headers:{"content-type":"application/zip"}})});
   const input = file({mime_type:mime,file_name:"intro.localcut",expected_sha256:createHash("sha256").update(zip).digest("hex")});
   let checks = 0;
   const result = await stage(input,{authorize(){checks++;}});
@@ -412,7 +412,7 @@ test("package preflight rejects traversal duplicate manifest malformed archive a
   ]) {
     const store = createTransientMediaStore();
     const stage = createAttachmentStager({publicBaseUrl:"https://localcut-bridge-v1.onrender.com", transientMediaStore:store,
-      tokenGenerator:()=>TOKEN,fetchImpl:async()=>new Response(zip,{headers:{"content-type":mime}})});
+      tokenGenerator:()=>TOKEN,fetchImpl:async()=>new Response(new Uint8Array(zip),{headers:{"content-type":mime}})});
     await assert.rejects(stage(input,{authorize(){}}),/PACKAGE_ZIP_INVALID/);
     assert.equal(store.take(TOKEN),null);
   }

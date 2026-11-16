@@ -161,6 +161,17 @@ class PortableStudioPackageSmokeTest {
                 val audio = FileProvider.getUriForFile(context, authority, requireNotNull(staged.audio)).toString()
                 val plan = AutomaticVideoRecipe.parse(staged.recipe, selected.size)
                 val project = AutomaticVideoProjectBuilder.build(context, plan, selected, audio, staged.audioMime, workDir)
+                assertTrue(!File(workDir, "image-0.png.source").exists())
+                val invalidImage = File(stageDir, "invalid.png").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+                val invalidImageUri = FileProvider.getUriForFile(context, authority, invalidImage).toString()
+                val invalidImageWork = File(context.cacheDir, "invalid-image-${UUID.randomUUID()}")
+                try {
+                    assertTrue(runCatching {
+                        AutomaticVideoProjectBuilder.build(context, plan, listOf(invalidImageUri), null, null, invalidImageWork)
+                    }.isFailure)
+                    assertTrue(!File(invalidImageWork, "image-0.png.source").exists())
+                    assertTrue(!File(invalidImageWork, "image-0.png").exists())
+                } finally { invalidImageWork.deleteRecursively() }
                 val copiedAudio = project.assets.single { it.id == "audio" }
                 assertEquals(digest(wav), digest(File(android.net.Uri.parse(copiedAudio.uri).path!!).readBytes()))
                 assertEquals(2_000_000L, copiedAudio.sourceDurationUs)

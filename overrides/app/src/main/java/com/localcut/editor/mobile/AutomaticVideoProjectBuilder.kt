@@ -46,7 +46,7 @@ internal object AutomaticVideoProjectBuilder {
             }
             require(plan.scenes.filter { it.imageIndex == index }.all { it.sourceInUs == 0L }) { "Início de trecho só é permitido em vídeo" }
             val file = File(dir, "image-$index.png")
-            prepareImage(context, Uri.parse(selected[index]), plan, file)
+            prepareImage(context, uri, plan, file, checkCancelled)
             Asset(id = "image-$index", type = AssetType.IMAGE, uri = Uri.fromFile(file).toString(),
                 sourceDurationUs = null, sizeBytes = file.length(), displayName = file.name,
                 mimeType = "image/png", fingerprint = "${file.name}-${file.length()}")
@@ -114,20 +114,36 @@ internal object AutomaticVideoProjectBuilder {
         } finally { retriever.release() }
     }
 
-    private fun prepareImage(context: Context, uri: Uri, plan: AutomaticVideoPlan, file: File) {
-        val input = ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, info, _ ->
+    private fun prepareImage(context: Context, uri: Uri, plan: AutomaticVideoPlan, file: File, checkCancelled: () -> Unit) {
+        val source = File(file.parentFile!!, file.name + ".source")
+        try {
+            (context.contentResolver.openInputStream(uri) ?: error("Imagem indisponível")).use { input ->
+                source.outputStream().use { output ->
+                    copyStudioMedia(input, output, checkCancelled, availableBytes = { source.parentFile!!.usableSpace })
+                }
+            }
+            checkCancelled()
+            decodeImage(source, plan, file, checkCancelled)
+        } finally { source.delete() }
+    }
+
+    private fun decodeImage(source: File, plan: AutomaticVideoPlan, file: File, checkCancelled: () -> Unit) {
+        val input = ImageDecoder.decodeBitmap(ImageDecoder.createSource(source)) { decoder, info, _ ->
             val (w, h) = TikTokCarouselPolicy.fittedSize(info.size.width, info.size.height, plan.width, plan.height)
             decoder.setTargetSize(w, h)
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
         }
         try {
+            checkCancelled()
             val output = Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888)
             try {
                 val (w, h) = TikTokCarouselPolicy.fittedSize(input.width, input.height, plan.width, plan.height)
                 val left = (plan.width - w) / 2
                 val top = (plan.height - h) / 2
                 Canvas(output).apply { drawColor(Color.BLACK); drawBitmap(input, null, Rect(left, top, left + w, top + h), Paint(Paint.FILTER_BITMAP_FLAG)) }
+                checkCancelled()
                 file.outputStream().use { check(output.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+                checkCancelled()
             } finally { output.recycle() }
         } finally { input.recycle() }
     }

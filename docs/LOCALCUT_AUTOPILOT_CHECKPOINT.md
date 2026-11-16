@@ -140,3 +140,7 @@ Parent 1edf0ce76306cb7b7773d04490522d641419e0d0: four CI PASS (2075,1906,1729,87
 
 ## Studio preparation rollback — 2026-11-16
 Parent 0d55aed8ae2a3828bc00dd6cc3ff1a2cbc2aeff8: four PR workflows completed success; PR open/draft. Skill listing empty; used versioned docs and actual builder. Preparation now removes only its newly created work directory on any unsuccessful build, including cancellation after PNG write and invalid audio after image preparation. Existing directory rejection remains outside cleanup; successful assets retained. Extended portable Android smoke for cancellation, corrupt image/audio cleanup and existing-directory preservation. CI pending; no local Android execution. This is in-process rollback, not durable recovery after process death. Next scoped transfer and durable recovery. No main/install/phase2.
+
+
+## Studio generated PNG output bounds — 2026-11-16
+Parent 09d703995186779125b9781f295787402d307ce7: four PR workflows completed success; PR open/draft, push permission confirmed. Skill listing empty; used versioned docs and actual builder. Generated PNG writes now enforce per-file byte limit, free-space reserve and cancellation before each write; reject empty output, preserve existing preparation rollback. Added instrumentation for exact limit, insufficient space, cancellation and unchanged bytes after rejection; existing real MP4 smoke exercises production path. CI pending; no local Android execution. Storage checks are not atomic reservations; durable recovery and scoped relay remain pending. No main/install/phase2.

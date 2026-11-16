@@ -61,6 +61,24 @@ class PortableStudioPackageSmokeTest {
         } finally { file.delete() }
     }
 
+    @Test fun generatedPngOutputEnforcesBudgetAndCancellation() {
+        val bytes = ByteArrayOutputStream()
+        var space = 20L
+        var cancelled = false
+        val output = StudioPngOutput(bytes, { space }, { check(!cancelled) }, maxBytes = 4, reserveBytes = 10)
+        output.write(byteArrayOf(1, 2), 0, 2)
+        space = 10
+        assertTrue(runCatching { output.write(3) }.isFailure)
+        space = 20
+        cancelled = true
+        assertTrue(runCatching { output.write(3) }.isFailure)
+        cancelled = false
+        output.write(byteArrayOf(3, 4), 0, 2)
+        assertTrue(runCatching { output.write(5) }.isFailure)
+        assertEquals(4L, output.written)
+        assertTrue(bytes.toByteArray().contentEquals(byteArrayOf(1, 2, 3, 4)))
+    }
+
     @Test fun verifiesOrderedImagesAndRecipeWithoutExtractingFiles() {
         val images = JSONArray().put(asset("second")).put(asset("first"))
         withArchive(manifest(images), listOf("media/first" to png, "media/second" to png)) { file ->

@@ -111,7 +111,8 @@ class BridgeExportCommandTest {
         val hash = "a".repeat(64)
         val sample = BridgeExportSample(0L, 1, 1, byteArrayOf(-1, -40, -1, -39))
         val report = """{"status":"technical_checks_passed","width":1080,"height":1920,"durationUs":2000000,"audioTracks":0,"decodedFrames":1,"sampledFrames":1,"encodedSampleFrames":1,"nearBlackSamplePositionsUs":[],"durationMatches":true,"resolutionMatches":true,"sha256":"$hash"}"""
-        fixture.exportPort.listener!!.onCompletedWithReview("{}", BridgeExportInspection(report, hash, listOf(sample)))
+        // Production supplies technicalReview in the result JSON as well as the separate sample evidence.
+        fixture.exportPort.listener!!.onCompletedWithReview("""{"technicalReview":$report}""", BridgeExportInspection(report, hash, listOf(sample)))
         val plan = """{"projectId":"project-1","expectedRevision":5,"operations":[{"op":"patchClip","clipId":"clip-1","opacity":0.8}],"review":{"jobId":"$id","sha256":"$hash","findings":"Ajustar opacidade."}}"""
         val cmd = exportCommand("proposal").copy(capability = BridgeCapability.SUBMIT_EXPORT_REVIEW_PROPOSAL,
             payloadJson = "{\"planJson\":${com.localcut.editor.data.project.jsonString(plan)}}")

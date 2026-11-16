@@ -44,6 +44,8 @@ class AutomaticVideoActivity : ComponentActivity() {
     private var audio by mutableStateOf<String?>(null)
     private var recipe by mutableStateOf(AutomaticVideoRecipe.EXAMPLE)
     private var message by mutableStateOf("")
+    private var recoveryNotice by mutableStateOf("")
+    private lateinit var exportRecovery: StudioExportRecovery
     private var busy by mutableStateOf(false)
     private var choosingOutput by mutableStateOf(false)
     private var approvedPlan: AutomaticVideoPlan? = null
@@ -58,6 +60,14 @@ class AutomaticVideoActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT < 29) { finish(); return }
+        exportRecovery = StudioExportRecovery(this)
+        scope.launch {
+            val recovered = withContext(Dispatchers.IO) { exportRecovery.recover() }
+            if (recovered.interrupted > 0 || recovered.cleanupPending > 0) {
+                recoveryNotice = "Uma exportação anterior foi interrompida ou não teve conclusão confirmada. Confira o arquivo de destino antes de criar outro MP4. Nenhuma exportação foi retomada automaticamente." +
+                    if (recovered.cleanupPending > 0) " Alguns temporários não puderam ser limpos com segurança." else " Temporários privados verificados foram limpos."
+            }
+        }
         images = savedInstanceState?.getStringArrayList("images")?.toList().orEmpty()
         audio = savedInstanceState?.getString("audio")
         recipe = savedInstanceState?.getString("recipe") ?: AutomaticVideoRecipe.EXAMPLE
@@ -133,6 +143,10 @@ class AutomaticVideoActivity : ComponentActivity() {
                     Text("Editor IA", style = MaterialTheme.typography.headlineSmall)
                     Text("GPT externo • renderização local Android. Crie um novo vídeo com mídias locais e roteiro JSON, sem alterar o projeto aberto.")
                     Text("MP4 achatado: não recupera automaticamente texto, áudio ou cenário em camadas independentes.", style = MaterialTheme.typography.bodySmall)
+                    if (recoveryNotice.isNotBlank()) {
+                        Text(recoveryNotice, style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = { recoveryNotice = "" }) { Text("Entendi") }
+                    }
                     val editable = !busy && !choosingOutput
                     TextButton(onClick = { finish() }, enabled = editable) { Text("Voltar") }
                     Button(onClick = {
@@ -249,7 +263,8 @@ class AutomaticVideoActivity : ComponentActivity() {
     private fun export(plan: AutomaticVideoPlan, destination: Uri) {
         val selected = images.toList()
         val chosenAudio = audio
-        val dir = File(cacheDir, "automatic-${UUID.randomUUID()}")
+        val jobId = UUID.randomUUID().toString()
+        val dir = File(cacheDir, "automatic-$jobId")
         val target = SafExportDestination(contentResolver, destination)
         busy = true
         message = "Preparando mídias..."
@@ -257,6 +272,8 @@ class AutomaticVideoActivity : ComponentActivity() {
             var submitted = false
             var terminal = false
             try {
+                // Persist before creating any private preparation files. No replay of consent.
+                check(withContext(Dispatchers.IO) { exportRecovery.begin(jobId) }) { "Não foi possível registrar a exportação com segurança." }
                 val project = withContext(Dispatchers.IO) {
                     val context = currentCoroutineContext()
                     AutomaticVideoProjectBuilder.build(
@@ -281,7 +298,12 @@ class AutomaticVideoActivity : ComponentActivity() {
                 if (e is CancellationException) throw e
                 message = "Não foi possível criar o vídeo: ${e.message ?: "verifique as mídias"}"
             } finally {
-                if (!submitted || terminal) withContext(NonCancellable + Dispatchers.IO) { dir.deleteRecursively() }
+                if (!submitted || terminal) {
+                    val cleaned = withContext(NonCancellable + Dispatchers.IO) { exportRecovery.finish(jobId) }
+                    if (!cleaned && dir.exists()) recoveryNotice = "Temporários privados aguardam recuperação segura. O arquivo de destino não foi alterado pela recuperação."
+                }
+                // If collection was interrupted after submit, renderer cleanup can still be active.
+                // Leave the record and directory to the next process, never delete while in use.
                 busy = false
             }
         }

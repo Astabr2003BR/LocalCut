@@ -373,6 +373,69 @@ class PortableStudioPackageSmokeTest {
         } finally { bitmap.recycle() }
     }
 
+    @Test fun studioExportRecoveryOnlyRemovesPreviousProcessOwnedPrivateFiles() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val name = "studio-recovery-test-${UUID.randomUUID()}"
+        val oldOwner = UUID.randomUUID().toString()
+        val newOwner = UUID.randomUUID().toString()
+        val id = UUID.randomUUID().toString()
+        val dir = File(context.cacheDir, "automatic-$id")
+        val unrelated = File(context.cacheDir, "automatic-${UUID.randomUUID()}")
+        val destination = File(context.cacheDir, "studio-destination-${UUID.randomUUID()}.mp4")
+        try {
+            val old = StudioExportRecovery(context, oldOwner, name)
+            assertTrue(old.begin(id))
+            assertTrue(!old.begin(id))
+            assertTrue(!runCatching { old.begin("../outside") }.isSuccess)
+            assertTrue(dir.mkdir())
+            File(dir, "image-0.png").writeBytes(png)
+            assertTrue(unrelated.mkdir())
+            File(unrelated, "keep.png").writeBytes(png)
+            destination.writeBytes(png)
+            assertEquals(StudioExportRecovery.Recovery(0, 0), old.recover())
+            assertTrue(dir.exists())
+            val restarted = StudioExportRecovery(context, newOwner, name)
+            assertTrue(!restarted.finish(id))
+            assertEquals(StudioExportRecovery.Recovery(1, 0), restarted.recover())
+            assertTrue(!dir.exists())
+            assertTrue(unrelated.exists())
+            assertTrue(destination.readBytes().contentEquals(png))
+            assertEquals(StudioExportRecovery.Recovery(0, 0), restarted.recover())
+            assertTrue(restarted.begin(id))
+            assertTrue(dir.mkdir())
+            File(dir, "audio.wav").writeBytes(png)
+            assertTrue(restarted.finish(id))
+            assertTrue(!dir.exists())
+        } finally {
+            dir.deleteRecursively(); unrelated.deleteRecursively(); destination.delete()
+            context.getSharedPreferences(name, android.content.Context.MODE_PRIVATE).edit().clear().commit()
+        }
+    }
+
+    @Test fun studioExportRecoveryFailsClosedForUnexpectedDirectoryContents() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val name = "studio-recovery-test-${UUID.randomUUID()}"
+        val id = UUID.randomUUID().toString()
+        val dir = File(context.cacheDir, "automatic-$id")
+        try {
+            val old = StudioExportRecovery(context, UUID.randomUUID().toString(), name)
+            assertTrue(old.begin(id))
+            val unexpected = File(dir, "unexpected")
+            assertTrue(unexpected.mkdirs())
+            val sentinel = File(unexpected, "keep").apply { writeBytes(png) }
+            val next = StudioExportRecovery(context, UUID.randomUUID().toString(), name)
+            assertEquals(StudioExportRecovery.Recovery(1, 1), next.recover())
+            assertTrue(sentinel.readBytes().contentEquals(png))
+            assertTrue(!next.begin(id))
+            assertTrue(unexpected.deleteRecursively())
+            assertEquals(StudioExportRecovery.Recovery(1, 0), next.recover())
+            assertTrue(!dir.exists())
+        } finally {
+            dir.deleteRecursively()
+            context.getSharedPreferences(name, android.content.Context.MODE_PRIVATE).edit().clear().commit()
+        }
+    }
+
     @Test fun rejectsTruncatedZipAndHonorsCancellation() {
         withArchive(manifest(), listOf("media/frame" to png)) { file ->
             assertTrue(runCatching { PortableStudioPackage.verify(file) { error("cancelled") } }.isFailure)

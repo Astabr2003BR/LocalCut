@@ -120,3 +120,7 @@ Parent 45fb18936cf4a2376a0b0b4ba10755c2ca6a717e: all four CI PASS (2070,1901,172
 
 ## Still-image replacement domain primitive — 2026-11-15
 Parent 9ce5732e0797e2558592b19ee56aed47f3367d3c: four CI PASS (2071,1902,1725,871), PR draft, push permission confirmed. Skill unavailable in current surface (empty skill listing); used versioned docs and actual code. Added reversible ReplaceStillImageAssetCommand for existing still-image assets only, expected old asset guard, existing track/ancestor locks and timeline validation. Test exact project equality except target asset, undo, stale/missing/no-op/flattened video/locked rejection. Not exposed to Bridge or UI yet; no real intro or visual render test, no local execution; CI pending. Next wire explicit typed approval and render fixture. No main/install/phase2.
+
+
+## Typed still-image replacement approval — 2026-11-15
+Parent 519f8c6195d74292fc80b9778d3af831cd2c0e12: four CI PASS (2072,1903,1726,872), PR open/draft, push confirmed. Skill listing empty; used versioned docs. Added strict replaceStillImage typed operation reusing domain primitive, local Editor IA explicit approval and bounded image asset IDs without URIs, parser and approval regressions. No new transport or permissions; existing PROJECT_EDIT parser accepts operation under existing guards. CI pending; no local execution, actual intro render or physical test. Next render fixture and review/transport. No main/install/phase2.

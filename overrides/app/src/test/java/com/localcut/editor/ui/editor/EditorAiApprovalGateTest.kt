@@ -18,9 +18,10 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class EditorAiApprovalGateTest {
-    private fun fixture(): ProjectSession {
+    private fun fixture(still: Boolean = false): ProjectSession {
         val asset = Asset("asset", AssetType.VIDEO, "content://private/video", 4_000_000L, 100L, "video.mp4", "video/mp4", "fp")
-        val p = Project.create("Editor IA", 1080, 1920, 30).copy(id = "p", assets = listOf(asset),
+        val original = if (still) asset.copy(type = AssetType.IMAGE) else asset
+        val p = Project.create("Editor IA", 1080, 1920, 30).copy(id = "p", assets = if (still) listOf(original, original.copy(id = "new")) else listOf(asset),
             tracks = listOf(Track("v", TrackType.VISUAL, 0, clips = listOf(Clip("clip", asset.id, 0L, 2_000_000L, 0L, 2_000_000L))),
                 Track("a", TrackType.AUDIO, 1)))
         return ProjectSession(p,
@@ -36,6 +37,20 @@ class EditorAiApprovalGateTest {
     }
     private fun plan(revision: Long = 5L, operation: String = """{"op":"patchClip","clipId":"clip","opacity":0.8}""") =
         """{"projectId":"p","expectedRevision":$revision,"operations":[$operation]}"""
+
+    @Test fun stillReplacementRequiresApprovalAndPreservesOriginal() {
+        val s = fixture(still = true); val original = s.state.project; val gate = EditorAiApprovalGate()
+        val draft = plan(operation = """{"op":"replaceStillImage","clipId":"clip","expectedAssetId":"asset","replacementAssetId":"new"}""")
+        val approval = gate.prepare(draft, s.state).getOrThrow()
+        assertEquals(original, s.state.project)
+        assertTrue(approval.summary.contains("new"))
+        gate.apply(approval, draft, s).getOrThrow()
+        assertEquals("new", s.state.project.findClip("clip")!!.assetId)
+        assertEquals(original.assets, s.state.project.assets)
+        s.dispatch(EditorAction.Undo)
+        assertEquals(original, s.state.project)
+        assertTrue(gate.prepare(draft, fixture().state).isFailure)
+    }
 
     @Test fun validateIsReadOnlyApplyOnceAndUndoRestoresExactly() {
         val s = fixture(); val original = s.state.project; val gate = EditorAiApprovalGate(); val draft = plan()

@@ -53,6 +53,10 @@ internal object ProjectEditPayloadParser {
             }.toSet()
             ProjectEditOperation.DeleteByKind(kinds)
         }
+        "replaceStillImage" -> {
+            item.requireOnly("op", "clipId", "expectedAssetId", "replacementAssetId")
+            ProjectEditOperation.ReplaceStillImage(item.requiredNonBlankString("clipId"), item.requiredNonBlankString("expectedAssetId"), item.requiredNonBlankString("replacementAssetId"))
+        }
         "deleteClip" -> {
             item.requireOnly("op", "clipId")
             ProjectEditOperation.DeleteClip(item.requiredNonBlankString("clipId"))

@@ -8,6 +8,15 @@ import org.junit.Test
 
 class ProjectEditPayloadParserTest {
     @Test
+    fun parsesStillReplacementStrictly() {
+        val op = """{"op":"replaceStillImage","clipId":"c","expectedAssetId":"old","replacementAssetId":"new"}"""
+        assertEquals(ProjectEditOperation.ReplaceStillImage("c", "old", "new"), ProjectEditPayloadParser.parse("{\"operations\":[$op]}").single())
+        for (invalid in listOf(op.replace("\"new\"", "\"\""), op.replace("\"new\"", "null"), op.replace("\"replacementAssetId\"", "\"path\""))) {
+            assertTrue(runCatching { ProjectEditPayloadParser.parse("{\"operations\":[$invalid]}") }.isFailure)
+        }
+    }
+
+    @Test
     fun parsesTypedBatchOperations() {
         val operations = ProjectEditPayloadParser.parse(
             """{"operations":[{"op":"deleteByKind","kinds":["audio","text"]},{"op":"patchClip","clipId":"clip-1","startUs":2000000,"volume":0.5,"scale":1.25},{"op":"addText","id":"t2","text":"Olá","startUs":0,"durationUs":1000000,"fontSizePx":70},{"op":"patchText","overlayId":"t2","text":"Olá mundo","opacity":0.8}]}""",

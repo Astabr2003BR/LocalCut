@@ -96,3 +96,7 @@ MainActivity exposes Editor IA beside Carrossel TikTok. Existing timeline remain
 
 ### Editor IA export review panel
 Editor IA subscribes to latest Bridge export snapshot via StateFlow (no polling, no persisted media). Source project/revision captured at reservation; foreign project metadata hidden. Latest queued/running/completed/failed/cancelled state and strict parsed technical metadata, dimensions/duration/audio/decoded samples/dark warnings. Older revision visibly stale; no copy-review action for stale, incomplete, unavailable or mismatched provenance. Explicit clipboard action requests GPT to inspect existing ephemeral samples by job/source revision/hash; no automatic GPT action, images not locally rendered in this panel, no visual approval. Manual SAF exports not included. Terminal job callbacks immutable; unknown explicit status no longer falls back to unrelated active job; cancel rejects terminal/foreign/nonactive jobs and waits for renderer callback. Tests cover status/cancel and UI report policy; physical UI/MCP pending.
+
+
+### Still-image replacement
+Typed `replaceStillImage` takes `clipId`, `expectedAssetId`, `replacementAssetId` (existing image assets only). Local Editor IA shows explicit approval and bounded image IDs; existing batch history, revision and lock checks apply. No flattened-video separation, no new media import or visual render certification. CI pending.

@@ -22,6 +22,7 @@ enum class ProjectItemKind { VIDEO, IMAGE, AUDIO, TEXT, DESIGN, DRAWING }
 
 sealed interface ProjectEditOperation {
     data class DeleteByKind(val kinds: Set<ProjectItemKind>) : ProjectEditOperation
+    data class ReplaceStillImage(val clipId: String, val expectedAssetId: String, val replacementAssetId: String) : ProjectEditOperation
     data class DeleteClip(val clipId: String) : ProjectEditOperation
     data class AddEffect(val clipId: String, val effectId: String, val typeId: String, val numbers: Map<String, Double> = emptyMap()) : ProjectEditOperation
     data class PatchEffect(val clipId: String, val effectId: String, val enabled: Boolean? = null, val numbers: Map<String, Double> = emptyMap()) : ProjectEditOperation
@@ -116,6 +117,7 @@ data class ProjectEditBatchCommand(
 
     private fun applyOperation(project: Project, operation: ProjectEditOperation): Project = when (operation) {
         is ProjectEditOperation.DeleteByKind -> deleteByKind(project, operation.kinds)
+        is ProjectEditOperation.ReplaceStillImage -> ReplaceStillImageAssetCommand(operation.clipId, operation.expectedAssetId, operation.replacementAssetId).apply(project).project
         is ProjectEditOperation.DeleteClip -> deleteClip(project, operation.clipId)
         is ProjectEditOperation.AddEffect -> editEffects(project, operation.clipId) { clip ->
             require(clip.effects.none { it.id == operation.effectId }) { "effect id already exists" }

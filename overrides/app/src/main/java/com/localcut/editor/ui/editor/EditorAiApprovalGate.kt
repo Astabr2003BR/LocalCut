@@ -47,6 +47,7 @@ internal class EditorAiApprovalGate {
         require(operations.size in 1..8) { "Use de 1 a 8 operações." }
         val labels = operations.map { operation ->
             when (operation) {
+                is ProjectEditOperation.ReplaceStillImage -> "Substituir imagem: ${operation.clipId} / ${operation.expectedAssetId} → ${operation.replacementAssetId}"
                 is ProjectEditOperation.PatchClip -> {
                     require(operation.startUs == null && operation.volume == null && operation.transform == null) { "Correção visual não altera tempo ou áudio." }
                     val clip = requireNotNull(state.project.findClip(operation.clipId)) { "Clipe não encontrado." }
@@ -98,17 +99,19 @@ internal class EditorAiApprovalGate {
             val p = state.project
             append("LocalCut Editor IA — proponha uma correção visual somente para este projeto.\n")
             append("Responda apenas JSON com projectId, expectedRevision e operations (1–8). ")
-            append("Operações permitidas: patchClip (clipId, x, y, scale, rotationDeg, opacity), patchText (overlayId, text, x, y, scale, rotationDeg, opacity, fontSizePx, fillArgb, zIndex), addEffect, patchEffect, setEffectKeyframe. Preserve áudio, duração, mídias, textos e camadas não solicitados. Não invente IDs.\n")
+            append("Operações permitidas: patchClip (clipId, x, y, scale, rotationDeg, opacity), patchText (overlayId, text, x, y, scale, rotationDeg, opacity, fontSizePx, fillArgb, zIndex), addEffect, patchEffect, setEffectKeyframe, replaceStillImage (clipId, expectedAssetId, replacementAssetId; somente imagens existentes). Preserve áudio, duração, mídias, textos e camadas não solicitados. Não invente IDs.\n")
             append("Contexto: {\"projectId\":"); append(jsonString(p.id))
             append(",\"expectedRevision\":"); append(state.revision)
             append(",\"width\":"); append(p.width); append(",\"height\":"); append(p.height)
             append(",\"durationUs\":"); append(TimelineMath.durationUs(p))
             val visual = p.tracks.flatMap { track -> track.clips.map { track to it } }
                 .filter { (_, clip) -> p.assets.any { it.id == clip.assetId && it.type != AssetType.AUDIO } }
+            val images = p.assets.filter { it.type == AssetType.IMAGE }
+            append(",\"imageAssetIds\":["); images.take(32).forEachIndexed { i, asset -> if (i > 0) append(','); append(jsonString(asset.id)) }; append(']')
             append(",\"clips\":[")
             visual.take(32).forEachIndexed { i, (track, clip) ->
                 if (i > 0) append(',')
-                append("{\"id\":"); append(jsonString(clip.id)); append(",\"trackLocked\":"); append(track.locked)
+                append("{\"id\":"); append(jsonString(clip.id)); append(",\"assetId\":"); append(jsonString(clip.assetId)); append(",\"trackLocked\":"); append(track.locked)
                 append(",\"startUs\":"); append(clip.startUs); append(",\"durationUs\":"); append(clip.durationUs)
                 append(",\"x\":"); append(clip.transform.x); append(",\"y\":"); append(clip.transform.y)
                 append(",\"scale\":"); append(clip.transform.scale); append(",\"rotationDeg\":"); append(clip.transform.rotationDeg)
@@ -120,7 +123,7 @@ internal class EditorAiApprovalGate {
                 append("{\"id\":"); append(jsonString(text.id)); append(",\"text\":"); append(jsonString(text.text.take(160)))
                 append(",\"startUs\":"); append(text.startUs); append(",\"durationUs\":"); append(text.durationUs); append('}')
             }
-            append("],\"inventoryTruncated\":"); append(visual.size > 32 || p.textOverlays.size > 32); append('}')
+            append("],\"inventoryTruncated\":"); append(visual.size > 32 || p.textOverlays.size > 32 || images.size > 32); append('}')
         }
     }
 }

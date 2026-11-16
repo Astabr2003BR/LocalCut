@@ -45,6 +45,7 @@ internal object ProjectStartupRecovery {
             compareByDescending<Path> { candidateModifiedAt(it) }
                 .thenByDescending { it.fileName.toString() }
         )
+        var emptyRecovery: Path? = null
         for (dir in ranked) {
             val store = AtomicProjectStore(dir)
             val recovered = store.load()
@@ -54,6 +55,18 @@ internal object ProjectStartupRecovery {
                     "Projeto principal indisponível. Recuperação salva reaberta; arquivos anteriores preservados.",
                 )
             }
+            val recoveryError = recovered.exceptionOrNull() as? ProjectStoreException
+            if (recoveryError?.code == ProjectStoreErrorCode.NOT_FOUND && emptyRecovery == null) {
+                // Reuse the newest empty workspace left by a process interrupted before its first save.
+                emptyRecovery = dir
+            }
+        }
+
+        emptyRecovery?.let { dir ->
+            return ProjectStartupSelection(
+                AtomicProjectStore(dir), dir, null,
+                "Projeto anterior preservado. Área de recuperação vazia reutilizada; verifique seus projetos anteriores.",
+            )
         }
 
         val error = primary.exceptionOrNull() as? ProjectStoreException

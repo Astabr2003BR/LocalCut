@@ -206,6 +206,32 @@ fun main(){
             assertEquals("{broken recovery",Files.readString(broken.resolve("project.json")))
         } finally {root.toFile().deleteRecursively()}
     }
+    test("startup reuses an empty recovery directory after interruption before first save") {
+        val root = Files.createTempDirectory("localcut-startup-")
+        try {
+            val primaryDir = root.resolve("default")
+            AtomicProjectStore(primaryDir).save(project("before-corruption")).getOrThrow()
+            val corruptPrimary = "{truncated before recovery save"
+            Files.writeString(primaryDir.resolve("project.json"), corruptPrimary)
+
+            val first = ProjectStartupRecovery.select(root)
+            val firstDirectory = first.directory
+            assertTrue(first.warning != null)
+            assertEquals(null, first.project)
+            assertTrue(firstDirectory.fileName.toString().startsWith("recovery-"))
+
+            // Simulate a second process start before the first recovery snapshot was saved.
+            val second = ProjectStartupRecovery.select(root)
+            assertEquals(firstDirectory, second.directory)
+            assertEquals(null, second.project)
+            assertTrue(second.warning != null)
+            val recoveryCount = Files.list(root).use { stream ->
+                stream.filter { Files.isDirectory(it) && it.fileName.toString().startsWith("recovery-") }.count()
+            }
+            assertEquals(1L, recoveryCount)
+            assertEquals(corruptPrimary, Files.readString(primaryDir.resolve("project.json")))
+        } finally { root.toFile().deleteRecursively() }
+    }
     println("RESULT passed=$passed failed=$failed")
     if(failed!=0)error("$failed tests failed")
 }

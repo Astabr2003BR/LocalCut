@@ -39,6 +39,7 @@ class AutomaticVideoActivity : ComponentActivity() {
         }
     }
     private var sharedPackage by mutableStateOf<Uri?>(null)
+    private var sharedRelay by mutableStateOf<PortableStudioRelay?>(null)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var images by mutableStateOf(emptyList<String>())
     private var audio by mutableStateOf<String?>(null)
@@ -75,7 +76,20 @@ class AutomaticVideoActivity : ComponentActivity() {
         packageDirectory = savedInstanceState?.getString("packageDirectory")
         packageAudioSource = savedInstanceState?.getString("packageAudioSource")
         packageAudioMime = savedInstanceState?.getString("packageAudioMime")
-        if (savedInstanceState == null) sharedPackage = intent.data?.takeIf { it.scheme == "content" && !it.authority.isNullOrBlank() }
+        if (savedInstanceState == null) {
+            sharedPackage = intent.data?.takeIf { it.scheme == "content" && !it.authority.isNullOrBlank() }
+            if (intent.hasExtra(PortableStudioRelay.EXTRA_URL)) {
+                sharedRelay = runCatching {
+                    PortableStudioRelay(requireNotNull(intent.getStringExtra(PortableStudioRelay.EXTRA_URL)),
+                        requireNotNull(intent.getStringExtra(PortableStudioRelay.EXTRA_HASH)),
+                        intent.getLongExtra(PortableStudioRelay.EXTRA_BYTES, -1L))
+                }.getOrElse { message = "Link de pacote inválido."; null }
+            }
+        }
+        // Do not retain the one-time URL in Activity state or replay it after recreation.
+        intent.removeExtra(PortableStudioRelay.EXTRA_URL)
+        intent.removeExtra(PortableStudioRelay.EXTRA_HASH)
+        intent.removeExtra(PortableStudioRelay.EXTRA_BYTES)
         val packagePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null && !busy && !choosingOutput && uri.scheme == "content") importPackage(uri)
         }
@@ -111,6 +125,15 @@ class AutomaticVideoActivity : ComponentActivity() {
         }
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
+                sharedRelay?.let { relay ->
+                    AlertDialog(
+                        onDismissRequest = { sharedRelay = null },
+                        title = { Text("Abrir pacote do GPT") },
+                        text = { Text("Baixar e validar o pacote temporário? Nenhum projeto existente será alterado. O link é de uso único e pode expirar.") },
+                        confirmButton = { TextButton(onClick = { sharedRelay = null; importRelayPackage(relay) }) { Text("Baixar e validar") } },
+                        dismissButton = { TextButton(onClick = { sharedRelay = null }) { Text("Cancelar") } },
+                    )
+                }
                 sharedPackage?.let { uri ->
                     AlertDialog(
                         onDismissRequest = { sharedPackage = null },
@@ -206,7 +229,18 @@ class AutomaticVideoActivity : ComponentActivity() {
         return File(File(cacheDir, "portable-studio"), name)
     }
 
-    private fun importPackage(uri: Uri) {
+    private fun importPackage(uri: Uri) = importPackageSource { directory, check ->
+        PortableStudioStager.stage(directory,
+            openSource = { contentResolver.openInputStream(uri) ?: error("Arquivo indisponível") },
+            checkCancelled = check)
+    }
+
+    private fun importRelayPackage(relay: PortableStudioRelay) = importPackageSource { directory, check ->
+        PortableStudioRelayReceiver.receive(relay, directory, check)
+    }
+
+    private fun importPackageSource(stage: (File, () -> Unit) -> PortableStudioStager.Staged) {
+        if (busy || choosingOutput) return
         val name = UUID.randomUUID().toString()
         val directory = packagePath(name)
         busy = true
@@ -217,9 +251,7 @@ class AutomaticVideoActivity : ComponentActivity() {
             try {
                 val staged = withContext(Dispatchers.IO) {
                     val context = currentCoroutineContext()
-                    PortableStudioStager.stage(directory,
-                        openSource = { contentResolver.openInputStream(uri) ?: error("Arquivo indisponível") },
-                        checkCancelled = { context.ensureActive() })
+                    stage(directory) { context.ensureActive() }
                 }
                 val authority = "$packageName.remote-media"
                 val newImages = staged.images.map { FileProvider.getUriForFile(this@AutomaticVideoActivity, authority, it).toString() }

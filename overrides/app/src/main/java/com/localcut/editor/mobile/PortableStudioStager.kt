@@ -17,6 +17,7 @@ internal object PortableStudioStager {
         openSource: () -> InputStream,
         checkCancelled: () -> Unit = {},
         availableBytes: (File) -> Long = { it.usableSpace },
+        expectedArchive: PortableStudioRelay? = null,
     ): Staged {
         require(!directory.exists() && directory.mkdirs()) { "PACKAGE_STAGE_DIRECTORY" }
         var complete = false
@@ -26,12 +27,18 @@ internal object PortableStudioStager {
             }
             val archive = File(directory, "archive.localcut")
             space(0)
-            openSource().use { input ->
+            val archiveDigest = expectedArchive?.let { MessageDigest.getInstance("SHA-256") }
+            val archiveBytes = openSource().use { input ->
                 archive.outputStream().use { output ->
-                    copy(input, PortableStudioPackage.MAX_ARCHIVE_BYTES, checkCancelled, ::space) { buffer, count ->
+                    copy(input, expectedArchive?.bytes ?: PortableStudioPackage.MAX_ARCHIVE_BYTES, checkCancelled, ::space) { buffer, count ->
+                        archiveDigest?.update(buffer, 0, count)
                         output.write(buffer, 0, count)
                     }
                 }
+            }
+            if (expectedArchive != null) {
+                require(archiveBytes == expectedArchive.bytes &&
+                    archiveDigest!!.digest().joinToString("") { "%02x".format(it.toInt() and 255) } == expectedArchive.sha256) { "PACKAGE_RELAY_INTEGRITY" }
             }
             val verified = PortableStudioPackage.verify(archive, checkCancelled)
             val assets = verified.images + listOfNotNull(verified.audio)

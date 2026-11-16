@@ -59,6 +59,7 @@ data class MobileHandoffCommand(
     val deleteAllVisualClips: Boolean = false,
     val resolveSelectedClip: Boolean = false,
     val resolveVisualClipAtPositionUs: Long? = null,
+    val studioPackageRelay: PortableStudioRelay? = null,
 )
 
 object MobileHandoffParser {
@@ -100,6 +101,15 @@ object MobileHandoffParser {
                     description = "Autorizar o pareamento do LocalCut com o ChatGPT usando o código $code",
                     mobilePairingCode = code,
                 )
+            }
+            "open_package" -> {
+                require(normalizedScheme == "https" && uri.host == HTTPS_HOST && uri.port == -1 &&
+                    uri.userInfo == null && uri.rawFragment == null) { "PACKAGE_HANDOFF_ORIGIN_INVALID" }
+                require(params.keys.all { it in setOf("action", "url", "sha256", "bytes", "returnTo") }) { "PACKAGE_HANDOFF_FIELDS_INVALID" }
+                val relay = PortableStudioRelay(requiredText(params, "url", 4096),
+                    requiredText(params, "sha256", 64), requiredLong(params, "bytes", 1L))
+                MobileHandoffCommand(null, "{}", "Abrir pacote temporário no Editor IA? O projeto atual não será alterado.",
+                    studioPackageRelay = relay)
             }
             "import_url" -> {
                 val rawUrl = requiredText(params, "url", 4_096)
@@ -320,12 +330,16 @@ object MobileHandoffParser {
 
     private fun parseQuery(rawQuery: String?): Map<String, String> {
         if (rawQuery.isNullOrBlank()) return emptyMap()
-        return rawQuery.split('&').associate { part ->
+        val params = linkedMapOf<String, String>()
+        for (part in rawQuery.split('&')) {
             val index = part.indexOf('=')
             val rawKey = if (index >= 0) part.substring(0, index) else part
             val rawValue = if (index >= 0) part.substring(index + 1) else ""
-            decode(rawKey) to decode(rawValue)
+            val key = decode(rawKey)
+            require(key !in params) { "HANDOFF_DUPLICATE_FIELD" }
+            params[key] = decode(rawValue)
         }
+        return params
     }
 
     private fun decode(value: String): String = URLDecoder.decode(value, StandardCharsets.UTF_8.name())

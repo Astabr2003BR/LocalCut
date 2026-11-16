@@ -436,6 +436,27 @@ class PortableStudioPackageSmokeTest {
         }
     }
 
+    @Test fun relayArchiveIntegrityIsCheckedBeforeExtraction() {
+        val cache = InstrumentationRegistry.getInstrumentation().targetContext.cacheDir
+        withArchive(manifest(), listOf("media/frame" to png)) { archive ->
+            val bytes = archive.readBytes()
+            val relay = PortableStudioRelay("https://localcut-bridge-v1.onrender.com/v1/mobile-media/" + "A".repeat(43),
+                digest(bytes), bytes.size.toLong())
+            val dir = File(cache, "relay-test-${UUID.randomUUID()}")
+            try {
+                for (invalid in listOf(relay.copy(sha256 = "0".repeat(64)), relay.copy(bytes = relay.bytes + 1),
+                    relay.copy(bytes = relay.bytes - 1))) {
+                    assertTrue(runCatching { PortableStudioStager.stage(dir, { bytes.inputStream() }, expectedArchive = invalid) }.isFailure)
+                    assertTrue(!dir.exists())
+                }
+                val staged = PortableStudioStager.stage(dir, { bytes.inputStream() }, expectedArchive = relay)
+                assertEquals(AutomaticVideoRecipe.EXAMPLE, staged.recipe)
+                assertTrue(staged.images.single().readBytes().contentEquals(png))
+                assertTrue(!File(dir, "archive.localcut").exists())
+            } finally { dir.deleteRecursively() }
+        }
+    }
+
     @Test fun rejectsTruncatedZipAndHonorsCancellation() {
         withArchive(manifest(), listOf("media/frame" to png)) { file ->
             assertTrue(runCatching { PortableStudioPackage.verify(file) { error("cancelled") } }.isFailure)

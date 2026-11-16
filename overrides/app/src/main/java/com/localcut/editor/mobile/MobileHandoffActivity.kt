@@ -154,6 +154,19 @@ class MobileHandoffActivity : Activity() {
     }
 
     private fun execute(command: MobileHandoffCommand, recoveryAttempted: Boolean = false) {
+        command.studioPackageRelay?.let { relay ->
+            if (android.os.Build.VERSION.SDK_INT < 29) {
+                Toast.makeText(this, "Editor IA requer Android 10 ou superior.", Toast.LENGTH_LONG).show()
+                finish()
+                return
+            }
+            startActivity(Intent(this, AutomaticVideoActivity::class.java)
+                .putExtra(PortableStudioRelay.EXTRA_URL, relay.url)
+                .putExtra(PortableStudioRelay.EXTRA_HASH, relay.sha256)
+                .putExtra(PortableStudioRelay.EXTRA_BYTES, relay.bytes))
+            finish()
+            return
+        }
         val runtime = LocalCutProcessRuntime.get(this)
         val pairingCode = command.mobilePairingCode
         if (pairingCode != null) {

@@ -8,6 +8,30 @@ import org.junit.Test
 
 class MobileHandoffParserTest {
     @Test
+    fun packageHandoffAcceptsOnlyExactRelayAndIntegrityDescriptor() {
+        val relay = "https://localcut-bridge-v1.onrender.com/v1/mobile-media/" + "A".repeat(43)
+        val hash = "b".repeat(64)
+        fun link(url: String = relay, sha: String = hash, bytes: Long = 123L) =
+            "https://localcut-bridge-v1.onrender.com/open?action=open_package&url=" +
+                java.net.URLEncoder.encode(url, "UTF-8") + "&sha256=$sha&bytes=$bytes"
+        val command = MobileHandoffParser.parse(link()).getOrThrow()
+        assertEquals(PortableStudioRelay(relay, hash, 123L), command.studioPackageRelay)
+        assertNull(command.capability)
+        assertNull(command.remoteMediaUrl)
+        for (url in listOf(relay.replace("onrender.com", "onrender.com.evil.example"), relay + "?x=1",
+            relay + "#fragment", relay.replace("https:", "http:"), relay.replace("onrender.com/", "onrender.com:443/"),
+            relay.replace("/v1/mobile-media/", "/other/"), relay + "/", relay.dropLast(1))) {
+            assertTrue(url, MobileHandoffParser.parse(link(url)).isFailure)
+        }
+        assertTrue(MobileHandoffParser.parse(link(sha = "bad")).isFailure)
+        assertTrue(MobileHandoffParser.parse(link(bytes = 0)).isFailure)
+        assertTrue(MobileHandoffParser.parse(link(bytes = PortableStudioRelay.MAX_BYTES + 1)).isFailure)
+        assertTrue(MobileHandoffParser.parse(link() + "&bytes=42").isFailure)
+        assertTrue(MobileHandoffParser.parse(link() + "&unknown=1").isFailure)
+        assertTrue(MobileHandoffParser.parse(link().replace("https://localcut-bridge-v1.onrender.com/open", "localcut://command")).isFailure)
+    }
+
+    @Test
     fun parsesBlinkHandoffWithPortraitDefaults() {
         val command = MobileHandoffParser.parse(
             "https://localcut-bridge-v1.onrender.com/open?action=blink&returnTo=editor",

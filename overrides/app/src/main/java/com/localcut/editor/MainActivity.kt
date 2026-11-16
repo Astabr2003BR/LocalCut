@@ -395,6 +395,14 @@ class MainActivity : ComponentActivity() {
         val action = sourceIntent.action
         if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE) return
 
+        if (sourceIntent.type == AutomaticVideoActivity.PACKAGE_MIME) {
+            val uri = AutomaticVideoActivity.sharedPackageUri(action, sharedUriStrings(sourceIntent))
+            markSharedIntentConsumed(sourceIntent)
+            if (uri == null) showError("Selecione um único pacote .localcut válido.")
+            else startActivity(Intent(this, AutomaticVideoActivity::class.java).setData(uri))
+            return
+        }
+
         val parsed = SharedMediaIntentParser.parse(
             action = action,
             mimeType = sourceIntent.type,

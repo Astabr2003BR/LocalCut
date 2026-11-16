@@ -61,6 +61,16 @@ class PortableStudioPackageSmokeTest {
         } finally { file.delete() }
     }
 
+    @Test fun sharedPackageAcceptsOnlySingleContentUri() {
+        val send = android.content.Intent.ACTION_SEND
+        val uri = "content://example.provider/package"
+        assertEquals(uri, AutomaticVideoActivity.sharedPackageUri(send, listOf(uri)).toString())
+        assertEquals(null, AutomaticVideoActivity.sharedPackageUri(send, listOf("file:///tmp/package")))
+        assertEquals(null, AutomaticVideoActivity.sharedPackageUri(send, listOf(uri, uri)))
+        assertEquals(null, AutomaticVideoActivity.sharedPackageUri(send, listOf(null)))
+        assertEquals(null, AutomaticVideoActivity.sharedPackageUri(android.content.Intent.ACTION_SEND_MULTIPLE, listOf(uri)))
+    }
+
     @Test fun generatedPngOutputEnforcesBudgetAndCancellation() {
         val bytes = ByteArrayOutputStream()
         var space = 20L

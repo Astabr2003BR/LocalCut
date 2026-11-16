@@ -30,6 +30,15 @@ import kotlinx.coroutines.flow.collect
 /** Offline, opt-in creation of a separate image/audio composition. No editor project is mutated. */
 @UnstableApi
 class AutomaticVideoActivity : ComponentActivity() {
+    companion object {
+        const val PACKAGE_MIME = "application/vnd.localcut.package"
+        internal fun sharedPackageUri(action: String?, sources: List<String?>): Uri? {
+            if (action != Intent.ACTION_SEND || sources.size != 1) return null
+            val uri = sources.single()?.let(Uri::parse) ?: return null
+            return uri.takeIf { it.scheme == "content" && !it.authority.isNullOrBlank() }
+        }
+    }
+    private var sharedPackage by mutableStateOf<Uri?>(null)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var images by mutableStateOf(emptyList<String>())
     private var audio by mutableStateOf<String?>(null)
@@ -56,6 +65,7 @@ class AutomaticVideoActivity : ComponentActivity() {
         packageDirectory = savedInstanceState?.getString("packageDirectory")
         packageAudioSource = savedInstanceState?.getString("packageAudioSource")
         packageAudioMime = savedInstanceState?.getString("packageAudioMime")
+        if (savedInstanceState == null) sharedPackage = intent.data?.takeIf { it.scheme == "content" && !it.authority.isNullOrBlank() }
         val packagePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null && !busy && !choosingOutput && uri.scheme == "content") importPackage(uri)
         }
@@ -91,6 +101,15 @@ class AutomaticVideoActivity : ComponentActivity() {
         }
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
+                sharedPackage?.let { uri ->
+                    AlertDialog(
+                        onDismissRequest = { sharedPackage = null },
+                        title = { Text("Importar pacote compartilhado") },
+                        text = { Text("Validar e abrir este pacote local? Nenhum projeto existente será alterado.") },
+                        confirmButton = { TextButton(onClick = { sharedPackage = null; importPackage(uri) }) { Text("Validar e abrir") } },
+                        dismissButton = { TextButton(onClick = { sharedPackage = null }) { Text("Cancelar") } },
+                    )
+                }
                 if (showPackageReplace) AlertDialog(
                     onDismissRequest = { showPackageReplace = false },
                     title = { Text("Abrir pacote .localcut") },

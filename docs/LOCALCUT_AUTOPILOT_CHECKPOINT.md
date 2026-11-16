@@ -144,3 +144,7 @@ Parent 0d55aed8ae2a3828bc00dd6cc3ff1a2cbc2aeff8: four PR workflows completed suc
 
 ## Studio generated PNG output bounds — 2026-11-16
 Parent 09d703995186779125b9781f295787402d307ce7: four PR workflows completed success; PR open/draft, push permission confirmed. Skill listing empty; used versioned docs and actual builder. Generated PNG writes now enforce per-file byte limit, free-space reserve and cancellation before each write; reject empty output, preserve existing preparation rollback. Added instrumentation for exact limit, insufficient space, cancellation and unchanged bytes after rejection; existing real MP4 smoke exercises production path. CI pending; no local Android execution. Storage checks are not atomic reservations; durable recovery and scoped relay remain pending. No main/install/phase2.
+
+
+## Studio package Share entry — 2026-11-16
+Parent 3cb1ed39b9308145d481a67d5d2f8212f18836ab: four PR workflows PASS (2078,1909,1732,878); PR open/draft. Added explicit custom MIME ACTION_SEND routing through existing MainActivity to private Editor IA Activity, single content URI only, explicit confirmation before existing bounded package staging. Existing media Share path unchanged. Instrumentation covers URI/action rejection; CI pending, no local or physical test. Generic ZIP/octet-stream still uses SAF; provider read grant and actual Android Sharesheet flow require device validation. No new exported component, remote transport, main merge, installation or phase 2. Next scoped relay and durable recovery.

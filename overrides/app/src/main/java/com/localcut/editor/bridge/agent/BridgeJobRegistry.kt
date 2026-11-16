@@ -40,6 +40,13 @@ class BridgeJobRegistry(private val monotonicMs: () -> Long = { System.nanoTime(
     private val mutableReviewProposal = MutableStateFlow<BridgeReviewProposal?>(null)
     internal val reviewProposal: StateFlow<BridgeReviewProposal?> = mutableReviewProposal.asStateFlow()
     private var proposalConsumed = false
+    internal var reviewHistory: BridgeReviewHistory? = null
+        private set
+    @Synchronized
+    internal fun attachReviewHistory(history: BridgeReviewHistory) {
+        check(reviewHistory == null) { "review history already attached" }
+        reviewHistory = history
+    }
 
     @Synchronized
     fun reserveExport(messageId: String, sourceProjectId: String? = null, sourceRevision: Long? = null): BridgeJobReservation {
@@ -52,6 +59,7 @@ class BridgeJobRegistry(private val monotonicMs: () -> Long = { System.nanoTime(
             }
         }
         latestEvidence = null // retain only the latest export's bounded samples
+        reviewHistory?.supersedePending()
         mutableReviewProposal.value = null
         proposalConsumed = false
         val job = BridgeJobSnapshot(
@@ -120,6 +128,7 @@ class BridgeJobRegistry(private val monotonicMs: () -> Long = { System.nanoTime(
         val age = monotonicMs() - evidenceAtMs
         if (age < 0L || age > 600_000L) {
             latestEvidence = null
+            reviewHistory?.supersedePending()
             mutableReviewProposal.value = null
             return false
         }
@@ -135,7 +144,10 @@ class BridgeJobRegistry(private val monotonicMs: () -> Long = { System.nanoTime(
             planJson.isBlank() || planJson.toByteArray(Charsets.UTF_8).size > 8192) return null
         val existing = mutableReviewProposal.value
         if (existing != null) return existing.takeIf { it.source == source && it.planJson == planJson }
-        return BridgeReviewProposal(UUID.randomUUID().toString(), source, planJson).also { mutableReviewProposal.value = it }
+        return BridgeReviewProposal(UUID.randomUUID().toString(), source, planJson).also {
+            reviewHistory?.received(it)
+            mutableReviewProposal.value = it
+        }
     }
 
     @Synchronized
@@ -145,6 +157,7 @@ class BridgeJobRegistry(private val monotonicMs: () -> Long = { System.nanoTime(
             !hasReviewEvidence(proposal.source)) return null
         mutableReviewProposal.value = null
         proposalConsumed = true
+        reviewHistory?.transition(proposal.id, ReviewHistoryStatus.LOADED)
         return proposal
     }
 
@@ -153,6 +166,7 @@ class BridgeJobRegistry(private val monotonicMs: () -> Long = { System.nanoTime(
         if (mutableReviewProposal.value?.id != id) return false
         mutableReviewProposal.value = null
         proposalConsumed = true
+        reviewHistory?.transition(id, ReviewHistoryStatus.DISCARDED)
         return true
     }
 
@@ -160,7 +174,12 @@ class BridgeJobRegistry(private val monotonicMs: () -> Long = { System.nanoTime(
     internal fun reviewFrames(jobId: String, projectId: String, revision: Long): String? {
         val evidence = latestEvidence ?: return null
         val age = monotonicMs() - evidenceAtMs
-        if (age < 0L || age > 600_000L) { latestEvidence = null; mutableReviewProposal.value = null; return null }
+        if (age < 0L || age > 600_000L) {
+            latestEvidence = null
+            reviewHistory?.supersedePending()
+            mutableReviewProposal.value = null
+            return null
+        }
         if (evidence.jobId != jobId || evidence.projectId != projectId || evidence.revision != revision ||
             jobs[jobId]?.state != BridgeJobState.SUCCEEDED) return null
         return evidence.toJson()

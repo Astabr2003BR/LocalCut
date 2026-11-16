@@ -62,7 +62,10 @@ class LocalCutProcessRuntime private constructor(context: Context) {
     val session: ProjectSession
     val editorViewModel: EditorViewModel
     val mediaIngestCoordinator: MediaIngestCoordinator
-    val bridgeJobs = BridgeJobRegistry()
+    val bridgeJobs = BridgeJobRegistry().apply {
+        attachReviewHistory(com.localcut.editor.bridge.agent.BridgeReviewHistory(
+            com.localcut.editor.bridge.agent.AndroidReviewHistoryStorage(appContext)))
+    }
     val bridgeCommandExecutor: BridgeCommandExecutor
     val bridgeTermuxAgentPort: BridgeTermuxAgentTaskPort
     val bridgeMessageProcessor: BridgeMessageProcessor

@@ -100,3 +100,7 @@ Editor IA subscribes to latest Bridge export snapshot via StateFlow (no polling,
 
 ### Still-image replacement
 Typed `replaceStillImage` takes `clipId`, `expectedAssetId`, `replacementAssetId` (existing image assets only). Local Editor IA shows explicit approval and bounded image IDs; existing batch history, revision and lock checks apply. No flattened-video separation, no new media import or visual render certification. CI pending.
+
+
+### Rendered still-image replacement fixture
+MultitrackExportSmokeTest.editorAiReplacesBackgroundInRenderedIntroWithoutChangingOtherLayers runs actual EditorAiApprovalGate prepare/apply against a synthetic layered 320x180 intro: red old background, green replacement, animated blue overlay, white title, PCM tone. Render before/after with existing Media3 H264/AAC compiler; exact expected model equality except asset reference, sampled background color, title bright-mask overlap, early/late overlay alpha, audio track MIME/packet count/duration, original MP4/source SHA256 and exact Undo. Synthetic fixture, not the user's actual opening; audio track evidence does not prove decoded waveform equality or full synchronization. CI pending; physical device and original media remain pending.

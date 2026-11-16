@@ -124,3 +124,7 @@ Parent 9ce5732e0797e2558592b19ee56aed47f3367d3c: four CI PASS (2071,1902,1725,87
 
 ## Typed still-image replacement approval — 2026-11-15
 Parent 519f8c6195d74292fc80b9778d3af831cd2c0e12: four CI PASS (2072,1903,1726,872), PR open/draft, push confirmed. Skill listing empty; used versioned docs. Added strict replaceStillImage typed operation reusing domain primitive, local Editor IA explicit approval and bounded image asset IDs without URIs, parser and approval regressions. No new transport or permissions; existing PROJECT_EDIT parser accepts operation under existing guards. CI pending; no local execution, actual intro render or physical test. Next render fixture and review/transport. No main/install/phase2.
+
+
+## Hybrid rendered intro replacement regression — 2026-11-15
+Parent 0bfaf61f0875440492396e26710c7350905e786a: four CI PASS (2073,1904,1727,873), PR draft/open. Added instrumentation to existing multitrack smoke class: actual EditorAiApprovalGate prepare/apply and exact model diff for still-image swap, render before/after using production compiler/Media3, compare sampled background and animated overlay, title pixel overlap, audio packets/duration, source/original render hashes and Undo. Synthetic fixture only; no real intro file or full audio sync/visual approval. CI pending; no local run, no deployment/main/install/phase2. Next verify instrumentation, then actual intro access and remaining scoped transport/QA.

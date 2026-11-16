@@ -36,6 +36,8 @@ import com.localcut.editor.domain.model.TransformValue
 import com.localcut.editor.domain.model.TransitionKind
 import com.localcut.editor.session.EditorAction
 import com.localcut.editor.session.ProjectSession
+import com.localcut.editor.ui.editor.EditorAiApprovalGate
+import com.localcut.editor.ui.editor.EditorAiExportReview
 import java.util.Base64
 
 interface BridgePlaybackPort {
@@ -81,6 +83,7 @@ class BridgeCommandExecutor(
                 }
                 BridgeCapability.GET_PREVIEW_FRAME -> executePreviewFrame(command)
                 BridgeCapability.GET_EXPORT_REVIEW_FRAMES -> executeExportReviewFrames(command)
+                BridgeCapability.SUBMIT_EXPORT_REVIEW_PROPOSAL -> executeExportReviewProposal(command)
                 BridgeCapability.SEEK -> executeSeek(command)
                 BridgeCapability.SELECT_CLIP -> executeSelect(command)
                 BridgeCapability.MOVE_CLIP -> executeMove(command)
@@ -112,6 +115,26 @@ class BridgeCommandExecutor(
         } catch (error: Throwable) {
             error(command, BridgeErrorCode.INTERNAL_ERROR, error.message ?: "internal error", retryable = false)
         }
+    }
+
+    private fun executeExportReviewProposal(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val fields = payload(command)
+        require(fields.fields.keys == setOf("planJson")) { "expected planJson" }
+        val draft = fields.requiredString("planJson")
+        val state = session.state
+        val source = EditorAiExportReview.from(jobs.latest.value, state.project.id, state.revision).source
+            ?: return error(command, BridgeErrorCode.PREVIEW_FAILED, "export evidence unavailable", false)
+        if (!jobs.hasReviewEvidence(source))
+            return error(command, BridgeErrorCode.PREVIEW_FAILED, "export evidence expired", false)
+        // Dry-run only, on the editor thread through the existing message processor.
+        val approval = EditorAiApprovalGate().prepare(draft, state, source).getOrElse {
+            return error(command, BridgeErrorCode.INVALID_ARGUMENT, "invalid visual review proposal", false)
+        }
+        if (approval.reviewSource != source)
+            return error(command, BridgeErrorCode.INVALID_ARGUMENT, "review identity required", false)
+        val proposal = jobs.offerReviewProposal(source, draft)
+            ?: return error(command, BridgeErrorCode.LOCAL_INTERACTION_REQUIRED, "proposal already pending or consumed; check Editor IA", false)
+        return success(command, "{\"proposalId\":${jsonString(proposal.id)},\"status\":\"pending_local_approval\",\"applied\":false}")
     }
 
     private fun executeExportReviewFrames(command: BridgeCommandEnvelope): BridgeResultEnvelope {

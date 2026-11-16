@@ -27,6 +27,8 @@ test("MCP OAuth scopes classify reads separately from editor actions", () => {
   assert.deepEqual(securityScopesForCapability("seek"), ["localcut:write"]);
   assert.deepEqual(securityScopesForCapability("move_clip"), ["localcut:write"]);
   assert.deepEqual(securityScopesForCapability("export_project"), ["localcut:write"]);
+  assert.deepEqual(securityScopesForCapability("submit_export_review_proposal"), ["localcut:write"]);
+  assert.equal(buildToolInputSchema("submit_export_review_proposal").safeParse({deviceId:"lc",projectId:"p",payload:{}}).success,false);
 });
 
 test("project writes and export require expectedRevision", () => {

@@ -1,6 +1,7 @@
 package com.localcut.editor.bridge.agent
 
 import com.localcut.editor.bridge.protocol.BridgeErrorCode
+import com.localcut.editor.ui.editor.EditorAiReviewSource
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +27,8 @@ sealed interface BridgeJobReservation {
     data class Busy(val activeJob: BridgeJobSnapshot) : BridgeJobReservation
 }
 
+internal data class BridgeReviewProposal(val id: String, val source: EditorAiReviewSource, val planJson: String)
+
 class BridgeJobRegistry(private val monotonicMs: () -> Long = { System.nanoTime() / 1_000_000L }) {
     private val jobs = LinkedHashMap<String, BridgeJobSnapshot>()
     private val messageToJobId = mutableMapOf<String, String>()
@@ -34,6 +37,9 @@ class BridgeJobRegistry(private val monotonicMs: () -> Long = { System.nanoTime(
     private var evidenceAtMs: Long = 0L
     private val mutableLatest = MutableStateFlow<BridgeJobSnapshot?>(null)
     val latest: StateFlow<BridgeJobSnapshot?> = mutableLatest.asStateFlow()
+    private val mutableReviewProposal = MutableStateFlow<BridgeReviewProposal?>(null)
+    internal val reviewProposal: StateFlow<BridgeReviewProposal?> = mutableReviewProposal.asStateFlow()
+    private var proposalConsumed = false
 
     @Synchronized
     fun reserveExport(messageId: String, sourceProjectId: String? = null, sourceRevision: Long? = null): BridgeJobReservation {
@@ -46,6 +52,8 @@ class BridgeJobRegistry(private val monotonicMs: () -> Long = { System.nanoTime(
             }
         }
         latestEvidence = null // retain only the latest export's bounded samples
+        mutableReviewProposal.value = null
+        proposalConsumed = false
         val job = BridgeJobSnapshot(
             jobId = UUID.randomUUID().toString(),
             messageId = messageId,
@@ -107,10 +115,52 @@ class BridgeJobRegistry(private val monotonicMs: () -> Long = { System.nanoTime(
     }
 
     @Synchronized
+    internal fun hasReviewEvidence(source: EditorAiReviewSource): Boolean {
+        val evidence = latestEvidence ?: return false
+        val age = monotonicMs() - evidenceAtMs
+        if (age < 0L || age > 600_000L) {
+            latestEvidence = null
+            mutableReviewProposal.value = null
+            return false
+        }
+        return evidence.jobId == source.jobId && evidence.projectId == source.projectId &&
+            evidence.revision == source.revision && evidence.sha256 == source.sha256 &&
+            mutableLatest.value?.jobId == source.jobId && jobs[source.jobId]?.state == BridgeJobState.SUCCEEDED
+    }
+
+    /** One proposal for this export. Never silently replace or requeue a consumed proposal. */
+    @Synchronized
+    internal fun offerReviewProposal(source: EditorAiReviewSource, planJson: String): BridgeReviewProposal? {
+        if (!hasReviewEvidence(source) || proposalConsumed ||
+            planJson.isBlank() || planJson.toByteArray(Charsets.UTF_8).size > 8192) return null
+        val existing = mutableReviewProposal.value
+        if (existing != null) return existing.takeIf { it.source == source && it.planJson == planJson }
+        return BridgeReviewProposal(UUID.randomUUID().toString(), source, planJson).also { mutableReviewProposal.value = it }
+    }
+
+    @Synchronized
+    internal fun takeReviewProposal(id: String, projectId: String, revision: Long): BridgeReviewProposal? {
+        val proposal = mutableReviewProposal.value ?: return null
+        if (proposal.id != id || proposal.source.projectId != projectId || proposal.source.revision != revision ||
+            !hasReviewEvidence(proposal.source)) return null
+        mutableReviewProposal.value = null
+        proposalConsumed = true
+        return proposal
+    }
+
+    @Synchronized
+    internal fun dismissReviewProposal(id: String): Boolean {
+        if (mutableReviewProposal.value?.id != id) return false
+        mutableReviewProposal.value = null
+        proposalConsumed = true
+        return true
+    }
+
+    @Synchronized
     internal fun reviewFrames(jobId: String, projectId: String, revision: Long): String? {
         val evidence = latestEvidence ?: return null
         val age = monotonicMs() - evidenceAtMs
-        if (age < 0L || age > 600_000L) { latestEvidence = null; return null }
+        if (age < 0L || age > 600_000L) { latestEvidence = null; mutableReviewProposal.value = null; return null }
         if (evidence.jobId != jobId || evidence.projectId != projectId || evidence.revision != revision ||
             jobs[jobId]?.state != BridgeJobState.SUCCEEDED) return null
         return evidence.toJson()

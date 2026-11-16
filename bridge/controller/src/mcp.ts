@@ -11,6 +11,7 @@ import {
 } from "./protocol.ts";
 import { registerTermuxTools } from "./termuxMcp.ts";
 import { exportReviewToolResult, validExportReviewPayload } from "./exportReview.ts";
+import { validExportProposalPayload } from "./exportProposal.ts";
 import { MAX_REVIEW_FRAMES } from "./previewReview.ts";
 import { MAX_CORRECTION_OPERATIONS, ReviewCorrectionCoordinator, correctionToolResult } from "./reviewCorrection.ts";
 
@@ -226,9 +227,11 @@ export function createLocalCutMcpServer(
       },
       async (input: unknown) => {
         const parsed = inputSchema.parse(input);
-        if (capability === "get_export_review_frames") {
+        if (capability === "get_export_review_frames" || capability === "submit_export_review_proposal") {
           if (review?.authorizedDeviceId() !== parsed.deviceId) return toolResult({ success: false, code: "AUTH_REQUIRED" }, true);
-          if (!validExportReviewPayload(parsed.payload)) return toolResult({ success: false, code: "INVALID_ARGUMENT" }, true);
+          const valid = capability === "get_export_review_frames" ? validExportReviewPayload(parsed.payload) :
+            validExportProposalPayload(parsed.payload, parsed.projectId, parsed.expectedRevision);
+          if (!valid) return toolResult({ success: false, code: "INVALID_ARGUMENT" }, true);
         }
         const now = Date.now();
         const command: BridgeCommandEnvelope = {
@@ -248,6 +251,9 @@ export function createLocalCutMcpServer(
         if (capability === "get_export_review_frames") {
           if (review?.authorizedDeviceId() !== parsed.deviceId) return toolResult({ success: false, code: "AUTH_REQUIRED" }, true);
           return exportReviewToolResult(result, parsed.projectId, parsed.payload);
+        }
+        if (capability === "submit_export_review_proposal" && review?.authorizedDeviceId() !== parsed.deviceId) {
+          return toolResult({ success: false, code: "AUTH_REQUIRED", delivery: "unknown" }, true);
         }
         return toolResultForCapability(capability, result, !result.success);
       },
@@ -403,6 +409,9 @@ function titleFor(capability: BridgeCapability): string {
 }
 
 function descriptionFor(capability: BridgeCapability): string {
+  if (capability === "submit_export_review_proposal") {
+    return "After inspecting actual get_export_review_frames evidence, deliver a proposed visual correction to the Editor IA inbox of your OAuth-authorized paired device. Required expectedRevision; payload {planJson: JSON string} with exact projectId, expectedRevision, operations (1–8 visual-only), review {jobId,sha256,findings}. Maximum 8 KiB. Android validates against fresh export evidence and current project and queues one temporary proposal. This does not edit the project, grant approval, or export. User must open Editor IA, load and approve locally. Do not overwrite or retry a pending proposal; on unknown delivery ask user to check inbox. Manual paste remains available.";
+  }
   if (capability === "get_export_review_frames") {
     return "Read sampled images from the latest completed Bridge-exported MP4 on your authorized device, not editor preview. Use payload {jobId,sourceRevision} from get_export_status. Current project must match the source project; sourceRevision is the immutable export revision, not current editor revision. Evidence is temporary, up to three approximate sampled JPEG frames, not full video/audio QA.";
   }

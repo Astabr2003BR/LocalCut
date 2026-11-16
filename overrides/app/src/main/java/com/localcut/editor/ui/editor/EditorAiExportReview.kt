@@ -79,7 +79,7 @@ internal data class EditorAiExportReview(
                     append("Se houver correção visual necessária e você tiver inspecionado os quadros, proponha um JSON local com projectId, expectedRevision, operations e review. ")
                     append("O objeto review deve conter exatamente jobId, sha256 e findings (texto de 1 a 1000 caracteres, descreva o que foi observado e as limitações). ")
                     append("Use jobId "); append(jsonString(job.jobId)); append(" e sha256 "); append(jsonString(hash))
-                    append(". Não use operações destrutivas. Se não houver correção, responda somente com a análise; não invente alterações. A amostragem não confirma qualidade de todo o vídeo ou sincronização de áudio.")
+                    append(". Não use operações destrutivas. Se houver correção, use submit_export_review_proposal no dispositivo autorizado, com expectedRevision atual e payload {planJson: JSON do plano como string}; aguarde aprovação local, não execute project_edit. Se a ferramenta estiver indisponível, retorne o JSON para colar. Se não houver correção, responda somente com a análise; não invente alterações. A amostragem não confirma qualidade de todo o vídeo ou sincronização de áudio.")
                 } else null
                 EditorAiExportReview(
                     if (status == "technical_checks_passed" && warnings.isEmpty()) "MP4 exportado • verificações técnicas concluídas" else "MP4 exportado • requer revisão",

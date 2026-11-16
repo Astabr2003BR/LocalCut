@@ -105,6 +105,40 @@ class BridgeExportCommandTest {
     }
 
     @Test
+    fun bridgeProposalOnlyQueuesExactFreshReviewAndNeverEditsProject() {
+        val fixture = fixture()
+        val id = jobId(fixture.executor.execute(exportCommand("proposal-export")).resultJson)
+        val hash = "a".repeat(64)
+        val sample = BridgeExportSample(0L, 1, 1, byteArrayOf(-1, -40, -1, -39))
+        val report = """{"status":"technical_checks_passed","width":1080,"height":1920,"durationUs":2000000,"audioTracks":0,"decodedFrames":1,"sampledFrames":1,"encodedSampleFrames":1,"nearBlackSamplePositionsUs":[],"durationMatches":true,"resolutionMatches":true,"sha256":"$hash"}"""
+        fixture.exportPort.listener!!.onCompletedWithReview("{}", BridgeExportInspection(report, hash, listOf(sample)))
+        val plan = """{"projectId":"project-1","expectedRevision":5,"operations":[{"op":"patchClip","clipId":"clip-1","opacity":0.8}],"review":{"jobId":"$id","sha256":"$hash","findings":"Ajustar opacidade."}}"""
+        val cmd = exportCommand("proposal").copy(capability = BridgeCapability.SUBMIT_EXPORT_REVIEW_PROPOSAL,
+            payloadJson = "{\"planJson\":${com.localcut.editor.data.project.jsonString(plan)}}")
+        val before = fixture.executor.execute(exportCommand("read-before").copy(capability = BridgeCapability.GET_PROJECT_STATE, expectedRevision = null))
+        assertFalse(fixture.executor.execute(cmd.copy(expectedRevision = 4L)).success)
+        assertFalse(fixture.executor.execute(cmd.copy(projectId = "other")).success)
+        assertFalse(fixture.executor.execute(cmd.copy(payloadJson = cmd.payloadJson.replace(hash, "b".repeat(64)))).success)
+        val accepted = fixture.executor.execute(cmd)
+        assertTrue(accepted.resultJson, accepted.success)
+        assertTrue(accepted.resultJson.contains("pending_local_approval"))
+        assertTrue(accepted.resultJson.contains("\"applied\":false"))
+        assertEquals(5L, accepted.projectRevision)
+        val pending = fixture.jobs.reviewProposal.value!!
+        assertEquals(plan, pending.planJson)
+        assertTrue(fixture.executor.execute(cmd.copy(messageId = "same")).success)
+        assertFalse(fixture.executor.execute(cmd.copy(messageId = "different", payloadJson = cmd.payloadJson.replace("0.8", "0.5"))).success)
+        assertEquals(pending, fixture.jobs.reviewProposal.value)
+        assertEquals(null, fixture.jobs.takeReviewProposal(pending.id, "other", 5L))
+        assertEquals(pending, fixture.jobs.takeReviewProposal(pending.id, "project-1", 5L))
+        assertEquals(null, fixture.jobs.takeReviewProposal(pending.id, "project-1", 5L))
+        assertFalse(fixture.executor.execute(cmd.copy(messageId = "after-consumed")).success)
+        val after = fixture.executor.execute(exportCommand("read-after").copy(capability = BridgeCapability.GET_PROJECT_STATE, expectedRevision = null))
+        assertEquals(before.resultJson, after.resultJson)
+        assertEquals(5L, after.projectRevision)
+    }
+
+    @Test
     fun exportEvidenceExpiresAndCannotBeReplacedByLateOldJob() {
         var now = 1000L
         val registry = BridgeJobRegistry { now }
@@ -113,7 +147,11 @@ class BridgeExportCommandTest {
         val review = BridgeExportInspection("{}", "a".repeat(64), listOf(sample))
         registry.succeedWithReview(first, "{}", "p", 5L, review)
         assertTrue(registry.reviewFrames(first, "p", 5L) != null)
+        val source = com.localcut.editor.ui.editor.EditorAiReviewSource("p", 5L, first, "a".repeat(64))
+        val proposal = registry.offerReviewProposal(source, "{}")!!
         now += 600_001L
+        assertEquals(null, registry.takeReviewProposal(proposal.id, "p", 5L))
+        assertEquals(null, registry.reviewProposal.value)
         assertTrue(registry.reviewFrames(first, "p", 5L) == null)
         val second = (registry.reserveExport("two") as BridgeJobReservation.Started).job.jobId
         registry.succeedWithReview(first, "{}", "p", 5L, review)

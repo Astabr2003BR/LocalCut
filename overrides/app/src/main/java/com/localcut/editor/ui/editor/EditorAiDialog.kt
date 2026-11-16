@@ -39,6 +39,7 @@ internal fun EditorAiDialog(
     onDismiss: () -> Unit,
 ) {
     val latestJob by jobs.latest.collectAsState()
+    val incomingProposal by jobs.reviewProposal.collectAsState()
     val report = remember(latestJob, state.project.id, state.revision) { EditorAiExportReview.from(latestJob, state.project.id, state.revision) }
     val gate = remember { EditorAiApprovalGate() }
     var draft by remember { mutableStateOf("") }
@@ -64,11 +65,38 @@ internal fun EditorAiDialog(
                     enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Copiar contexto para GPT") }
                 OutlinedButton(onClick = { gate.cancel(); onCreateVideo() }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Criar novo vídeo / abrir pacote") }
                 Text("Editar projeto atual: cole um plano visual. Não permite excluir mídias, mudar áudio ou duração. A alteração pode ser desfeita.")
+                incomingProposal?.let { proposal ->
+                    val matches = proposal.source == report.source
+                    Text(if (matches) "Proposta recebida pelo Bridge • aguarda aprovação local" else "Proposta desatualizada.",
+                        style = MaterialTheme.typography.titleSmall)
+                    OutlinedButton(onClick = {
+                        val current = session.state
+                        if (draft.isNotBlank() || approval != null) {
+                            message = "Limpe ou conclua o plano atual primeiro."
+                        } else {
+                            val received = jobs.takeReviewProposal(proposal.id, current.project.id, current.revision)
+                            if (received == null) message = "Proposta expirada ou desatualizada. Solicite nova exportação."
+                            else {
+                                draft = received.planJson
+                                gate.prepare(draft, current, currentReviewSource()).onSuccess {
+                                    approval = it; message = "Proposta carregada. Confira e aprove localmente."
+                                }.onFailure { message = "Proposta rejeitada. Confira o projeto e a exportação." }
+                            }
+                        }
+                    }, enabled = !busy && matches && prepared == null && draft.isBlank(),
+                        modifier = Modifier.fillMaxWidth()) { Text("Carregar proposta do GPT") }
+                    TextButton(enabled = !busy, onClick = {
+                        if (jobs.dismissReviewProposal(proposal.id)) message = "Proposta descartada. Nenhuma alteração realizada."
+                    }) { Text("Descartar proposta recebida") }
+                }
                 OutlinedTextField(value = draft, onValueChange = {
                     if (it.length <= EditorAiApprovalGate.MAX_BYTES && it.toByteArray(Charsets.UTF_8).size <= EditorAiApprovalGate.MAX_BYTES) {
                         draft = it; gate.cancel(); approval = null; message = ""
                     } else message = "Plano acima de 8 KiB."
                 }, label = { Text("Plano JSON do GPT") }, modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 6, enabled = !busy && prepared == null)
+                if (prepared == null && draft.isNotBlank()) {
+                    TextButton(enabled = !busy, onClick = { gate.cancel(); draft = ""; message = "" }) { Text("Limpar plano") }
+                }
                 if (prepared != null) {
                     Text("Plano validado • ${prepared.operationCount} operações", style = MaterialTheme.typography.titleSmall)
                     Text(prepared.summary, style = MaterialTheme.typography.bodySmall)
@@ -93,7 +121,7 @@ internal fun EditorAiDialog(
                         val fresh = EditorAiExportReview.from(jobs.latest.value, current.project.id, current.revision)
                         if (fresh.source == report.source && fresh.request != null) {
                             onCopyContext(EditorAiApprovalGate.context(current) + "\n\n" + fresh.request)
-                            message = "Pedido e contexto copiados. Envie ao GPT e cole o plano de revisão retornado."
+                            message = "Pedido e contexto copiados. O GPT pode enviar a proposta pelo Bridge; colar o JSON também é possível."
                         } else message = "Exportação mudou. Copie o pedido atualizado."
                     },
                         enabled = !busy && BridgePanelUiPolicy.agentReady(bridgeState), modifier = Modifier.fillMaxWidth()) { Text("Copiar pedido de revisão visual") }

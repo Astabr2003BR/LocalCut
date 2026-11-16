@@ -10,6 +10,7 @@ export const bridgeCapabilities = [
   "get_errors",
   "get_preview_frame",
   "get_export_review_frames",
+  "submit_export_review_proposal",
   "seek",
   "select_clip",
   "split_clip",
@@ -56,6 +57,7 @@ export const projectWriteCapabilities = new Set<BridgeCapability>([
 export const revisionRequiredCapabilities = new Set<BridgeCapability>([
   ...projectWriteCapabilities,
   "export_project",
+  "submit_export_review_proposal",
 ]);
 
 export type BridgeCommandEnvelope = {

@@ -49,15 +49,22 @@ internal fun EditorAiDialog(
     var draft by remember { mutableStateOf("") }
     var approval by remember { mutableStateOf<EditorAiApprovalGate.Approval?>(null) }
     var message by remember { mutableStateOf("") }
-    var loadedProposal by remember { mutableStateOf<BridgeReviewProposal?>(null) }
+    // Keep a stable State holder so the disposal callback sees the latest proposal
+    // even if the dialog closes before a new Compose recomposition.
+    val loadedProposalState = remember { mutableStateOf<BridgeReviewProposal?>(null) }
+    var loadedProposal by loadedProposalState
     val history = jobs.reviewHistory
     val historyView = history?.view?.collectAsState()?.value ?: ReviewHistoryView()
     fun finishLoaded(status: ReviewHistoryStatus, revision: Long = -1L) {
         loadedProposal?.let { history?.transition(it.id, status, revision) }
         loadedProposal = null
     }
-    DisposableEffect(Unit) {
-        onDispose { finishLoaded(ReviewHistoryStatus.DISCARDED) }
+    DisposableEffect(history) {
+        onDispose {
+            // A lifecycle teardown (including rotation) is not a user rejection.
+            // It must never be recorded as an explicit discard.
+            loadedProposalState.value?.let { history?.transition(it.id, ReviewHistoryStatus.INTERRUPTED) }
+        }
     }
     val prepared = approval
     val stale = prepared != null && (prepared.projectId != state.project.id || prepared.revision != state.revision ||
@@ -69,7 +76,11 @@ internal fun EditorAiDialog(
         return source?.takeIf { loadedProposal == null || jobs.hasReviewEvidence(it) }
     }
     AlertDialog(
-        onDismissRequest = { gate.cancel(); onDismiss() },
+        onDismissRequest = {
+            gate.cancel()
+            finishLoaded(ReviewHistoryStatus.DISCARDED)
+            onDismiss()
+        },
         title = { Text("Editor IA") },
         text = {
             Column(Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
@@ -184,6 +195,10 @@ internal fun EditorAiDialog(
                 }
             }) { Text("Aprovar e aplicar") }
         },
-        dismissButton = { TextButton(onClick = { gate.cancel(); onDismiss() }) { Text("Fechar") } },
+        dismissButton = { TextButton(onClick = {
+            gate.cancel()
+            finishLoaded(ReviewHistoryStatus.DISCARDED)
+            onDismiss()
+        }) { Text("Fechar") } },
     )
 }

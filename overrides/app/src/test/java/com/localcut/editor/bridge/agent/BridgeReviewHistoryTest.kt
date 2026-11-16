@@ -67,6 +67,32 @@ class BridgeReviewHistoryTest {
         isolated.received(proposal())
         assertEquals("corrupt", bad.raw)
     }
+    @Test fun lifecycleInterruptionAndExplicitDiscardHaveDistinctTerminalOutcomes() {
+        val storage = Memory()
+        val history = BridgeReviewHistory(storage)
+        val interrupted = proposal()
+        history.received(interrupted)
+        // Only a loaded proposal can be interrupted by closing the UI lifecycle.
+        history.transition(interrupted.id, ReviewHistoryStatus.INTERRUPTED)
+        assertEquals(ReviewHistoryStatus.RECEIVED, history.view.value.entries.single().status)
+        history.transition(interrupted.id, ReviewHistoryStatus.LOADED)
+        history.transition(interrupted.id, ReviewHistoryStatus.INTERRUPTED)
+        assertEquals(ReviewHistoryStatus.INTERRUPTED, history.view.value.entries.single().status)
+        history.transition(interrupted.id, ReviewHistoryStatus.APPLIED_IN_EDITOR, 6L)
+        history.transition(interrupted.id, ReviewHistoryStatus.DISCARDED)
+        assertEquals(ReviewHistoryStatus.INTERRUPTED, history.view.value.entries.single().status)
+        assertEquals(-1L, BridgeReviewHistory(storage).view.value.entries.single().resultRevision)
+
+        val discarded = proposal()
+        history.received(discarded)
+        history.transition(discarded.id, ReviewHistoryStatus.LOADED)
+        history.transition(discarded.id, ReviewHistoryStatus.DISCARDED)
+        assertEquals(ReviewHistoryStatus.DISCARDED, BridgeReviewHistory(storage).view.value.entries.first().status)
+        assertEquals(ReviewHistoryStatus.INTERRUPTED, BridgeReviewHistory(storage).view.value.entries.last().status)
+        assertFalse(storage.raw!!.contains("privatePlan"))
+        assertFalse(storage.raw!!.contains("content://secret"))
+    }
+
     @Test fun registryJournalsReceiptLoadAndNewExportWithoutPersistingProposal() {
         val storage = Memory()
         val history = BridgeReviewHistory(storage)

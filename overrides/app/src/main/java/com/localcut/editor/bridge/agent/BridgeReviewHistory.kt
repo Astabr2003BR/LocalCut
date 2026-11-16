@@ -62,7 +62,7 @@ internal class BridgeReviewHistory(private val storage: ReviewHistoryStorage) {
         val allowed = when (old.status) {
             ReviewHistoryStatus.RECEIVED -> status in setOf(ReviewHistoryStatus.LOADED, ReviewHistoryStatus.DISCARDED, ReviewHistoryStatus.SUPERSEDED)
             ReviewHistoryStatus.LOADED -> status in setOf(ReviewHistoryStatus.APPLIED_IN_EDITOR, ReviewHistoryStatus.DISCARDED,
-                ReviewHistoryStatus.REJECTED, ReviewHistoryStatus.SUPERSEDED)
+                ReviewHistoryStatus.REJECTED, ReviewHistoryStatus.SUPERSEDED, ReviewHistoryStatus.INTERRUPTED)
             else -> false
         }
         val updated = old.copy(status = status, resultRevision = resultRevision)

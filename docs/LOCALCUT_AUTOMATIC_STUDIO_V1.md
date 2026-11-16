@@ -139,3 +139,7 @@ Private bounded metadata history (64 records globally; 8 current-project rows di
 
 ### Integrated rendered review regression
 PortableStudioPackageSmokeTest now drives an actual rendered package through sampled MP4 evidence, BridgeCodec/BridgeMessageProcessor/BridgeCommandExecutor, exact proposal inbox and local Editor IA approval, re-render through production composition compiler and Media3, decoded color/border, audio/duration/resolution, source hash, new evidence and Undo checks. Private preference history is reopened using an isolated test key. This is an emulator integration with synthetic image/audio and in-process Bridge wire messages; no actual external GPT, OAuth/WebSocket transport or physical device is claimed. Loaded remote proposals must still have live evidence at approval. CI pending.
+
+
+### Editor IA lifecycle audit: explicit discard versus interruption
+A loaded remote proposal previously became DISCARDED when the Compose dialog was disposed for any reason, including configuration changes. The dialog now retains a stable state holder for lifecycle cleanup and records INTERRUPTED only on implicit disposal. Explicit Close/back, creation navigation, clearing or replacing the plan still record DISCARDED; successful approval remains APPLIED_IN_EDITOR and failures remain REJECTED. Added terminal-state and persisted-reopen tests; no proposal text or authorization is restored after recreation, no edit is performed by cleanup. UI/device lifecycle validation remains pending.

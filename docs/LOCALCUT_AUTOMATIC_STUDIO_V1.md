@@ -151,3 +151,7 @@ The local UI distinguishes batch apply (editor memory) from atomic project-store
 
 ### Storage exception during scheduled or manual autosave
 The debounced saver now normalizes ordinary exceptions thrown directly by a ProjectStore into Result.failure, so a scheduled save can record its failure, retain pending edits and use its existing one-shot automatic retry. Manual flush and Editor IA save confirmation receive a failure result instead of an escaped exception. Fatal Error subclasses are not swallowed. Existing serialization and newest-edit behavior remain; scheduled, manual and newer-edit tests were added. This only addresses the exception path, not irrecoverable power loss, unavailable storage or unsaved data after an OS process kill.
+
+
+### Persistent recovery project selection
+A corrupt/unsupported primary project no longer causes a brand-new untracked recovery directory on each process launch. Startup checks existing private recovery-* folders, including legacy timestamped folders, selects the most recently modified valid atomic snapshot and continues editing/saving there; failed snapshots remain untouched. New recovery directories are allocated only when no valid candidate exists; once a project is saved, later launches locate it. Valid primary projects remain preferred. This does not reconstruct edits lost before first durable save, merge divergent recovery projects, or constitute physical device kill testing.

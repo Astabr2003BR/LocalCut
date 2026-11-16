@@ -20,9 +20,7 @@ import com.localcut.editor.bridge.security.AndroidKeystoreDeviceIdentityStore
 import com.localcut.editor.bridge.transport.BridgeInboundMessageHandler
 import com.localcut.editor.data.assets.AndroidAssetImporter
 import com.localcut.editor.data.assets.AssetUriResolver
-import com.localcut.editor.data.project.AtomicProjectStore
-import com.localcut.editor.data.project.ProjectStoreErrorCode
-import com.localcut.editor.data.project.ProjectStoreException
+import com.localcut.editor.data.project.ProjectStartupRecovery
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.media.AndroidExportCapabilitiesProvider
 import com.localcut.editor.media.FinalPreviewRenderer
@@ -74,22 +72,10 @@ class LocalCutProcessRuntime private constructor(context: Context) {
     val loadWarning: String?
 
     init {
-        val primaryStore = AtomicProjectStore(appContext.filesDir.toPath().resolve("projects/default"))
-        val loadResult = primaryStore.load()
-        val loadError = loadResult.exceptionOrNull() as? ProjectStoreException
-        val activeStore = if (loadResult.isSuccess || loadError?.code == ProjectStoreErrorCode.NOT_FOUND) {
-            primaryStore
-        } else {
-            AtomicProjectStore(
-                appContext.filesDir.toPath().resolve("projects/recovery-${System.currentTimeMillis()}"),
-            )
-        }
-        loadWarning = if (activeStore !== primaryStore) {
-            "Projeto anterior preservado; abrindo recuperação."
-        } else {
-            null
-        }
-        val initialProject = loadResult.getOrNull() ?: Project.create("Meu projeto", 1080, 1920, 30)
+        val startup = ProjectStartupRecovery.select(appContext.filesDir.toPath().resolve("projects"))
+        val activeStore = startup.store
+        loadWarning = startup.warning
+        val initialProject = startup.project ?: Project.create("Meu projeto", 1080, 1920, 30)
 
         val compositionCompiler = ProjectCompositionCompiler(AssetUriResolver(appContext.contentResolver))
         val exportCapabilitiesProvider = AndroidExportCapabilitiesProvider(appContext)

@@ -135,3 +135,7 @@ New submit_export_review_proposal capability, exact OAuth device scope, expected
 
 ### Local proposal history
 Private bounded metadata history (64 records globally; 8 current-project rows displayed), tracks received, loaded, applied in editor, discarded, rejected, superseded and interrupted. Stores only proposal/project/export identifiers, source revision, MP4 hash, state and resulting revision. No plan/findings/media/URI/consent stored. Restart marks pending/loaded records interrupted, does not restore inbox or apply. UI records applied only after existing local gate succeeds; this does not certify project autosave, visual quality or current project contents. Storage failures visible; corrupt journal preserved. No production/deployment/device QA yet.
+
+
+### Integrated rendered review regression
+PortableStudioPackageSmokeTest now drives an actual rendered package through sampled MP4 evidence, BridgeCodec/BridgeMessageProcessor/BridgeCommandExecutor, exact proposal inbox and local Editor IA approval, re-render through production composition compiler and Media3, decoded color/border, audio/duration/resolution, source hash, new evidence and Undo checks. Private preference history is reopened using an isolated test key. This is an emulator integration with synthetic image/audio and in-process Bridge wire messages; no actual external GPT, OAuth/WebSocket transport or physical device is claimed. Loaded remote proposals must still have live evidence at approval. CI pending.

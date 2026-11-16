@@ -14,6 +14,13 @@ import com.localcut.editor.data.assets.AssetUriResolver
 import com.localcut.editor.media.ProjectCompositionCompiler
 import com.localcut.editor.media.RenderMode
 import com.localcut.editor.domain.model.TrackType
+import com.localcut.editor.bridge.agent.*
+import com.localcut.editor.bridge.protocol.*
+import com.localcut.editor.data.project.ProjectStore
+import com.localcut.editor.domain.model.Project
+import com.localcut.editor.session.*
+import com.localcut.editor.ui.editor.EditorAiApprovalGate
+import com.localcut.editor.ui.editor.EditorAiExportReview
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -300,6 +307,8 @@ class PortableStudioPackageSmokeTest {
                         assertTrue(Color.green(center) > Color.red(center) + 40 && Color.green(center) > Color.blue(center) + 40)
                     } finally { frame.recycle() }
                 } finally { retriever.release() }
+                // Exercise the actual rendered evidence -> Bridge wire proposal -> local approval -> re-render cycle.
+                verifyRenderedReviewCycle(project, output, inspection, workDir, running)
                 // Reuse the actual rendered MP4 as an existing local video source.
                 val videoFile = File(stageDir, "existing.mp4")
                 output.copyTo(videoFile)
@@ -360,6 +369,138 @@ class PortableStudioPackageSmokeTest {
                 workDir.deleteRecursively()
                 output.delete()
             }
+        }
+    }
+
+    private fun verifyRenderedReviewCycle(
+        project: Project, originalOutput: File, inspection: BridgeExportInspection,
+        workDir: File, running: AtomicReference<Transformer?>,
+    ) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val prefsName = "review-cycle-${UUID.randomUUID()}"
+        val originalHash = digest(originalOutput.readBytes())
+        val historyStorage = AndroidReviewHistoryStorage(context, prefsName)
+        val history = BridgeReviewHistory(historyStorage)
+        val jobs = BridgeJobRegistry().apply { attachReviewHistory(history) }
+        val session = ProjectSession(project,
+            preview = object : ProjectPreviewLoader { override fun load(project: Project) = Result.success(Unit) },
+            autosave = DebouncedProjectSaver(
+                store = object : ProjectStore {
+                    override fun save(project: Project) = Result.success(Unit)
+                    override fun load(): Result<Project> = Result.failure(IllegalStateException("unused"))
+                },
+                scheduler = object : DelayScheduler { override fun schedule(delayMs: Long, action: () -> Unit): Cancellable = Cancellable {} },
+                delayMs = 300L),
+            revisionClock = InMemoryProjectRevisionClock(mapOf(project.id to 5L)))
+        val playback = object : BridgePlaybackPort {
+            override val positionUs = 0L
+            override fun seekToUs(positionUs: Long) = Result.success(Unit)
+        }
+        val executor = BridgeCommandExecutor(session, playback, jobs)
+        val processor = BridgeMessageProcessor("review-device", executor)
+        val clip = project.tracks.first { it.type == TrackType.VISUAL }.clips.single()
+        val first = (jobs.reserveExport("first-render", project.id, 5L) as BridgeJobReservation.Started).job
+        fun complete(jobId: String, revision: Long, evidence: BridgeExportInspection) {
+            val result = JSONObject().put("sourceProjectId", project.id).put("sourceRevision", revision)
+                .put("technicalReview", JSONObject(evidence.reportJson)).toString()
+            jobs.succeedWithReview(jobId, result, project.id, revision, evidence)
+        }
+        fun command(capability: BridgeCapability, revision: Long?, payload: JSONObject): BridgeResultEnvelope {
+            val now = System.currentTimeMillis()
+            val wire = BridgeCommandEnvelope(1, UUID.randomUUID().toString(), "command", "review-device", project.id,
+                revision, now, now + 30_000L, UUID.randomUUID().toString(), capability, payload.toString())
+            val response = AtomicReference<BridgeResultEnvelope>()
+            instrumentation.runOnMainSync {
+                response.set(BridgeCodec.decodeResult(requireNotNull(processor.process(BridgeCodec.encodeCommand(wire), now))))
+            }
+            return response.get()
+        }
+        try {
+            complete(first.jobId, 5L, inspection)
+            val frames = command(BridgeCapability.GET_EXPORT_REVIEW_FRAMES, null,
+                JSONObject().put("jobId", first.jobId).put("sourceRevision", 5))
+            assertTrue(frames.resultJson, frames.success)
+            val evidence = JSONObject(frames.resultJson)
+            assertEquals(originalHash, evidence.getString("sha256"))
+            assertEquals(3, evidence.getJSONArray("frames").length())
+            val draft = JSONObject().put("projectId", project.id).put("expectedRevision", 5)
+                .put("operations", JSONArray().put(JSONObject().put("op", "patchClip").put("clipId", clip.id).put("scale", 0.5)))
+                .put("review", JSONObject().put("jobId", first.jobId).put("sha256", originalHash)
+                    .put("findings", "Teste de integração: reduzir escala da imagem.")).toString()
+            val proposed = command(BridgeCapability.SUBMIT_EXPORT_REVIEW_PROPOSAL, 5L, JSONObject().put("planJson", draft))
+            assertTrue(proposed.resultJson, proposed.success)
+            assertTrue(!JSONObject(proposed.resultJson).getBoolean("applied"))
+            assertEquals(project, session.state.project)
+            assertEquals(5L, session.state.revision)
+            val pending = requireNotNull(jobs.reviewProposal.value)
+            assertEquals(ReviewHistoryStatus.RECEIVED, history.view.value.entries.single().status)
+            val corrected = AtomicReference<Project>()
+            instrumentation.runOnMainSync {
+                val source = requireNotNull(EditorAiExportReview.from(jobs.latest.value, project.id, 5L).source)
+                val loaded = requireNotNull(jobs.takeReviewProposal(pending.id, project.id, 5L))
+                val gate = EditorAiApprovalGate()
+                val approval = gate.prepare(loaded.planJson, session.state, source).getOrThrow()
+                assertEquals(project, session.state.project)
+                val revision = gate.apply(approval, loaded.planJson, session, source).getOrThrow()
+                assertEquals(6L, revision)
+                history.transition(loaded.id, ReviewHistoryStatus.APPLIED_IN_EDITOR, revision)
+                corrected.set(session.state.project)
+                assertTrue(gate.apply(approval, loaded.planJson, session, source).isFailure)
+            }
+            val changed = corrected.get()
+            assertEquals(project.assets, changed.assets)
+            assertEquals(project.tracks.filter { it.type == TrackType.AUDIO }, changed.tracks.filter { it.type == TrackType.AUDIO })
+            assertEquals(project.textOverlays, changed.textOverlays)
+            assertEquals(0.5, changed.findClip(clip.id)!!.transform.scale, 0.0)
+            assertEquals(clip.copy(transform = clip.transform.copy(scale = 0.5)), changed.findClip(clip.id))
+            assertEquals(ReviewHistoryStatus.APPLIED_IN_EDITOR, BridgeReviewHistory(AndroidReviewHistoryStorage(context, prefsName)).view.value.entries.single().status)
+            assertTrue(!command(BridgeCapability.SUBMIT_EXPORT_REVIEW_PROPOSAL, 5L, JSONObject().put("planJson", draft)).success)
+
+            val output = File(workDir, "review-corrected.mp4")
+            val composition = ProjectCompositionCompiler(AssetUriResolver(context.contentResolver)).compile(changed, RenderMode.EXPORT).getOrThrow()
+            val done = CountDownLatch(1)
+            val failure = AtomicReference<Throwable?>()
+            instrumentation.runOnMainSync {
+                val transformer = Transformer.Builder(context).setVideoMimeType(MimeTypes.VIDEO_H264)
+                    .setAudioMimeType(MimeTypes.AUDIO_AAC).addListener(object : Transformer.Listener {
+                        override fun onCompleted(composition: Composition, exportResult: ExportResult) { done.countDown() }
+                        override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+                            failure.set(exportException); done.countDown()
+                        }
+                    }).build()
+                running.set(transformer)
+                transformer.start(composition, output.absolutePath)
+            }
+            assertTrue("Review correction export timed out", done.await(120, TimeUnit.SECONDS))
+            failure.get()?.let { throw AssertionError("Review correction export failed", it) }
+            val secondInspection = AndroidBridgeExportFileReviewer.inspectWithSamples(output, changed)
+            val secondReport = JSONObject(secondInspection.reportJson)
+            assertEquals(1, secondReport.getInt("audioTracks"))
+            assertTrue(secondReport.getBoolean("durationMatches"))
+            assertTrue(secondReport.getBoolean("resolutionMatches"))
+            assertEquals(3, secondInspection.samples.size)
+            val image = requireNotNull(android.graphics.BitmapFactory.decodeByteArray(secondInspection.samples[1].jpeg, 0, secondInspection.samples[1].jpeg.size))
+            try {
+                val center = image.getPixel(image.width / 2, image.height / 2)
+                val corner = image.getPixel(image.width / 10, image.height / 10)
+                assertTrue("Green center preserved", Color.green(center) > Color.red(center) + 40 && Color.green(center) > Color.blue(center) + 40)
+                assertTrue("Scaled image leaves dark border", Color.red(corner) < 40 && Color.green(corner) < 40 && Color.blue(corner) < 40)
+            } finally { image.recycle() }
+            assertEquals(originalHash, digest(originalOutput.readBytes()))
+            assertTrue(originalHash != secondInspection.sha256)
+            val second = (jobs.reserveExport("second-render", project.id, 6L) as BridgeJobReservation.Started).job
+            complete(second.jobId, 6L, secondInspection)
+            assertTrue(!command(BridgeCapability.GET_EXPORT_REVIEW_FRAMES, null, JSONObject().put("jobId", first.jobId).put("sourceRevision", 5)).success)
+            val newFrames = command(BridgeCapability.GET_EXPORT_REVIEW_FRAMES, null, JSONObject().put("jobId", second.jobId).put("sourceRevision", 6))
+            assertTrue(newFrames.success)
+            assertEquals(secondInspection.sha256, JSONObject(newFrames.resultJson).getString("sha256"))
+            instrumentation.runOnMainSync {
+                session.dispatch(EditorAction.Undo)
+                assertEquals(project, session.state.project)
+            }
+        } finally {
+            context.getSharedPreferences(prefsName, android.content.Context.MODE_PRIVATE).edit().clear().commit()
         }
     }
 

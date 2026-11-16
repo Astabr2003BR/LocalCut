@@ -64,7 +64,9 @@ internal fun EditorAiDialog(
         (prepared.reviewSource != null && prepared.reviewSource != report.source))
     fun currentReviewSource(): EditorAiReviewSource? {
         val current = session.state
-        return EditorAiExportReview.from(jobs.latest.value, current.project.id, current.revision).source
+        val source = EditorAiExportReview.from(jobs.latest.value, current.project.id, current.revision).source
+        // A loaded Bridge proposal remains bound to live temporary evidence until approval.
+        return source?.takeIf { loadedProposal == null || jobs.hasReviewEvidence(it) }
     }
     AlertDialog(
         onDismissRequest = { gate.cancel(); onDismiss() },

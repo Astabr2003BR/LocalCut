@@ -22,8 +22,8 @@ internal interface ReviewHistoryStorage {
     fun read(): String?
     fun write(value: String): Boolean
 }
-internal class AndroidReviewHistoryStorage(context: Context) : ReviewHistoryStorage {
-    private val prefs = context.applicationContext.getSharedPreferences("localcut_review_history_v1", Context.MODE_PRIVATE)
+internal class AndroidReviewHistoryStorage(context: Context, preferencesName: String = "localcut_review_history_v1") : ReviewHistoryStorage {
+    private val prefs = context.applicationContext.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
     override fun read(): String? = prefs.getString("history", null)
     override fun write(value: String): Boolean = prefs.edit().putString("history", value).commit()
 }

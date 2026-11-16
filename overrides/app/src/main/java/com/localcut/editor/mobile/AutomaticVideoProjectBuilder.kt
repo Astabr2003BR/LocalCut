@@ -60,14 +60,6 @@ internal object AutomaticVideoProjectBuilder {
             val uri = Uri.parse(chosenAudio)
             val mime = (audioMime ?: context.contentResolver.getType(uri))
                 ?.takeIf { it.startsWith("audio/") } ?: error("Áudio inválido")
-            val retriever = MediaMetadataRetriever()
-            val duration = try {
-                retriever.setDataSource(context, uri)
-                check(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO) == "yes") { "Arquivo sem trilha de áudio" }
-                val ms = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: error("Duração do áudio desconhecida")
-                check(ms in 1L..Long.MAX_VALUE / 1000L)
-                ms * 1000L
-            } finally { retriever.release() }
             val extension = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)?.takeIf { it.matches(Regex("[A-Za-z0-9]{1,8}")) } ?: "audio"
             val file = File(dir, "audio.$extension")
             (context.contentResolver.openInputStream(uri) ?: error("Áudio indisponível")).use { input ->
@@ -75,6 +67,16 @@ internal object AutomaticVideoProjectBuilder {
                     copyStudioMedia(input, out, checkCancelled, availableBytes = { dir.usableSpace })
                 }
             }
+            checkCancelled()
+            val retriever = MediaMetadataRetriever()
+            val duration = try {
+                retriever.setDataSource(file.absolutePath)
+                check(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO) == "yes") { "Arquivo sem trilha de áudio" }
+                val ms = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: error("Duração do áudio desconhecida")
+                check(ms in 1L..Long.MAX_VALUE / 1000L)
+                ms * 1000L
+            } finally { retriever.release() }
+            checkCancelled()
             assets += Asset(id = "audio", type = AssetType.AUDIO, uri = Uri.fromFile(file).toString(),
                 sourceDurationUs = duration, sizeBytes = file.length(), displayName = file.name,
                 mimeType = mime, fingerprint = "${file.name}-${file.length()}")

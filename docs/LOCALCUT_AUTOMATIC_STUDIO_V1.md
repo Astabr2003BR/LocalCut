@@ -104,3 +104,6 @@ Typed `replaceStillImage` takes `clipId`, `expectedAssetId`, `replacementAssetId
 
 ### Rendered still-image replacement fixture
 MultitrackExportSmokeTest.editorAiReplacesBackgroundInRenderedIntroWithoutChangingOtherLayers runs actual EditorAiApprovalGate prepare/apply against a synthetic layered 320x180 intro: red old background, green replacement, animated blue overlay, white title, PCM tone. Render before/after with existing Media3 H264/AAC compiler; exact expected model equality except asset reference, sampled background color, title bright-mask overlap, early/late overlay alpha, audio track MIME/packet count/duration, original MP4/source SHA256 and exact Undo. Synthetic fixture, not the user's actual opening; audio track evidence does not prove decoded waveform equality or full synchronization. CI pending; physical device and original media remain pending.
+
+### Studio audio staged-byte validation
+Audio duration and track presence are now inspected from the private bounded copy, not the provider URI before copying. Cancellation is checked before and after metadata inspection. This binds the validated duration to the bytes actually used by the renderer; decoder validation is not a full audio decode. Existing portable export instrumentation checks copied WAV hash/duration and corrupt audio rejection. CI pending.

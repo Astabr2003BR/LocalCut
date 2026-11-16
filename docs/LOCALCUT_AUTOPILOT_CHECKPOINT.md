@@ -128,3 +128,7 @@ Parent 519f8c6195d74292fc80b9778d3af831cd2c0e12: four CI PASS (2072,1903,1726,87
 
 ## Hybrid rendered intro replacement regression — 2026-11-15
 Parent 0bfaf61f0875440492396e26710c7350905e786a: four CI PASS (2073,1904,1727,873), PR draft/open. Added instrumentation to existing multitrack smoke class: actual EditorAiApprovalGate prepare/apply and exact model diff for still-image swap, render before/after using production compiler/Media3, compare sampled background and animated overlay, title pixel overlap, audio packets/duration, source/original render hashes and Undo. Synthetic fixture only; no real intro file or full audio sync/visual approval. CI pending; no local run, no deployment/main/install/phase2. Next verify instrumentation, then actual intro access and remaining scoped transport/QA.
+
+
+## Studio audio staged-byte validation — 2026-11-15
+Parent 110acf2fe37c6522a01263d3a75e4481f0707e4e: four CI PASS (2074,1905,1728,874), PR draft/open, push confirmed. Skill listing empty; used versioned docs. Audio metadata previously read from provider URI before bounded copy, allowing mismatch between inspected and rendered bytes and unbounded provider metadata access. Move metadata inspection to private bounded copy, cancellation before/after inspection; preserve MIME and duration rules. Extend existing portable real export instrumentation with staged WAV hash/duration and corrupt WAV rejection. CI pending; no local Android execution. No new transport, no physical test, no main/install/phase2. Next scoped transport and durable job recovery.

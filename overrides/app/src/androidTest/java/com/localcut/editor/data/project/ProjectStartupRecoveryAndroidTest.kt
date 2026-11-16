@@ -3,7 +3,6 @@ package com.localcut.editor.data.project
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.localcut.editor.domain.model.Project
-import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -22,7 +21,7 @@ class ProjectStartupRecoveryAndroidTest {
             val primaryStore = AtomicProjectStore(primaryDir)
             primaryStore.save(Project.create("primary-before-corruption", 1080, 1920, 30)).getOrThrow()
             val corruptPrimary = "{truncated-primary-snapshot"
-            Files.writeString(primaryDir.resolve("project.json"), corruptPrimary)
+            primaryDir.resolve("project.json").toFile().writeText(corruptPrimary)
 
             val firstSelection = ProjectStartupRecovery.select(projectsRoot)
             assertNotNull("corrupt primary must produce a visible recovery warning", firstSelection.warning)
@@ -39,7 +38,7 @@ class ProjectStartupRecoveryAndroidTest {
             val reopened = ProjectStartupRecovery.select(projectsRoot)
             assertEquals(firstSelection.directory, reopened.directory)
             assertEquals(savedRecovery, reopened.project)
-            assertEquals(corruptPrimary, Files.readString(primaryDir.resolve("project.json")))
+            assertEquals(corruptPrimary, primaryDir.resolve("project.json").toFile().readText())
         } finally {
             projectsRoot.toFile().deleteRecursively()
         }

@@ -35,7 +35,7 @@ internal object TrackEditGuard {
                         throw TimelineEditException(TimelineErrorCode.INVALID_PROJECT, "invalid composition hierarchy")
                     }
                     if (node.locked) {
-                        throw TimelineEditException(TimelineErrorCode.TRACK_LOCKED, "clip locked: $clipId")
+                        throw TimelineEditException(TimelineErrorCode.TRACK_LOCKED, "track locked by layer or ancestor: $clipId")
                     }
                     current = node.parentId?.let { parentId ->
                         nodes[parentId] ?: throw TimelineEditException(

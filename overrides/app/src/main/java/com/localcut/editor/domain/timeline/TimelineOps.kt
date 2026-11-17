@@ -46,6 +46,7 @@ object TimelineOps {
         TrackEditGuard.requireUnlocked(track)
         val clipIndex = track.clips.indexOfFirst { it.id == clipId && it.assetId == assetId }
         if (clipIndex < 0) throw TimelineEditException(TimelineErrorCode.CLIP_NOT_FOUND, "clip $clipId not found for asset $assetId")
+        TrackEditGuard.requireClipTrackUnlocked(project, clipId)
         val otherReferences = project.tracks
             .asSequence()
             .flatMap { it.clips.asSequence() }

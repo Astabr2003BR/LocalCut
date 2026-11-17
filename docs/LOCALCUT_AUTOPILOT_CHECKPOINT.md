@@ -331,3 +331,33 @@ Next:
 1. Check the four workflows for this exact new SHA once; inspect and correct a failing cause before another increment.
 2. If green, continue the remaining direct-mutation, project authorization/revision and portable video-package audit; do not add phase-2 work.
 3. Keep the phase-1 release-candidate gate blocked until portable video/Share flow, scoped transport, full bidirectional QA, real intro-media validation, deployed Bridge E2E and physical POCO checks have evidence.
+
+
+## Hybrid round — 2026-11-17 — duplicate-lock regression assertion correction
+
+Baseline immediately before this increment:
+- Branch: `feature/localcut-bridge-v1`; parent HEAD: `080fb39a2a7b840cf791d674d7010ab746e15fff`; branch ref and PR #14 head matched.
+- PR #14: OPEN + DRAFT, base `main`; repository owner permission previously verified as `admin`.
+- Parent CI: Android Multitrack Export Smoke #1936 (run 44012462684) PASS; Bridge Controller CI #1759 (run 44012462686) PASS; Termux Agent Engine CI #905 (run 44012463699) PASS; Android Debug APK #2105 (run 44012462632) FAIL.
+- Android Debug job 133802462160 completed compilation and 1,541 unit tests; only `TrackLockEnforcementTest.duplicateDoesNotBlockLockedAncestorOutsideShiftedRange` failed at the final source-state assertion (test line 240). The other three workflows completed successfully.
+
+Root cause:
+- The production duplicate operation correctly shifts the returned immutable project while leaving the input project unchanged.
+- The positive regression's final assertion incorrectly expected `source.findClip("b").startUs + 3,000,000` to equal zero. The fixture's original clip starts at 3,000,000us; this was a test expectation defect, not evidence of a production lock-guard defect.
+
+Increment:
+- Corrected the assertion to compare the original source clip with the original `following` fixture object. The returned edited project continues to assert the shifted clip at 5,000,000us.
+- No production code, dependency, permission, endpoint, schema, media, signing, storage or project data changed.
+- Updated the automatic-studio roadmap note to describe the immutable-source assertion.
+
+Verification:
+- Failure diagnosis: observed directly in Android Debug run 44012462632, job 133802462160 logs.
+- Static patch construction: exact assertion anchor found once; corrected assertion is based on the existing immutable fixture.
+- Local Gradle/JVM execution: NOT RUN in this environment.
+- CI for the resulting commit: PENDING; this checkpoint is contained in the same commit as the test correction. Its exact resulting SHA is the commit containing this entry and will be recorded explicitly after the branch ref is read back.
+- No APK installation/distribution, physical POCO X6 5G test, deployed Bridge/MCP E2E, production deployment, merge, signing change or force-push.
+
+Next:
+1. Verify the exact resulting commit SHA and the four CI workflows once; if any fail, inspect that failure before another code increment.
+2. If green, continue auditing remaining direct mutation paths, project authorization/revision checks and portable video-package/Share flow.
+3. Keep the phase-1 release-candidate gate and phase 2 blocked until all required implementation, integration, deployed Bridge, real intro-media and physical-device evidence exists.

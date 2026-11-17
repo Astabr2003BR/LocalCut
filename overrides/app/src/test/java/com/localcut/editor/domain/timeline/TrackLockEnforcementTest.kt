@@ -237,7 +237,7 @@ class TrackLockEnforcementTest {
         assertEquals(1_000_000L, edited.findClip("a")!!.startUs)
         assertEquals(3_000_000L, edited.findClip("a-copy")!!.startUs)
         assertEquals(5_000_000L, edited.findClip("b")!!.startUs)
-        assertEquals(0L, source.findClip("b")!!.startUs + 3_000_000L)
+        assertEquals(following, source.findClip("b"))
     }
 
     @Test

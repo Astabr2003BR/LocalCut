@@ -5,6 +5,9 @@ import com.localcut.editor.domain.history.HistoryManager
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
+import com.localcut.editor.domain.model.CompositionGraph
+import com.localcut.editor.domain.model.CompositionNode
+import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackType
@@ -149,6 +152,49 @@ class LocalTalkClipCoverageTest {
             project(extraVisual = true), "body", "voice") }.isFailure)
         assertTrue(runCatching { LocalTalkClipCoverage.projectedProject(
             project(locked = true), "body", "voice") }.isFailure)
+    }
+
+    @Test fun imageExtensionRejectsLockedCompositionAncestorWithoutChangingSource() {
+        val base = project()
+        val source = base.copy(compositionGraph = CompositionGraph(nodes = listOf(
+            CompositionNode(id = "locked-group", kind = CompositionNodeKind.GROUP, locked = true),
+            CompositionNode(
+                id = "body-layer",
+                kind = CompositionNodeKind.LAYER,
+                clipId = "body",
+                parentId = "locked-group",
+            ),
+        )))
+        val before = source
+
+        assertTrue(runCatching {
+            LocalTalkClipCoverage.projectedProject(source, "body", "voice")
+        }.isFailure)
+        assertEquals(before, source)
+    }
+
+    @Test fun audioDurationRecoveryRejectsLockedCompositionAncestorWithoutChangingSource() {
+        val base = project()
+        val short = base.copy(tracks = base.tracks.map { track ->
+            if (track.type != TrackType.AUDIO) track else track.copy(
+                clips = track.clips.map { it.copy(durationUs = 5_000_000L, sourceOutUs = 5_000_000L) },
+            )
+        })
+        val source = short.copy(compositionGraph = CompositionGraph(nodes = listOf(
+            CompositionNode(id = "locked-audio-group", kind = CompositionNodeKind.GROUP, locked = true),
+            CompositionNode(
+                id = "voice-layer",
+                kind = CompositionNodeKind.LAYER,
+                clipId = "voice",
+                parentId = "locked-audio-group",
+            ),
+        )))
+        val before = source
+
+        assertTrue(runCatching {
+            LocalTalkClipCoverage.projectedProject(source, "body", "voice")
+        }.isFailure)
+        assertEquals(before, source)
     }
 
     @Test fun confirmedTalkAndExtensionAreOneUndoableAction() {

@@ -271,3 +271,33 @@ Next:
 1. Check the four workflows for this exact new SHA once; inspect and correct a failing job before any further increment.
 2. If green, continue auditing remaining forward mutation paths for composition ancestry and revision/authorization consistency.
 3. Keep the phase-1 release-candidate gate and phase 2 blocked; real intro media, deployed Bridge E2E, physical process-recovery and POCO validation remain pending.
+
+
+## Hybrid round — 2026-11-16 — TALK coverage lock ancestry
+
+Baseline verified before this increment:
+- Branch: `feature/localcut-bridge-v1`; parent HEAD: `e1d212c9b294dbde866ae5803329eba37916d5cd`.
+- PR #14: OPEN + DRAFT, base `main`, head matched parent SHA.
+- Parent HEAD CI: Android Debug APK #2103, Android Multitrack Export Smoke #1934, Bridge Controller CI #1757, Termux Agent Engine CI #903 — all completed SUCCESS.
+- Read `bridge/chatgpt-plugin/skills/localcut-control/SKILL.md`, `docs/LOCALCUT_AUTOMATIC_STUDIO_V1.md`, the LocalCut Studio/Bridge design spec, and actual TALK, timeline-lock and project-edit code. The dedicated LocalCut Dev Autopilot skill was not exposed by the installed skill registry; no direct paired-device MCP tool was available in this session.
+
+Audit finding:
+- `LocalTalkClipCoverage.projectedProject` can mutate the voice clip's source/duration during five-second import recovery and can extend a still-image body clip to cover the voice.
+- Before this increment it checked track-level `locked/hidden` flags but did not inspect composition LAYER locks or locked GROUP ancestors. The later `ApplyAnimationPlanCommand` validates its own animation targets, but the voice clip is not necessarily an animation target; that later guard therefore did not protect the earlier duration recovery. The image extension also needed its own guard at the exact mutation boundary.
+
+Increment:
+- Added the shared `TrackEditGuard.requireClipTrackUnlocked` before changing the recovered audio clip and before extending the still-image clip.
+- No-op/read-only coverage calculations are unchanged; existing hidden-track and track-lock checks remain.
+- Added regressions for a locked GROUP ancestor on the image and on the recovered voice; both assert rejection and unchanged source project.
+- Updated `LOCALCUT_AUTOMATIC_STUDIO_V1.md`. No dependency, permission, endpoint, model, project schema, or storage behavior changed.
+
+Verification:
+- Static patch construction checks: PASS (unique anchors and expected parent SHA).
+- Local Gradle/JVM execution: NOT RUN in this environment.
+- New GitHub Actions for the resulting SHA: PENDING until observed.
+- No APK install/distribution, physical POCO X6 5G test, live paired-device Bridge E2E, deployment, merge, signing change, or force-push.
+
+Next:
+1. Check the four workflows for this exact SHA once; inspect logs and fix a failing cause before another increment.
+2. If green, continue auditing direct mutation paths and Bridge authorization/revision checks.
+3. Keep phase 2 blocked until the complete phase-1 gate and immutable release-candidate SHA/artifact are evidenced.

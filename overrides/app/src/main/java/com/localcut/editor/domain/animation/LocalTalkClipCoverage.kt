@@ -5,6 +5,7 @@ import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.TimeMap
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.timeline.TimelineValidator
+import com.localcut.editor.domain.timeline.TrackEditGuard
 
 /** Preview-only edit; does not mutate history until confirmed TALK is applied. */
 object LocalTalkClipCoverage {
@@ -54,6 +55,9 @@ object LocalTalkClipCoverage {
             require(!audioTrack.locked && !audioTrack.hidden) {
                 "A faixa de voz está bloqueada ou oculta; não é possível estendê-la"
             }
+            // Duration recovery mutates this clip even when the animation plan
+            // targets only the visual body. Enforce its layer/group locks here.
+            TrackEditGuard.requireClipTrackUnlocked(project, audioId)
         }
         val plannedAudio = if (recoverImportedVoice) {
             audio.copy(durationUs = requireNotNull(sourceDuration), sourceOutUs = sourceDuration)
@@ -69,6 +73,9 @@ object LocalTalkClipCoverage {
         val extendImage = targetEndUs > imageEndUs
         if (extendImage) {
             require(image.timeMap == TimeMap()) { "Imagem com velocidade alterada: ajuste manualmente" }
+            // Extending the still image is a real clip mutation, not just a
+            // preview calculation; reject locked layers and locked ancestors.
+            TrackEditGuard.requireClipTrackUnlocked(project, imageId)
         }
         val newDurationUs = if (extendImage) Math.subtractExact(targetEndUs, image.startUs) else image.durationUs
         val newSourceOutUs = if (extendImage) Math.addExact(image.sourceInUs, newDurationUs)

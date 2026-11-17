@@ -162,3 +162,7 @@ A corrupt/unsupported primary project no longer causes a brand-new untracked rec
 
 ### Bulk and ripple deletion lock ancestry
 Bulk visual deletion now checks every target clip with the shared track/layer/ancestor guard before constructing the replacement project. Ripple deletion applies the same guard to the removed clip and every following clip it will shift; a locked GROUP ancestor or invalid hierarchy fails closed before returning an edited project. Added regressions for a bulk-delete target under a locked GROUP and a ripple-shifted clip under a locked GROUP, both asserting the source project remains unchanged. Existing Undo/Redo snapshots and unlocked operations are unchanged. CI is required for this commit; no physical-device test is implied.
+
+
+### Confirmed TALK duration coverage respects composition locks
+The local TALK coverage planner can extend a still-image body clip and can repair a five-second imported voice duration before the later animation-plan command runs. Track-level lock checks alone did not cover a locked composition LAYER or ancestor GROUP on either clip. The planner now calls the shared `TrackEditGuard.requireClipTrackUnlocked` only for the clips it actually mutates: the voice clip when recovering its duration and the image clip when extending its coverage. Read-only/no-op coverage calculations remain unaffected. Regression tests reject both locked-ancestor cases and assert the original immutable project is unchanged. This is domain/JVM coverage; CI and physical-device validation are separate gates.

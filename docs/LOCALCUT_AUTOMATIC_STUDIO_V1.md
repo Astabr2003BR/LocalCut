@@ -59,6 +59,10 @@ The existing authenticated PROJECT_EDIT bridge capability already requires match
 
 
 ### Insert-mode lock ancestry
+### Duplicate-mode lock ancestry
+
+`TimelineOps.duplicateClip` preserves the source clip and inserts a copy after it, but it also shifts every following clip on the same track. The duplicate path now checks the shared track/layer/ancestor lock guard for each clip it will shift before constructing the edited project. A locked shifted clip rejects the operation without changing the source; a locked clip before the duplicate range does not block it. The source clip remains independently guarded. Regression coverage exercises both cases. Undo/history behavior is unchanged; this closes the duplicate-shift path only and does not replace the remaining phase-1 authorization/revision audit.
+
 `InsertClipAtTimelineCommand` shifts existing clips whose start is at or after the insertion point. Before building the new immutable project, it now applies the shared track/layer/ancestor lock guard to every shifted clip. A locked ancestor rejects the entire insert without changing the source; a locked clip outside the shifted range does not block the operation. Undo continues to use the captured track snapshot as a restoration command, separate from forward edit authorization. This closes the insert-mode path only; linked-item semantics and a complete audit of all mutation entry points remain pending.
 
 ### Pointwise effect editing

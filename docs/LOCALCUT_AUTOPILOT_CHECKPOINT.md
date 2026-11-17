@@ -301,3 +301,33 @@ Next:
 1. Check the four workflows for this exact SHA once; inspect logs and fix a failing cause before another increment.
 2. If green, continue auditing direct mutation paths and Bridge authorization/revision checks.
 3. Keep phase 2 blocked until the complete phase-1 gate and immutable release-candidate SHA/artifact are evidenced.
+
+
+## Hybrid round — 2026-11-17 — duplicate-mode lock ancestry
+
+Baseline verified immediately before this increment:
+- Branch: `feature/localcut-bridge-v1`; parent HEAD: `6f69db055e25c005f44fd246bb0df3075bf2ecba` (branch ref and PR #14 head matched).
+- PR #14: OPEN + DRAFT, base `main`; repository collaborator permission for owner: `admin`.
+- Parent HEAD CI: Android Debug APK #2104 (run 44005507079), Android Multitrack Export Smoke #1935 (run 44005507110), Bridge Controller CI #1758 (run 44005507188), Termux Agent Engine CI #904 (run 44005507103) — all completed SUCCESS; each run's single job was completed with conclusion SUCCESS.
+- Read the repository `localcut-control` skill, automatic-studio documentation, current checkpoint and actual duplicate/timeline/lock implementation. The dedicated LocalCut Dev Autopilot skill was not exposed by the installed skill registry; no direct paired-device MCP control tool was available.
+
+Audit finding:
+- `TimelineOps.duplicateClip` guarded the source clip, but shifted every following clip whose start was at/after the duplicate end without checking that clip's composition LAYER or locked GROUP ancestors.
+- On an unlocked track, duplicating an earlier clip could therefore move a later locked clip. This was the same authorization boundary already fixed for insert mode and ripple delete.
+
+Increment:
+- Added `TrackEditGuard.requireClipTrackUnlocked(project, clip.id)` before each affected following clip is shifted.
+- Added a negative regression: locked GROUP ancestor on the shifted clip rejects duplication and the immutable source remains unchanged.
+- Added a positive regression: a locked ancestor on a clip before the shifted range does not block duplication; source, duplicate and shifted timeline positions are asserted.
+- Updated the studio roadmap note. No dependency, permission, endpoint, model, project schema, media, signing or storage behavior changed.
+
+Verification:
+- Static patch construction checks: PASS (all source files read from the exact parent branch; each replacement anchor unique).
+- Local Gradle/JVM execution: NOT RUN in this environment.
+- CI for the resulting SHA: PENDING until GitHub Actions reports completion.
+- No APK installation/distribution, physical POCO X6 5G test, deployed Bridge/MCP E2E, production deployment, merge, signing change or force-push.
+
+Next:
+1. Check the four workflows for this exact new SHA once; inspect and correct a failing cause before another increment.
+2. If green, continue the remaining direct-mutation, project authorization/revision and portable video-package audit; do not add phase-2 work.
+3. Keep the phase-1 release-candidate gate blocked until portable video/Share flow, scoped transport, full bidirectional QA, real intro-media validation, deployed Bridge E2E and physical POCO checks have evidence.

@@ -24,6 +24,9 @@ fun TimelineOps.duplicateClip(
 
     val clips = track.clips.map { clip ->
         if (clip.id != original.id && clip.startUs >= duplicateStartUs) {
+            // Duplicating shifts every following clip; enforce the same
+            // track/layer/ancestor authorization as an explicit move.
+            TrackEditGuard.requireClipTrackUnlocked(project, clip.id)
             clip.copy(startUs = checkedTimelineAdd(clip.startUs, original.durationUs))
         } else {
             clip

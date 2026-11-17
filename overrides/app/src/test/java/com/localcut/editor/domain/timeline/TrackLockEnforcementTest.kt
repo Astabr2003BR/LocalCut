@@ -179,6 +179,68 @@ class TrackLockEnforcementTest {
     }
 
     @Test
+    fun duplicateRejectsShiftedClipWithLockedAncestorWithoutChangingSource() {
+        val base = lockedProject()
+        val source = base.copy(
+            tracks = base.tracks.map { track ->
+                if (track.id == "visual-1") track.copy(locked = false) else track
+            },
+            compositionGraph = CompositionGraph(
+                nodes = listOf(
+                    CompositionNode(id = "group-b", kind = CompositionNodeKind.GROUP, locked = true),
+                    CompositionNode(
+                        id = "layer-b",
+                        kind = CompositionNodeKind.LAYER,
+                        clipId = "b",
+                        parentId = "group-b",
+                    ),
+                ),
+            ),
+        )
+        val before = source
+
+        assertTrackLocked {
+            TimelineOps.duplicateClip(source, "a", "a-copy")
+        }
+
+        assertEquals(before, source)
+    }
+
+    @Test
+    fun duplicateDoesNotBlockLockedAncestorOutsideShiftedRange() {
+        val base = lockedProject()
+        val earlier = Clip("earlier", "video", 0L, 1_000_000L, 0L, 1_000_000L)
+        val sourceClip = Clip("a", "video", 1_000_000L, 2_000_000L, 1_000_000L, 3_000_000L)
+        val following = Clip("b", "video", 3_000_000L, 3_000_000L, 3_000_000L, 6_000_000L)
+        val source = base.copy(
+            tracks = base.tracks.map { track ->
+                if (track.id == "visual-1") {
+                    track.copy(locked = false, clips = listOf(earlier, sourceClip, following))
+                } else track
+            },
+            compositionGraph = CompositionGraph(
+                nodes = listOf(
+                    CompositionNode(id = "group-earlier", kind = CompositionNodeKind.GROUP, locked = true),
+                    CompositionNode(
+                        id = "layer-earlier",
+                        kind = CompositionNodeKind.LAYER,
+                        clipId = "earlier",
+                        parentId = "group-earlier",
+                    ),
+                ),
+            ),
+        )
+
+        val edited = TimelineOps.duplicateClip(source, "a", "a-copy")
+
+        assertEquals(0L, edited.findClip("earlier")!!.startUs)
+        assertEquals(1_000_000L, edited.findClip("a")!!.startUs)
+        assertEquals(3_000_000L, edited.findClip("a-copy")!!.startUs)
+        assertEquals(5_000_000L, edited.findClip("b")!!.startUs)
+        assertEquals(0L, source.findClip("b")!!.startUs + 3_000_000L)
+    }
+
+    @Test
     fun unlockedTrackRemainsEditable() {
         val source = lockedProject().let { project ->
             project.copy(

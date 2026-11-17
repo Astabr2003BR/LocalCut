@@ -2,16 +2,22 @@ package com.localcut.editor.domain.timeline
 
 import com.localcut.editor.domain.history.AddClipTransitionCommand
 import com.localcut.editor.domain.history.DeleteAllVisualClipsCommand
+import com.localcut.editor.domain.history.DeleteClipWithTransitionsCommand
+import com.localcut.editor.domain.history.SetClipEffectsCommand
 import com.localcut.editor.domain.history.SetClipOpacityCommand
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.ClipTransition
+import com.localcut.editor.domain.model.CompositionGraph
+import com.localcut.editor.domain.model.CompositionNode
+import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.model.TransitionKind
+import com.localcut.editor.domain.model.EffectInstance
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -77,6 +83,35 @@ class TrackLockEnforcementTest {
         }
 
         assertEquals(listOf("a", "b"), source.tracks.first { it.id == "visual-1" }.clips.map { it.id })
+    }
+
+    @Test
+    fun lockedAncestorRejectsDirectTimelineAndCreativeCommands() {
+        val source = lockedProject().copy(
+            tracks = lockedProject().tracks.map { track -> track.copy(locked = false) },
+            compositionGraph = CompositionGraph(
+                nodes = listOf(
+                    CompositionNode(id = "group-1", kind = CompositionNodeKind.GROUP, locked = true),
+                    CompositionNode(
+                        id = "layer-a",
+                        kind = CompositionNodeKind.LAYER,
+                        clipId = "a",
+                        parentId = "group-1",
+                    ),
+                ),
+            ),
+        )
+
+        assertTrackLocked { TimelineOps.moveClip(source, "a", 500_000L) }
+        assertTrackLocked { TimelineOps.deleteClip(source, "a") }
+        assertTrackLocked { DeleteClipWithTransitionsCommand("a").apply(source) }
+        assertTrackLocked {
+            SetClipEffectsCommand("a", listOf(EffectInstance("fx-1", "blur"))).apply(source)
+        }
+
+        assertEquals(0L, source.findClip("a")!!.startUs)
+        assertEquals(listOf("a", "b"), source.tracks.first { it.id == "visual-1" }.clips.map { it.id })
+        assertTrue(source.findClip("a")!!.effects.isEmpty())
     }
 
     @Test

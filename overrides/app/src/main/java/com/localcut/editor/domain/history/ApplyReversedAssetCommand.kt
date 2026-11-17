@@ -5,6 +5,7 @@ import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.timeline.TimelineValidator
+import com.localcut.editor.domain.timeline.TrackEditGuard
 import com.localcut.editor.domain.time.ReverseClipReplacementPlanner
 
 data class ApplyReversedAssetCommand(
@@ -20,7 +21,7 @@ data class ApplyReversedAssetCommand(
         val trackIndex = project.tracks.indexOfFirst { track -> track.clips.any { it.id == clipId } }
         require(trackIndex >= 0) { "REVERSE_CLIP_NOT_FOUND" }
         val track = project.tracks[trackIndex]
-        require(!track.locked) { "REVERSE_CLIP_TRACK_LOCKED" }
+        TrackEditGuard.requireClipTrackUnlocked(project, clipId)
         val clipIndex = track.clips.indexOfFirst { it.id == clipId }
         require(clipIndex >= 0) { "REVERSE_CLIP_NOT_FOUND" }
         val originalClip = track.clips[clipIndex]

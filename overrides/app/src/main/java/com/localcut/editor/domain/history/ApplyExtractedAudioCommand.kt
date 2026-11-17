@@ -8,6 +8,7 @@ import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.timeline.TimelineValidator
+import com.localcut.editor.domain.timeline.TrackEditGuard
 
 data class ApplyExtractedAudioCommand(
     val sourceClipId: String,
@@ -31,7 +32,7 @@ data class ApplyExtractedAudioCommand(
         require(sourceTrackIndex >= 0) { "EXTRACT_AUDIO_SOURCE_CLIP_NOT_FOUND" }
         val sourceTrack = project.tracks[sourceTrackIndex]
         require(sourceTrack.type == TrackType.VISUAL) { "EXTRACT_AUDIO_SOURCE_TRACK_INVALID" }
-        require(!sourceTrack.locked) { "EXTRACT_AUDIO_SOURCE_TRACK_LOCKED" }
+        TrackEditGuard.requireClipTrackUnlocked(project, sourceClipId)
         val sourceClipIndex = sourceTrack.clips.indexOfFirst { it.id == sourceClipId }
         require(sourceClipIndex >= 0) { "EXTRACT_AUDIO_SOURCE_CLIP_NOT_FOUND" }
         val sourceClip = sourceTrack.clips[sourceClipIndex]

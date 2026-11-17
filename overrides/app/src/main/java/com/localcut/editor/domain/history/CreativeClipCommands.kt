@@ -104,7 +104,7 @@ private fun replaceCreativeClip(
         val index = track.clips.indexOfFirst { it.id == clipId }
         if (index < 0) return@map track
         require(!found) { "clip $clipId exists in more than one track" }
-        if (enforceTrackLock) TrackEditGuard.requireUnlocked(track)
+        if (enforceTrackLock) TrackEditGuard.requireClipTrackUnlocked(project, clipId)
         found = true
         val old = track.clips[index]
         val next = transform(old)

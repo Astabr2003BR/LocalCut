@@ -160,7 +160,7 @@ object TimelineOps {
             throw TimelineEditException(TimelineErrorCode.SPLIT_OUTSIDE_CLIP, "split must be inside clip")
         }
         val track = project.tracks[location.trackIndex]
-        TrackEditGuard.requireUnlocked(track)
+        TrackEditGuard.requireClipTrackUnlocked(project, clipId)
         val firstDuration = splitAtProjectUs - original.startUs
         val secondDuration = original.durationUs - firstDuration
         val splitSourceUs = original.sourceInUs + firstDuration
@@ -192,7 +192,7 @@ object TimelineOps {
     fun deleteClip(project: Project, clipId: String): Project {
         val location = locate(project, clipId)
         val track = project.tracks[location.trackIndex]
-        TrackEditGuard.requireUnlocked(track)
+        TrackEditGuard.requireClipTrackUnlocked(project, clipId)
         val clips = track.clips.toMutableList().also { it.removeAt(location.clipIndex) }
         val tracks = project.tracks.toMutableList().also { it[location.trackIndex] = track.copy(clips = clips) }
         return validated(project.copy(tracks = tracks))
@@ -201,7 +201,7 @@ object TimelineOps {
     private fun updateClip(project: Project, clipId: String, update: (Clip) -> Clip): Project {
         val location = locate(project, clipId)
         val track = project.tracks[location.trackIndex]
-        TrackEditGuard.requireUnlocked(track)
+        TrackEditGuard.requireClipTrackUnlocked(project, clipId)
         val clips = track.clips.toMutableList().also { it[location.clipIndex] = update(location.clip) }
         val tracks = project.tracks.toMutableList().also { it[location.trackIndex] = track.copy(clips = clips) }
         return validated(project.copy(tracks = tracks))

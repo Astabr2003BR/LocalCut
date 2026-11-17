@@ -17,6 +17,7 @@ import com.localcut.editor.domain.model.VectorPath
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.model.TransformValue
 import com.localcut.editor.domain.timeline.TimelineValidator
+import com.localcut.editor.domain.timeline.TrackEditGuard
 
 enum class ProjectItemKind { VIDEO, IMAGE, AUDIO, TEXT, DESIGN, DRAWING }
 
@@ -211,20 +212,7 @@ private fun deleteByKind(project: Project, kinds: Set<ProjectItemKind>): Project
 }
 
 internal fun requireEditableProjectClip(project: Project, clipId: String) {
-    val track = project.tracks.firstOrNull { it.clips.any { clip -> clip.id == clipId } }
-        ?: throw IllegalArgumentException("clip $clipId not found")
-    require(!track.locked) { "track ${track.id} is locked" }
-    val nodes = project.compositionGraph.nodes.associateBy { it.id }
-    project.compositionGraph.nodes.filter { it.kind == CompositionNodeKind.LAYER && it.clipId == clipId }.forEach { layer ->
-        var current: com.localcut.editor.domain.model.CompositionNode? = layer
-        val visited = mutableSetOf<String>()
-        while (current != null) {
-            val node = current
-            require(visited.add(node.id)) { "invalid composition hierarchy" }
-            require(!node.locked) { "clip $clipId is locked" }
-            current = node.parentId?.let { requireNotNull(nodes[it]) { "invalid composition parent" } }
-        }
-    }
+    TrackEditGuard.requireClipTrackUnlocked(project, clipId)
 }
 
 private fun numericParameters(numbers: Map<String, Double>): Map<String, EffectParameter> {

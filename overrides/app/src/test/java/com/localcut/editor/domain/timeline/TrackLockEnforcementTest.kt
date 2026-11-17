@@ -3,6 +3,7 @@ package com.localcut.editor.domain.timeline
 import com.localcut.editor.domain.history.AddClipTransitionCommand
 import com.localcut.editor.domain.history.DeleteAllVisualClipsCommand
 import com.localcut.editor.domain.history.DeleteClipWithTransitionsCommand
+import com.localcut.editor.domain.history.InsertClipAtTimelineCommand
 import com.localcut.editor.domain.history.SetClipEffectsCommand
 import com.localcut.editor.domain.history.SetClipOpacityCommand
 import com.localcut.editor.domain.model.Asset
@@ -114,6 +115,67 @@ class TrackLockEnforcementTest {
         assertEquals(0L, source.findClip("a")!!.startUs)
         assertEquals(listOf("a", "b"), source.tracks.first { it.id == "visual-1" }.clips.map { it.id })
         assertTrue(source.findClip("a")!!.effects.isEmpty())
+    }
+
+    @Test
+    fun insertModeRejectsShiftedClipWithLockedAncestorWithoutChangingSource() {
+        val base = lockedProject()
+        val source = base.copy(
+            tracks = base.tracks.map { track ->
+                if (track.id == "visual-1") track.copy(locked = false) else track
+            },
+            compositionGraph = CompositionGraph(
+                nodes = listOf(
+                    CompositionNode(id = "group-b", kind = CompositionNodeKind.GROUP, locked = true),
+                    CompositionNode(
+                        id = "layer-b",
+                        kind = CompositionNodeKind.LAYER,
+                        clipId = "b",
+                        parentId = "group-b",
+                    ),
+                ),
+            ),
+        )
+        val before = source
+
+        assertTrackLocked {
+            InsertClipAtTimelineCommand(
+                "visual-1",
+                Clip("inserted", "video", 3_000_000L, 1_000_000L, 0L, 1_000_000L),
+            ).apply(source)
+        }
+
+        assertEquals(before, source)
+    }
+
+    @Test
+    fun insertModeDoesNotBlockLockedAncestorOutsideShiftedRange() {
+        val base = lockedProject()
+        val source = base.copy(
+            tracks = base.tracks.map { track ->
+                if (track.id == "visual-1") track.copy(locked = false) else track
+            },
+            compositionGraph = CompositionGraph(
+                nodes = listOf(
+                    CompositionNode(id = "group-a", kind = CompositionNodeKind.GROUP, locked = true),
+                    CompositionNode(
+                        id = "layer-a",
+                        kind = CompositionNodeKind.LAYER,
+                        clipId = "a",
+                        parentId = "group-a",
+                    ),
+                ),
+            ),
+        )
+
+        val edited = InsertClipAtTimelineCommand(
+            "visual-1",
+            Clip("inserted", "video", 3_000_000L, 1_000_000L, 0L, 1_000_000L),
+        ).apply(source).project
+
+        assertEquals(0L, edited.findClip("a")!!.startUs)
+        assertEquals(4_000_000L, edited.findClip("b")!!.startUs)
+        assertEquals(3_000_000L, edited.findClip("inserted")!!.startUs)
     }
 
     @Test

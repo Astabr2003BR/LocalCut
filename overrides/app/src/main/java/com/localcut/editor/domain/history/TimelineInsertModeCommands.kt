@@ -7,6 +7,7 @@ import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.timeline.TimelineEditException
 import com.localcut.editor.domain.timeline.TimelineErrorCode
 import com.localcut.editor.domain.timeline.TimelineValidator
+import com.localcut.editor.domain.timeline.TrackEditGuard
 
 /**
  * Inserts [clip] into an EXCLUSIVE track and shifts clips that start at or after
@@ -49,6 +50,8 @@ data class InsertClipAtTimelineCommand(
             if (existing.startUs < insertionUs) {
                 existing
             } else {
+                // Insertion moves this existing clip; honor its layer and ancestor locks first.
+                TrackEditGuard.requireClipTrackUnlocked(project, existing.id)
                 existing.copy(startUs = Math.addExact(existing.startUs, clip.durationUs))
             }
         }

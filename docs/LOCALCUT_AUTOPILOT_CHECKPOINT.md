@@ -212,3 +212,33 @@ Parent bfa3c99fa3cfc050c23c7a85b947d53181cd9ef9: all four PR workflows PASS (And
 
 ## Startup recovery validation — 2026-11-16
 Parent edb8dd59a6dae58611eb35cfccfde3b7c883a7e2: all four PR workflows PASS on this exact code SHA. Android Debug build run 43982603399 / job 133702720351: PASS; Android unit tests, debug APK assembly, legacy regression harness verification and critical Bridge regression verification all completed successfully. Android Multitrack Export Smoke run 43982603372 / job 133702630715: PASS; emulator smoke including ProjectStartupRecoveryAndroidTest completed successfully. Bridge Controller run 43982603369 / check 133702598403: PASS. Termux Agent Engine run 43982603395 / check 133702598228: PASS. New Android instrumentation covers corrupt primary → save into app-private recovery → select same recovery again, and confirms original corrupt primary remains unchanged. This is an emulator instrumentation test; it does not simulate an actual OS process kill or prove physical-device force-stop/reopen. Physical Android force-stop/reopen and storage interruption remain PENDING. Debug APK artifact was generated and uploaded by CI but was NOT installed or distributed. PR #14 remains OPEN + DRAFT; no merge, release, deployment, signing change or force-push. Next: proceed with the next roadmap item only after checking current source/docs and preserving these recovery guarantees; retain physical-device recovery validation as an explicit gate.
+
+
+## Hybrid round — 2026-11-16 — insert-mode lock ancestry
+
+Baseline verified before this increment:
+- Branch: `feature/localcut-bridge-v1`; parent HEAD: `107711ab450d629785233bed7450d57351821e1b`.
+- PR #14: OPEN + DRAFT; base `main`; no merge or release.
+- Repository push permission: confirmed; owner permission: `admin`.
+- Parent HEAD CI: Android Debug #2101, Android Multitrack Export Smoke #1932, Bridge Controller #1755, Termux Agent Engine #901 — all completed SUCCESS. The earlier test-focused commit `0b6b34e2ea0cfabcc89e635e2b96aaa47b0e1ed3` had Android Debug #2100 and Multitrack #1931 cancelled while Bridge #1754 and Termux #900 succeeded; the later parent HEAD is fully green.
+- The development autopilot skill was not exposed by the installed skill listing. Read the repository's `bridge/chatgpt-plugin/skills/localcut-control/SKILL.md`, `docs/LOCALCUT_AUTOMATIC_STUDIO_V1.md`, and `docs/LOCALCUT_EDITOR_ANIMATION_MASTER_RESEARCH_2026-11-10.md`; followed the versioned repository guidance and did not assume direct Android MCP availability.
+
+Audit finding:
+- The recent lock-hardening chain centralized direct clip authorization in `TrackEditGuard.requireClipTrackUnlocked`, covering direct timeline edits, batch/creative edits, extracted-audio/reverse operations, duplication and imported-asset removal.
+- `InsertClipAtTimelineCommand` was a remaining forward-mutation path: it shifted existing clips at/after the insertion timestamp but checked only the destination track's lock. An unlocked track could therefore move a clip whose composition layer or ancestor GROUP was locked.
+- The inverse command restores a captured track snapshot for Undo; that restoration path remains separate and unchanged.
+
+Increment in this commit:
+- Before shifting each existing clip, call the shared `TrackEditGuard.requireClipTrackUnlocked(project, existing.id)`. The check is limited to clips actually shifted; no source mutation occurs if any guard fails.
+- Added two `TrackLockEnforcementTest` cases: reject an insertion that would shift a clip under a locked GROUP and prove the source project is unchanged; allow insertion when the locked GROUP contains only an earlier, unshifted clip.
+- Updated the automatic-studio documentation and this checkpoint. No new dependency, permission, network endpoint, model, API, or project format.
+
+Verification state:
+- Static source-edit assertions passed in the authoring step (unique replacement anchors and expected file paths).
+- CI for the new commit: PENDING at checkpoint creation. No local Gradle execution, APK installation, physical POCO X6 5G test, deployed Bridge/MCP E2E, or real intro-media QA claimed.
+- No secrets, signing configuration, project data, `main`, PR draft state, or other projects were changed.
+
+Next:
+1. Check the four workflows on the new code SHA once; if any fail, inspect the failing job/log and fix that cause before advancing.
+2. If green, continue the command-path lock/revision audit and preserve physical recovery/intro validation as explicit gates.
+3. Keep phase 2 blocked until every technical phase-1 criterion and an immutable release-candidate SHA/artifact are evidenced.

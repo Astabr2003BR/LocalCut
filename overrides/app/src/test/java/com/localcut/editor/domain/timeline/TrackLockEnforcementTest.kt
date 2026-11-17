@@ -105,6 +105,8 @@ class TrackLockEnforcementTest {
         assertTrackLocked { TimelineOps.moveClip(source, "a", 500_000L) }
         assertTrackLocked { TimelineOps.deleteClip(source, "a") }
         assertTrackLocked { DeleteClipWithTransitionsCommand("a").apply(source) }
+        assertTrackLocked { TimelineOps.duplicateClip(source, "a", "a-copy") }
+        assertTrackLocked { TimelineOps.removeImportedAssetClip(source, "visual-1", "video", "a") }
         assertTrackLocked {
             SetClipEffectsCommand("a", listOf(EffectInstance("fx-1", "blur"))).apply(source)
         }

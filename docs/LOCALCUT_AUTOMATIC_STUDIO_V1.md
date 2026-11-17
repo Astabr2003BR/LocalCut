@@ -158,3 +158,7 @@ The debounced saver now normalizes ordinary exceptions thrown directly by a Proj
 
 ### Persistent recovery project selection
 A corrupt/unsupported primary project no longer causes a brand-new untracked recovery directory on each process launch. Startup checks existing private recovery-* folders, including legacy timestamped folders, selects the most recently modified valid atomic snapshot and continues editing/saving there; failed snapshots remain untouched. New recovery directories are allocated only when no valid candidate exists; once a project is saved, later launches locate it. Valid primary projects remain preferred. This does not reconstruct edits lost before first durable save, merge divergent recovery projects, or constitute physical device kill testing.
+
+
+### Bulk and ripple deletion lock ancestry
+Bulk visual deletion now checks every target clip with the shared track/layer/ancestor guard before constructing the replacement project. Ripple deletion applies the same guard to the removed clip and every following clip it will shift; a locked GROUP ancestor or invalid hierarchy fails closed before returning an edited project. Added regressions for a bulk-delete target under a locked GROUP and a ripple-shifted clip under a locked GROUP, both asserting the source project remains unchanged. Existing Undo/Redo snapshots and unlocked operations are unchanged. CI is required for this commit; no physical-device test is implied.

@@ -96,6 +96,29 @@ class RippleDeleteClipCommandTest {
         }
     }
 
+    @Test
+    fun rippleDeleteRefusesToMoveClipUnderLockedAncestorWithoutChangingSource() {
+        val base = sequentialProject()
+        val source = base.copy(
+            compositionGraph = CompositionGraph(nodes = listOf(
+                CompositionNode(id = "group-c", kind = CompositionNodeKind.GROUP, locked = true),
+                CompositionNode(
+                    id = "layer-c",
+                    kind = CompositionNodeKind.LAYER,
+                    clipId = "c",
+                    parentId = "group-c",
+                ),
+            )),
+        )
+        val before = source
+
+        assertThrows(IllegalArgumentException::class.java) {
+            RippleDeleteClipCommand("b").apply(source)
+        }
+
+        assertEquals(before, source)
+    }
+
     private fun sequentialProject(): Project {
         val asset = Asset(
             id = "video",

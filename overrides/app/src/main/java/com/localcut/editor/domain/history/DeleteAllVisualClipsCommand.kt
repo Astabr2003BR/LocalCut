@@ -12,13 +12,17 @@ object DeleteAllVisualClipsCommand : EditorCommand {
             track.type == TrackType.VISUAL && track.clips.isNotEmpty()
         }
         require(visualTracksWithClips.isNotEmpty()) { "no visual clips" }
-        visualTracksWithClips.forEach(TrackEditGuard::requireUnlocked)
-
         val removedClipIds = visualTracksWithClips
             .asSequence()
             .flatMap { it.clips.asSequence() }
             .map { it.id }
             .toSet()
+
+        // Validate every affected clip before constructing the replacement project.
+        // This includes track, layer, and all composition-group ancestors.
+        removedClipIds.forEach { clipId ->
+            TrackEditGuard.requireClipTrackUnlocked(project, clipId)
+        }
 
         val remainingNodes = project.compositionGraph.nodes.filterNot { node ->
             node.kind == CompositionNodeKind.LAYER && node.clipId?.let { it in removedClipIds } == true

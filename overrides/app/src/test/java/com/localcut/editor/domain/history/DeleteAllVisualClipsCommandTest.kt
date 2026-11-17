@@ -3,12 +3,16 @@ package com.localcut.editor.domain.history
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
+import com.localcut.editor.domain.model.CompositionGraph
+import com.localcut.editor.domain.model.CompositionNode
+import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.timeline.TimelineValidator
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -27,6 +31,29 @@ class DeleteAllVisualClipsCommandTest {
 
         assertTrue(history.undo())
         assertEquals(original, history.project)
+    }
+
+    @Test
+    fun bulkVisualDeleteRejectsLockedAncestorWithoutChangingSource() {
+        val base = fixtureProject()
+        val source = base.copy(
+            compositionGraph = CompositionGraph(nodes = listOf(
+                CompositionNode(id = "group-locked", kind = CompositionNodeKind.GROUP, locked = true),
+                CompositionNode(
+                    id = "layer-video",
+                    kind = CompositionNodeKind.LAYER,
+                    clipId = "video-clip",
+                    parentId = "group-locked",
+                ),
+            )),
+        )
+        val before = source
+
+        assertThrows(IllegalArgumentException::class.java) {
+            DeleteAllVisualClipsCommand.apply(source)
+        }
+
+        assertEquals(before, source)
     }
 
     private fun fixtureProject(): Project {

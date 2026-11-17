@@ -242,3 +242,32 @@ Next:
 1. Check the four workflows on the new code SHA once; if any fail, inspect the failing job/log and fix that cause before advancing.
 2. If green, continue the command-path lock/revision audit and preserve physical recovery/intro validation as explicit gates.
 3. Keep phase 2 blocked until every technical phase-1 criterion and an immutable release-candidate SHA/artifact are evidenced.
+
+
+## Hybrid round — 2026-11-16 — bulk/ripple lock ancestry
+
+Baseline verified immediately before this increment:
+- Branch: `feature/localcut-bridge-v1`; parent HEAD: `6cf080cc3184eab23bbb795d7d41165f6baa6686`.
+- PR #14: OPEN + DRAFT, base `main`, head matched parent SHA; repository owner permission: `admin`.
+- Parent HEAD CI: Android Debug APK #2102, Android Multitrack Export Smoke #1933, Bridge Controller CI #1756, Termux Agent Engine CI #902 — all completed SUCCESS.
+- Repository development skill was read from `bridge/chatgpt-plugin/skills/localcut-control/SKILL.md`; the dedicated LocalCut development skill was not exposed by the installed skill registry. No direct LocalCut MCP control functions were exposed in this session.
+
+Audit finding:
+- `DeleteAllVisualClipsCommand` checked visual track locks but did not check each clip's composition layer or locked GROUP ancestors. A visual clip under an unlocked track could therefore be removed by the bulk command while its composition ancestor was locked.
+- `RippleDeleteClipCommand` checked direct layer locks for following clips, but not their ancestor GROUP locks. It could shift a following clip inside a locked group. The deleted target already flows through `TimelineOps.deleteClip`, which uses the shared guard.
+
+Increment in this commit:
+- Bulk deletion now runs `TrackEditGuard.requireClipTrackUnlocked` for every target clip before building the replacement project.
+- Ripple deletion uses the same shared guard for its target and every following clip it shifts. Invalid/missing/cyclic composition ancestry continues to fail closed in the central guard.
+- Added JVM regressions for locked-GROUP bulk deletion and locked-GROUP ripple movement; both assert the immutable source project remains equal after rejection.
+- Updated the automatic-studio documentation. No new dependency, permission, endpoint, model, project format, or runtime service.
+
+Verification state:
+- Static source-edit assertions passed: each patch anchor was unique and all six target files were read from the parent SHA.
+- JVM/Gradle tests were not run locally; GitHub Actions for this commit are PENDING until observed.
+- No APK installation, physical POCO X6 5G test, live paired-device MCP operation, production deployment, merge, signing change, or force-push.
+
+Next:
+1. Check the four workflows for this exact new SHA once; inspect and correct a failing job before any further increment.
+2. If green, continue auditing remaining forward mutation paths for composition ancestry and revision/authorization consistency.
+3. Keep the phase-1 release-candidate gate and phase 2 blocked; real intro media, deployed Bridge E2E, physical process-recovery and POCO validation remain pending.

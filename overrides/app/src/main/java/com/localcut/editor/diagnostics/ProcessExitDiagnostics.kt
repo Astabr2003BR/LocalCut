@@ -16,6 +16,8 @@ object ProcessExitDiagnostics {
     private const val PREFS_NAME = "localcut.process.diagnostics.v1"
     private const val KEY_LAST_CRASH = "last_uncaught_crash"
     private const val KEY_LAST_CRASH_AT = "last_uncaught_crash_at"
+    private const val KEY_LAST_ACK_EXIT_AT = "last_acknowledged_exit_at"
+    private const val KEY_LAST_ACK_CRASH_AT = "last_acknowledged_crash_at"
     private const val MAX_STATE_SUMMARY_BYTES = 120
     private const val MAX_CRASH_CHARS = 1800
     private const val MAX_REPORT_CHARS = 2200
@@ -24,21 +26,45 @@ object ProcessExitDiagnostics {
     private val installed = AtomicBoolean(false)
     private val breadcrumbs = ArrayDeque<String>()
 
+    private data class PendingDiagnostic(
+        val report: String,
+        val exitTimestampMs: Long,
+        val crashTimestampMs: Long,
+    )
+
     @Volatile
-    private var pendingReport: String? = null
+    private var pendingReport: PendingDiagnostic? = null
+
+    @Volatile
+    private var reportContext: Context? = null
 
     fun install(context: Context) {
         if (!installed.compareAndSet(false, true)) return
         val appContext = context.applicationContext
-        pendingReport = latestRelevantExitReport(appContext)
+        reportContext = appContext
+        pendingReport = latestRelevantExitDetails(appContext)
         installCrashHandler(appContext)
         mark(appContext, "app:create")
     }
 
+    /** Called once when the report is actually handed to the UI, not at cold start. */
+    @Synchronized
     fun consumePendingReport(): String? {
-        val report = pendingReport
+        val pending = pendingReport ?: return null
         pendingReport = null
-        return report
+        reportContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)?.let { prefs ->
+            val editor = prefs.edit()
+            val previouslyShownExit = prefs.getLong(KEY_LAST_ACK_EXIT_AT, 0L)
+            val previouslyShownCrash = prefs.getLong(KEY_LAST_ACK_CRASH_AT, 0L)
+            if (pending.exitTimestampMs > previouslyShownExit) {
+                editor.putLong(KEY_LAST_ACK_EXIT_AT, pending.exitTimestampMs)
+            }
+            if (pending.crashTimestampMs > previouslyShownCrash) {
+                editor.putLong(KEY_LAST_ACK_CRASH_AT, pending.crashTimestampMs)
+            }
+            editor.apply()
+        }
+        return pending.report
     }
 
     fun mark(context: Context, event: String) {
@@ -63,24 +89,32 @@ object ProcessExitDiagnostics {
         }
     }
 
-    fun latestRelevantExitReport(context: Context): String? {
+    fun latestRelevantExitReport(context: Context): String? =
+        latestRelevantExitDetails(context.applicationContext)?.report
+
+    private fun latestRelevantExitDetails(context: Context): PendingDiagnostic? {
         val appContext = context.applicationContext
         val preferences = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val storedCrash = preferences
-            .getString(KEY_LAST_CRASH, null)
-            ?.takeIf { it.isNotBlank() }
+        val previousExitAt = preferences.getLong(KEY_LAST_ACK_EXIT_AT, 0L)
+        val previousCrashAt = preferences.getLong(KEY_LAST_ACK_CRASH_AT, 0L)
         val storedCrashAt = preferences.getLong(KEY_LAST_CRASH_AT, 0L)
+        val storedCrash = preferences.getString(KEY_LAST_CRASH, null)
+            ?.takeIf { it.isNotBlank() && ProcessExitDiagnosticsPolicy.shouldReportStoredCrash(
+                storedCrashAt, previousCrashAt,
+            ) }
 
         val exit = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             runCatching {
-                appContext
-                    .getSystemService(ActivityManager::class.java)
+                appContext.getSystemService(ActivityManager::class.java)
                     .getHistoricalProcessExitReasons(appContext.packageName, 0, 12)
-                    .firstOrNull { ProcessExitDiagnosticsPolicy.shouldSurface(it.reason) }
+                    .filter { record ->
+                        ProcessExitDiagnosticsPolicy.shouldReportExit(
+                            record.reason, record.timestamp, previousExitAt,
+                        )
+                    }
+                    .maxByOrNull { it.timestamp }
             }.getOrNull()
-        } else {
-            null
-        }
+        } else null
 
         val crash = when {
             storedCrash == null -> null
@@ -92,7 +126,6 @@ object ProcessExitDiagnostics {
             ) -> storedCrash
             else -> null
         }
-
         if (exit == null && crash == null) return null
 
         val batteryOptimized = runCatching {
@@ -100,7 +133,7 @@ object ProcessExitDiagnostics {
             !power.isIgnoringBatteryOptimizations(appContext.packageName)
         }.getOrDefault(true)
 
-        return buildString {
+        val report = buildString {
             append("DIAGNÓSTICO DE ENCERRAMENTO\n")
             if (exit != null) {
                 append(formatExit(exit))
@@ -114,6 +147,15 @@ object ProcessExitDiagnostics {
                 append(crash.take(900))
             }
         }.take(MAX_REPORT_CHARS)
+
+        return PendingDiagnostic(
+            report = report,
+            exitTimestampMs = exit?.timestamp ?: 0L,
+            // Do not surface an old unrelated exception after acknowledging a newer exit.
+            crashTimestampMs = if (crash != null ||
+                (exit != null && storedCrashAt in 1L..exit.timestamp)
+            ) storedCrashAt else 0L,
+        )
     }
 
     private fun formatExit(exit: ApplicationExitInfo): String = buildString {
@@ -132,11 +174,17 @@ object ProcessExitDiagnostics {
         append("Quando: ")
         append(SimpleDateFormat("dd/MM HH:mm:ss", Locale.ROOT).format(Date(exit.timestamp)))
         append("\n")
-        append("Memória: PSS=")
-        append(exit.pss / 1024L)
-        append("MB RSS=")
-        append(exit.rss / 1024L)
-        append("MB\n")
+        append("Memória (última amostra, não pico): PSS=")
+        if (exit.pss <= 0L) append("sem amostra") else {
+            append(exit.pss / 1024L)
+            append("MB")
+        }
+        append(" RSS=")
+        if (exit.rss <= 0L) append("sem amostra") else {
+            append(exit.rss / 1024L)
+            append("MB")
+        }
+        append("\n")
 
         if (description.isNotBlank()) {
             append("Descrição: ")
@@ -144,7 +192,10 @@ object ProcessExitDiagnostics {
             append("\n")
         }
 
-        ProcessExitDiagnosticsPolicy.interpretationFor(exit.reason, description)?.let { interpretation ->
+        (
+            ProcessExitDiagnosticsPolicy.memoryExitInterpretation(exit.reason, exit.importance)
+                ?: ProcessExitDiagnosticsPolicy.interpretationFor(exit.reason, description)
+        )?.let { interpretation ->
             append("Interpretação: ")
             append(interpretation)
             append("\n")

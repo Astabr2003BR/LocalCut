@@ -59,6 +59,20 @@ class TermuxEngineRecoveryPolicyTest {
     }
 
     @Test
+    fun pairedManagedOfflineEngineEntersAutomaticRecoveryPath() {
+        assertTrue(
+            TermuxEngineRecoveryPolicy.shouldOfferRepair(
+                paired = true,
+                connected = false,
+                errorCode = null,
+                managedReady = true,
+                capabilities = TermuxAutomationPolicy.REQUIRED_CREATIVE_CAPABILITIES +
+                    TermuxAutomationPolicy.MANAGED_AUTOMATION_CAPABILITY,
+            ),
+        )
+    }
+
+    @Test
     fun unpairedBootstrapPreparesAutomationBeforePairing() {
         val command = TermuxEngineRecoveryPolicy.bootstrapCommand(paired = false)
         assertTrue(command.contains("setup_termux.sh --enable-external-automation"))

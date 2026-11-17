@@ -112,6 +112,126 @@ fun main(){
             assertEquals(before,store.load().getOrThrow().assets)
         }finally{dir.toFile().deleteRecursively()}
     }
+    test("startup prefers valid primary and preserves existing recovery folders") {
+        val root=Files.createTempDirectory("localcut-startup-")
+        try {
+            val original=project("original-primary")
+            val older=project("older-recovery")
+            AtomicProjectStore(root.resolve("default")).save(original).getOrThrow()
+            AtomicProjectStore(root.resolve("recovery-1700000000000")).save(older).getOrThrow()
+            val selected=ProjectStartupRecovery.select(root)
+            assertEquals(root.resolve("default"),selected.directory)
+            assertEquals(original,selected.project)
+            assertEquals(null,selected.warning)
+            assertEquals(older,AtomicProjectStore(root.resolve("recovery-1700000000000")).load().getOrThrow())
+        } finally {root.toFile().deleteRecursively()}
+    }
+    test("startup reopens newest legacy recovery after primary corrupt and restart") {
+        val root=Files.createTempDirectory("localcut-startup-")
+        try {
+            val primaryDir=root.resolve("default")
+            AtomicProjectStore(primaryDir).save(project("original")).getOrThrow()
+            val corrupted="{not json"
+            Files.writeString(primaryDir.resolve("project.json"),corrupted)
+            val oldDir=root.resolve("recovery-1700000000000")
+            val newerDir=root.resolve("recovery-1700000000001")
+            AtomicProjectStore(oldDir).save(project("older")).getOrThrow()
+            AtomicProjectStore(newerDir).save(project("newer")).getOrThrow()
+            Files.setLastModifiedTime(oldDir.resolve("project.json"),java.nio.file.attribute.FileTime.fromMillis(1_700_000_000_000))
+            Files.setLastModifiedTime(newerDir.resolve("project.json"),java.nio.file.attribute.FileTime.fromMillis(1_700_000_010_000))
+            val selected=ProjectStartupRecovery.select(root)
+            assertEquals(newerDir,selected.directory)
+            assertEquals(project("newer"),selected.project)
+            selected.store.save(project("after-edit")).getOrThrow()
+            val restarted=ProjectStartupRecovery.select(root)
+            assertEquals(newerDir,restarted.directory)
+            assertEquals(project("after-edit"),restarted.project)
+            assertEquals(corrupted,Files.readString(primaryDir.resolve("project.json")))
+            assertEquals(project("older"),AtomicProjectStore(oldDir).load().getOrThrow())
+        } finally {root.toFile().deleteRecursively()}
+    }
+    test("new recovery store reopens committed edits after crash with corrupt primary unchanged") {
+        val root=Files.createTempDirectory("localcut-startup-")
+        try {
+            val primary=root.resolve("default")
+            AtomicProjectStore(primary).save(project("pre-corruption")).getOrThrow()
+            Files.writeString(primary.resolve("project.json"),"{truncated")
+            val first=ProjectStartupRecovery.select(root)
+            assertTrue(first.warning!=null,"corruption should be visible")
+            assertTrue(first.directory.fileName.toString().startsWith("recovery-"))
+            assertEquals(null,first.project)
+            val recovered=project("newly-saved-recovery")
+            first.store.save(recovered).getOrThrow()
+            val reopened=ProjectStartupRecovery.select(root)
+            assertEquals(first.directory,reopened.directory)
+            assertEquals(recovered,reopened.project)
+            assertEquals("{truncated",Files.readString(primary.resolve("project.json")))
+        } finally {root.toFile().deleteRecursively()}
+    }
+    test("missing primary reopens saved recovery rather than creating blank default") {
+        val root=Files.createTempDirectory("localcut-startup-")
+        try {
+            val first=ProjectStartupRecovery.select(root)
+            assertEquals(root.resolve("default"),first.directory)
+            assertEquals(null,first.warning)
+            val oldDir=root.resolve("recovery-1700000000002")
+            val recovered=project("saved-while-primary-missing")
+            AtomicProjectStore(oldDir).save(recovered).getOrThrow()
+            val next=ProjectStartupRecovery.select(root)
+            assertEquals(oldDir,next.directory)
+            assertEquals(recovered,next.project)
+            assertTrue(!Files.exists(root.resolve("default").resolve("project.json")))
+        } finally {root.toFile().deleteRecursively()}
+    }
+    test("corrupt recovery and newer-schema primary are preserved, valid recovery wins") {
+        val root=Files.createTempDirectory("localcut-startup-")
+        try {
+            val primary=root.resolve("default")
+            AtomicProjectStore(primary).save(project("from-future")).getOrThrow()
+            val fromFuture=ProjectJson.encode(project("future")).replace(
+                "\"schemaVersion\":${BuildContract.PROJECT_SCHEMA_VERSION}","\"schemaVersion\":999")
+            Files.writeString(primary.resolve("project.json"),fromFuture)
+            val broken=root.resolve("recovery-1700000000003")
+            Files.createDirectories(broken)
+            Files.writeString(broken.resolve("project.json"),"{broken recovery")
+            val first=ProjectStartupRecovery.select(root)
+            assertTrue(first.directory!=primary && first.directory!=broken)
+            assertEquals(null,first.project)
+            val recovered=project("safe-new-recovery")
+            first.store.save(recovered).getOrThrow()
+            val again=ProjectStartupRecovery.select(root)
+            assertEquals(first.directory,again.directory)
+            assertEquals(recovered,again.project)
+            assertEquals(fromFuture,Files.readString(primary.resolve("project.json")))
+            assertEquals("{broken recovery",Files.readString(broken.resolve("project.json")))
+        } finally {root.toFile().deleteRecursively()}
+    }
+    test("startup reuses an empty recovery directory after interruption before first save") {
+        val root = Files.createTempDirectory("localcut-startup-")
+        try {
+            val primaryDir = root.resolve("default")
+            AtomicProjectStore(primaryDir).save(project("before-corruption")).getOrThrow()
+            val corruptPrimary = "{truncated before recovery save"
+            Files.writeString(primaryDir.resolve("project.json"), corruptPrimary)
+
+            val first = ProjectStartupRecovery.select(root)
+            val firstDirectory = first.directory
+            assertTrue(first.warning != null)
+            assertEquals(null, first.project)
+            assertTrue(firstDirectory.fileName.toString().startsWith("recovery-"))
+
+            // Simulate a second process start before the first recovery snapshot was saved.
+            val second = ProjectStartupRecovery.select(root)
+            assertEquals(firstDirectory, second.directory)
+            assertEquals(null, second.project)
+            assertTrue(second.warning != null)
+            val recoveryCount = Files.list(root).use { stream ->
+                stream.filter { Files.isDirectory(it) && it.fileName.toString().startsWith("recovery-") }.count()
+            }
+            assertEquals(1L, recoveryCount)
+            assertEquals(corruptPrimary, Files.readString(primaryDir.resolve("project.json")))
+        } finally { root.toFile().deleteRecursively() }
+    }
     println("RESULT passed=$passed failed=$failed")
     if(failed!=0)error("$failed tests failed")
 }

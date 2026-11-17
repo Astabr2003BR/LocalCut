@@ -17,13 +17,16 @@ fun TimelineOps.duplicateClip(
         throw TimelineEditException(TimelineErrorCode.CLIP_NOT_FOUND, "clip $clipId not found")
     }
     val track = project.tracks[trackIndex]
-    TrackEditGuard.requireUnlocked(track)
+    TrackEditGuard.requireClipTrackUnlocked(project, clipId)
     val clipIndex = track.clips.indexOfFirst { it.id == clipId }
     val original = track.clips[clipIndex]
     val duplicateStartUs = checkedClipEnd(original)
 
     val clips = track.clips.map { clip ->
         if (clip.id != original.id && clip.startUs >= duplicateStartUs) {
+            // Duplicating shifts every following clip; enforce the same
+            // track/layer/ancestor authorization as an explicit move.
+            TrackEditGuard.requireClipTrackUnlocked(project, clip.id)
             clip.copy(startUs = checkedTimelineAdd(clip.startUs, original.durationUs))
         } else {
             clip

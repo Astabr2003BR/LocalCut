@@ -17,6 +17,36 @@ class RemoteMediaUrlPolicyTest {
     }
 
     @Test
+    fun acceptsSignedHttpsMediaLink() {
+        val value = "https://cdn.example/private/test.jpg?expires=123&signature=valid-token"
+        val parsed = RemoteMediaUrlPolicy.parseAndValidate(value).getOrThrow()
+        assertEquals(value, parsed.toASCIIString())
+    }
+
+    @Test
+    fun rejectsChatGptInternalAndUnsafeMediaLinks() {
+        val invalid = listOf(
+            "sandbox:/mnt/data/LocalCut_Personagem_LipSync.jpg",
+            "data:image/png;base64,AA==",
+            "file:///sdcard/Download/voice.mp3",
+            "http://cdn.example/media/voice.mp3",
+            "https://user:password@cdn.example/image.png",
+            "https://127.0.0.1:443/audio.mp3",
+            "https://cdn.example/" + "a".repeat(4_100),
+        )
+        invalid.forEach { url ->
+            assertTrue("expected rejected media link: " + url.take(70),
+                RemoteMediaUrlPolicy.parseAndValidate(url).isFailure)
+        }
+    }
+
+    @Test
+    fun doesNotRequireNetworkOrDnsForPublicHostPrevalidation() {
+        val result = RemoteMediaUrlPolicy.parseAndValidate("https://media.example/assets/voice.mp3")
+        assertTrue(result.isSuccess)
+    }
+
+    @Test
     fun rejectsHttpUrl() {
         assertTrue(
             RemoteMediaUrlPolicy.parseAndValidate(

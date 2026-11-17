@@ -30,6 +30,11 @@ internal object ProjectEditPayloadParser {
         require(payloadJson.isNotBlank() && payloadJson.length <= MAX_PAYLOAD_CHARS) { "project edit payload size invalid" }
         val root = MiniJson.parse(payloadJson).asObject()
         root.requireOnly("operations")
+        return parseOperations(root)
+    }
+
+    // Local Editor IA uses the same typed operation parser, with its own envelope.
+    internal fun parseOperations(root: JObject): List<ProjectEditOperation> {
         val rawOperations = root.required("operations").asArray().values
         require(rawOperations.isNotEmpty()) { "project edit requires operations" }
         require(rawOperations.size <= ProjectEditBatchCommand.MAX_OPERATIONS) { "too many project edit operations" }
@@ -48,9 +53,36 @@ internal object ProjectEditPayloadParser {
             }.toSet()
             ProjectEditOperation.DeleteByKind(kinds)
         }
+        "replaceStillImage" -> {
+            item.requireOnly("op", "clipId", "expectedAssetId", "replacementAssetId")
+            ProjectEditOperation.ReplaceStillImage(item.requiredNonBlankString("clipId"), item.requiredNonBlankString("expectedAssetId"), item.requiredNonBlankString("replacementAssetId"))
+        }
         "deleteClip" -> {
             item.requireOnly("op", "clipId")
             ProjectEditOperation.DeleteClip(item.requiredNonBlankString("clipId"))
+        }
+        "trimClip" -> {
+            item.requireOnly("op", "clipId", "newStartUs", "newEndUs")
+            val start = item.optionalLong("newStartUs")
+            val end = item.optionalLong("newEndUs")
+            require((start == null) != (end == null)) { "provide exactly one of newStartUs/newEndUs" }
+            require((start ?: end!!) >= 0L) { "trim edge must be non-negative" }
+            ProjectEditOperation.TrimClip(item.requiredNonBlankString("clipId"), start, end)
+        }
+        "addEffect" -> {
+            item.requireOnly("op", "clipId", "effectId", "typeId", "numbers")
+            ProjectEditOperation.AddEffect(item.requiredNonBlankString("clipId"), item.requiredNonBlankString("effectId"),
+                item.requiredNonBlankString("typeId"), item.numericParameters())
+        }
+        "patchEffect" -> {
+            item.requireOnly("op", "clipId", "effectId", "enabled", "numbers")
+            ProjectEditOperation.PatchEffect(item.requiredNonBlankString("clipId"), item.requiredNonBlankString("effectId"),
+                item.optionalBoolean("enabled"), item.numericParameters())
+        }
+        "setEffectKeyframe" -> {
+            item.requireOnly("op", "clipId", "effectId", "parameter", "offsetUs", "value")
+            ProjectEditOperation.SetEffectKeyframe(item.requiredNonBlankString("clipId"), item.requiredNonBlankString("effectId"),
+                item.requiredNonBlankString("parameter"), item.requiredLong("offsetUs"), item.requiredDouble("value"))
         }
         "deleteText" -> {
             item.requireOnly("op", "overlayId")
@@ -210,6 +242,12 @@ internal object ProjectEditPayloadParser {
             )
         }
         else -> throw IllegalArgumentException("unsupported project edit op '$op'")
+    }
+
+    private fun JObject.numericParameters(): Map<String, Double> {
+        val fields = optional("numbers")?.asObject()?.fields.orEmpty()
+        require(fields.size <= 32) { "too many numeric parameters" }
+        return fields.mapValues { (_, raw) -> raw.asDouble().also { require(it.isFinite()) } }
     }
 
     private fun JObject.requireOnly(vararg keys: String) {

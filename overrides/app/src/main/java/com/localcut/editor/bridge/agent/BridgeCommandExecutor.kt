@@ -36,6 +36,8 @@ import com.localcut.editor.domain.model.TransformValue
 import com.localcut.editor.domain.model.TransitionKind
 import com.localcut.editor.session.EditorAction
 import com.localcut.editor.session.ProjectSession
+import com.localcut.editor.ui.editor.EditorAiApprovalGate
+import com.localcut.editor.ui.editor.EditorAiExportReview
 import java.util.Base64
 
 interface BridgePlaybackPort {
@@ -80,6 +82,8 @@ class BridgeCommandExecutor(
                     success(command, reader.exportStatusJson(payload.optionalString("jobId")))
                 }
                 BridgeCapability.GET_PREVIEW_FRAME -> executePreviewFrame(command)
+                BridgeCapability.GET_EXPORT_REVIEW_FRAMES -> executeExportReviewFrames(command)
+                BridgeCapability.SUBMIT_EXPORT_REVIEW_PROPOSAL -> executeExportReviewProposal(command)
                 BridgeCapability.SEEK -> executeSeek(command)
                 BridgeCapability.SELECT_CLIP -> executeSelect(command)
                 BridgeCapability.MOVE_CLIP -> executeMove(command)
@@ -90,6 +94,8 @@ class BridgeCommandExecutor(
                 BridgeCapability.SET_TRANSFORM -> executeTransform(command)
                 BridgeCapability.SET_VOLUME -> executeVolume(command)
                 BridgeCapability.SET_KEYFRAMES -> executeKeyframes(command)
+                BridgeCapability.ANIMATE_CHARACTER -> BridgeAnimationCommandHandler(session).executeCharacter(command)
+                BridgeCapability.ANIMATE_SCENE -> BridgeAnimationCommandHandler(session).executeScene(command)
                 BridgeCapability.ADD_TEXT -> executeAddText(command)
                 BridgeCapability.PROJECT_EDIT -> executeProjectEdit(command)
                 BridgeCapability.ADD_TRANSITION -> executeAddTransition(command)
@@ -111,7 +117,42 @@ class BridgeCommandExecutor(
         }
     }
 
+    private fun executeExportReviewProposal(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val fields = payload(command)
+        require(fields.fields.keys == setOf("planJson")) { "expected planJson" }
+        val draft = fields.requiredString("planJson")
+        val state = session.state
+        val source = EditorAiExportReview.from(jobs.latest.value, state.project.id, state.revision).source
+            ?: return error(command, BridgeErrorCode.PREVIEW_FAILED, "export evidence unavailable", false)
+        if (!jobs.hasReviewEvidence(source))
+            return error(command, BridgeErrorCode.PREVIEW_FAILED, "export evidence expired", false)
+        // Dry-run only, on the editor thread through the existing message processor.
+        val approval = EditorAiApprovalGate().prepare(draft, state, source).getOrElse {
+            return error(command, BridgeErrorCode.INVALID_ARGUMENT, "invalid visual review proposal", false)
+        }
+        if (approval.reviewSource != source)
+            return error(command, BridgeErrorCode.INVALID_ARGUMENT, "review identity required", false)
+        val proposal = jobs.offerReviewProposal(source, draft)
+            ?: return error(command, BridgeErrorCode.LOCAL_INTERACTION_REQUIRED, "proposal already pending or consumed; check Editor IA", false)
+        return success(command, "{\"proposalId\":${jsonString(proposal.id)},\"status\":\"pending_local_approval\",\"applied\":false}")
+    }
+
+    private fun executeExportReviewFrames(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val fields = payload(command)
+        require(fields.fields.keys == setOf("jobId", "sourceRevision")) { "expected jobId and sourceRevision" }
+        val jobId = fields.requiredString("jobId")
+        val revision = fields.requiredLong("sourceRevision")
+        require(revision >= 0L && jobId.length <= 128) { "invalid export evidence reference" }
+        val json = jobs.reviewFrames(jobId, command.projectId, revision)
+            ?: return error(command, BridgeErrorCode.PREVIEW_FAILED, "export sample evidence unavailable", false)
+        return success(command, json)
+    }
+
     private fun executePreviewFrame(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val before = session.state
+        if (command.expectedRevision != null && command.expectedRevision != before.revision) {
+            return error(command, BridgeErrorCode.REVISION_CONFLICT, "project revision changed", retryable = true)
+        }
         val frameResult = previewFramePort.capture()
         if (frameResult.isFailure) {
             return error(
@@ -122,6 +163,13 @@ class BridgeCommandExecutor(
             )
         }
         val frame = frameResult.getOrThrow()
+        val after = session.state
+        if (after.project.id != before.project.id || after.revision != before.revision) {
+            return error(command, BridgeErrorCode.REVISION_CONFLICT, "project changed during preview capture", retryable = true)
+        }
+        if (!BridgePreviewFreshness.bounded(frame)) {
+            return error(command, BridgeErrorCode.PREVIEW_FAILED, "preview exceeds technical bounds", retryable = false)
+        }
         val encoded = Base64.getEncoder().encodeToString(frame.bytes)
         val resultJson = buildString {
             append("{\"mimeType\":")
@@ -134,12 +182,19 @@ class BridgeCommandExecutor(
             append(frame.height)
             append(",\"positionUs\":")
             append(frame.positionUs)
+            append(",\"projectId\":")
+            append(jsonString(before.project.id))
+            append(",\"revision\":")
+            append(before.revision)
             append('}')
         }
         return success(command, resultJson)
     }
 
     private fun executeSeek(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        if (command.expectedRevision != null && command.expectedRevision != session.state.revision) {
+            return error(command, BridgeErrorCode.REVISION_CONFLICT, "project revision changed", retryable = true)
+        }
         val positionUs = payload(command).requiredLong("positionUs")
         require(positionUs >= 0L) { "positionUs must be non-negative" }
         val result = playback.seekToUs(positionUs)
@@ -340,7 +395,9 @@ class BridgeCommandExecutor(
         }
     }
 
-    private fun executeExport(command: BridgeCommandEnvelope): BridgeResultEnvelope = when (val reservation = jobs.reserveExport(command.messageId)) {
+    private fun executeExport(command: BridgeCommandEnvelope): BridgeResultEnvelope {
+        val source = session.state
+        return when (val reservation = jobs.reserveExport(command.messageId, source.project.id, source.revision)) {
         is BridgeJobReservation.Existing -> success(command, jobJson(reservation.job))
         is BridgeJobReservation.Busy -> error(
             command,
@@ -360,8 +417,12 @@ class BridgeCommandExecutor(
                     jobs.updateProgress(jobId, percent.coerceIn(0, 100))
                 }
 
-                override fun onCompleted(resultJson: String) {
-                    jobs.succeed(jobId, resultJson)
+                override fun onCompleted(resultJson: String) = onCompletedWithReview(resultJson, null)
+
+                override fun onCompletedWithReview(resultJson: String, review: BridgeExportInspection?) {
+                    jobs.succeedWithReview(jobId, appendBridgeExportMetadata(resultJson,
+                        "\"sourceProjectId\":" + jsonString(source.project.id) + ",\"sourceRevision\":" + source.revision),
+                        source.project.id, source.revision, review)
                 }
 
                 override fun onFailed(message: String) {
@@ -372,7 +433,7 @@ class BridgeCommandExecutor(
                     jobs.cancel(jobId)
                 }
             }
-            val started = exportPort.start(session.state.project, listener)
+            val started = exportPort.start(source.project, listener)
             if (started.isFailure) {
                 val message = started.exceptionOrNull()?.message ?: "export could not start"
                 jobs.fail(jobId, BridgeErrorCode.EXPORT_FAILED, sanitize(message))
@@ -383,9 +444,13 @@ class BridgeCommandExecutor(
         }
     }
 
+    }
+
     private fun executeCancelExport(command: BridgeCommandEnvelope): BridgeResultEnvelope {
         val jobId = payload(command).requiredString("jobId")
-        val job = jobs.get(jobId) ?: return error(command, BridgeErrorCode.INVALID_ARGUMENT, "job not found", false)
+        val job = jobs.get(jobId)?.takeIf { it.sourceProjectId == command.projectId }
+            ?: return error(command, BridgeErrorCode.INVALID_ARGUMENT, "job not found", false)
+        if (jobs.active()?.jobId != jobId) return error(command, BridgeErrorCode.INVALID_ARGUMENT, "job is not active", false)
         val cancelled = exportPort.cancel()
         if (cancelled.isFailure) {
             return error(
@@ -395,7 +460,7 @@ class BridgeCommandExecutor(
                 retryable = true,
             )
         }
-        jobs.cancel(jobId)
+        // Cancellation is a request. Completion/cancel/failure callback owns terminal state.
         return success(command, jobJson(requireNotNull(jobs.get(job.jobId))))
     }
 

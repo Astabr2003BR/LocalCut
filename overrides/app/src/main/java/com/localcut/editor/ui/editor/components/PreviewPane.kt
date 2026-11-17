@@ -24,6 +24,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -65,6 +67,7 @@ fun PreviewPane(
     onTrackingViewportSizeChanged: (IntSize) -> Unit = {},
 ) {
     val hostView = LocalView.current
+    val clipboard = LocalClipboardManager.current
     val latestState = rememberUpdatedState(state)
     val playerViewRef = remember(controller) { AtomicReference<PlayerView?>(null) }
     val previousViewportHeightDp = remember(controller) { AtomicReference(viewportHeight.value) }
@@ -204,13 +207,25 @@ fun PreviewPane(
                         shape = RoundedCornerShape(7.dp),
                         modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp),
                     ) {
-                        Text(
-                            text = message,
-                            color = Color(0xFFFFDADD),
-                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                        )
+                        Column(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                            horizontalAlignment = Alignment.Start,
+                        ) {
+                            Text(
+                                text = message,
+                                color = Color(0xFFFFDADD),
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 3,
+                            )
+                            if (message.startsWith("Prévia Media3:")) {
+                                TextButton(
+                                    onClick = { clipboard.setText(AnnotatedString(message)) },
+                                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                                ) {
+                                    Text("Copiar diagnóstico", color = Color.White)
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -53,6 +53,7 @@ class AndroidWaveformDecoder(
             var outputFormat = inputFormat
 
             while (!outputEnded) {
+                ensureNotInterrupted()
                 if (!inputEnded) {
                     val inputIndex = codec.dequeueInputBuffer(CODEC_TIMEOUT_US)
                     if (inputIndex >= 0) {
@@ -103,8 +104,17 @@ class AndroidWaveformDecoder(
             } catch (_: Throwable) {
                 // Decoder may fail before start; release below is still required.
             }
-            codec?.release()
-            extractor.release()
+            try {
+                codec?.release()
+            } finally {
+                extractor.release()
+            }
+        }
+    }
+
+    private fun ensureNotInterrupted() {
+        if (Thread.currentThread().isInterrupted) {
+            throw InterruptedException("Waveform decoding cancelled")
         }
     }
 
@@ -135,6 +145,8 @@ class AndroidWaveformDecoder(
         }.slice().order(ByteOrder.nativeOrder())
         val frameCount = data.remaining() / bytesPerFrame
         for (frame in 0 until frameCount) {
+            // A long decoded buffer must respond to cancellation too.
+            if ((frame and 1023) == 0) ensureNotInterrupted()
             var peak = 0f
             repeat(channelCount) {
                 val amplitude = when (encoding) {

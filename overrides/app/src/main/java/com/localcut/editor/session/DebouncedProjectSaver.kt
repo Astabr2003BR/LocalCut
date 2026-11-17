@@ -51,7 +51,14 @@ class DebouncedProjectSaver(
         return synchronized(saveLock) {
             val project = synchronized(stateLock) { pending }
                 ?: return@synchronized Result.success(Unit).also { lastResult = it }
-            val result = store.save(project)
+            // Storage implementations normally return Result.failure, but an
+            // unexpected I/O exception must not kill a scheduled save worker
+            // or discard the still-pending project. Do not mask fatal Errors.
+            val result = try {
+                store.save(project)
+            } catch (error: Exception) {
+                Result.failure(error)
+            }
             synchronized(stateLock) {
                 if (result.isSuccess && pending == project) {
                     pending = null

@@ -2,16 +2,23 @@ package com.localcut.editor.domain.timeline
 
 import com.localcut.editor.domain.history.AddClipTransitionCommand
 import com.localcut.editor.domain.history.DeleteAllVisualClipsCommand
+import com.localcut.editor.domain.history.DeleteClipWithTransitionsCommand
+import com.localcut.editor.domain.history.InsertClipAtTimelineCommand
+import com.localcut.editor.domain.history.SetClipEffectsCommand
 import com.localcut.editor.domain.history.SetClipOpacityCommand
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
 import com.localcut.editor.domain.model.ClipTransition
+import com.localcut.editor.domain.model.CompositionGraph
+import com.localcut.editor.domain.model.CompositionNode
+import com.localcut.editor.domain.model.CompositionNodeKind
 import com.localcut.editor.domain.model.Project
 import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.model.TransitionKind
+import com.localcut.editor.domain.model.EffectInstance
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -77,6 +84,160 @@ class TrackLockEnforcementTest {
         }
 
         assertEquals(listOf("a", "b"), source.tracks.first { it.id == "visual-1" }.clips.map { it.id })
+    }
+
+    @Test
+    fun lockedAncestorRejectsDirectTimelineAndCreativeCommands() {
+        val source = lockedProject().copy(
+            tracks = lockedProject().tracks.map { track -> track.copy(locked = false) },
+            compositionGraph = CompositionGraph(
+                nodes = listOf(
+                    CompositionNode(id = "group-1", kind = CompositionNodeKind.GROUP, locked = true),
+                    CompositionNode(
+                        id = "layer-a",
+                        kind = CompositionNodeKind.LAYER,
+                        clipId = "a",
+                        parentId = "group-1",
+                    ),
+                ),
+            ),
+        )
+
+        assertTrackLocked { TimelineOps.moveClip(source, "a", 500_000L) }
+        assertTrackLocked { TimelineOps.deleteClip(source, "a") }
+        assertTrackLocked { DeleteClipWithTransitionsCommand("a").apply(source) }
+        assertTrackLocked { TimelineOps.duplicateClip(source, "a", "a-copy") }
+        assertTrackLocked { TimelineOps.removeImportedAssetClip(source, "visual-1", "video", "a") }
+        assertTrackLocked {
+            SetClipEffectsCommand("a", listOf(EffectInstance("fx-1", "blur"))).apply(source)
+        }
+
+        assertEquals(0L, source.findClip("a")!!.startUs)
+        assertEquals(listOf("a", "b"), source.tracks.first { it.id == "visual-1" }.clips.map { it.id })
+        assertTrue(source.findClip("a")!!.effects.isEmpty())
+    }
+
+    @Test
+    fun insertModeRejectsShiftedClipWithLockedAncestorWithoutChangingSource() {
+        val base = lockedProject()
+        val source = base.copy(
+            tracks = base.tracks.map { track ->
+                if (track.id == "visual-1") track.copy(locked = false) else track
+            },
+            compositionGraph = CompositionGraph(
+                nodes = listOf(
+                    CompositionNode(id = "group-b", kind = CompositionNodeKind.GROUP, locked = true),
+                    CompositionNode(
+                        id = "layer-b",
+                        kind = CompositionNodeKind.LAYER,
+                        clipId = "b",
+                        parentId = "group-b",
+                    ),
+                ),
+            ),
+        )
+        val before = source
+
+        assertTrackLocked {
+            InsertClipAtTimelineCommand(
+                "visual-1",
+                Clip("inserted", "video", 3_000_000L, 1_000_000L, 0L, 1_000_000L),
+            ).apply(source)
+        }
+
+        assertEquals(before, source)
+    }
+
+    @Test
+    fun insertModeDoesNotBlockLockedAncestorOutsideShiftedRange() {
+        val base = lockedProject()
+        val source = base.copy(
+            tracks = base.tracks.map { track ->
+                if (track.id == "visual-1") track.copy(locked = false) else track
+            },
+            compositionGraph = CompositionGraph(
+                nodes = listOf(
+                    CompositionNode(id = "group-a", kind = CompositionNodeKind.GROUP, locked = true),
+                    CompositionNode(
+                        id = "layer-a",
+                        kind = CompositionNodeKind.LAYER,
+                        clipId = "a",
+                        parentId = "group-a",
+                    ),
+                ),
+            ),
+        )
+
+        val edited = InsertClipAtTimelineCommand(
+            "visual-1",
+            Clip("inserted", "video", 3_000_000L, 1_000_000L, 0L, 1_000_000L),
+        ).apply(source).project
+
+        assertEquals(0L, edited.findClip("a")!!.startUs)
+        assertEquals(4_000_000L, edited.findClip("b")!!.startUs)
+        assertEquals(3_000_000L, edited.findClip("inserted")!!.startUs)
+    }
+
+    @Test
+    fun duplicateRejectsShiftedClipWithLockedAncestorWithoutChangingSource() {
+        val base = lockedProject()
+        val source = base.copy(
+            tracks = base.tracks.map { track ->
+                if (track.id == "visual-1") track.copy(locked = false) else track
+            },
+            compositionGraph = CompositionGraph(
+                nodes = listOf(
+                    CompositionNode(id = "group-b", kind = CompositionNodeKind.GROUP, locked = true),
+                    CompositionNode(
+                        id = "layer-b",
+                        kind = CompositionNodeKind.LAYER,
+                        clipId = "b",
+                        parentId = "group-b",
+                    ),
+                ),
+            ),
+        )
+        val before = source
+
+        assertTrackLocked {
+            TimelineOps.duplicateClip(source, "a", "a-copy")
+        }
+
+        assertEquals(before, source)
+    }
+
+    @Test
+    fun duplicateDoesNotBlockLockedAncestorOutsideShiftedRange() {
+        val base = lockedProject()
+        val earlier = Clip("earlier", "video", 0L, 1_000_000L, 0L, 1_000_000L)
+        val sourceClip = Clip("a", "video", 1_000_000L, 2_000_000L, 1_000_000L, 3_000_000L)
+        val following = Clip("b", "video", 3_000_000L, 3_000_000L, 3_000_000L, 6_000_000L)
+        val source = base.copy(
+            tracks = base.tracks.map { track ->
+                if (track.id == "visual-1") {
+                    track.copy(locked = false, clips = listOf(earlier, sourceClip, following))
+                } else track
+            },
+            compositionGraph = CompositionGraph(
+                nodes = listOf(
+                    CompositionNode(id = "group-earlier", kind = CompositionNodeKind.GROUP, locked = true),
+                    CompositionNode(
+                        id = "layer-earlier",
+                        kind = CompositionNodeKind.LAYER,
+                        clipId = "earlier",
+                        parentId = "group-earlier",
+                    ),
+                ),
+            ),
+        )
+
+        val edited = TimelineOps.duplicateClip(source, "a", "a-copy")
+
+        assertEquals(0L, edited.findClip("earlier")!!.startUs)
+        assertEquals(1_000_000L, edited.findClip("a")!!.startUs)
+        assertEquals(3_000_000L, edited.findClip("a-copy")!!.startUs)
+        assertEquals(5_000_000L, edited.findClip("b")!!.startUs)
+        assertEquals(following, source.findClip("b"))
     }
 
     @Test

@@ -27,8 +27,12 @@ internal object LocalCutFrameProcessorIntegration {
             builder
                 .setFrameProcessorFactory(LocalCutBlendFrameProcessor.Factory(context))
                 .setNativeHardwareBufferHelpers(HardwareBufferJni.INSTANCE)
-        } else {
+        } else if (LocalCutFrameProcessorRoutePolicy.requiresMultipleInputVideoGraph(project)) {
             builder.setVideoGraphFactory(MultipleInputVideoGraph.Factory())
+        } else {
+            // CompositionPlayer defaults to SingleInputVideoGraph; avoid the
+            // multi-input compositor for one portrait plus audio-only tracks.
+            builder
         }
 
     fun configureTransformerBuilder(

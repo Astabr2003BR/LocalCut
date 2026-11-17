@@ -8,6 +8,15 @@ import org.junit.Test
 
 class ProjectEditPayloadParserTest {
     @Test
+    fun parsesStillReplacementStrictly() {
+        val op = """{"op":"replaceStillImage","clipId":"c","expectedAssetId":"old","replacementAssetId":"new"}"""
+        assertEquals(ProjectEditOperation.ReplaceStillImage("c", "old", "new"), ProjectEditPayloadParser.parse("{\"operations\":[$op]}").single())
+        for (invalid in listOf(op.replace("\"new\"", "\"\""), op.replace("\"new\"", "null"), op.replace("\"replacementAssetId\"", "\"path\""))) {
+            assertTrue(runCatching { ProjectEditPayloadParser.parse("{\"operations\":[$invalid]}") }.isFailure)
+        }
+    }
+
+    @Test
     fun parsesTypedBatchOperations() {
         val operations = ProjectEditPayloadParser.parse(
             """{"operations":[{"op":"deleteByKind","kinds":["audio","text"]},{"op":"patchClip","clipId":"clip-1","startUs":2000000,"volume":0.5,"scale":1.25},{"op":"addText","id":"t2","text":"Olá","startUs":0,"durationUs":1000000,"fontSizePx":70},{"op":"patchText","overlayId":"t2","text":"Olá mundo","opacity":0.8}]}""",
@@ -45,6 +54,39 @@ class ProjectEditPayloadParserTest {
         assertEquals(1_000_000L, clip.durationUs)
         assertEquals(0.75, clip.scale, 0.0)
         assertEquals(0.8, clip.opacity, 0.0)
+    }
+
+    @Test
+    fun parsesTrimAndRejectsInvalidEdges() {
+        val operations = ProjectEditPayloadParser.parse("""{"operations":[{"op":"trimClip","clipId":"v","newStartUs":200000},{"op":"trimClip","clipId":"v","newEndUs":700000}]}""")
+        assertEquals(ProjectEditOperation.TrimClip("v", newStartUs = 200_000L), operations[0])
+        assertEquals(ProjectEditOperation.TrimClip("v", newEndUs = 700_000L), operations[1])
+        val invalid = listOf(
+            """{"op":"trimClip","clipId":"v"}""",
+            """{"op":"trimClip","clipId":"v","newStartUs":0,"newEndUs":5}""",
+            """{"op":"trimClip","clipId":"v","newStartUs":-1}""",
+            """{"op":"trimClip","clipId":"v","newEndUs":"5"}""",
+            """{"op":"trimClip","clipId":"v","newEndUs":5,"unexpected":true}""",
+        )
+        invalid.forEach { item ->
+            assertTrue(runCatching { ProjectEditPayloadParser.parse("{\"operations\":[$item]}") }.isFailure)
+        }
+    }
+
+    @Test
+    fun parsesPointwiseEffectOperationsAndRejectsNonNumericValues() {
+        val operations = ProjectEditPayloadParser.parse("""{"operations":[{"op":"addEffect","clipId":"v","effectId":"e","typeId":"localcut.color.brightness","numbers":{"amount":0.2}},{"op":"patchEffect","clipId":"v","effectId":"e","enabled":false},{"op":"setEffectKeyframe","clipId":"v","effectId":"e","parameter":"amount","offsetUs":1000,"value":0.4}]}""")
+        assertEquals(ProjectEditOperation.AddEffect("v", "e", "localcut.color.brightness", mapOf("amount" to 0.2)), operations[0])
+        assertEquals(ProjectEditOperation.PatchEffect("v", "e", enabled = false), operations[1])
+        assertEquals(ProjectEditOperation.SetEffectKeyframe("v", "e", "amount", 1000L, 0.4), operations[2])
+        val invalid = listOf(
+            """{"op":"patchEffect","clipId":"v","effectId":"e","numbers":{"amount":"0.4"}}""",
+            """{"op":"patchEffect","clipId":"v","effectId":"e","typeId":"new"}""",
+            """{"op":"setEffectKeyframe","clipId":"v","effectId":"e","parameter":"amount","offsetUs":0,"value":true}""",
+        )
+        invalid.forEach { item ->
+            assertTrue(runCatching { ProjectEditPayloadParser.parse("{\"operations\":[$item]}") }.isFailure)
+        }
     }
 
     @Test

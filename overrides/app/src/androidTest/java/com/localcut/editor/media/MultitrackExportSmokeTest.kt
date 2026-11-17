@@ -5,6 +5,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.media.MediaMetadataRetriever
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.media3.common.MimeTypes
@@ -27,6 +29,17 @@ import com.localcut.editor.domain.model.Track
 import com.localcut.editor.domain.model.TrackCollisionPolicy
 import com.localcut.editor.domain.model.TrackType
 import com.localcut.editor.domain.model.TransformValue
+import com.localcut.editor.domain.model.TransformKeyframe
+import com.localcut.editor.ui.editor.EditorAiApprovalGate
+import com.localcut.editor.session.ProjectSession
+import com.localcut.editor.session.ProjectPreviewLoader
+import com.localcut.editor.session.DebouncedProjectSaver
+import com.localcut.editor.session.DelayScheduler
+import com.localcut.editor.session.Cancellable
+import com.localcut.editor.session.InMemoryProjectRevisionClock
+import com.localcut.editor.session.EditorAction
+import com.localcut.editor.data.project.ProjectStore
+import java.security.MessageDigest
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -34,6 +47,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -202,11 +216,149 @@ class MultitrackExportSmokeTest {
         }
     }
 
+    @Test
+    fun editorAiReplacesBackgroundInRenderedIntroWithoutChangingOtherLayers() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val dir = File(context.cacheDir, "intro-replace-smoke-${System.nanoTime()}").apply { mkdirs() }
+        try {
+            val red = createSolidPng(File(dir, "old-background.png"), Color.RED)
+            val green = createSolidPng(File(dir, "new-background.png"), Color.GREEN)
+            val blue = createSolidPng(File(dir, "foreground.png"), Color.BLUE)
+            val tone = createMonoPcmWav(File(dir, "tone.wav"), DURATION_US)
+            val assets = listOf(imageAsset("old-bg", red), imageAsset("new-bg", green),
+                imageAsset("foreground", blue), audioAsset("tone", tone, DURATION_US))
+            val sourceHashes = listOf(red, green, blue, tone).associateWith(::sha256)
+            val original = Project(
+                id = "intro-fixture", schemaVersion = BuildContract.PROJECT_SCHEMA_VERSION,
+                title = "Intro replacement fixture", width = WIDTH, height = HEIGHT, fps = 30,
+                assets = assets,
+                tracks = listOf(
+                    Track("base", TrackType.VISUAL, 0, TrackCollisionPolicy.EXCLUSIVE,
+                        clips = listOf(Clip("background", "old-bg", 0L, DURATION_US, 0L, DURATION_US))),
+                    Track("overlay", TrackType.VISUAL, 1, TrackCollisionPolicy.OVERLAY,
+                        clips = listOf(Clip("foreground-clip", "foreground", 0L, DURATION_US, 0L, DURATION_US,
+                            transform = TransformValue(scale = 0.5),
+                            keyframes = listOf(
+                                TransformKeyframe(0L, TransformValue(scale = 0.5, opacity = 0.2)),
+                                TransformKeyframe(DURATION_US, TransformValue(scale = 0.5, opacity = 1.0)),
+                            )))),
+                    Track("audio", TrackType.AUDIO, 2, TrackCollisionPolicy.EXCLUSIVE,
+                        clips = listOf(Clip("audio-clip", "tone", 0L, DURATION_US, 0L, DURATION_US))),
+                ),
+                textOverlays = listOf(TextOverlay("title", 0L, DURATION_US, "LOCALCUT",
+                    style = TextStyle(fontSizePx = 32.0, fillArgb = Color.WHITE), zIndex = 10)),
+            )
+            val session = ProjectSession(original,
+                preview = object : ProjectPreviewLoader { override fun load(project: Project) = Result.success(Unit) },
+                autosave = DebouncedProjectSaver(
+                    store = object : ProjectStore {
+                        override fun save(project: Project) = Result.success(Unit)
+                        override fun load(): Result<Project> = Result.failure(IllegalStateException("unused"))
+                    },
+                    scheduler = object : DelayScheduler { override fun schedule(delayMs: Long, action: () -> Unit): Cancellable = Cancellable {} },
+                    delayMs = 300L),
+                revisionClock = InMemoryProjectRevisionClock(mapOf(original.id to 5L)))
+            val beforeFile = File(dir, "before.mp4")
+            val afterFile = File(dir, "after.mp4")
+            val before = exportFrame(original, beforeFile, instrumentation, context, 850_000L, true)
+            try {
+                val gate = EditorAiApprovalGate()
+                val draft = """{"projectId":"intro-fixture","expectedRevision":5,"operations":[{"op":"replaceStillImage","clipId":"background","expectedAssetId":"old-bg","replacementAssetId":"new-bg"}]}"""
+                val approval = gate.prepare(draft, session.state).getOrThrow()
+                assertEquals(original, session.state.project)
+                assertEquals(6L, gate.apply(approval, draft, session).getOrThrow())
+                val edited = session.state.project
+                val expected = original.copy(tracks = original.tracks.map { track ->
+                    track.copy(clips = track.clips.map { clip ->
+                        if (clip.id == "background") clip.copy(assetId = "new-bg") else clip
+                    })
+                })
+                assertEquals("Only the background reference may change", expected, edited)
+                val beforeHash = sha256(beforeFile)
+                val after = exportFrame(edited, afterFile, instrumentation, context, 850_000L, true)
+                try {
+                    assertEquals(before.width, after.width)
+                    assertEquals(before.height, after.height)
+                    assertDominantRed(before.getPixel(before.width / 12, before.height / 12), "old background")
+                    val corner = after.getPixel(after.width / 12, after.height / 12)
+                    assertTrue("new background must be green", Color.green(corner) > Color.red(corner) + 40 &&
+                        Color.green(corner) > Color.blue(corner) + 40)
+                    val oldText = countBrightPixels(before)
+                    val newText = countBrightPixels(after)
+                    var overlap = 0
+                    for (y in 0 until before.height) for (x in 0 until before.width) {
+                        if (isBright(before.getPixel(x, y)) && isBright(after.getPixel(x, y))) overlap++
+                    }
+                    assertTrue("title pixels must survive in the same location; before=$oldText after=$newText overlap=$overlap",
+                        oldText >= 80 && newText >= 80 && overlap >= minOf(oldText, newText) * 0.7)
+                    // The animated blue overlay is sampled below the centered title.
+                    val x = after.width / 2
+                    val y = after.height / 2 + after.height / 6
+                    val oldEarly = decodeFrame(beforeFile, 100_000L, true)
+                    val newEarly = decodeFrame(afterFile, 100_000L, true)
+                    try {
+                        for ((early, late) in listOf(oldEarly to before, newEarly to after)) {
+                            val earlyBlue = Color.blue(early.getPixel(x, y))
+                            val latePixel = late.getPixel(x, y)
+                            assertDominantBlue(latePixel, "foreground must remain above replacement")
+                            assertTrue("foreground opacity animation must remain visible; early=$earlyBlue late=${Color.blue(latePixel)}",
+                                Color.blue(latePixel) >= earlyBlue + 55)
+                        }
+                    } finally { oldEarly.recycle(); newEarly.recycle() }
+                    val oldAudio = audioEvidence(beforeFile)
+                    val newAudio = audioEvidence(afterFile)
+                    assertEquals(oldAudio.first, newAudio.first)
+                    assertTrue("AAC audio track must contain samples", oldAudio.second > 0 && newAudio.second > 0)
+                    assertTrue("audio packet counts must remain comparable", kotlin.math.abs(oldAudio.second - newAudio.second) <= 2)
+                    assertTrue("audio track duration must remain comparable", kotlin.math.abs(oldAudio.third - newAudio.third) <= 100_000L)
+                    assertEquals(beforeHash, sha256(beforeFile))
+                    sourceHashes.forEach { (file, digest) -> assertEquals(digest, sha256(file)) }
+                    session.dispatch(EditorAction.Undo)
+                    assertEquals(original, session.state.project)
+                } finally { after.recycle() }
+            } finally { before.recycle() }
+        } finally { dir.deleteRecursively() }
+    }
+
+    private fun isBright(pixel: Int): Boolean = Color.red(pixel) >= 190 && Color.green(pixel) >= 190 && Color.blue(pixel) >= 190
+
+    private fun sha256(file: File): String = MessageDigest.getInstance("SHA-256").let { digest ->
+        file.inputStream().use { input ->
+            val buffer = ByteArray(8192)
+            while (true) { val n = input.read(buffer); if (n < 0) break; digest.update(buffer, 0, n) }
+        }
+        digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
+    }
+
+    private fun audioEvidence(file: File): Triple<String, Int, Long> {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(file.absolutePath)
+            val track = (0 until extractor.trackCount).single { index ->
+                extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+            }
+            val format = extractor.getTrackFormat(track)
+            extractor.selectTrack(track)
+            val buffer = ByteBuffer.allocate(64 * 1024)
+            var count = 0
+            while (extractor.readSampleData(buffer, 0) > 0) {
+                count++
+                assertTrue("unexpected audio packet count", count < 200)
+                buffer.clear()
+                if (!extractor.advance()) break
+            }
+            return Triple(requireNotNull(format.getString(MediaFormat.KEY_MIME)), count, format.getLong(MediaFormat.KEY_DURATION))
+        } finally { extractor.release() }
+    }
+
     private fun exportFrame(
         project: Project,
         outputFile: File,
         instrumentation: Instrumentation,
         context: Context,
+        timeUs: Long = 500_000L,
+        closest: Boolean = false,
     ): Bitmap {
         val compiler = ProjectCompositionCompiler(AssetUriResolver(context.contentResolver))
         val composition = compiler.compile(project, RenderMode.EXPORT).getOrThrow()
@@ -238,14 +390,16 @@ class MultitrackExportSmokeTest {
         failure.get()?.let { throw AssertionError("Transformer export failed", it) }
         assertTrue("Exported MP4 is missing or empty", outputFile.isFile && outputFile.length() > 0L)
 
+        return decodeFrame(outputFile, timeUs, closest)
+    }
+
+    private fun decodeFrame(file: File, timeUs: Long, closest: Boolean): Bitmap {
         val retriever = MediaMetadataRetriever()
         return try {
-            retriever.setDataSource(outputFile.absolutePath)
-            retriever.getFrameAtTime(500_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            retriever.setDataSource(file.absolutePath)
+            retriever.getFrameAtTime(timeUs, if (closest) MediaMetadataRetriever.OPTION_CLOSEST else MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 ?: error("Unable to decode exported frame")
-        } finally {
-            retriever.release()
-        }
+        } finally { retriever.release() }
     }
 
     private fun projectFor(baseFile: File, overlayFile: File): Project {

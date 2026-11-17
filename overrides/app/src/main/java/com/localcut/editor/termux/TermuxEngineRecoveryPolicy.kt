@@ -25,7 +25,7 @@ object TermuxEngineRecoveryPolicy {
         capabilities: Set<String>,
     ): Boolean {
         if (!paired || errorCode == "TERMUX_ENGINE_UNAVAILABLE") return true
-        if (!connected) return !managedReady
+        if (!connected) return true
         if (!TermuxAutomationPolicy.hasManagedAutomationCapability(capabilities)) return true
         if (managedReady && TermuxAutomationPolicy.hasFullCreativeCapabilities(capabilities)) return false
         return missingCreativeCapabilities(capabilities).isNotEmpty()

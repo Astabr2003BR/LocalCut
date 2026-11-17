@@ -23,3 +23,22 @@ object UnavailableBridgePreviewFramePort : BridgePreviewFramePort {
     override fun capture(): Result<BridgePreviewFrame> =
         Result.failure(IllegalStateException("preview frame port not attached"))
 }
+
+
+internal object BridgePreviewFreshness {
+    const val MAX_AGE_MS = 2_000L
+    const val MAX_DRIFT_US = 250_000L
+    const val MAX_BYTES = 1_048_576
+    const val MAX_EDGE = 720
+
+    fun isCurrent(frameGeneration: Long, generation: Long, capturedAtMs: Long, nowMs: Long,
+        framePositionUs: Long, positionUs: Long): Boolean {
+        if (frameGeneration != generation || capturedAtMs < 0L || nowMs < capturedAtMs ||
+            nowMs - capturedAtMs > MAX_AGE_MS || framePositionUs < 0L || positionUs < 0L) return false
+        val drift = maxOf(framePositionUs, positionUs) - minOf(framePositionUs, positionUs)
+        return drift <= MAX_DRIFT_US
+    }
+
+    fun bounded(frame: BridgePreviewFrame): Boolean =
+        frame.bytes.size in 1..MAX_BYTES && frame.width in 1..MAX_EDGE && frame.height in 1..MAX_EDGE
+}

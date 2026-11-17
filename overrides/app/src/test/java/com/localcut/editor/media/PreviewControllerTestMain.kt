@@ -12,6 +12,7 @@ private class FakeEngine : PreviewEngine {
     var loadCount = 0
     var playCount = 0
     var pauseCount = 0
+    var seekCount = 0
     var seekPosition = 0L
     var position = 0L
     var applySeekImmediately = true
@@ -32,6 +33,7 @@ private class FakeEngine : PreviewEngine {
     override fun play() { playCount++ }
     override fun pause() { pauseCount++ }
     override fun seekToUs(positionUs: Long) {
+        seekCount++
         seekPosition = positionUs
         if (applySeekImmediately) position = positionUs
     }
@@ -78,6 +80,13 @@ fun main() {
         controller.load(project()).getOrThrow(); controller.seekToUs(4_990_000); controller.stepFrames(1, 30)
         assertThat(engine.seekPosition == 5_000_000L, "frame clamp")
         controller.stepFrames(-1, 30); assertThat(engine.seekPosition < 5_000_000L, "step back")
+    }
+    case("empty project seek never reaches engine") {
+        val engine = FakeEngine(); val controller = DefaultPreviewController(engine, FakeTicker())
+        controller.load(Project.create("Empty", 1080, 1920, 30)).getOrThrow()
+        controller.seekToUs(0L)
+        assertThat(engine.seekCount == 0, "empty project must not seek Media3 engine")
+        assertThat(controller.state.value.positionUs == 0L, "empty project position must remain zero")
     }
     case("stale player poll cannot overwrite a pending backward seek") {
         val engine = FakeEngine(); val ticker = FakeTicker(); val controller = DefaultPreviewController(engine, ticker)

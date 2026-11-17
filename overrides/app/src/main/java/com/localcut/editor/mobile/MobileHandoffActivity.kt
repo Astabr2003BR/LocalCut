@@ -145,7 +145,28 @@ class MobileHandoffActivity : Activity() {
         finish()
     }
 
-    private fun execute(command: MobileHandoffCommand) {
+    private var lipSyncExecutor: ConfirmedMobileLipSyncExecutor? = null
+
+    override fun onDestroy() {
+        lipSyncExecutor?.close()
+        lipSyncExecutor = null
+        super.onDestroy()
+    }
+
+    private fun execute(command: MobileHandoffCommand, recoveryAttempted: Boolean = false) {
+        command.studioPackageRelay?.let { relay ->
+            if (android.os.Build.VERSION.SDK_INT < 29) {
+                Toast.makeText(this, "Editor IA requer Android 10 ou superior.", Toast.LENGTH_LONG).show()
+                finish()
+                return
+            }
+            startActivity(Intent(this, AutomaticVideoActivity::class.java)
+                .putExtra(PortableStudioRelay.EXTRA_URL, relay.url)
+                .putExtra(PortableStudioRelay.EXTRA_HASH, relay.sha256)
+                .putExtra(PortableStudioRelay.EXTRA_BYTES, relay.bytes))
+            finish()
+            return
+        }
         val runtime = LocalCutProcessRuntime.get(this)
         val pairingCode = command.mobilePairingCode
         if (pairingCode != null) {
@@ -160,20 +181,119 @@ class MobileHandoffActivity : Activity() {
             return
         }
 
+        val blinkRegion = command.blinkRegion
+        if (blinkRegion != null) {
+            val result = MobileBlinkHandoffExecutor.execute(runtime.session, blinkRegion)
+            runtime.editorViewModel.refreshSnapshot()
+            Toast.makeText(
+                this,
+                result.fold(
+                    onSuccess = { it },
+                    onFailure = { it.message ?: "Falha ao aplicar piscadas" },
+                ),
+                Toast.LENGTH_LONG,
+            ).show()
+            returnAfterHandoff(command.returnTarget)
+            return
+        }
+
+        val region = command.lipSyncRegion
+        if (region != null) {
+            if (lipSyncExecutor != null) {
+                Toast.makeText(this, "Análise de voz já iniciada", Toast.LENGTH_SHORT).show()
+                return
+            }
+            Toast.makeText(this, "Analisando fala e preparando TALK...", Toast.LENGTH_LONG).show()
+            val executor = ConfirmedMobileLipSyncExecutor(applicationContext, runtime)
+            lipSyncExecutor = executor
+            executor.start(region) { result ->
+                lipSyncExecutor = null
+                Toast.makeText(
+                    applicationContext,
+                    result.fold(
+                        onSuccess = { it },
+                        onFailure = { it.message ?: "Falha ao aplicar TALK" },
+                    ),
+                    Toast.LENGTH_LONG,
+                ).show()
+                returnAfterHandoff(command.returnTarget)
+            }
+            return
+        }
+
         val remoteMediaUrl = command.remoteMediaUrl
         if (remoteMediaUrl != null) {
+            val blockedTrack = if (!recoveryAttempted) {
+                LockedMediaImportRecovery.blockedTrackForMediaLink(
+                    runtime.session.state.project, remoteMediaUrl,
+                )
+            } else null
+            if (blockedTrack != null) {
+                AlertDialog.Builder(this)
+                    .setTitle("Faixa bloqueada")
+                    .setMessage(
+                        "A faixa $blockedTrack está bloqueada. " +
+                            "Desbloquear antes de baixar e importar esta mídia? " +
+                            "A alteração pode ser desfeita.",
+                    )
+                    .setNegativeButton("Cancelar") { _, _ ->
+                        returnAfterHandoff(command.returnTarget)
+                    }
+                    .setOnCancelListener { returnAfterHandoff(command.returnTarget) }
+                    .setPositiveButton("Desbloquear e importar") { _, _ ->
+                        if (LockedMediaImportRecovery.unlock(runtime.session, blockedTrack)) {
+                            runtime.editorViewModel.refreshSnapshot()
+                            execute(command, recoveryAttempted = true)
+                        } else {
+                            Toast.makeText(this, "Não foi possível desbloquear $blockedTrack", Toast.LENGTH_LONG).show()
+                            returnAfterHandoff(command.returnTarget)
+                        }
+                    }
+                    .show()
+                return
+            }
             runtime.processScope.launch {
                 val result = RemoteMediaImportExecutor(
                     context = applicationContext,
                     mediaIngestCoordinator = runtime.mediaIngestCoordinator,
                 ).importUrl(remoteMediaUrl)
                 runtime.editorViewModel.refreshSnapshot()
-                val message = result.fold(
-                    onSuccess = { "Mídia importada no LocalCut" },
-                    onFailure = { it.message ?: "Falha ao importar mídia remota" },
-                )
-                Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
-                returnAfterHandoff(command.returnTarget)
+                val error = result.exceptionOrNull()
+                val lockedTrackId = if (!recoveryAttempted) {
+                    LockedMediaImportRecovery.blockedTrackId(runtime.session.state.project, error)
+                } else null
+                if (lockedTrackId != null && !isFinishing && !isDestroyed) {
+                    AlertDialog.Builder(this@MobileHandoffActivity)
+                        .setTitle("Faixa bloqueada")
+                        .setMessage(
+                            "A faixa $lockedTrackId está bloqueada. " +
+                                "Desbloquear e repetir somente esta importação? " +
+                                "A alteração pode ser desfeita.",
+                        )
+                        .setNegativeButton("Cancelar") { _, _ ->
+                            returnAfterHandoff(command.returnTarget)
+                        }
+                        .setOnCancelListener { returnAfterHandoff(command.returnTarget) }
+                        .setPositiveButton("Desbloquear e importar") { _, _ ->
+                            if (LockedMediaImportRecovery.unlock(runtime.session, lockedTrackId)) {
+                                runtime.editorViewModel.refreshSnapshot()
+                                execute(command, recoveryAttempted = true)
+                            } else {
+                                Toast.makeText(
+                                    this@MobileHandoffActivity,
+                                    "Não foi possível desbloquear $lockedTrackId",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                                returnAfterHandoff(command.returnTarget)
+                            }
+                        }
+                        .show()
+                } else {
+                    val message = if (error == null) "Mídia importada no LocalCut"
+                        else error.message ?: "Falha ao importar mídia remota"
+                    Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
+                    returnAfterHandoff(command.returnTarget)
+                }
             }
             return
         }

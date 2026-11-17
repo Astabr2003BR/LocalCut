@@ -3,6 +3,9 @@ package com.localcut.editor.bridge.agent
 import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import androidx.media3.common.Player
+import java.util.concurrent.atomic.AtomicLong
 import android.view.PixelCopy
 import android.view.SurfaceView
 import android.view.TextureView
@@ -54,21 +57,34 @@ class AndroidPlayerPreviewFramePort(
 ) : BridgePreviewFramePort {
     @Volatile
     private var playerViewRef: WeakReference<PlayerView>? = null
-    private val latestFrame = AtomicReference<BridgePreviewFrame?>(null)
+    private data class CaptureTicket(val generation: Long, val view: PlayerView, val positionUs: Long, val startedAtMs: Long)
+    private data class CachedFrame(val frame: BridgePreviewFrame, val generation: Long, val capturedAtMs: Long)
+    private val generation = AtomicLong(0L)
+    private val latestFrame = AtomicReference<CachedFrame?>(null)
     private val latestError = AtomicReference("preview frame not ready")
     private val captureInFlight = AtomicBoolean(false)
 
     fun attach(view: PlayerView) {
-        playerViewRef = WeakReference(view)
+        if (playerViewRef?.get() !== view) {
+            invalidate()
+            playerViewRef = WeakReference(view)
+        }
         requestRefresh()
     }
 
     fun detach(view: PlayerView) {
         if (playerViewRef?.get() === view) {
             playerViewRef = null
-            latestFrame.set(null)
+            invalidate()
             latestError.set("preview surface unavailable")
         }
+    }
+
+    /** Invalidate before loading, seeking, or changing the bound surface. In-flight callbacks cannot publish old frames. */
+    fun invalidate() {
+        generation.incrementAndGet()
+        latestFrame.set(null)
+        latestError.set("preview frame not ready")
     }
 
     fun requestRefresh() {
@@ -77,20 +93,36 @@ class AndroidPlayerPreviewFramePort(
             return
         }
         if (!captureInFlight.compareAndSet(false, true)) return
-        if (Looper.myLooper() == mainHandler.looper) {
-            captureFrom(view)
-        } else {
-            mainHandler.post { captureFrom(view) }
+        val requestedGeneration = generation.get()
+        val run = Runnable {
+            if (playerViewRef?.get() !== view || requestedGeneration != generation.get()) {
+                captureInFlight.set(false)
+            } else {
+                captureFrom(view, requestedGeneration)
+            }
         }
+        if (Looper.myLooper() == mainHandler.looper) run.run()
+        else if (!mainHandler.post(run)) captureInFlight.set(false)
     }
 
     override fun capture(): Result<BridgePreviewFrame> {
         requestRefresh()
-        return latestFrame.get()?.let { Result.success(it) }
-            ?: Result.failure(IllegalStateException(latestError.get()))
+        val cached = latestFrame.get()
+        if (cached != null && BridgePreviewFreshness.isCurrent(
+                cached.generation, generation.get(), cached.capturedAtMs, SystemClock.elapsedRealtime(),
+                cached.frame.positionUs, positionUsProvider())) {
+            return Result.success(cached.frame)
+        }
+        return Result.failure(IllegalStateException(latestError.get()))
     }
 
-    private fun captureFrom(playerView: PlayerView) {
+    private fun captureFrom(playerView: PlayerView, requestedGeneration: Long) {
+        val player = playerView.player
+        if (player == null || player.playbackState != Player.STATE_READY) {
+            finishFailure("preview player is not ready")
+            return
+        }
+        val ticket = CaptureTicket(requestedGeneration, playerView, positionUsProvider().coerceAtLeast(0L), SystemClock.elapsedRealtime())
         val surface = playerView.videoSurfaceView ?: run {
             finishFailure("preview surface is not ready")
             return
@@ -135,12 +167,12 @@ class AndroidPlayerPreviewFramePort(
             }
 
         when (surface) {
-            is SurfaceView -> captureSurfaceView(surface, size)
-            is TextureView -> captureTextureView(surface, size)
+            is SurfaceView -> captureSurfaceView(surface, size, ticket)
+            is TextureView -> captureTextureView(surface, size, ticket)
         }
     }
 
-    private fun captureSurfaceView(surface: SurfaceView, size: PreviewFrameSize) {
+    private fun captureSurfaceView(surface: SurfaceView, size: PreviewFrameSize, ticket: CaptureTicket) {
         val bitmap = Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888)
         val request = runCatching {
             PixelCopy.request(
@@ -148,7 +180,7 @@ class AndroidPlayerPreviewFramePort(
                 bitmap,
                 { result ->
                     if (result == PixelCopy.SUCCESS) {
-                        storeBitmap(bitmap)
+                        storeBitmap(bitmap, ticket)
                     } else {
                         bitmap.recycle()
                         finishFailure("preview capture failed: PixelCopy=$result")
@@ -163,32 +195,34 @@ class AndroidPlayerPreviewFramePort(
         }
     }
 
-    private fun captureTextureView(texture: TextureView, size: PreviewFrameSize) {
+    private fun captureTextureView(texture: TextureView, size: PreviewFrameSize, ticket: CaptureTicket) {
         val bitmap = texture.getBitmap(size.width, size.height)
         if (bitmap == null) {
             finishFailure("preview texture is not ready")
             return
         }
-        storeBitmap(bitmap)
+        storeBitmap(bitmap, ticket)
     }
 
-    private fun storeBitmap(bitmap: Bitmap) {
+    private fun storeBitmap(bitmap: Bitmap, ticket: CaptureTicket) {
         try {
+            if (playerViewRef?.get() !== ticket.view || ticket.view.player?.playbackState != Player.STATE_READY ||
+                !BridgePreviewFreshness.isCurrent(ticket.generation, generation.get(), ticket.startedAtMs,
+                    SystemClock.elapsedRealtime(), ticket.positionUs, positionUsProvider())) {
+                latestError.set("preview changed during capture")
+                return
+            }
             val bytes = ByteArrayOutputStream().use { output ->
                 check(bitmap.compress(Bitmap.CompressFormat.JPEG, PreviewFrameCapturePolicy.JPEG_QUALITY, output)) {
                     "preview JPEG compression failed"
                 }
                 output.toByteArray()
             }
-            latestFrame.set(
-                BridgePreviewFrame(
-                    mimeType = "image/jpeg",
-                    bytes = bytes,
-                    width = bitmap.width,
-                    height = bitmap.height,
-                    positionUs = positionUsProvider().coerceAtLeast(0L),
-                ),
-            )
+            val frame = BridgePreviewFrame("image/jpeg", bytes, bitmap.width, bitmap.height, ticket.positionUs)
+            check(BridgePreviewFreshness.bounded(frame)) { "preview exceeds technical bounds" }
+            if (ticket.generation == generation.get() && playerViewRef?.get() === ticket.view) {
+                latestFrame.set(CachedFrame(frame, ticket.generation, ticket.startedAtMs))
+            }
             latestError.set("preview frame not ready")
         } catch (error: Throwable) {
             latestError.set(error.message ?: "preview frame encoding failed")
@@ -199,6 +233,7 @@ class AndroidPlayerPreviewFramePort(
     }
 
     private fun finishFailure(message: String) {
+        latestFrame.set(null)
         latestError.set(message)
         captureInFlight.set(false)
     }

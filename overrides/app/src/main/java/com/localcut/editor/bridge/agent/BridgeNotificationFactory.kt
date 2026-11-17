@@ -26,7 +26,11 @@ class BridgeNotificationFactory(private val context: Context) {
             Notification.Action.Builder(
                 null,
                 "Desconectar",
-                serviceActionIntent(BridgeConnectionService.ACTION_DISCONNECT, 101),
+                serviceActionIntent(
+                    action = BridgeConnectionService.ACTION_DISCONNECT,
+                    requestCode = 101,
+                    explicitUserDisconnect = true,
+                ),
             ).build(),
         )
         .build()
@@ -67,10 +71,20 @@ class BridgeNotificationFactory(private val context: Context) {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    private fun serviceActionIntent(action: String, requestCode: Int): PendingIntent = PendingIntent.getService(
+    private fun serviceActionIntent(
+        action: String,
+        requestCode: Int,
+        explicitUserDisconnect: Boolean = false,
+    ): PendingIntent = PendingIntent.getService(
         context,
         requestCode,
-        Intent(context, BridgeConnectionService::class.java).setAction(action),
+        Intent(context, BridgeConnectionService::class.java)
+            .setAction(action)
+            .apply {
+                if (explicitUserDisconnect) {
+                    putExtra(BridgeConnectionService.EXTRA_EXPLICIT_USER_DISCONNECT, true)
+                }
+            },
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 

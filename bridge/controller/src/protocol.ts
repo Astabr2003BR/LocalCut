@@ -9,6 +9,8 @@ export const bridgeCapabilities = [
   "get_export_status",
   "get_errors",
   "get_preview_frame",
+  "get_export_review_frames",
+  "submit_export_review_proposal",
   "seek",
   "select_clip",
   "split_clip",
@@ -19,6 +21,8 @@ export const bridgeCapabilities = [
   "set_transform",
   "set_volume",
   "set_keyframes",
+  "animate_character",
+  "animate_scene",
   "add_text",
   "project_edit",
   "add_transition",
@@ -40,6 +44,8 @@ export const projectWriteCapabilities = new Set<BridgeCapability>([
   "set_transform",
   "set_volume",
   "set_keyframes",
+  "animate_character",
+  "animate_scene",
   "add_text",
   "project_edit",
   "add_transition",
@@ -51,6 +57,7 @@ export const projectWriteCapabilities = new Set<BridgeCapability>([
 export const revisionRequiredCapabilities = new Set<BridgeCapability>([
   ...projectWriteCapabilities,
   "export_project",
+  "submit_export_review_proposal",
 ]);
 
 export type BridgeCommandEnvelope = {

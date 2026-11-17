@@ -44,6 +44,8 @@ class BridgePreviewFrameCommandTest {
         assertTrue(result.resultJson.contains("\"width\":640"))
         assertTrue(result.resultJson.contains("\"height\":360"))
         assertTrue(result.resultJson.contains("\"positionUs\":2500000"))
+        assertTrue(result.resultJson.contains("\"revision\":5"))
+        assertTrue(result.resultJson.contains("\"projectId\":\"project-1\""))
         assertEquals(5L, fixture.session.state.revision)
     }
 
@@ -61,6 +63,34 @@ class BridgePreviewFrameCommandTest {
         assertEquals(BridgeErrorCode.PREVIEW_FAILED, result.code)
         assertTrue(result.retryable)
         assertEquals(5L, fixture.session.state.revision)
+    }
+
+    @Test
+    fun staleRevisionIsRejectedBeforeCapturingAndOversizeIsRejected() {
+        var captures = 0
+        val fixture = fixture(BridgePreviewFramePort {
+            captures++
+            Result.success(BridgePreviewFrame("image/jpeg", ByteArray(BridgePreviewFreshness.MAX_BYTES + 1), 640, 360, 0L))
+        })
+        val stale = fixture.executor.execute(command().copy(expectedRevision = 4L))
+        assertFalse(stale.success)
+        assertEquals(BridgeErrorCode.REVISION_CONFLICT, stale.code)
+        assertEquals(0, captures)
+        val oversized = fixture.executor.execute(command().copy(expectedRevision = 5L))
+        assertFalse(oversized.success)
+        assertEquals(BridgeErrorCode.PREVIEW_FAILED, oversized.code)
+        assertEquals(1, captures)
+        assertEquals(5L, fixture.session.state.revision)
+    }
+
+    @Test
+    fun freshnessRejectsOldGenerationExpiredFrameAndSeekDrift() {
+        assertTrue(BridgePreviewFreshness.isCurrent(1, 1, 100, 2_100, 500_000, 750_000))
+        assertFalse(BridgePreviewFreshness.isCurrent(1, 2, 100, 101, 0, 0))
+        assertFalse(BridgePreviewFreshness.isCurrent(1, 1, 100, 2_101, 0, 0))
+        assertFalse(BridgePreviewFreshness.isCurrent(1, 1, 100, 101, 0, 250_001))
+        assertFalse(BridgePreviewFreshness.isCurrent(1, 1, 100, 99, 0, 0))
+        assertFalse(BridgePreviewFreshness.isCurrent(1, 1, 100, 101, Long.MAX_VALUE, 0))
     }
 
     private data class Fixture(

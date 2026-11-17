@@ -19,4 +19,14 @@ class PreviewResumePolicyTest {
     fun emptyProjectDoesNotRefresh() {
         assertFalse(PreviewResumePolicy.shouldRefresh(durationUs = 0L, playing = false))
     }
+
+    @Test
+    fun emptyProjectDoesNotRestoreBackgroundPosition() {
+        assertFalse(PreviewResumePolicy.shouldRestorePosition(durationUs = 0L))
+    }
+
+    @Test
+    fun projectWithMediaRestoresBackgroundPosition() {
+        assertTrue(PreviewResumePolicy.shouldRestorePosition(durationUs = 5_000_000L))
+    }
 }

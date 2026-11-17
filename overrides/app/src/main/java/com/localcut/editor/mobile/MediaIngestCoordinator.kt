@@ -109,6 +109,11 @@ class MediaIngestCoordinator(
         uris: List<Uri>,
         stageFailureMessage: String,
     ): MediaIngestResult {
+        // A mixed JPG+voice share is a common lip-sync setup. Track only this batch's new
+        // clips so we can leave the visual selected without changing existing projects.
+        val beforeProject = editorViewModel.sessionState.value.project
+        val originalIds = beforeProject.tracks.flatMap { it.clips }.map { it.id }.toSet()
+        val wasEmptyTimeline = originalIds.isEmpty()
         var importedCount = 0
         var failedCount = 0
         val errors = mutableListOf<String>()
@@ -137,6 +142,25 @@ class MediaIngestCoordinator(
                         staged.backingFile.delete()
                     }
                 }
+            }
+        }
+
+        if (importedCount == 2 && failedCount == 0 && errors.isEmpty()) {
+            val after = editorViewModel.sessionState.value.project
+            val imported = after.tracks.flatMap { it.clips }
+                .filter { it.id !in originalIds }
+                .mapNotNull { clip ->
+                    after.assets.firstOrNull { it.id == clip.assetId }?.let { asset ->
+                        SharedLipSyncSelectionPolicy.ImportedClip(
+                            clipId = clip.id,
+                            assetType = asset.type,
+                            startUs = clip.startUs,
+                        )
+                    }
+                }
+            val imageId = SharedLipSyncSelectionPolicy.imageToSelect(wasEmptyTimeline, imported)
+            if (imageId != null) {
+                editorViewModel.dispatch(EditorAction.SelectClip(imageId))
             }
         }
 

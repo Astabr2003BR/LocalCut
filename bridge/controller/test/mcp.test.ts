@@ -4,6 +4,8 @@ import { CommandRouter, DeviceRegistry } from "../src/commandRouter.ts";
 import { bridgeCapabilities } from "../src/protocol.ts";
 import { InMemoryBridgeStore } from "../src/store.ts";
 import {
+  attachmentToolMeta,
+  buildAttachmentInputSchema,
   buildToolInputSchema,
   controllerManagementToolNames,
   controllerToolNames,
@@ -15,7 +17,7 @@ test("MCP exposes only allowlisted LocalCut edit tools plus explicit management 
   assert.deepEqual(controllerToolNames().sort(), [...bridgeCapabilities].sort());
   assert.deepEqual(
     controllerManagementToolNames().sort(),
-    ["claim_pairing", "discover_active_contexts", "revoke_device"].sort(),
+    ["claim_pairing", "discover_active_contexts", "revoke_device", "stage_attachment", "stage_package"].sort(),
   );
 });
 
@@ -25,6 +27,8 @@ test("MCP OAuth scopes classify reads separately from editor actions", () => {
   assert.deepEqual(securityScopesForCapability("seek"), ["localcut:write"]);
   assert.deepEqual(securityScopesForCapability("move_clip"), ["localcut:write"]);
   assert.deepEqual(securityScopesForCapability("export_project"), ["localcut:write"]);
+  assert.deepEqual(securityScopesForCapability("submit_export_review_proposal"), ["localcut:write"]);
+  assert.equal(buildToolInputSchema("submit_export_review_proposal").safeParse({deviceId:"lc",projectId:"p",payload:{}}).success,false);
 });
 
 test("project writes and export require expectedRevision", () => {
@@ -55,6 +59,37 @@ test("tool schema rejects blank routing identifiers and negative revisions", () 
     move.safeParse({ deviceId: "lc", projectId: "p", expectedRevision: -1, payload: {} }).success,
     false,
   );
+});
+
+test("attachment schema matches ChatGPT file-param contract and requires HTTPS", () => {
+  const schema = buildAttachmentInputSchema();
+
+  assert.equal(schema.safeParse({}).success, false);
+  assert.equal(schema.safeParse({ file: { download_url: "https://files.example/item", file_id: "file_1" } }).success, true);
+  assert.equal(schema.safeParse({
+    file: {
+      download_url: "https://files.example/item",
+      file_id: "file_1",
+      mime_type: "image/png",
+      file_name: "frame.png",
+    },
+  }).success, true);
+  assert.equal(schema.safeParse({ file: { download_url: "http://files.example/item", file_id: "file_1" } }).success, false);
+  assert.equal(schema.safeParse({ file: { download_url: "https://files.example/item", file_id: "" } }).success, false);
+  assert.equal(schema.safeParse({
+    file: {
+      download_url: "https://files.example/item",
+      file_id: "file_1",
+      unknown: true,
+    },
+  }).success, false);
+});
+
+test("attachment tool metadata declares the top-level ChatGPT file parameter", () => {
+  assert.deepEqual(attachmentToolMeta(["localcut:write"]), {
+    securitySchemes: [{ type: "oauth2", scopes: ["localcut:write"] }],
+    "openai/fileParams": ["file"],
+  });
 });
 
 test("active context discovery probes the live paired device and returns routing metadata", async () => {

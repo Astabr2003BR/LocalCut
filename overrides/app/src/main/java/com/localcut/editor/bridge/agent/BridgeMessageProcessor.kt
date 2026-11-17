@@ -68,7 +68,11 @@ class BridgeMessageProcessor(
                     errorResult(command.messageId, BridgeErrorCode.INTERNAL_ERROR, retryable = true)
                 }
                 runCatching(onExecuted)
-                replayGuard.complete(command.messageId, result)
+                // Do not retain large image payloads in the 512-entry replay cache.
+                // A duplicate delivery cannot replay expired/replaced export evidence; use a fresh read.
+                val replayResult = if (command.capability == BridgeCapability.GET_EXPORT_REVIEW_FRAMES && result.success)
+                    errorResult(command.messageId, BridgeErrorCode.PREVIEW_FAILED, retryable = true) else result
+                replayGuard.complete(command.messageId, replayResult)
                 BridgeCodec.encodeResult(result)
             }
 

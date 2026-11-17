@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
+import type { OpenAIFileParam } from "./attachmentTransport.ts";
 import type { CommandRouter, DeviceRegistry } from "./commandRouter.ts";
 import {
   bridgeCapabilities,
@@ -9,6 +10,10 @@ import {
   revisionRequiredCapabilities,
 } from "./protocol.ts";
 import { registerTermuxTools } from "./termuxMcp.ts";
+import { exportReviewToolResult, validExportReviewPayload } from "./exportReview.ts";
+import { validExportProposalPayload } from "./exportProposal.ts";
+import { MAX_REVIEW_FRAMES } from "./previewReview.ts";
+import { MAX_CORRECTION_OPERATIONS, ReviewCorrectionCoordinator, correctionToolResult } from "./reviewCorrection.ts";
 
 const MAX_PREVIEW_BASE64_CHARS = 2_000_000;
 const ACTIVE_PROJECT_SENTINEL = "__localcut_active_project__";
@@ -24,6 +29,7 @@ const READ_ONLY_CAPABILITIES = new Set<BridgeCapability>([
   "get_export_status",
   "get_errors",
   "get_preview_frame",
+  "get_export_review_frames",
 ]);
 
 const routingFields = {
@@ -37,6 +43,8 @@ type DeviceIdSource = Pick<DeviceRegistry, "listDeviceIds">;
 export interface ControllerAdminActions {
   claimPairing(code: string): Promise<unknown> | unknown;
   revokeDevice(deviceId: string): Promise<unknown> | unknown;
+  stageAttachment(file: OpenAIFileParam): Promise<unknown> | unknown;
+  stagePackage?(file: OpenAIFileParam): Promise<unknown> | unknown;
 }
 
 export function controllerToolNames(): string[] {
@@ -44,7 +52,7 @@ export function controllerToolNames(): string[] {
 }
 
 export function controllerManagementToolNames(): string[] {
-  return ["claim_pairing", "discover_active_contexts", "revoke_device"];
+  return ["claim_pairing", "discover_active_contexts", "revoke_device", "stage_attachment", "stage_package"];
 }
 
 export function securityScopesForCapability(capability: BridgeCapability): [string] {
@@ -62,6 +70,34 @@ export function buildToolInputSchema(capability: BridgeCapability) {
     ...routingFields,
     expectedRevision: z.number().int().nonnegative().optional(),
   }).strict();
+}
+
+export function buildAttachmentInputSchema() {
+  const httpsUrl = z.string().url().refine(value => {
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:" && !url.username && !url.password;
+    } catch {
+      return false;
+    }
+  }, "HTTPS URL required");
+
+  return z.object({
+    file: z.object({
+      download_url: httpsUrl,
+      file_id: z.string().min(1).max(512),
+      mime_type: z.string().min(1).max(255).optional(),
+      file_name: z.string().min(1).max(512).optional(),
+      expected_sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    }).strict(),
+  }).strict();
+}
+
+export function attachmentToolMeta(scopes: readonly string[]): Record<string, unknown> {
+  return {
+    ...oauthToolMeta(scopes),
+    "openai/fileParams": ["file"],
+  };
 }
 
 export async function discoverActiveContexts(
@@ -111,6 +147,7 @@ export function createLocalCutMcpServer(
   router: CommandRouter,
   controllerId: string,
   admin?: ControllerAdminActions,
+  review?: { coordinator: ReviewCorrectionCoordinator; authorizedDeviceId: () => string | null },
 ): McpServer {
   if (!controllerId) throw new Error("controllerId is required");
   const server = new McpServer({ name: "LocalCut Controller", version: "0.1.0" });
@@ -137,6 +174,40 @@ export function createLocalCutMcpServer(
 
   registerTermuxTools(server, router, controllerId);
 
+  if (review) {
+    const reviewSchema = z.object({
+      deviceId: z.string().min(1).max(128), projectId: z.string().min(1).max(256),
+      expectedRevision: z.number().int().nonnegative(),
+      positionsUs: z.array(z.number().int().nonnegative()).min(2).max(MAX_REVIEW_FRAMES),
+    }).strict();
+    server.registerTool("review_preview_frames", {
+      title: "LocalCut: review multiple preview frames",
+      description: "Collect 2-4 ordered editor preview images for one exact project revision on your OAuth-authorized paired device. Pause playback first. Moves the visible playhead to the requested positions and leaves it at the last sampled position; does not edit the project. Images are approximate editor previews, not final export QA. If any frame or revision check fails, no images are returned.",
+      inputSchema: reviewSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      _meta: oauthToolMeta(["localcut:read", "localcut:write"]),
+    }, async input => {
+      const parsed = reviewSchema.parse(input);
+      return correctionToolResult(await review.coordinator.review(router, controllerId, parsed, review.authorizedDeviceId));
+    });
+
+    const correctionSchema = z.object({
+      deviceId: z.string().min(1).max(128), projectId: z.string().min(1).max(256),
+      expectedRevision: z.number().int().nonnegative(), reviewId: z.string().uuid(),
+      operations: z.array(z.record(z.string(), z.unknown())).min(1).max(MAX_CORRECTION_OPERATIONS),
+    }).strict();
+    server.registerTool("apply_review_correction", {
+      title: "LocalCut: apply visual correction and recheck",
+      description: "After visually inspecting review_preview_frames and receiving user authorization for the requested changes, apply one atomic visual-only correction batch to its exact revision using the single-use reviewId. Supports patchClip transform, patchText, addEffect, patchEffect, setEffectKeyframe; no deletes, trims, audio or timing changes. Returns fresh images at the same positions when possible, with the new revision and next reviewId. At most three corrections per review chain. If applied is unknown, read project state and do not retry the edit. If verification is unavailable, the edit may already be committed. Never claim visual approval without inspecting the images.",
+      inputSchema: correctionSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      _meta: oauthToolMeta(["localcut:read", "localcut:write"]),
+    }, async input => {
+      const parsed = correctionSchema.parse(input);
+      return correctionToolResult(await review.coordinator.apply(router, controllerId, parsed, review.authorizedDeviceId));
+    });
+  }
+
   for (const capability of bridgeCapabilities) {
     const inputSchema = buildToolInputSchema(capability);
     const scopes = securityScopesForCapability(capability);
@@ -156,6 +227,12 @@ export function createLocalCutMcpServer(
       },
       async (input: unknown) => {
         const parsed = inputSchema.parse(input);
+        if (capability === "get_export_review_frames" || capability === "submit_export_review_proposal") {
+          if (review?.authorizedDeviceId() !== parsed.deviceId) return toolResult({ success: false, code: "AUTH_REQUIRED" }, true);
+          const valid = capability === "get_export_review_frames" ? validExportReviewPayload(parsed.payload) :
+            validExportProposalPayload(parsed.payload, parsed.projectId, parsed.expectedRevision);
+          if (!valid) return toolResult({ success: false, code: "INVALID_ARGUMENT" }, true);
+        }
         const now = Date.now();
         const command: BridgeCommandEnvelope = {
           protocolVersion: 1,
@@ -171,12 +248,57 @@ export function createLocalCutMcpServer(
           payload: parsed.payload,
         };
         const result = await router.execute(controllerId, command);
+        if (capability === "get_export_review_frames") {
+          if (review?.authorizedDeviceId() !== parsed.deviceId) return toolResult({ success: false, code: "AUTH_REQUIRED" }, true);
+          return exportReviewToolResult(result, parsed.projectId, parsed.payload);
+        }
+        if (capability === "submit_export_review_proposal" && review?.authorizedDeviceId() !== parsed.deviceId) {
+          return toolResult({ success: false, code: "AUTH_REQUIRED", delivery: "unknown" }, true);
+        }
         return toolResultForCapability(capability, result, !result.success);
       },
     );
   }
 
   if (admin) {
+    const attachmentSchema = buildAttachmentInputSchema();
+    server.registerTool(
+      "stage_attachment",
+      {
+        title: "LocalCut: stage ChatGPT attachment",
+        description: "Receive one ChatGPT image/audio/video attachment, copy it into LocalCut's bounded one-time relay, and return a safe Android import_url handoff. The Android app still requires local confirmation before importing.",
+        inputSchema: attachmentSchema,
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+        _meta: attachmentToolMeta(["localcut:write"]),
+      },
+      async input => {
+        const parsed = attachmentSchema.parse(input);
+        try {
+          return toolResult(await admin.stageAttachment(parsed.file), false);
+        } catch (error) {
+          return toolResult({ code: safeAdminError(error) }, true);
+        }
+      },
+    );
+
+    if (admin.stagePackage) {
+      server.registerTool(
+        "stage_package",
+        {
+          title: "LocalCut: stage portable studio package",
+          description: "Send one .localcut file (explicit MIME application/vnd.localcut.package, up to 20 MiB) through the authenticated one-time relay. Returns a temporary link requiring confirmation in Editor IA. Do not share the link with other people. Android verifies the entire archive and its media before opening. No project is edited or exported by this tool.",
+          inputSchema: attachmentSchema,
+          annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+          _meta: attachmentToolMeta(["localcut:write"]),
+        },
+        async input => {
+          const parsed = attachmentSchema.parse(input);
+          try { return toolResult(await admin.stagePackage!(parsed.file), false); }
+          catch (error) { return toolResult({ code: safeAdminError(error) }, true); }
+        },
+      );
+    }
+
     const claimSchema = z.object({ code: z.string().regex(/^\d{6}$/) }).strict();
     server.registerTool(
       "claim_pairing",
@@ -287,6 +409,12 @@ function titleFor(capability: BridgeCapability): string {
 }
 
 function descriptionFor(capability: BridgeCapability): string {
+  if (capability === "submit_export_review_proposal") {
+    return "After inspecting actual get_export_review_frames evidence, deliver a proposed visual correction to the Editor IA inbox of your OAuth-authorized paired device. Required expectedRevision; payload {planJson: JSON string} with exact projectId, expectedRevision, operations (1–8 visual-only), review {jobId,sha256,findings}. Maximum 8 KiB. Android validates against fresh export evidence and current project and queues one temporary proposal. This does not edit the project, grant approval, or export. User must open Editor IA, load and approve locally. Do not overwrite or retry a pending proposal; on unknown delivery ask user to check inbox. Manual paste remains available.";
+  }
+  if (capability === "get_export_review_frames") {
+    return "Read sampled images from the latest completed Bridge-exported MP4 on your authorized device, not editor preview. Use payload {jobId,sourceRevision} from get_export_status. Current project must match the source project; sourceRevision is the immutable export revision, not current editor revision. Evidence is temporary, up to three approximate sampled JPEG frames, not full video/audio QA.";
+  }
   if (capability === "get_preview_frame") {
     return "Capture the latest bounded LocalCut preview frame from the paired APK so an agent can visually inspect the current edit. The response includes image content plus frame metadata.";
   }

@@ -68,6 +68,10 @@ class BridgeProtocolTest {
         assertEquals(BridgeErrorCode.INVALID_ARGUMENT, error.code)
         assertTrue(BridgeCapability.SPLIT_CLIP.mutatesProject)
         assertFalse(BridgeCapability.GET_PROJECT_STATE.mutatesProject)
+        assertFalse(BridgeCapability.SUBMIT_EXPORT_REVIEW_PROPOSAL.mutatesProject)
+        assertTrue(BridgeCapability.SUBMIT_EXPORT_REVIEW_PROPOSAL.requiresRevision)
+        assertEquals(BridgeCapability.SUBMIT_EXPORT_REVIEW_PROPOSAL,
+            BridgeCodec.decodeCommand(validCommandJson(capability = "submit_export_review_proposal")).capability)
     }
 
     private fun validCommandJson(

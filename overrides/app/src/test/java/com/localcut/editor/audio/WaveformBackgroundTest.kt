@@ -99,6 +99,86 @@ class WaveformBackgroundTest {
         assertEquals(2, decoder.calls)
     }
 
+    @Test
+    fun lastSubscriberCancellationBeforeExecutionSkipsDecodeAndAllowsRetry() {
+        val executor = ManualExecutor()
+        val decoder = CountingDecoder(Result.success(WaveformData(listOf(0.5f))))
+        val repository = WaveformRepository(WaveformCache(8), decoder, executor)
+        val key = WaveformCacheKey("cancel-before-start", 0L, 1_000_000L, 1)
+        var cancelledCallbacks = 0
+
+        val old = repository.requestCancellable(key, "content://audio/test") {
+            cancelledCallbacks++
+        }
+        old.cancel()
+        old.cancel() // Idempotent.
+        executor.runAll()
+
+        assertEquals(0, decoder.calls)
+        assertEquals(0, cancelledCallbacks)
+
+        var retry: WaveformData? = null
+        repository.request(key, "content://audio/test") { retry = it.getOrThrow() }
+        executor.runAll()
+        assertEquals(1, decoder.calls)
+        assertEquals(listOf(0.5f), retry!!.peaks)
+    }
+
+    @Test
+    fun cancellingOneSubscriberPreservesSharedDecode() {
+        val executor = ManualExecutor()
+        val decoder = CountingDecoder(Result.success(WaveformData(listOf(0.7f))))
+        val repository = WaveformRepository(WaveformCache(8), decoder, executor)
+        val key = WaveformCacheKey("shared-decode", 0L, 1_000_000L, 1)
+        var cancelledCallbacks = 0
+        var survivingCallbacks = 0
+
+        val first = repository.requestCancellable(key, "content://audio/1") {
+            cancelledCallbacks++
+        }
+        repository.requestCancellable(key, "content://audio/1") {
+            survivingCallbacks++
+            assertEquals(listOf(0.7f), it.getOrThrow().peaks)
+        }
+        first.cancel()
+        executor.runAll()
+
+        assertEquals(1, decoder.calls)
+        assertEquals(0, cancelledCallbacks)
+        assertEquals(1, survivingCallbacks)
+    }
+
+    @Test
+    fun cancellingLastSubscriberInterruptsRunningDecodeAndAllowsRetry() {
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        val started = java.util.concurrent.CountDownLatch(1)
+        val interrupted = java.util.concurrent.CountDownLatch(1)
+        val decoder = WaveformDecoder { _, _, _, _ ->
+            started.countDown()
+            try {
+                java.util.concurrent.CountDownLatch(1).await()
+                Result.success(WaveformData(listOf(0.1f)))
+            } catch (error: InterruptedException) {
+                interrupted.countDown()
+                Result.failure(error)
+            }
+        }
+        val repository = WaveformRepository(WaveformCache(8), decoder, executor)
+        val key = WaveformCacheKey("running-cancel", 0L, 1_000_000L, 1)
+        var cancelledCallbacks = 0
+        try {
+            val handle = repository.requestCancellable(key, "content://audio/1") {
+                cancelledCallbacks++
+            }
+            assertTrue(started.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            handle.cancel()
+            assertTrue(interrupted.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            assertEquals(0, cancelledCallbacks)
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
     private class ManualExecutor : Executor {
         private val tasks = ArrayDeque<Runnable>()
         val pending: Int get() = tasks.size

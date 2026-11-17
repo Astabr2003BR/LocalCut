@@ -163,7 +163,20 @@ class BridgeProjectReader(
                     field("sourceOutUs", clip.sourceOutUs.toString()); comma()
                     field("opacity", clip.opacity.toString()); comma()
                     field("volume", clip.volume.toString()); comma()
-                    field("keyframeCount", clip.keyframes.size.toString())
+                    field("keyframeCount", clip.keyframes.size.toString()); comma()
+                    field("effectCount", clip.effects.size.toString()); comma()
+                    append(jsonString("effects")); append(":[")
+                    clip.effects.take(32).forEachIndexed { effectIndex, effect ->
+                        if (effectIndex > 0) comma()
+                        append('{')
+                        field("id", jsonString(effect.id)); comma()
+                        field("typeId", jsonString(effect.typeId)); comma()
+                        field("enabled", effect.enabled.toString()); comma()
+                        field("animationCount", effect.animations.size.toString())
+                        append('}')
+                    }
+                    append("]"); comma()
+                    field("effectsTruncated", (clip.effects.size > 32).toString())
                     append('}')
                 }
             }
@@ -201,7 +214,8 @@ class BridgeProjectReader(
     }
 
     fun exportStatusJson(jobId: String?): String {
-        val job = jobId?.let(jobs::get) ?: jobs.active()
+        val projectId = session.state.project.id
+        val job = (if (jobId == null) jobs.active() else jobs.get(jobId))?.takeIf { it.sourceProjectId == projectId }
         if (job == null) return "{\"job\":null}"
         return buildString {
             append("{\"job\":{")

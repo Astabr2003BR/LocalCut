@@ -85,6 +85,7 @@ import com.localcut.editor.ui.editor.TimelineSnapUiPolicy
 import com.localcut.editor.ui.editor.TimelineThumbnailPolicy
 import com.localcut.editor.ui.editor.TimelineTouchTargetPolicy
 import com.localcut.editor.ui.editor.TimelineTrackGeometry
+import com.localcut.editor.ui.editor.TimelineTrackLockUiPolicy
 import com.localcut.editor.ui.editor.TimelineViewportPolicy
 import com.localcut.editor.ui.editor.TimelineZoomUiPolicy
 import java.util.concurrent.Executors
@@ -115,6 +116,8 @@ fun TimelinePane(
     dpPerSecond: Float = TimelineZoomUiPolicy.DEFAULT_DP_PER_SECOND,
     onSetTrackMuted: (String, Boolean) -> Unit = { _, _ -> },
     onSetTrackSolo: (String, Boolean) -> Unit = { _, _ -> },
+    onSetTrackLocked: (String, Boolean) -> Unit = { _, _ -> },
+    onScrubActiveChanged: (Boolean) -> Unit = {},
 ) {
     val horizontalScroll = rememberScrollState()
     val verticalScroll = rememberScrollState()
@@ -149,6 +152,10 @@ fun TimelinePane(
     val scope = rememberCoroutineScope()
     val runtime = remember(context) { LocalCutProcessRuntime.get(context) }
     val currentPlayheadUs by rememberUpdatedState(playheadUs)
+    val latestScrubActiveHandler by rememberUpdatedState(onScrubActiveChanged)
+    DisposableEffect(Unit) {
+        onDispose { latestScrubActiveHandler(false) }
+    }
     var snapEnabled by remember(project.id) { mutableStateOf(true) }
     var exclusiveHandleActive by remember(project.id) { mutableStateOf(false) }
     val snapClipEdges = if (snapEnabled) {
@@ -412,6 +419,34 @@ fun TimelinePane(
             }
         }
 
+        Row(
+            modifier = Modifier.fillMaxWidth().height(24.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(52.dp)
+                    .fillMaxHeight()
+                    .background(Color(0xFF0D0D0F)),
+            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .horizontalScroll(
+                        state = horizontalScroll,
+                        enabled = TimelineGesturePolicy.isHorizontalScrollEnabled(exclusiveHandleActive),
+                    )
+                    .padding(start = 3.dp),
+            ) {
+                TimelineRuler(
+                    durationUs = durationUs,
+                    dpPerSecond = timelineZoom,
+                    playheadUs = playheadUs,
+                    width = timelineWidth,
+                )
+            }
+        }
+
         trackLayout.rows.forEach { rowGeometry ->
             val track = tracksById.getValue(rowGeometry.trackId)
             val addAction = if (track.locked) null else ({ onAddToTrack(track) })
@@ -424,6 +459,7 @@ fun TimelinePane(
                     onAdd = addAction,
                     onSetMuted = onSetTrackMuted,
                     onSetSolo = onSetTrackSolo,
+                    onSetLocked = onSetTrackLocked,
                 )
                 Box(
                     modifier = Modifier
@@ -450,6 +486,7 @@ fun TimelinePane(
                         onSelectClip = onSelectClip,
                         onMoveClip = onMoveClip,
                         onSeek = onSeek,
+                        onScrubActiveChanged = onScrubActiveChanged,
                         onTrimLeft = onTrimLeft,
                         onTrimRight = onTrimRight,
                         onAdd = addAction,
@@ -467,6 +504,7 @@ private fun TrackHeader(
     onAdd: (() -> Unit)?,
     onSetMuted: (String, Boolean) -> Unit,
     onSetSolo: (String, Boolean) -> Unit,
+    onSetLocked: (String, Boolean) -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -499,6 +537,7 @@ private fun TrackHeader(
                             .padding(horizontal = 12.dp, vertical = 1.dp),
                     )
                 }
+                TrackLockToggle(track = track, onSetLocked = onSetLocked)
             }
         } else {
             Column(
@@ -527,6 +566,7 @@ private fun TrackHeader(
                                 .padding(start = 5.dp, end = 2.dp),
                         )
                     }
+                    TrackLockToggle(track = track, onSetLocked = onSetLocked)
                 }
                 Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     AudioTrackToggle(
@@ -545,6 +585,27 @@ private fun TrackHeader(
             }
         }
     }
+}
+
+@Composable
+private fun TrackLockToggle(
+    track: Track,
+    onSetLocked: (String, Boolean) -> Unit,
+) {
+    Text(
+        text = TimelineTrackLockUiPolicy.label(track.locked),
+        color = if (track.locked) AccentColor else Color(0xFF77777D),
+        fontWeight = if (track.locked) FontWeight.Bold else FontWeight.Normal,
+        style = MaterialTheme.typography.labelSmall,
+        modifier = Modifier
+            .clickable {
+                onSetLocked(
+                    track.id,
+                    TimelineTrackLockUiPolicy.nextLocked(track.locked),
+                )
+            }
+            .padding(horizontal = 3.dp, vertical = 1.dp),
+    )
 }
 
 @Composable
@@ -585,6 +646,7 @@ private fun TrackLane(
     onSelectClip: (String?) -> Unit,
     onMoveClip: (String, Long) -> Unit,
     onSeek: (Long) -> Unit,
+    onScrubActiveChanged: (Boolean) -> Unit,
     onTrimLeft: (String, Long) -> Unit,
     onTrimRight: (String, Long) -> Unit,
     onAdd: (() -> Unit)?,
@@ -592,6 +654,7 @@ private fun TrackLane(
 ) {
     val density = LocalDensity.current
     val snapToleranceUs = TimelineSnapUiPolicy.toleranceUs(dpPerSecond)
+    val clipEditsEnabled = TimelineTrackLockUiPolicy.allowsClipEdits(track.locked)
     Box(
         modifier = Modifier
             .width(timelineWidth)
@@ -686,8 +749,9 @@ private fun TrackLane(
                     )
                     .clickable { onSelectClip(clip.id) }
                     .draggable(
-                        orientation = Orientation.Horizontal,
                         state = rememberDraggableState { delta -> bodyDragPx += delta },
+                        orientation = Orientation.Horizontal,
+                        enabled = clipEditsEnabled,
                         onDragStarted = { onSelectClip(clip.id) },
                         onDragStopped = {
                             val deltaDp = with(density) { bodyDragPx.toDp().value }
@@ -760,7 +824,7 @@ private fun TrackLane(
                         color = Color(0xFFF1F1F3),
                     )
                 }
-                if (selected) {
+                if (selected && clipEditsEnabled) {
                     TrimHandle(
                         modifier = Modifier.align(Alignment.CenterStart),
                         onActiveChanged = onExclusiveHandleActiveChanged,
@@ -825,7 +889,10 @@ private fun TrackLane(
             dpPerSecond = dpPerSecond,
             onSelectClip = onSelectClip,
             onSeek = onSeek,
-            onActiveChanged = onExclusiveHandleActiveChanged,
+            onActiveChanged = { active ->
+                onExclusiveHandleActiveChanged(active)
+                onScrubActiveChanged(active)
+            },
         )
     }
 }

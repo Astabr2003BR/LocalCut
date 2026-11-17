@@ -1,9 +1,13 @@
 import { createPublicKey, timingSafeEqual, verify } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { PreviewReviewCoordinator } from "./previewReview.ts";
+import { ReviewCorrectionCoordinator } from "./reviewCorrection.ts";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { pathToFileURL } from "node:url";
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { WebSocketServer, type WebSocket } from "ws";
+import { createAttachmentStager } from "./attachmentTransport.ts";
 import { BrowserControlSessionService } from "./browserControl.ts";
 import { createBrowserControlHttpHandler } from "./browserControlHttp.ts";
 import { CommandRouter, DeviceRegistry } from "./commandRouter.ts";
@@ -14,6 +18,7 @@ import { PairingService } from "./pairing.ts";
 import { DeviceRecoveryTokenService, publicKeySha256 } from "./recovery.ts";
 import { DeviceSessionService, SqliteSessionStore, type DeviceSessionStore } from "./session.ts";
 import { SqliteBridgeStore, type BridgeStore } from "./store.ts";
+import { createTransientMediaStore } from "./transientMediaHttp.ts";
 
 const MAX_JSON_BODY_BYTES = 64 * 1024;
 const MAX_HANDOFF_QUERY_BYTES = 8 * 1024;
@@ -37,6 +42,7 @@ export type ControllerServerOptions = {
   controllerApiToken: string;
   controllerId: string;
   publicBaseUrl?: string;
+  attachmentSourceOrigins?: readonly string[];
   store: BridgeStore;
   pairing: PairingService;
   sessions: DeviceSessionService;
@@ -61,6 +67,8 @@ export function createControllerServer(options: ControllerServerOptions): Contro
   const publicBaseUrl = options.publicBaseUrl ?? DEFAULT_PUBLIC_BASE_URL;
   const registry = options.registry ?? new DeviceRegistry();
   const router = options.router ?? new CommandRouter(options.store, registry);
+  const transientMediaStore = createTransientMediaStore({ nowEpochMs });
+  const stageAttachment = createAttachmentStager({ publicBaseUrl, transientMediaStore, allowedSourceOrigins: options.attachmentSourceOrigins });
   const mobileClaimNonces = new Map<string, number>();
   const recoveryNonces = new Map<string, number>();
   const recoveryTokens = new DeviceRecoveryTokenService(options.controllerApiToken);
@@ -87,13 +95,30 @@ export function createControllerServer(options: ControllerServerOptions): Contro
     controllerId: options.controllerId,
     publicBaseUrl,
     nowEpochMs,
+    transientMediaStore,
     ...(options.remoteRandomToken ? { randomToken: options.remoteRandomToken } : {}),
   });
   const wss = new WebSocketServer({ noServer: true, clientTracking: false });
+  const reviewAuth = new AsyncLocalStorage<string>();
+  const reviewCoordinator = new ReviewCorrectionCoordinator(new PreviewReviewCoordinator());
   const mcpHandler = createMcpHandler(() => createLocalCutMcpServer(
     router,
     options.controllerId,
     {
+      stageAttachment(file) {
+        return stageAttachment(file);
+      },
+      stagePackage(file) {
+        // Recheck this request's OAuth device authorization immediately before staging.
+        const token = reviewAuth.getStore();
+        if (!token) throw new Error("OAUTH_TOKEN_INVALID");
+        const deviceId = oauth.verifyAccessToken(token, ["localcut:read", "localcut:write"]).deviceId;
+        return stageAttachment(file, { authorize() {
+          if (oauth.verifyAccessToken(token, ["localcut:read", "localcut:write"]).deviceId !== deviceId || !isDeviceAuthorized(deviceId)) {
+            throw new Error("OAUTH_TOKEN_INVALID");
+          }
+        } });
+      },
       claimPairing(code) {
         const claimed = options.pairing.claim(code, options.controllerId, nowEpochMs());
         return {
@@ -107,6 +132,15 @@ export function createControllerServer(options: ControllerServerOptions): Contro
         options.sessions.revoke(deviceId);
         registry.get(deviceId)?.close("device_revoked");
         return { revoked: true, deviceId };
+      },
+    },
+    {
+      coordinator: reviewCoordinator,
+      authorizedDeviceId: () => {
+        const token = reviewAuth.getStore();
+        if (!token) return null;
+        try { return oauth.verifyAccessToken(token, ["localcut:read", "localcut:write"]).deviceId; }
+        catch { return null; }
       },
     },
   ));
@@ -183,7 +217,7 @@ export function createControllerServer(options: ControllerServerOptions): Contro
         } catch {
           return sendMcpAuthRequired(res, oauth.issuerBaseUrl);
         }
-        await nodeMcpHandler(req, res);
+        await reviewAuth.run(token!, () => nodeMcpHandler(req, res));
         return;
       }
 
@@ -698,6 +732,9 @@ export function startControllerServerFromEnv(): ControllerServerRuntime {
     controllerApiToken,
     controllerId,
     publicBaseUrl,
+    attachmentSourceOrigins: process.env.LOCALCUT_ATTACHMENT_SOURCE_ORIGINS === undefined
+      ? undefined
+      : process.env.LOCALCUT_ATTACHMENT_SOURCE_ORIGINS.split(",").map((value) => value.trim()).filter(Boolean),
     store,
     pairing,
     sessions,

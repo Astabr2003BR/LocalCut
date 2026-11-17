@@ -1,0 +1,363 @@
+# LocalCut Autopilot checkpoint — 2026-11-14
+
+Phase 1 / communication and media security. Parent 133069fc93f51c2599d230459f0d16ed5421a17e. Baseline four PR workflows green (2040, 1871, 1694, 840). No physical-device verification.
+
+Read automatic studio documentation, attachmentTransport.ts, mcp.ts, server attachment wiring, attachment tests and repository localcut-control skill. The development skill was not exposed in this session. Existing stage_attachment uses a bounded one-time relay and Android confirmation; get_preview_frame can return image content. Neither proves availability in ChatGPT Android. Existing automatic studio is JSON v1 image composition, not portable ZIP or full Editor IA.
+
+Increment: reject upstream redirects before following them and apply a 30-second fetch/body abort signal. Regression test checks fetch options and error mapping. CI pending; no local execution claimed. Direct HTTPS SSRF remains open: establish trusted attachment origins and DNS/egress protections before claiming transport security. MIME content validation and device/session-scoped relay authorization also pending. Next: inspect actual attachment origins and deployment configuration, design fail-closed origin policy with tests; verify CI first. No APK installation, main merge or phase 2.
+
+
+## Round 2 — 2026-11-14
+Parent c6bce1eb3df4b3f1d1afde35015be653f6b783bf: all four CI workflows PASS (2041, 1872, 1695, 841). Inspected attachmentTransport, server wiring and tests. No physical-device verification. New increment: cancel rejected upstream response bodies on HTTP/MIME/size validation errors; cancel oversized streams and release reader locks without masking original error. Tests added for HTTP 503, unsupported MIME, declared oversize and streamed oversize. New CI pending. Server currently accepts HTTPS attachment origins without a trusted-origin policy; no verified production attachment host list available, so no guessed allowlist or deployment change. SSRF/DNS/egress policy remains P0, as do content validation and device-scoped relay authorization. Next: verify CI, inspect documented attachment origins and deployment config, implement explicit trusted origin policy with compatibility tests. No APK installation or phase 2.
+
+## Round 3 — 2026-11-14
+Parent 42edcec8e093affac4464d0a2475813b16f1ad85: all four workflows PASS (2042, 1873, 1696, 842). Read attachment transport, tests, server wiring, attachment design, automatic studio and repository localcut-control skill; development skill not exposed. Increment: reject literal IPs including normalized IPv4 aliases and IPv6, single-label/local/internal names, nonstandard ports and URL fragments before network access. Regression test asserts zero fetch calls for rejected URLs. Existing HTTPS DNS-name transport and GET-only relay retained. New CI pending; no local execution or physical test claimed. This is defense in depth, NOT complete SSRF protection: DNS rebinding/private resolution and trusted origin configuration remain P0. No verified production attachment origin list in inspected design; next implement explicit origin configuration and connection-level DNS/egress protection without guessing production hosts. Content validation and scoped relay authorization remain pending. No APK installation, deployment, main merge or phase 2.
+
+## Round 4 — 2026-11-14
+Parent 7843d3ea44e05c11d6f25119507cc673ffd809bc: four workflows PASS (2043, 1874, 1697, 843); PR open/draft, owner admin. Read actual transport, server wiring, tests and studio documentation; development skill not exposed. Added exact HTTPS origin policy configurable through LOCALCUT_ATTACHMENT_SOURCE_ORIGINS (comma-separated origins); configured empty list denies all, absent variable retains legacy compatibility pending verified production origins. Reject path/query in configuration and cross-origin response URLs. Tests cover exact match, suffix/subdomain/trailing-dot bypass, empty configuration and invalid origin. No deployment configuration changed; DNS rebinding/connection-level protection, content validation and device-scoped relay remain P0. CI pending, no physical test. Next: validate CI and implement connection-level DNS protection without guessing production hosts. No APK installation or phase 2.
+
+
+## Round 6 — 2026-11-14
+Parent c348c3426955541b192234096757017068dc2dc4: four workflows PASS (2044, 1875, 1698, 844), PR draft and repository push permission confirmed. Read checkpoint, automatic studio documentation, transport, tests and MCP wiring; development skill not exposed. Increment: return SHA-256 of exact staged bytes in attachment result, additive field; regression verifies digest matches original and relay bytes. This is integrity metadata only, not verification of a caller-supplied digest or Android import integrity. CI pending; no local or physical test claimed. DNS connection-level protection remains P0 and is not resolved by this increment; next implement pinned connection resolution with tests, then media content validation and scoped relay. No deployment, APK installation or phase 2.
+
+
+## Round 7 — 2026-11-15
+Parent b3da630f83b665ca11311fcc7ecdfc3929b4cf82: four workflows PASS (2045, 1876, 1699, 845). PR draft and push permission verified. Read studio docs, checkpoint, transport, tests and MCP schema; development skill not exposed. Added optional expected_sha256 to attachment file schema and stager, strict lowercase hex validation before network, mismatch rejection before relay staging, backward compatible absent digest. Tests cover malformed digest/no fetch, mismatch/no relay, matching digest. CI pending; no local or physical execution claimed. DNS pinning/egress, content validation, device-scoped relay and Android verification remain P0; next prioritize connection-level DNS protection. No deployment, APK installation or phase 2.
+
+
+## Round 9 — 2026-11-15
+Parent 743c113aff8c60dd7fc7f919a95934927acc9994: all four PR workflows PASS, PR open/draft, owner admin. Read actual attachment transport, tests, package and studio docs; development skill not exposed. Increment: default attachment fetch uses IPv4 DNS resolution, rejects mixed/private/special-use answers, connects directly to the validated IP with original TLS SNI/certificate hostname and Host header, no redirect, no pooled agent, deadline and identity encoding. IPv6-only origins fail closed; production compatibility and actual TLS/connection integration remain pending. Unit tests cover address policy and mixed/empty DNS answers; CI pending, no local or physical execution claimed. Origin allowlist deployment, network egress policy, media content validation and scoped relay remain pending. Next: verify CI, add transport integration tests and address compatibility. No deployment, APK installation or phase 2.
+
+## Round 10 — 2026-11-15
+Parent c1fdb9df87cf5c0866e7ae46e35b9ae638a1ba3c: four PR workflows PASS; PR open/draft and push permission confirmed. Read pinned transport, tests, studio docs and checkpoint; development skill not exposed. Extract actual HTTPS request options into a tested helper, with defense-in-depth rejection of non-HTTPS, credentials, nondefault port and nonpublic address. Tests assert pinned IP, original SNI/Host, signed path, TLS verification, no pooling and cancellation signal. Configuration-level tests, not real TLS integration. CI pending; no local or physical execution claimed. Next: verify CI, exercise response handling and content validation, then scoped relay. No deployment, APK installation or phase 2.
+
+## Round 11 — 2026-11-15
+Parent 6eb411450122790347dbcb91f1e3daab44918ec5: four PR workflows PASS (Android 2048, multitrack 1879, Bridge 1702, Termux 848); PR open/draft and push permission confirmed. Read transport, tests, studio docs and checkpoint; development skill not exposed. Reject partial/non-200 responses, Content-Range and nonidentity content encoding before staging; tests assert rejection, body cancellation and no relay entry. CI pending; no local or physical execution claimed. Next: verify CI, validate media signatures and exact byte length, then scoped relay. Real TLS integration, production origin policy, portable package and full Editor IA remain pending. No deployment, APK installation or phase 2.
+
+## Round 12 — 2026-11-15
+Parent be96427c017b2bf3fccf44dbdab07a88dcff49e9: all four PR workflows PASS; PR open/draft and owner admin confirmed. Read transport, tests, studio docs and checkpoint; development skill not exposed. Validate Content-Length syntax, safe integer/size and exact streamed byte count before staging; reject overrun immediately and truncated bodies at EOF. Tests cover malformed, oversized, short/long and matching lengths. CI pending; no local or physical execution claimed. Next: verify CI, media signature validation with real fixtures and scoped relay. No deployment, APK installation or phase 2.
+
+
+## Hybrid round — 2026-11-15
+Parent 3ddbe40fafbaebd12a8317d3345bce2eef6ea8b8: all four PR workflows PASS (2050, 1881, 1704, 850), PR draft and admin/push confirmed. Read LocalCut Dev skill, project-lock reference, studio docs, actual transport, relay and tests. Added bounded header recognition before stage_attachment relay storage; common raster/audio/video container signatures only, reject unsupported MIME (including SVG) and mismatched header. Existing positive test fixtures replaced with original 1x1 PNG and PCM WAV; added spoof/truncation/no-relay cases. Local Node 22 strip-types isolated signature tests executed (8 checks); full Bridge/Android CI pending. Header recognition is not decoding, malware scanning, or track/codec validation; container families can share signatures and ID3/header-only files may still fail downstream. Compatibility change: MIME previously allowed by family alone may now be rejected; Android physical test and broader fixture validation pending. Next: verify CI, device/session-scoped relay and portable package vertical slice; no production deployment or phase 2. Hybrid mode retains hourly automation, CAS and no redundant builds.
+
+
+## Hybrid portable preflight — 2026-11-15
+Parent 53c0d7b083659230704224e3ceac7b41eba8685d: four PR workflows PASS (2051, 1882, 1705, 851), PR open/draft and push permission confirmed. Read skill, prior checkpoint, studio docs, recipe/plan/activity and actual emulator workflow. Prior hybrid local-test assertion not independently verified; rely on observed CI, not claimed local count. Added PortableStudioPackage read-only v1 ZIP preflight (bounded central directory and entries, strict manifest, canonical asset paths, exact asset set, sizes/CRC/SHA-256, ordered recipe, cancellation); instrumentation smoke and workflow registration; package spec in studio docs. No local Android test executed; CI pending. Not a complete offline import: SAF private copy, safe streaming extraction, storage reservation, media decode, integration with existing activity and physical device remain pending. Device/session-scoped relay authorization also remains open P0; no new remote transport enabled. Next verify CI, then implement local private staging and SAF integration; scoped relay before remote release. No APK installation, main merge, deployment or phase 2.
+
+
+## Hybrid SAF package import — 2026-11-15
+Parent 0f89a167b30c3c0ef1a2c778dc58c4a44453ca7d: four PR workflows PASS (2052, 1883, 1706, 852), PR draft and push confirmed. Read actual package preflight, Activity, manifest/provider paths, instrumentation and checkpoint. Added private bounded streaming staging, storage preflight, verified extraction, metadata checks, cancellation cleanup, narrow cache FileProvider path, SAF selection and draft-only replacement with confirmation, existing recipe/export integration. Tests added to existing PortableStudioPackageSmokeTest for valid local read through provider and cleanup after no-space/cancel/corrupt; no local Android execution claimed. CI pending. Physical device, full package-to-MP4 test, process recovery, video assets, Share entry, scoped relay, full editor operations and QA return remain pending. Cache eviction/interruption and storage contention are limitations, not guaranteed persistent jobs. Next verify CI and add real packaged image+audio export smoke, then integrate video/editing and scoped relay. No production, main, installation or phase 2.
+
+
+## Hybrid portable package-to-MP4 integration — 2026-11-15
+Parent d3f6c0257cf3e815a31a6948c7ac790123faa708: four PR workflows PASS (2053, 1884, 1707, 853), PR draft and push confirmed. Inspected actual AutomaticVideoActivity, portable stager smoke and existing Media3 export smoke. Extracted AutomaticVideoProjectBuilder from production Activity without changing its recipe/asset/clip/composition semantics; added real package→private URI→shared builder→existing compiler/Transformer→MP4 instrumentation with source hashes, duration, resolution, audio track and decoded pixel assertion. CI pending, no local Android execution claimed. This tests the underlying export engine, not the SAF UI/destination/controller or physical POCO. Scoped relay, durable job recovery, video assets, editor operations and bidirectional QA remain pending. Next verify CI, then existing-video composition and typed project editing. No installation, main merge, production or phase 2.
+
+
+## Hybrid existing MP4 preparation — 2026-11-15
+Parent 620cd6c91fd696f599f7a958ae7154e0e6fad73f: four workflows PASS (2054, 1885, 1708, 854), PR draft and push confirmed. Local SAF visual picker accepts MP4 alongside images; shared builder copies MP4 to private work directory with 128 MiB per-file limit and 16 MiB free-space reserve, validates video metadata and rejects scenes exceeding source duration. Existing recipe index retained for compatibility. Instrumentation reuses actual generated MP4, checks video asset, trim duration, composition compilation, source hash and overlong rejection. CI pending; no local execution or physical verification. This is preparation/compile only for video, not proven video re-export or editing existing projects; embedded audio behavior, mixed sequence export, package video schema, scoped relay and QA remain pending. No main merge, installation or phase 2.
+
+
+## Hybrid non-destructive MP4 trim — 2026-11-15
+Parent 598c8fdfe4d11aad28f7a141d6049a17e0d86532: all four PR workflows PASS (2055, 1886, 1709, 855); automation last completed and PR open/draft. Inspected actual recipe/plan/builder, existing Media3 compiler/blueprint and Clip model. Added optional sourceInMs with checked arithmetic, per-source interval validation and image offset rejection; builder uses existing sourceInUs/sourceOutUs and preserves timeline placement. Existing smoke extended to reexport actual generated MP4 with embedded audio, check audio track/duration/green pixel and source SHA-256, reject invalid source range and still image offset; added plan/parser tests. CI pending; no local Android execution claimed. This is local trim/reexport only, not arbitrary editing, layer reconstruction, package video schema, mixed-sequence audio policy, durable jobs, scoped relay or QA return. Next verify CI, then typed non-destructive operations on existing editable projects with revision protection. No installation, production, main merge or phase 2.
+
+
+## Hybrid existing project batch hardening — 2026-11-15
+Parent c8ff7ea96e324896f30305d119908faabf2d4a22: all four PR workflows PASS (2056, 1887, 1710, 856); PR draft/open, automation last completed. Inspected existing ProjectEditBatchCommand, parser, BridgeCommandExecutor, ProjectSession, revision clock, clip/track lock and TimelineValidator. Existing PROJECT_EDIT already provides typed patches for clip/text/design, project/revision guard and snapshot Undo/Redo; discovered missing track/direct-layer lock checks in batch patch/delete/bulk-delete. Added guards (whole batch rejected before commit if locked), new trimClip typed operation reusing existing left/right edge commands with exactly one nonnegative edge, parser and domain/bridge regression tests for preservation, atomicity, stale revision, Undo/Redo and invalid ranges. No local Android tests executed; CI pending. Remaining: group/linked-item lock semantics, remote authentication/ownership and revision race audit across UI, effect/animation operations, QA return and actual POCO; no full parity claim, no production/installation/main merge/phase2. Next verify CI, review clip effect/animation operations and bounded preview return.
+
+
+## Hybrid pointwise effect editing — 2026-11-15
+Parent 7e33e783cfb6db2d03585637bc1d82ed741e1ab5: all four CI PASS (2057, 1888, 1711, 857), PR open/draft. Inspected effect registry/model, existing creative and animation commands, parser, project reader and validator. Added typed addEffect/patchEffect/setEffectKeyframe numeric-only operations using registry validation and existing SetClipEffectsCommand, preserving stack/order/other parameters and animation timestamps/easing, rejecting unknown type/invalid values/audio targets/ambiguous IDs/locked ancestors; extended existing animation-plan guard and bounded LIST_CLIPS effect discovery. Added parser/domain regression tests for preservation, exact Undo, invalid inputs and group lock. CI pending, no local Android run. Not full animation/editor parity; effect parameter discovery details, nonnumeric editing, mixed media, scoped relay, QA return and physical device remain pending. No main/production/install/phase2.
+
+Same-round review found an over-escaped JSON key in LIST_CLIPS effect inventory; fixed with jsonString helper and added BridgeCommandExecutorTest parsing actual response after adding effect. Corrective follow-up commit only on same HEAD with CAS; final CI pending. Prior commit may have independent CI runs; use latest corrected SHA.
+
+
+## Hybrid revision-aware preview capture — 2026-11-15
+Parent 1f277f1ecdd06962c07473292c0160fa146e87a3: four CI PASS (2059,1890,1713,859), PR open/draft. Inspected actual Android PixelCopy/TextureView port, controller, runtime main-thread dispatch, Bridge executor and existing MCP image output. Root issue: cached image not invalidated on load/seek, old callback can republish after detach, timestamp sampled at encoding. Added generation tickets, bounded freshness/drift/size, ready-player guard, invalidate before loads/seeks/release, optional revision check and response metadata, regression tests. CI pending; no local Android test claimed. Not frame-accurate render verification, no automated correction loop, multi-frame review or physical QA; scoped relay still pending. No deployment/install/main/phase2.
+
+Same-round provenance review: block Bridge capture unless successful editable-project load matches active session project. Reject failed loads, background/release, unversioned rendered-file preview; ordinary playback unchanged. Corrective follow-up on exact HEAD, final CI pending. Physical preview decode/seek accuracy remains unverified.
+
+
+## Hybrid bounded multi-frame preview review — 2026-11-15
+Parent c058a665fa79cb92101639274c42bfde183af02d: four CI PASS (2061,1892,1715,861), automation last completed, PR draft/open. Added controller PreviewReviewCoordinator and OAuth-bound MCP review_preview_frames (2–4 ordered positions), per-device concurrency guard, revision-bound Android seek, before/after project state checks, bounded capture retry/size/drift/signature, all-or-nothing result, image parts once. OAuth token request context is reverified for this tool each step; existing general MCP routing not rearchitected. Added Node orchestration and Android stale-seek regressions. Scope intentionally no cursor restoration, no project mutation, no new deployment, no full exported-frame or automated-correction proof. CI pending; physical POCO and scoped relay remain pending. Verify latest CI, then build revision-bound exported review/controlled correction loop.
+
+
+## Hybrid review-guided correction — 2026-11-15
+Parent e4a680cd5fed1b64994ef91e21486cfec3ee5aa3: all 4 CI PASS (2062,1893,1716,862); PR open/draft. Added ReviewCorrectionCoordinator, single-use latest-device evidence receipts with expiry, visual-only allowlist/bounded batch, atomic existing PROJECT_EDIT and same-position recheck at returned revision, up to 3 correction rounds per chain; fail closed on stale/foreign/expired/invalid, no blind replay on ambiguous transport, committed edit clearly distinguished from failed verification. MCP review/apply tools integrated with existing OAuth device auth; tests for success, limits, stale, concurrent, revoked, ambiguous commit, failed verification and image metadata. CI pending. GPT decides visual changes/acceptance externally; no autonomous model service, no final MP4 QA or physical test yet. No deployment/main/install/phase2.
+
+
+## Hybrid rendered MP4 technical QA — 2026-11-15
+Parent a3b8e3e8a679ef7a08b1ab17a5d83f9ab14cf9e5: four CI PASS (2063,1894,1717,863), PR draft/open. Added AndroidBridgeExportFileReviewer on existing commit worker, streaming SHA256 and metadata/extractor, three bounded sampled decodes, dimension/duration checks, explicit false visual/audio/full-decode flags, technicalReview only after commit, source project/revision snapshot. Inspection errors preserve successful render; no exported image transfer yet. Unit wrapper and provenance tests, real MP4 portable smoke assertions and corrupt negative. CI pending; no local/device claim. No publication/deployment/install/main/phase2. Next: actual exported sample image review, Android Editor IA UI and end-to-end QA.
+
+
+## Rendered sample dark-frame warning — 2026-11-15
+Parent 4439b4440778e958df67a7f5c51b2adf3921b3b5: four CI PASS (2064,1895,1718,864), PR draft, push permission confirmed. Added bounded 16x16 RGB sampling of already decoded frames, near-black timestamps and conservative needs_review status; no visual approval or image transfer. Android instrumentation covers black/green and real green MP4 report. CI pending; no local execution. Intentional fades/night scenes can trigger warning; sparse samples cannot establish continuity. Next exported image return and UI; no phase 2/install/main.
+
+
+## Hybrid rendered MP4 visual sample handoff — 2026-11-15
+Parent e61a4ef5a57010da63032335fdf8368b7866f518: four CI PASS (2065,1896,1719,865); automatic round completed, PR open/draft. Added bounded JPEG samples to successful Bridge export evidence, single latest job cache with 10-minute read expiry, source job/project/revision/hash checks, read capability get_export_review_frames with OAuth device scope and MCP image parts, no persistent file or public route, image replay cache redaction. Tests for expiry/late callbacks/foreign revision/invalid payload, Node JPEG header/provenance, real MP4 JPEG decode and green pixels. CI pending. Sample timestamps approximate, no visual/audio sync certification or physical test. Next Editor IA UI and end-to-end/regression; no deployment/main/install/phase2.
+
+
+## Editor IA approval UI increment — 2026-11-15
+Parent fdee96db82a2572610e8e483ab2e88c06bb65d5c: four CI PASS (2066,1897,1720,866), PR draft, push confirmed. Existing AutomaticVideoActivity renamed visibly Editor IA; explicit external GPT/local render and flattened MP4 limitation; approval summarizes exact parsed resolution, fps, scene count, duration, distinct visual assets and additional audio, preservation. Removed fallback that reparsed draft on output-picker result after Activity recreation without retained approval; fail closed and warn possible empty SAF file. Added Android summary regression. CI pending; no local Android execution, no UI rotation instrumentation yet. Existing project remote editing UI, durable jobs, scoped transfer, intro fixture and physical validation pending. No phase2/main/install/deploy.
+
+
+## Editor IA bounded local audio/video copy — 2026-11-15
+Parent 799fa60efa872d8201ee03d62ae250eb92f978dc: all four CI PASS (2067,1898,1721,867), PR open/draft, push permission confirmed. Found local audio preparation copied unbounded bytes without free-space checks while video had bounds. Shared copyStudioMedia now applies 128 MiB per asset and 16 MiB reserve to both, rejects empty/zero-progress streams, checks cancellation before reads and after EOF; caller retains cleanup ownership. Added JVM exact-limit/byte-preservation and empty/oversize/space/cancellation tests. CI pending; no local execution. Technical limits not commercial quotas; metadata decoder and image storage bounds remain separate. Next intro fixture, project UI, scoped transfer and durable jobs; no main/install/phase2.
+
+
+## Hybrid existing-project Editor IA local approval — 2026-11-15
+Parent 2163a67ee28fb3ff65b4d17cbfbe7cd19e88c0d1: four CI PASS (2068,1899,1722,868), PR draft/open. Added Editor IA entry beside carousel and dialog for existing project, copy bounded context (no private URI), paste revision-bound visual plan, immutable dry-run, single-use explicit approval and exact project/revision check, existing history and snapshot refresh. Reuses existing typed parser and automatic studio entry. Added JVM tests (not executed locally); CI pending. Approval in memory only, no remote permission changes, no audio/timing/delete in local visual correction. External GPT/Bridge still required for actual vision and remote review; no physical test. No main/deployment/install/phase2.
+
+
+### Editor IA regression fix — 2026-11-15
+Android Debug APK #2069 executed 1511 tests, one failure at EditorAiApprovalGateTest.kt:46: expected clip.opacity 0.8. Inspection confirmed PatchClip wrote operation.opacity into TransformValue.opacity rather than Clip.opacity, unlike AddClip and SetClipOpacityCommand. Corrected the explicit opacity field to Clip.opacity; preserve transform opacity, keyframes, other properties and undo. Added domain regression for separate opacity values, exact preservation/undo and invalid range. CI pending on corrective SHA. No physical test or publication.
+
+
+## Hybrid Editor IA export review panel — 2026-11-15
+Parent 45fb18936cf4a2376a0b0b4ba10755c2ca6a717e: all four CI PASS (2070,1901,1724,870), PR open/draft. Added observable latest Bridge export with source project/revision and terminal stability, UI metadata/warnings/stale revision and explicit copy GPT review request for matching complete samples. No raw error/image data in UI. Fixed unknown job status fallback and terminal/foreign cancel; cancellation terminal state from renderer callback. JVM tests added for report policy and job lifecycle, CI pending; no local/device claim. Manual exports not covered, no live GPT result history or final visual approval; next integrated review/history, actual intro fixture, scoped transport and QA. No main/deployment/install/phase2.
+
+
+## Still-image replacement domain primitive — 2026-11-15
+Parent 9ce5732e0797e2558592b19ee56aed47f3367d3c: four CI PASS (2071,1902,1725,871), PR draft, push permission confirmed. Skill unavailable in current surface (empty skill listing); used versioned docs and actual code. Added reversible ReplaceStillImageAssetCommand for existing still-image assets only, expected old asset guard, existing track/ancestor locks and timeline validation. Test exact project equality except target asset, undo, stale/missing/no-op/flattened video/locked rejection. Not exposed to Bridge or UI yet; no real intro or visual render test, no local execution; CI pending. Next wire explicit typed approval and render fixture. No main/install/phase2.
+
+
+## Typed still-image replacement approval — 2026-11-15
+Parent 519f8c6195d74292fc80b9778d3af831cd2c0e12: four CI PASS (2072,1903,1726,872), PR open/draft, push confirmed. Skill listing empty; used versioned docs. Added strict replaceStillImage typed operation reusing domain primitive, local Editor IA explicit approval and bounded image asset IDs without URIs, parser and approval regressions. No new transport or permissions; existing PROJECT_EDIT parser accepts operation under existing guards. CI pending; no local execution, actual intro render or physical test. Next render fixture and review/transport. No main/install/phase2.
+
+
+## Hybrid rendered intro replacement regression — 2026-11-15
+Parent 0bfaf61f0875440492396e26710c7350905e786a: four CI PASS (2073,1904,1727,873), PR draft/open. Added instrumentation to existing multitrack smoke class: actual EditorAiApprovalGate prepare/apply and exact model diff for still-image swap, render before/after using production compiler/Media3, compare sampled background and animated overlay, title pixel overlap, audio packets/duration, source/original render hashes and Undo. Synthetic fixture only; no real intro file or full audio sync/visual approval. CI pending; no local run, no deployment/main/install/phase2. Next verify instrumentation, then actual intro access and remaining scoped transport/QA.
+
+
+## Studio audio staged-byte validation — 2026-11-15
+Parent 110acf2fe37c6522a01263d3a75e4481f0707e4e: four CI PASS (2074,1905,1728,874), PR draft/open, push confirmed. Skill listing empty; used versioned docs. Audio metadata previously read from provider URI before bounded copy, allowing mismatch between inspected and rendered bytes and unbounded provider metadata access. Move metadata inspection to private bounded copy, cancellation before/after inspection; preserve MIME and duration rules. Extend existing portable real export instrumentation with staged WAV hash/duration and corrupt WAV rejection. CI pending; no local Android execution. No new transport, no physical test, no main/install/phase2. Next scoped transport and durable job recovery.
+
+
+## Studio bounded image staging — 2026-11-16
+Parent 1edf0ce76306cb7b7773d04490522d641419e0d0: four CI PASS (2075,1906,1729,875), PR draft/open, push confirmed. Skill listing empty; used versioned docs. Image decoder previously consumed provider URI directly without bounded copy. Stage source privately using existing copyStudioMedia byte/space/cancellation checks, decode from staged file, delete temporary source in finally, check cancellation around bitmap processing. Extend portable instrumentation for corrupt image rejection and temporary source cleanup; existing green MP4/source hash checks retained. CI pending; no local Android execution. Output PNG compression/storage and decoder resource limits remain separate; no full decode safety claim. Next scoped transport and durable recovery. No main/install/phase2.
+
+
+## Studio preparation rollback — 2026-11-16
+Parent 0d55aed8ae2a3828bc00dd6cc3ff1a2cbc2aeff8: four PR workflows completed success; PR open/draft. Skill listing empty; used versioned docs and actual builder. Preparation now removes only its newly created work directory on any unsuccessful build, including cancellation after PNG write and invalid audio after image preparation. Existing directory rejection remains outside cleanup; successful assets retained. Extended portable Android smoke for cancellation, corrupt image/audio cleanup and existing-directory preservation. CI pending; no local Android execution. This is in-process rollback, not durable recovery after process death. Next scoped transfer and durable recovery. No main/install/phase2.
+
+
+## Studio generated PNG output bounds — 2026-11-16
+Parent 09d703995186779125b9781f295787402d307ce7: four PR workflows completed success; PR open/draft, push permission confirmed. Skill listing empty; used versioned docs and actual builder. Generated PNG writes now enforce per-file byte limit, free-space reserve and cancellation before each write; reject empty output, preserve existing preparation rollback. Added instrumentation for exact limit, insufficient space, cancellation and unchanged bytes after rejection; existing real MP4 smoke exercises production path. CI pending; no local Android execution. Storage checks are not atomic reservations; durable recovery and scoped relay remain pending. No main/install/phase2.
+
+
+## Studio package Share entry — 2026-11-16
+Parent 3cb1ed39b9308145d481a67d5d2f8212f18836ab: four PR workflows PASS (2078,1909,1732,878); PR open/draft. Added explicit custom MIME ACTION_SEND routing through existing MainActivity to private Editor IA Activity, single content URI only, explicit confirmation before existing bounded package staging. Existing media Share path unchanged. Instrumentation covers URI/action rejection; CI pending, no local or physical test. Generic ZIP/octet-stream still uses SAF; provider read grant and actual Android Sharesheet flow require device validation. No new exported component, remote transport, main merge, installation or phase 2. Next scoped relay and durable recovery.
+
+
+## Hybrid studio interrupted-export recovery — 2026-11-16
+Parent d735c9e961f8cc8dae0780a3b8245af15ae0a8b9: four CI PASS (2079,1910,1733,879), PR draft/open. Identified Activity cancellation/process death can strand automatic-UUID preparation files after submission. Added bounded durable private journal before build, exact owner/job cleanup, previous-process detection, fail-closed flat private path checks, explicit UI warning, no destination URI/consent persistence or automatic re-export. Added instrumentation for simulated process owner change, same-owner protection, unrelated files/destination unchanged, duplicate/traversal, unexpected nested directory and terminal cleanup. CI pending; no local/device execution. Controller render temp/SAF partial output and true process kill/restart still pending; same-process interrupted record retained until restart. Scoped transfer remains pending. No main/install/deployment/phase2.
+
+
+## Hybrid explicit studio package relay receiver — 2026-11-16
+Parent 45f0e2fe3f1ac12a43c86a6a725d98007885a640: four CI PASS (2080,1911,1734,880), PR draft/open. Implemented Android receiver for exact fixed-origin HTTPS open_package handoff, declared SHA256 and <=20 MiB, no redirects/retry/proxy, pinned public DNS and strict HTTP response, whole archive digest/length before existing ZIP/media preflight. Local confirmation twice (handoff + studio), no automatic export or timeline mutation, no persisted relay URL/replay. Added parser and staging integrity regression tests. CI pending; controller does not yet issue package relay links, no live transfer/device test or deployment. Next authenticated controller package staging and one-time relay integration; no main/install/phase2.
+
+
+## Hybrid authenticated studio package sender — 2026-11-16
+Parent 3a3f91aaeeafdd908723df7eb55c693992499639: four CI PASS (2081,1912,1735,881), PR open/draft. Added explicit stage_package MCP tool, OAuth device recheck before and after source download, strict custom MIME/filename, bounded 20 MiB source fetch, ZIP central-directory preflight without extraction, SHA256/bytes in matching Android open_package handoff, one-time GET relay, capped pending entries. Added real ZIP fixture tests and rejected traversal/duplicates/malformed/auth revocation/hash/ordinary media misuse; HTTP one-time/limit regression. CI pending; no local execution/live transfer/deploy. Link is bearer capability not download-device-bound; Android validates full package; physical QA and end-to-end production authorization pending. No main/install/phase2.
+
+
+## Package relay TypeScript regression fix — 2026-11-16
+Parent 5a0b353337e5036b49f95fe5102015cc94cb6adc: Android APK #2082, Export Smoke #1913 and Termux #882 PASS. Bridge #1736 ran 110 tests, all passed; subsequent typecheck failed TS2345 at attachmentTransport.test.ts lines 384 and 415: Buffer<ArrayBufferLike> is incompatible with BodyInit. Convert only the two synthetic ZIP Response bodies to new Uint8Array(zip), which allocates a fresh ArrayBuffer and preserves byte values; no production changes or assertions removed. CI pending on corrective SHA; no local full typecheck/device run. PR stays draft; no main/deploy/install/phase2.
+
+
+## Hybrid package browser fallback and redemption authorization — 2026-11-16
+Parent 233b5b87047d288387d7b96f3379a90a72d3f7a0: all four CI PASS (2083,1914,1737,883), PR open/draft. Integration inspection found server GET /open redirects to localcut://command while Android open_package rejected custom scheme. Fixed exact fallback route with existing strict relay descriptor/confirmation. Added per-entry authorization callback for package redemption using existing OAuth device check, consume on denial, no changes to ordinary media. Tests server HTTP redirect preserves descriptor, Android parser accepts exact fallback/rejects aliases, actual HTTP redemption revocation/independent link, stager auth checks. CI pending; no local execution/production/physical transfer. Link remains bearer capability, not device-authenticated download; no main/install/phase2.
+
+
+## Hybrid revision-bound external export review correction — 2026-11-16
+Parent 4cd3ec16a999a666c38ba3c36c23068236726722: all four CI PASS (2084,1915,1738,884), PR open/draft. Extended Editor IA review identity and copy request with current bounded project context and optional review envelope jobId/sha256/findings; validate exact current export/project/revision before dry-run and recheck latest export at apply (including same-revision new job). Display external findings as unverified, preserve existing manual local plans/approval/undo and non-destructive operations. JVM regressions for mismatched/absent source, wrong digest/revision, findings bounds, new export invalidation, apply once and undo. CI pending; no local/device execution, no claim authentic GPT output or visual-quality proof; manual paste, no durable history or automatic delivery yet. No main/install/deploy/phase2.
+
+
+## Hybrid direct export review proposal inbox — 2026-11-16
+Parent bd3d764ef7c6abaeae780d44b097b9b459b88ade: all four CI PASS (2085,1916,1739,885), PR open/draft. Added submit_export_review_proposal capability with revision required/non-project-mutating, exact OAuth device check before and after routing, strict bounded visual JSON, Android actual fresh MP4 evidence and existing immutable dry-run. One in-memory proposal per export; same pending draft idempotent, different/consumed rejected, explicit UI load/discard and approval, fresh export/expiry invalidation. TS schema/operation regression and Android executor/registry/protocol tests; CI pending. No local/device execution, no automatic edit or export, no durable history, no authenticated proof of visual judgment. No main/install/deploy/phase2.
+
+
+## Export proposal fixture regression fix — 2026-11-16
+Parent dac4082120fb9a643a202c4475ded623196f3db1: Android Debug #2086 FAIL (1523 tests, one failure at BridgeExportCommandTest.kt:123); Export Smoke #1917, Bridge #1740, Termux #886 PASS. Root cause: fake completion supplied empty result JSON despite separate sample evidence; EditorAiExportReview requires technicalReview metadata in result JSON, matching production contract. Correct fixture to include technicalReview; retain all authorization, no-mutation, duplicate and consumption assertions. No production guard weakened. CI pending on corrective SHA; no local Android execution or physical test. PR draft, no main/install/deploy/phase2. Next verify four CI results before advancing.
+
+
+## Hybrid bounded local review proposal history — 2026-11-16
+Parent 91fa2a91e583365075df5cc7e7ef0a84e473e76b: four CI PASS (2087,1918,1741,887), PR open/draft. Added private SharedPreferences metadata-only journal with bounded 64 records, strict decode and terminal transition checks, restart interruption marking, visible persistence failure, no restore/replay. Bridge registry logs receipt/load/discard/supersession; Editor IA logs local approval outcome and shows project-filtered recent history. JVM tests exercise in-memory storage reopen, terminal rules, bounds, corruption/write failure, integration with real registry and no stored plans. CI pending; actual Android preference persistence/process restart and physical UI pending. Applied means editor revision, not durable autosave or visual approval. No main/install/deploy/phase2.
+
+
+## Hybrid integrated rendered review cycle regression — 2026-11-16
+Parent 370670464582072c427661e34e3e8b59e11cbb56: four CI PASS (2088,1919,1742,888), PR draft/open. Extend existing portable package real Media3 smoke: use actual rendered sample evidence, Bridge encoded command processor, authenticated-device identity/replay check, proposal queue, local gate read-only validation and single approval, preservation of assets/audio/text, second real render with scale change/dark border/green center, digest and metadata checks, new revision evidence replaces previous, Undo restores original. Reopen real private preferences under isolated test key; no production preference mutation. Recheck live evidence on loaded remote proposal approval. CI pending; in-process wire only, synthetic fixtures, no live OAuth/WSS/GPT/physical QA or original intro. No main/deploy/install/phase2.
+
+
+## Hybrid Editor IA lifecycle history semantics — 2026-11-16
+Parent dcaa96aadc70e447058066f7ecf13dc14ce8a84c: four CI PASS (2089,1920,1743,889), PR #14 open/draft. Root cause: onDispose unconditionally recorded DISCARD even for implicit screen destruction/configuration change; misleading audit. Stable Compose MutableState holder captures latest loaded proposal; implicit disposal transitions LOADED->INTERRUPTED, explicit back/Close/navigation still DISCARD. Existing APPLIED/REJECTED states untouched; startup recovery remains fail-closed. JVM tests for allowed/forbidden transitions, persisted reopen, no plan leak. CI pending; no physical rotation/test and no apk deploy. No main/merge/phase2.
+
+
+## Local Editor IA immediate save and truthful history — 2026-11-16
+Parent a5da38a6570b0a7bd689eaf937116ccbe1f3dfdf: four CI PASS (2090,1921,1744,890), PR #14 draft. Audited post-approval and found that gate applies to session and schedules delayed autosave but UI immediately reported success, while onDestroy flush silently ignored failure. Changed runtime flushAutosave to return Result<Unit>, added EditorAiApplyPersistence to persist right after local approval, distinguish editor-applied vs saved, guard same-revision retry, keep undoable state on failure and inform user. Metadata history now transitions APPLIED_IN_EDITOR -> SAVED_TO_DISK only following confirmed flush; state cannot skip approval or falsely certify another revision. Tests for actual fake-store write, failure and retry, stale revision, invalid approval and throwing persist callback, plus legal history transitions. No build/local device execution; CI pending; physical Android storage exhaustion and process death still pending. No merge/release/install/phase2.
+
+
+## Autosave exception safety and crash-recovery regression — 2026-11-16
+Parent 2f35b2adbad224216dc705d9af045ec8b032d841: all four CI PASS (Android #2091, Export Smoke #1922, Bridge #1745, Termux #891), PR #14 open/draft. Root issue: DebouncedProjectSaver calls ProjectStore.save directly, so an unexpected IOException/IllegalStateException thrown by a storage implementation escapes the timer callback before updating lastResult or scheduling retry; manual flush could throw instead of yielding Result.failure. Scoped change wraps only store.save in try/catch(Exception) -> Result.failure, preserving pending project, existing lock, retry policy and fatal error propagation. Added legacy JVM harness tests for thrown error on scheduled flush + automatic retry, thrown error on immediate flush + manual retry, and newer project winning after failure. Real Android OS process-kill, physical storage-full and on-device reopen still PENDING. CI pending, do not merge/release/install/phase2.
+
+
+## Durable recovery directory reuse — 2026-11-16
+Parent afea54f33e58f86ae21da708efbedcadda8c2887: all four CI PASS (Android #2092, Export Smoke #1923, Bridge #1746, Termux #892), PR #14 open/draft. Found P0/P1 risk in LocalCutProcessRuntime: when primary project load fails (corrupt/newer schema), a new timestamped recovery folder was created on every launch and existing saved recovery edits were never discovered. Added ProjectStartupRecovery selector: primary valid wins, otherwise examine app-private recovery-* directories (including legacy timestamp names), use newest valid AtomicProjectStore snapshot including its temp/backup rules; if none, create unique fresh directory without changing bad primary/recoveries. On process restart saved recovery project opens from same path, preserving original failed data. Five legacy harness scenarios for valid primary, older/newer recovery, fresh crash reopening, missing primary and corrupt/new-schema preservation. CI pending; no claim recovery of edits never saved to disk, no auto-overwrite/merge or physical Android kill test. No deploy/install/merge.
+
+
+## Empty recovery workspace reuse after interrupted startup — 2026-11-16
+Parent bfa3c99fa3cfc050c23c7a85b947d53181cd9ef9: all four PR workflows PASS (Android Debug #2093, Export Smoke #1924, Bridge #1747, Termux #893); PR #14 remains open/draft and repository push permission was confirmed. Root cause: when the primary project is corrupt and no valid recovery exists, startup creates a new recovery directory. If Android/process execution stops before the first durable save, the next launch sees that empty directory but previously skipped it and allocated another, allowing empty recovery folders to accumulate. Change: after checking every candidate for a valid snapshot, reuse the newest candidate whose AtomicProjectStore returns NOT_FOUND; valid saved recoveries still take precedence, and corrupt/unsupported snapshots remain untouched. A first launch with no primary and no recovery still uses the normal default store. Regression added to AtomicProjectStoreTestMain: corrupt primary → first empty recovery → second startup before save; assert same directory, one recovery folder, and unchanged corrupt primary bytes. CI for the new commit is pending; no local Gradle execution or physical Android restart test is claimed. Next: verify the four workflows on the new SHA, then continue only if green. No main merge, deployment, installation, release or phase 2.
+
+
+## Startup recovery validation — 2026-11-16
+Parent edb8dd59a6dae58611eb35cfccfde3b7c883a7e2: all four PR workflows PASS on this exact code SHA. Android Debug build run 43982603399 / job 133702720351: PASS; Android unit tests, debug APK assembly, legacy regression harness verification and critical Bridge regression verification all completed successfully. Android Multitrack Export Smoke run 43982603372 / job 133702630715: PASS; emulator smoke including ProjectStartupRecoveryAndroidTest completed successfully. Bridge Controller run 43982603369 / check 133702598403: PASS. Termux Agent Engine run 43982603395 / check 133702598228: PASS. New Android instrumentation covers corrupt primary → save into app-private recovery → select same recovery again, and confirms original corrupt primary remains unchanged. This is an emulator instrumentation test; it does not simulate an actual OS process kill or prove physical-device force-stop/reopen. Physical Android force-stop/reopen and storage interruption remain PENDING. Debug APK artifact was generated and uploaded by CI but was NOT installed or distributed. PR #14 remains OPEN + DRAFT; no merge, release, deployment, signing change or force-push. Next: proceed with the next roadmap item only after checking current source/docs and preserving these recovery guarantees; retain physical-device recovery validation as an explicit gate.
+
+
+## Hybrid round — 2026-11-16 — insert-mode lock ancestry
+
+Baseline verified before this increment:
+- Branch: `feature/localcut-bridge-v1`; parent HEAD: `107711ab450d629785233bed7450d57351821e1b`.
+- PR #14: OPEN + DRAFT; base `main`; no merge or release.
+- Repository push permission: confirmed; owner permission: `admin`.
+- Parent HEAD CI: Android Debug #2101, Android Multitrack Export Smoke #1932, Bridge Controller #1755, Termux Agent Engine #901 — all completed SUCCESS. The earlier test-focused commit `0b6b34e2ea0cfabcc89e635e2b96aaa47b0e1ed3` had Android Debug #2100 and Multitrack #1931 cancelled while Bridge #1754 and Termux #900 succeeded; the later parent HEAD is fully green.
+- The development autopilot skill was not exposed by the installed skill listing. Read the repository's `bridge/chatgpt-plugin/skills/localcut-control/SKILL.md`, `docs/LOCALCUT_AUTOMATIC_STUDIO_V1.md`, and `docs/LOCALCUT_EDITOR_ANIMATION_MASTER_RESEARCH_2026-11-10.md`; followed the versioned repository guidance and did not assume direct Android MCP availability.
+
+Audit finding:
+- The recent lock-hardening chain centralized direct clip authorization in `TrackEditGuard.requireClipTrackUnlocked`, covering direct timeline edits, batch/creative edits, extracted-audio/reverse operations, duplication and imported-asset removal.
+- `InsertClipAtTimelineCommand` was a remaining forward-mutation path: it shifted existing clips at/after the insertion timestamp but checked only the destination track's lock. An unlocked track could therefore move a clip whose composition layer or ancestor GROUP was locked.
+- The inverse command restores a captured track snapshot for Undo; that restoration path remains separate and unchanged.
+
+Increment in this commit:
+- Before shifting each existing clip, call the shared `TrackEditGuard.requireClipTrackUnlocked(project, existing.id)`. The check is limited to clips actually shifted; no source mutation occurs if any guard fails.
+- Added two `TrackLockEnforcementTest` cases: reject an insertion that would shift a clip under a locked GROUP and prove the source project is unchanged; allow insertion when the locked GROUP contains only an earlier, unshifted clip.
+- Updated the automatic-studio documentation and this checkpoint. No new dependency, permission, network endpoint, model, API, or project format.
+
+Verification state:
+- Static source-edit assertions passed in the authoring step (unique replacement anchors and expected file paths).
+- CI for the new commit: PENDING at checkpoint creation. No local Gradle execution, APK installation, physical POCO X6 5G test, deployed Bridge/MCP E2E, or real intro-media QA claimed.
+- No secrets, signing configuration, project data, `main`, PR draft state, or other projects were changed.
+
+Next:
+1. Check the four workflows on the new code SHA once; if any fail, inspect the failing job/log and fix that cause before advancing.
+2. If green, continue the command-path lock/revision audit and preserve physical recovery/intro validation as explicit gates.
+3. Keep phase 2 blocked until every technical phase-1 criterion and an immutable release-candidate SHA/artifact are evidenced.
+
+
+## Hybrid round — 2026-11-16 — bulk/ripple lock ancestry
+
+Baseline verified immediately before this increment:
+- Branch: `feature/localcut-bridge-v1`; parent HEAD: `6cf080cc3184eab23bbb795d7d41165f6baa6686`.
+- PR #14: OPEN + DRAFT, base `main`, head matched parent SHA; repository owner permission: `admin`.
+- Parent HEAD CI: Android Debug APK #2102, Android Multitrack Export Smoke #1933, Bridge Controller CI #1756, Termux Agent Engine CI #902 — all completed SUCCESS.
+- Repository development skill was read from `bridge/chatgpt-plugin/skills/localcut-control/SKILL.md`; the dedicated LocalCut development skill was not exposed by the installed skill registry. No direct LocalCut MCP control functions were exposed in this session.
+
+Audit finding:
+- `DeleteAllVisualClipsCommand` checked visual track locks but did not check each clip's composition layer or locked GROUP ancestors. A visual clip under an unlocked track could therefore be removed by the bulk command while its composition ancestor was locked.
+- `RippleDeleteClipCommand` checked direct layer locks for following clips, but not their ancestor GROUP locks. It could shift a following clip inside a locked group. The deleted target already flows through `TimelineOps.deleteClip`, which uses the shared guard.
+
+Increment in this commit:
+- Bulk deletion now runs `TrackEditGuard.requireClipTrackUnlocked` for every target clip before building the replacement project.
+- Ripple deletion uses the same shared guard for its target and every following clip it shifts. Invalid/missing/cyclic composition ancestry continues to fail closed in the central guard.
+- Added JVM regressions for locked-GROUP bulk deletion and locked-GROUP ripple movement; both assert the immutable source project remains equal after rejection.
+- Updated the automatic-studio documentation. No new dependency, permission, endpoint, model, project format, or runtime service.
+
+Verification state:
+- Static source-edit assertions passed: each patch anchor was unique and all six target files were read from the parent SHA.
+- JVM/Gradle tests were not run locally; GitHub Actions for this commit are PENDING until observed.
+- No APK installation, physical POCO X6 5G test, live paired-device MCP operation, production deployment, merge, signing change, or force-push.
+
+Next:
+1. Check the four workflows for this exact new SHA once; inspect and correct a failing job before any further increment.
+2. If green, continue auditing remaining forward mutation paths for composition ancestry and revision/authorization consistency.
+3. Keep the phase-1 release-candidate gate and phase 2 blocked; real intro media, deployed Bridge E2E, physical process-recovery and POCO validation remain pending.
+
+
+## Hybrid round — 2026-11-16 — TALK coverage lock ancestry
+
+Baseline verified before this increment:
+- Branch: `feature/localcut-bridge-v1`; parent HEAD: `e1d212c9b294dbde866ae5803329eba37916d5cd`.
+- PR #14: OPEN + DRAFT, base `main`, head matched parent SHA.
+- Parent HEAD CI: Android Debug APK #2103, Android Multitrack Export Smoke #1934, Bridge Controller CI #1757, Termux Agent Engine CI #903 — all completed SUCCESS.
+- Read `bridge/chatgpt-plugin/skills/localcut-control/SKILL.md`, `docs/LOCALCUT_AUTOMATIC_STUDIO_V1.md`, the LocalCut Studio/Bridge design spec, and actual TALK, timeline-lock and project-edit code. The dedicated LocalCut Dev Autopilot skill was not exposed by the installed skill registry; no direct paired-device MCP tool was available in this session.
+
+Audit finding:
+- `LocalTalkClipCoverage.projectedProject` can mutate the voice clip's source/duration during five-second import recovery and can extend a still-image body clip to cover the voice.
+- Before this increment it checked track-level `locked/hidden` flags but did not inspect composition LAYER locks or locked GROUP ancestors. The later `ApplyAnimationPlanCommand` validates its own animation targets, but the voice clip is not necessarily an animation target; that later guard therefore did not protect the earlier duration recovery. The image extension also needed its own guard at the exact mutation boundary.
+
+Increment:
+- Added the shared `TrackEditGuard.requireClipTrackUnlocked` before changing the recovered audio clip and before extending the still-image clip.
+- No-op/read-only coverage calculations are unchanged; existing hidden-track and track-lock checks remain.
+- Added regressions for a locked GROUP ancestor on the image and on the recovered voice; both assert rejection and unchanged source project.
+- Updated `LOCALCUT_AUTOMATIC_STUDIO_V1.md`. No dependency, permission, endpoint, model, project schema, or storage behavior changed.
+
+Verification:
+- Static patch construction checks: PASS (unique anchors and expected parent SHA).
+- Local Gradle/JVM execution: NOT RUN in this environment.
+- New GitHub Actions for the resulting SHA: PENDING until observed.
+- No APK install/distribution, physical POCO X6 5G test, live paired-device Bridge E2E, deployment, merge, signing change, or force-push.
+
+Next:
+1. Check the four workflows for this exact SHA once; inspect logs and fix a failing cause before another increment.
+2. If green, continue auditing direct mutation paths and Bridge authorization/revision checks.
+3. Keep phase 2 blocked until the complete phase-1 gate and immutable release-candidate SHA/artifact are evidenced.
+
+
+## Hybrid round — 2026-11-17 — duplicate-mode lock ancestry
+
+Baseline verified immediately before this increment:
+- Branch: `feature/localcut-bridge-v1`; parent HEAD: `6f69db055e25c005f44fd246bb0df3075bf2ecba` (branch ref and PR #14 head matched).
+- PR #14: OPEN + DRAFT, base `main`; repository collaborator permission for owner: `admin`.
+- Parent HEAD CI: Android Debug APK #2104 (run 44005507079), Android Multitrack Export Smoke #1935 (run 44005507110), Bridge Controller CI #1758 (run 44005507188), Termux Agent Engine CI #904 (run 44005507103) — all completed SUCCESS; each run's single job was completed with conclusion SUCCESS.
+- Read the repository `localcut-control` skill, automatic-studio documentation, current checkpoint and actual duplicate/timeline/lock implementation. The dedicated LocalCut Dev Autopilot skill was not exposed by the installed skill registry; no direct paired-device MCP control tool was available.
+
+Audit finding:
+- `TimelineOps.duplicateClip` guarded the source clip, but shifted every following clip whose start was at/after the duplicate end without checking that clip's composition LAYER or locked GROUP ancestors.
+- On an unlocked track, duplicating an earlier clip could therefore move a later locked clip. This was the same authorization boundary already fixed for insert mode and ripple delete.
+
+Increment:
+- Added `TrackEditGuard.requireClipTrackUnlocked(project, clip.id)` before each affected following clip is shifted.
+- Added a negative regression: locked GROUP ancestor on the shifted clip rejects duplication and the immutable source remains unchanged.
+- Added a positive regression: a locked ancestor on a clip before the shifted range does not block duplication; source, duplicate and shifted timeline positions are asserted.
+- Updated the studio roadmap note. No dependency, permission, endpoint, model, project schema, media, signing or storage behavior changed.
+
+Verification:
+- Static patch construction checks: PASS (all source files read from the exact parent branch; each replacement anchor unique).
+- Local Gradle/JVM execution: NOT RUN in this environment.
+- CI for the resulting SHA: PENDING until GitHub Actions reports completion.
+- No APK installation/distribution, physical POCO X6 5G test, deployed Bridge/MCP E2E, production deployment, merge, signing change or force-push.
+
+Next:
+1. Check the four workflows for this exact new SHA once; inspect and correct a failing cause before another increment.
+2. If green, continue the remaining direct-mutation, project authorization/revision and portable video-package audit; do not add phase-2 work.
+3. Keep the phase-1 release-candidate gate blocked until portable video/Share flow, scoped transport, full bidirectional QA, real intro-media validation, deployed Bridge E2E and physical POCO checks have evidence.
+
+
+## Hybrid round — 2026-11-17 — duplicate-lock regression assertion correction
+
+Baseline immediately before this increment:
+- Branch: `feature/localcut-bridge-v1`; parent HEAD: `080fb39a2a7b840cf791d674d7010ab746e15fff`; branch ref and PR #14 head matched.
+- PR #14: OPEN + DRAFT, base `main`; repository owner permission previously verified as `admin`.
+- Parent CI: Android Multitrack Export Smoke #1936 (run 44012462684) PASS; Bridge Controller CI #1759 (run 44012462686) PASS; Termux Agent Engine CI #905 (run 44012463699) PASS; Android Debug APK #2105 (run 44012462632) FAIL.
+- Android Debug job 133802462160 completed compilation and 1,541 unit tests; only `TrackLockEnforcementTest.duplicateDoesNotBlockLockedAncestorOutsideShiftedRange` failed at the final source-state assertion (test line 240). The other three workflows completed successfully.
+
+Root cause:
+- The production duplicate operation correctly shifts the returned immutable project while leaving the input project unchanged.
+- The positive regression's final assertion incorrectly expected `source.findClip("b").startUs + 3,000,000` to equal zero. The fixture's original clip starts at 3,000,000us; this was a test expectation defect, not evidence of a production lock-guard defect.
+
+Increment:
+- Corrected the assertion to compare the original source clip with the original `following` fixture object. The returned edited project continues to assert the shifted clip at 5,000,000us.
+- No production code, dependency, permission, endpoint, schema, media, signing, storage or project data changed.
+- Updated the automatic-studio roadmap note to describe the immutable-source assertion.
+
+Verification:
+- Failure diagnosis: observed directly in Android Debug run 44012462632, job 133802462160 logs.
+- Static patch construction: exact assertion anchor found once; corrected assertion is based on the existing immutable fixture.
+- Local Gradle/JVM execution: NOT RUN in this environment.
+- CI for the resulting commit: PENDING; this checkpoint is contained in the same commit as the test correction. Its exact resulting SHA is the commit containing this entry and will be recorded explicitly after the branch ref is read back.
+- No APK installation/distribution, physical POCO X6 5G test, deployed Bridge/MCP E2E, production deployment, merge, signing change or force-push.
+
+Next:
+1. Verify the exact resulting commit SHA and the four CI workflows once; if any fail, inspect that failure before another code increment.
+2. If green, continue auditing remaining direct mutation paths, project authorization/revision checks and portable video-package/Share flow.
+3. Keep the phase-1 release-candidate gate and phase 2 blocked until all required implementation, integration, deployed Bridge, real intro-media and physical-device evidence exists.

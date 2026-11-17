@@ -4,6 +4,11 @@ import com.localcut.editor.bridge.protocol.BridgeCapability
 import com.localcut.editor.bridge.protocol.BridgeCommandEnvelope
 import com.localcut.editor.bridge.protocol.BridgeErrorCode
 import com.localcut.editor.data.project.ProjectStore
+import com.localcut.editor.data.project.MiniJson
+import com.localcut.editor.data.project.asObject
+import com.localcut.editor.data.project.asArray
+import com.localcut.editor.data.project.asString
+import com.localcut.editor.data.project.required
 import com.localcut.editor.domain.model.Asset
 import com.localcut.editor.domain.model.AssetType
 import com.localcut.editor.domain.model.Clip
@@ -30,6 +35,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BridgeCommandExecutorTest {
+    @Test
+    fun effectInventoryIsValidJsonAndDiscoverableAfterPointwiseEdit() {
+        val fixture = fixture()
+        val edit = fixture.executor.execute(command(BridgeCapability.PROJECT_EDIT,
+            payload = """{"operations":[{"op":"addEffect","clipId":"clip-1","effectId":"bright","typeId":"localcut.color.brightness","numbers":{"amount":0.2}}]}""",
+            expectedRevision = 5L))
+        assertTrue(edit.success)
+        val result = fixture.executor.execute(command(BridgeCapability.LIST_CLIPS, messageId = "list-effects", expectedRevision = null))
+        assertTrue(result.success)
+        val clips = MiniJson.parse(result.resultJson).asObject().required("clips").asArray().values
+        val clip = clips.first { it.asObject().required("id").asString() == "clip-1" }.asObject()
+        val effect = clip.required("effects").asArray().values.single().asObject()
+        assertEquals("bright", effect.required("id").asString())
+        assertEquals("localcut.color.brightness", effect.required("typeId").asString())
+        assertFalse(result.resultJson.contains("content://private/"))
+        assertEquals(6L, fixture.session.state.revision)
+    }
+
     @Test
     fun projectReadIsBoundedAndDoesNotExposeAssetUri() {
         val fixture = fixture()
@@ -174,6 +197,22 @@ class BridgeCommandExecutorTest {
     }
 
     @Test
+    fun revisionBoundSeekRejectsStaleRevisionWithoutMovingPlayhead() {
+        val fixture = fixture()
+        val stale = fixture.executor.execute(command(BridgeCapability.SEEK,
+            payload = """{"positionUs":1000000}""", expectedRevision = 4L))
+        assertFalse(stale.success)
+        assertEquals(BridgeErrorCode.REVISION_CONFLICT, stale.code)
+        assertEquals(0L, fixture.playback.positionUs)
+        assertEquals(5L, fixture.session.state.revision)
+        val valid = fixture.executor.execute(command(BridgeCapability.SEEK,
+            payload = """{"positionUs":1000000}""", messageId = "valid-seek", expectedRevision = 5L))
+        assertTrue(valid.success)
+        assertEquals(1_000_000L, fixture.playback.positionUs)
+        assertEquals(5L, fixture.session.state.revision)
+    }
+
+    @Test
     fun seekChangesPlaybackStateButNotProjectRevision() {
         val fixture = fixture()
         val result = fixture.executor.execute(
@@ -217,6 +256,39 @@ class BridgeCommandExecutorTest {
         assertEquals(7L, fixture.session.state.revision)
         assertTrue(fixture.session.state.project.findClip("audio-clip") != null)
         assertEquals("Texto", fixture.session.state.project.textOverlays.single().text)
+    }
+
+    @Test
+    fun trimAndPatchBatchUsesOneRevisionWithUndoAndStaleRevisionProtection() {
+        val fixture = fixture()
+        val original = fixture.session.state.project
+        val payload = """{"operations":[{"op":"trimClip","clipId":"clip-1","newEndUs":2000000},{"op":"patchText","overlayId":"text-1","text":"Novo"}]}"""
+        val result = fixture.executor.execute(command(BridgeCapability.PROJECT_EDIT, payload = payload, expectedRevision = 5L))
+        assertTrue(result.success)
+        assertEquals(6L, fixture.session.state.revision)
+        assertEquals(2_000_000L, fixture.session.state.project.findClip("clip-1")!!.durationUs)
+        assertEquals(original.findClip("audio-clip"), fixture.session.state.project.findClip("audio-clip"))
+        assertEquals(original.designElements, fixture.session.state.project.designElements)
+        val stale = fixture.executor.execute(command(BridgeCapability.PROJECT_EDIT, payload = payload, messageId = "stale-batch", expectedRevision = 5L))
+        assertFalse(stale.success)
+        assertEquals(BridgeErrorCode.REVISION_CONFLICT, stale.code)
+        assertEquals(6L, fixture.session.state.revision)
+        val undo = fixture.executor.execute(command(BridgeCapability.UNDO, messageId = "undo-trim-batch", expectedRevision = 6L))
+        assertTrue(undo.success)
+        assertEquals(7L, fixture.session.state.revision)
+        assertEquals(original, fixture.session.state.project)
+    }
+
+    @Test
+    fun lockedLayerRejectsBatchWithoutPartialTextChange() {
+        val fixture = fixture(locked = true)
+        val original = fixture.session.state.project
+        val result = fixture.executor.execute(command(BridgeCapability.PROJECT_EDIT,
+            payload = """{"operations":[{"op":"patchText","overlayId":"text-1","text":"Not committed"},{"op":"deleteClip","clipId":"clip-1"}]}""",
+            expectedRevision = 5L))
+        assertFalse(result.success)
+        assertEquals(5L, fixture.session.state.revision)
+        assertEquals(original, fixture.session.state.project)
     }
 
     @Test

@@ -6,13 +6,13 @@ import org.junit.Test
 
 class TermuxRunCommandSpecTest {
     @Test
-    fun automaticWakeUsesStaticBackgroundCommandOnly() {
+    fun automaticWakeRestartsPersistentWatchdogInBackground() {
         assertEquals("com.termux.permission.RUN_COMMAND", TermuxRunCommandSpec.PERMISSION)
         assertEquals("com.termux.RUN_COMMAND", TermuxRunCommandSpec.ACTION)
         assertEquals("com.termux.app.RunCommandService", TermuxRunCommandSpec.SERVICE_CLASS)
         assertEquals("/data/data/com.termux/files/usr/bin/bash", TermuxRunCommandSpec.BASH_PATH)
         assertArrayEquals(
-            arrayOf("/data/data/com.termux/files/home/.localcut-engine/auto-recover", "--once"),
+            arrayOf("/data/data/com.termux/files/home/.localcut-engine/auto-recover", "--daemon"),
             TermuxRunCommandSpec.arguments(),
         )
     }

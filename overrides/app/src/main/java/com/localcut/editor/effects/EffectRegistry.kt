@@ -92,6 +92,58 @@ object EffectRegistry {
                 EffectParameterSpec("center", EffectParameterType.POINT, EffectParameter.Point(0.5, 0.5)),
             ),
         ),
+        EffectDefinition(
+            "localcut.character.mouth_warp",
+            EffectCategory.DISTORTION,
+            listOf(
+                EffectParameterSpec("center", EffectParameterType.POINT, EffectParameter.Point(0.5, 0.65)),
+                numberSpec("radiusX", 0.10, 0.01, 0.50),
+                numberSpec("radiusY", 0.05, 0.005, 0.30),
+                numberSpec("openness", 0.0, 0.0, 1.0),
+                // Optional viseme controls. Omitted in legacy TALK projects.
+                numberSpec("widthScale", 1.0, 0.60, 1.30),
+                numberSpec("rounding", 0.0, 0.0, 1.0),
+                numberSpec("teethVisibility", 0.0, 0.0, 1.0),
+                numberSpec("articulationGate", 1.0, 0.0, 1.0),
+            ),
+        ),
+        EffectDefinition(
+            "localcut.character.eye_blink",
+            EffectCategory.DISTORTION,
+            listOf(
+                EffectParameterSpec("leftEye", EffectParameterType.POINT, EffectParameter.Point(0.37, 0.36)),
+                EffectParameterSpec("rightEye", EffectParameterType.POINT, EffectParameter.Point(0.63, 0.36)),
+                numberSpec("radiusX", 0.085, 0.02, 0.15),
+                numberSpec("radiusY", 0.042, 0.01, 0.09),
+                numberSpec("firstBlinkSeconds", 1.4, 0.10, 3.0),
+                numberSpec("intervalSeconds", 3.2, 2.0, 6.0),
+                numberSpec("durationSeconds", 0.18, 0.10, 0.35),
+                // Values are data-only; existing projects keep the old
+                // zero-idle defaults until the user selects a motion preset.
+                numberSpec("blinkStrength", 1.0, 0.0, 1.0),
+                numberSpec("swayStrength", 0.0, 0.0, 1.0),
+                numberSpec("breathStrength", 0.0, 0.0, 1.0),
+                numberSpec("headMotionStrength", 0.0, 0.0, 1.0),
+                numberSpec("hairMotionStrength", 0.0, 0.0, 1.0),
+                numberSpec("blinkVariation", 0.0, 0.0, 1.0),
+                numberSpec("blinkAsymmetry", 0.0, 0.0, 1.0),
+                numberSpec("gazeStrength", 0.0, 0.0, 1.0),
+            ),
+        ),
+        EffectDefinition(
+            "localcut.character.brow_expression",
+            EffectCategory.DISTORTION,
+            listOf(
+                EffectParameterSpec("leftBrow", EffectParameterType.POINT,
+                    EffectParameter.Point(0.37, 0.29)),
+                EffectParameterSpec("rightBrow", EffectParameterType.POINT,
+                    EffectParameter.Point(0.63, 0.29)),
+                numberSpec("radiusX", 0.08, 0.02, 0.15),
+                numberSpec("radiusY", 0.04, 0.01, 0.09),
+                numberSpec("emotion", 0.0, 0.0, 3.0),
+                numberSpec("intensity", 0.0, 0.0, 1.0),
+            ),
+        ),
         EffectDefinition("localcut.flip.horizontal", EffectCategory.DISTORTION, emptyList()),
         EffectDefinition("localcut.flip.vertical", EffectCategory.DISTORTION, emptyList()),
         EffectDefinition(
@@ -133,6 +185,60 @@ object EffectRegistry {
                         addAll(parameterIssues(animation.propertyId, animated, spec))
                     }
                 }
+            }
+        }
+        if (effect.typeId == "localcut.character.mouth_warp") {
+            val center = effect.parameters["center"] as? EffectParameter.Point
+            if (center != null && (center.x !in 0.0..1.0 || center.y !in 0.0..1.0)) {
+                add("parameter center is outside allowed range")
+            }
+        }
+        if (effect.typeId == "localcut.character.brow_expression") {
+            val left = effect.parameters["leftBrow"] as? EffectParameter.Point
+                ?: EffectParameter.Point(0.37, 0.29)
+            val right = effect.parameters["rightBrow"] as? EffectParameter.Point
+                ?: EffectParameter.Point(0.63, 0.29)
+            val radiusX = (effect.parameters["radiusX"] as? EffectParameter.Number)?.value ?: 0.08
+            val radiusY = (effect.parameters["radiusY"] as? EffectParameter.Number)?.value ?: 0.04
+            val emotion = (effect.parameters["emotion"] as? EffectParameter.Number)?.value ?: 0.0
+            if (listOf(left.x, left.y, right.x, right.y, radiusX, radiusY).all(Double::isFinite)) {
+                if (left.x !in radiusX..(1.0 - radiusX) ||
+                    right.x !in radiusX..(1.0 - radiusX) ||
+                    left.y !in radiusY..(1.0 - radiusY) ||
+                    right.y !in radiusY..(1.0 - radiusY) ||
+                    right.x - left.x < radiusX * 2.25 ||
+                    kotlin.math.abs(left.y - right.y) > 0.00001
+                ) {
+                    add("eyebrow positions are invalid or overlapping")
+                }
+            }
+            if (emotion !in listOf(0.0, 1.0, 2.0, 3.0)) {
+                add("expression preset must be an integer 0..3")
+            }
+            if (effect.animations.isNotEmpty()) {
+                add("brow expression does not yet support keyframe animations")
+            }
+        }
+        if (effect.typeId == "localcut.character.eye_blink") {
+            val left = effect.parameters["leftEye"] as? EffectParameter.Point
+                ?: EffectParameter.Point(0.37, 0.36)
+            val right = effect.parameters["rightEye"] as? EffectParameter.Point
+                ?: EffectParameter.Point(0.63, 0.36)
+            val radiusX = (effect.parameters["radiusX"] as? EffectParameter.Number)?.value ?: 0.085
+            val radiusY = (effect.parameters["radiusY"] as? EffectParameter.Number)?.value ?: 0.042
+            if (listOf(left.x, left.y, right.x, right.y, radiusX, radiusY).all { it.isFinite() }) {
+                if (left.x !in radiusX..(1.0 - radiusX) ||
+                    right.x !in radiusX..(1.0 - radiusX) ||
+                    left.y !in radiusY..(1.0 - radiusY) ||
+                    right.y !in radiusY..(1.0 - radiusY) ||
+                    right.x - left.x < radiusX * 2.25 ||
+                    kotlin.math.abs(left.y - right.y) > radiusY
+                ) {
+                    add("eye blink eye coordinates are outside face or overlap")
+                }
+            }
+            if (effect.animations.isNotEmpty()) {
+                add("eye blink cannot use keyed property animations")
             }
         }
     }

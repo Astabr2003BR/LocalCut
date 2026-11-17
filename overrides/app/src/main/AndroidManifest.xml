@@ -37,8 +37,23 @@
                 <data android:mimeType="video/*" />
                 <data android:mimeType="audio/*" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/vnd.localcut.package" />
+            </intent-filter>
         </activity>
 
+        <activity android:name=".mobile.TikTokCarouselActivity" android:exported="false" />
+        <activity android:name=".mobile.AutomaticVideoActivity" android:exported="false" />
+
+        <!-- Android Files uses */* for mixed image + audio selection. The Kotlin
+             importer individually validates each URI and rejects non-media content. -->
         <activity
             android:name=".mobile.MobileHandoffActivity"
             android:exported="true">

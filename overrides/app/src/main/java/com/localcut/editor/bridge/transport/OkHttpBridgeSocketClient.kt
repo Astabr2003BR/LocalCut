@@ -8,7 +8,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 
 class OkHttpBridgeSocketClient(
-    private val client: OkHttpClient = OkHttpClient.Builder()
+    private val webSocketFactory: WebSocket.Factory = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .pingInterval(25, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
@@ -17,13 +17,17 @@ class OkHttpBridgeSocketClient(
     private val lock = Any()
     private var socket: WebSocket? = null
     private var connected = false
-    private var listener: BridgeSocketListener? = null
+    private var nextAttemptId = 0L
+    private var activeAttemptId: Long? = null
 
     override fun connect(session: BridgeSession, listener: BridgeSocketListener): Result<Unit> = runCatching {
-        synchronized(lock) {
-            if (socket != null) throw IllegalStateException("bridge socket already active")
-            this.listener = listener
+        val attemptId = synchronized(lock) {
+            if (activeAttemptId != null) throw IllegalStateException("bridge socket already active")
+            nextAttemptId = if (nextAttemptId == Long.MAX_VALUE) 1L else nextAttemptId + 1L
+            activeAttemptId = nextAttemptId
+            socket = null
             connected = false
+            nextAttemptId
         }
 
         val request = Request.Builder()
@@ -33,45 +37,57 @@ class OkHttpBridgeSocketClient(
             .header("X-LocalCut-Protocol-Version", session.protocolVersion.toString())
             .build()
 
-        val created = client.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) {
-                synchronized(lock) {
-                    if (socket !== webSocket) return
-                    connected = true
+        val created = try {
+            webSocketFactory.newWebSocket(request, object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    if (!bindOpenIfCurrent(attemptId, webSocket)) return
+                    listener.onConnected()
                 }
-                listener.onConnected()
-            }
 
-            override fun onMessage(webSocket: WebSocket, text: String) {
-                if (isCurrent(webSocket)) listener.onTextMessage(text)
-            }
-
-            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                if (isCurrent(webSocket)) webSocket.close(code, reason.take(120))
-            }
-
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                if (!clearIfCurrent(webSocket)) return
-                listener.onDisconnected(code, reason.take(240))
-            }
-
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                if (!clearIfCurrent(webSocket)) return
-                if (response?.code == HTTP_UNAUTHORIZED) {
-                    listener.onDisconnected(HTTP_UNAUTHORIZED, response.message.take(240))
-                } else {
-                    listener.onFailure(t.message?.take(240) ?: "bridge websocket failed")
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    if (isCurrent(attemptId, webSocket)) listener.onTextMessage(text)
                 }
-            }
-        })
 
-        synchronized(lock) {
-            if (socket != null) {
-                created.cancel()
-                throw IllegalStateException("bridge socket already active")
-            }
-            socket = created
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    if (isCurrent(attemptId, webSocket)) webSocket.close(code, reason.take(120))
+                }
+
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    if (!clearIfCurrent(attemptId, webSocket)) return
+                    listener.onDisconnected(code, reason.take(240))
+                }
+
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    if (!clearIfCurrent(attemptId, webSocket)) return
+                    if (response?.code == HTTP_UNAUTHORIZED) {
+                        listener.onDisconnected(HTTP_UNAUTHORIZED, response.message.take(240))
+                    } else {
+                        listener.onFailure(t.message?.take(240) ?: "bridge websocket failed")
+                    }
+                }
+            })
+        } catch (error: Throwable) {
+            clearAttemptIfCurrent(attemptId)
+            throw error
         }
+
+        var cancelCreated = false
+        var stateError: IllegalStateException? = null
+        synchronized(lock) {
+            when {
+                activeAttemptId != attemptId -> cancelCreated = true
+                socket == null -> socket = created
+                socket !== created -> {
+                    activeAttemptId = null
+                    socket = null
+                    connected = false
+                    cancelCreated = true
+                    stateError = IllegalStateException("bridge websocket callback returned a different socket")
+                }
+            }
+        }
+        if (cancelCreated) created.cancel()
+        stateError?.let { throw it }
     }
 
     override fun send(text: String): Result<Unit> = runCatching {
@@ -85,7 +101,7 @@ class OkHttpBridgeSocketClient(
     override fun disconnect(): Result<Unit> = runCatching {
         val active = synchronized(lock) {
             connected = false
-            listener = null
+            activeAttemptId = null
             socket.also { socket = null }
         }
         if (active != null && !active.close(NORMAL_CLOSE_CODE, "local_disconnect")) {
@@ -93,14 +109,34 @@ class OkHttpBridgeSocketClient(
         }
     }
 
-    private fun isCurrent(webSocket: WebSocket): Boolean = synchronized(lock) { socket === webSocket }
+    private fun bindOpenIfCurrent(attemptId: Long, webSocket: WebSocket): Boolean = synchronized(lock) {
+        if (activeAttemptId != attemptId) return@synchronized false
+        if (socket != null && socket !== webSocket) return@synchronized false
+        socket = webSocket
+        connected = true
+        true
+    }
 
-    private fun clearIfCurrent(webSocket: WebSocket): Boolean = synchronized(lock) {
-        if (socket !== webSocket) return@synchronized false
+    private fun isCurrent(attemptId: Long, webSocket: WebSocket): Boolean = synchronized(lock) {
+        activeAttemptId == attemptId && socket === webSocket
+    }
+
+    private fun clearIfCurrent(attemptId: Long, webSocket: WebSocket): Boolean = synchronized(lock) {
+        if (activeAttemptId != attemptId) return@synchronized false
+        if (socket != null && socket !== webSocket) return@synchronized false
+        activeAttemptId = null
         socket = null
         connected = false
-        listener = null
         true
+    }
+
+    private fun clearAttemptIfCurrent(attemptId: Long) {
+        synchronized(lock) {
+            if (activeAttemptId != attemptId) return
+            activeAttemptId = null
+            socket = null
+            connected = false
+        }
     }
 
     private companion object {

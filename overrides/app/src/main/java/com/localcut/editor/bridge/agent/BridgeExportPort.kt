@@ -8,6 +8,7 @@ interface BridgeExportListener {
     fun onStarted()
     fun onProgress(percent: Int)
     fun onCompleted(resultJson: String)
+    fun onCompletedWithReview(resultJson: String, review: BridgeExportInspection?) = onCompleted(resultJson)
     fun onFailed(message: String)
     fun onCancelled()
 }

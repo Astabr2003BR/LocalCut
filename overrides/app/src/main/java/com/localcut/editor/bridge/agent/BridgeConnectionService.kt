@@ -4,13 +4,27 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
+import com.localcut.editor.bridge.security.AndroidKeystoreBridgeCredentialStore
+import com.localcut.editor.bridge.security.AndroidKeystoreDeviceIdentityStore
 import com.localcut.editor.bridge.transport.BridgeConnectionCoordinator
+import com.localcut.editor.bridge.transport.BridgeEndpointConfig
+import com.localcut.editor.bridge.transport.OkHttpBridgePairingClient
 import com.localcut.editor.diagnostics.ProcessExitDiagnostics
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class BridgeConnectionService : Service() {
     private lateinit var settings: BridgeSettingsStore
     private lateinit var notificationFactory: BridgeNotificationFactory
     private lateinit var coordinatorLifecycle: BridgeCoordinatorLifecycle<BridgeConnectionCoordinator>
+    private var backgroundCredentialManager: BridgeBackgroundCredentialManager? = null
+    private val backgroundReconnectRunning = AtomicBoolean(false)
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val coordinator: BridgeConnectionCoordinator
         get() = coordinatorLifecycle.value
@@ -24,6 +38,13 @@ class BridgeConnectionService : Service() {
             factory = { BridgeServiceRuntime.createCoordinator(this, settings) },
             shutdownAction = { it.shutdown() },
         )
+        backgroundCredentialManager = BridgeEndpointConfig.resolve(settings.relayBaseUrl).getOrNull()?.let { endpoint ->
+            BridgeBackgroundCredentialManager(
+                credentialStore = AndroidKeystoreBridgeCredentialStore(applicationContext),
+                client = OkHttpBridgePairingClient(endpoint.httpsBaseUrl),
+                identityStore = AndroidKeystoreDeviceIdentityStore(),
+            )
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -53,12 +74,42 @@ class BridgeConnectionService : Service() {
             }
 
             ACTION_DISCONNECT -> {
-                if (coordinatorLifecycle.isInitialized) {
-                    coordinator.disconnectFromUser()
-                } else {
+                val explicitUserRequest = intent.getBooleanExtra(EXTRA_EXPLICIT_USER_DISCONNECT, false)
+                val decision = BridgeSessionPersistencePolicy.disconnectDecision(
+                    sessionEnabled = settings.sessionEnabled,
+                    explicitUserRequest = explicitUserRequest,
+                )
+
+                if (!decision.honorDisconnect) {
+                    ProcessExitDiagnostics.mark(this, "service:disconnect:ignored-stale")
+                    if (coordinatorLifecycle.isInitialized) {
+                        // A late/re-delivered disconnect must not tear down the currently owned socket.
+                        updateForegroundSafely("Agente ativo em segundo plano")
+                        return START_STICKY
+                    }
+                    if (settings.alwaysConnected) {
+                        // If the process/service was recreated before the stale intent arrived,
+                        // restore the desired session instead of converting it into a manual pause.
+                        if (!startAsForegroundSafely("Restaurando conexão…", startId)) {
+                            return START_NOT_STICKY
+                        }
+                        reconnectWithFreshCredential(startId, "Restaurando conexão…")
+                        return START_STICKY
+                    }
+                    stopSelf(startId)
+                    return START_NOT_STICKY
+                }
+
+                if (decision.disableSession) {
                     settings.markManualDisconnect()
                 }
-                ProcessExitDiagnostics.mark(this, "service:disconnect")
+                if (coordinatorLifecycle.isInitialized) {
+                    coordinator.disconnectFromUser()
+                }
+                ProcessExitDiagnostics.mark(
+                    this,
+                    "service:disconnect:accepted:explicit=$explicitUserRequest",
+                )
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf(startId)
                 START_NOT_STICKY
@@ -75,17 +126,14 @@ class BridgeConnectionService : Service() {
 
             ACTION_RECONNECT -> {
                 if (!startAsForegroundSafely("Reconectando…", startId)) return START_NOT_STICKY
-                val result = coordinator.reconnectIfEnabled()
-                updateForegroundSafely(
-                    if (result.isSuccess) "Reconectando ao ChatGPT…" else "Toque no LocalCut para concluir a conexão",
-                )
+                reconnectWithFreshCredential(startId, "Reconectando ao ChatGPT…")
                 if (settings.sessionEnabled) START_STICKY else START_NOT_STICKY
             }
 
             else -> {
                 if (settings.sessionEnabled) {
                     if (!startAsForegroundSafely("Restaurando conexão…", startId)) return START_NOT_STICKY
-                    coordinator.reconnectIfEnabled()
+                    reconnectWithFreshCredential(startId, "Restaurando conexão…")
                     START_STICKY
                 } else {
                     ProcessExitDiagnostics.mark(this, "service:sticky-disabled")
@@ -97,26 +145,22 @@ class BridgeConnectionService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        val preserveConnection = BridgeTaskRemovalPolicy.shouldPreserveConnection(
+        val decision = BridgeTaskRemovalPolicy.decide(
             sessionEnabled = settings.sessionEnabled,
             alwaysConnected = settings.alwaysConnected,
         )
         ProcessExitDiagnostics.mark(
             this,
-            "service:task-removed:preserve=$preserveConnection",
+            "service:task-removed:preserve=${decision.preserveConnection}:reconnect=${decision.reconnectImmediately}",
         )
 
-        if (preserveConnection) {
-            // Keep the foreground-service state explicit while the editor task disappears.
-            // Stock Android may keep/restart a START_STICKY foreground service after task removal.
-            // Xiaomi/HyperOS can still apply an OEM package clean (e.g. SwipeUpClean), which the
-            // app cannot override; in that case the persisted session lets the next allowed start
-            // reconnect without a new pairing flow.
+        if (decision.preserveConnection) {
+            // Removing the editor task is not the same as killing this foreground service.
+            // Keep the currently owned WebSocket alive. Starting another connection from
+            // onTaskRemoved() races with the active socket and can report
+            // "bridge socket already active". If Android/OEM later kills this service/process,
+            // START_STICKY and BridgeColdStartRecovery handle the real reconnect path.
             updateForegroundSafely("Agente ativo em segundo plano")
-            if (coordinatorLifecycle.isInitialized) {
-                runCatching { coordinator.reconnectIfEnabled() }
-                    .onFailure { ProcessExitDiagnostics.mark(this, "service:task-removed:reconnect-failed") }
-            }
         }
 
         super.onTaskRemoved(rootIntent)
@@ -127,6 +171,7 @@ class BridgeConnectionService : Service() {
             this,
             "service:destroy:init=${::coordinatorLifecycle.isInitialized && coordinatorLifecycle.isInitialized}",
         )
+        serviceScope.cancel()
         if (::coordinatorLifecycle.isInitialized) {
             coordinatorLifecycle.shutdownIfInitialized()
         }
@@ -134,6 +179,56 @@ class BridgeConnectionService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun reconnectWithFreshCredential(startId: Int, successStatus: String) {
+        if (!backgroundReconnectRunning.compareAndSet(false, true)) {
+            ProcessExitDiagnostics.mark(this, "service:reconnect:already-running")
+            return
+        }
+
+        serviceScope.launch {
+            try {
+                val credentialManager = backgroundCredentialManager
+                if (credentialManager == null) {
+                    ProcessExitDiagnostics.mark(this@BridgeConnectionService, "service:reconnect:endpoint-invalid")
+                    updateForegroundSafely("Abra o LocalCut para revisar o Relay")
+                    return@launch
+                }
+
+                val freshResult = withContext(Dispatchers.IO) {
+                    credentialManager.ensureFresh()
+                }
+                val fresh = freshResult.getOrElse { error ->
+                    ProcessExitDiagnostics.mark(
+                        this@BridgeConnectionService,
+                        "service:credential-refresh:failed=${error.message}",
+                    )
+                    updateForegroundSafely("Reconexão temporariamente indisponível")
+                    return@launch
+                }
+
+                if (!fresh) {
+                    ProcessExitDiagnostics.mark(
+                        this@BridgeConnectionService,
+                        "service:credential-refresh:pairing-required:session-preserved=${settings.sessionEnabled}",
+                    )
+                    // Credential loss is not a user request to disable the Bridge. Keep the desired
+                    // session/always-connected state intact so a later valid pairing can resume it.
+                    updateForegroundSafely("Pareamento necessário para retomar o agente")
+                    runCatching { notificationFactory.postReconnectFallback() }
+                    return@launch
+                }
+
+                ProcessExitDiagnostics.mark(this@BridgeConnectionService, "service:credential-refresh:ready")
+                val result = coordinator.reconnectIfEnabled()
+                updateForegroundSafely(
+                    if (result.isSuccess) successStatus else "Toque no LocalCut para concluir a conexão",
+                )
+            } finally {
+                backgroundReconnectRunning.set(false)
+            }
+        }
+    }
 
     private fun startAsForegroundSafely(status: String, startId: Int): Boolean =
         BridgeForegroundServiceGuard.tryStart(
@@ -174,5 +269,6 @@ class BridgeConnectionService : Service() {
         const val ACTION_CONNECT = "com.localcut.editor.bridge.action.CONNECT"
         const val ACTION_DISCONNECT = "com.localcut.editor.bridge.action.DISCONNECT"
         const val ACTION_RECONNECT = "com.localcut.editor.bridge.action.RECONNECT"
+        const val EXTRA_EXPLICIT_USER_DISCONNECT = "com.localcut.editor.bridge.extra.EXPLICIT_USER_DISCONNECT"
     }
 }

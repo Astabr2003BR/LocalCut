@@ -33,6 +33,7 @@ class Media3PreviewController(
     private val delegate = DefaultPreviewController(engine, AndroidPreviewTicker())
     private val backgroundSession = PreviewBackgroundSession()
     private var lastProject: Project? = null
+    private var bridgeEditorPreviewReady = false
     @Volatile
     private var boundViewRef: WeakReference<PlayerView>? = null
     val bridgePreviewFramePort = AndroidPlayerPreviewFramePort(
@@ -40,14 +41,24 @@ class Media3PreviewController(
     )
 
     override val state = delegate.state
-    override fun load(project: Project): Result<Unit> = delegate.load(project).also { result ->
-        if (result.isSuccess) {
-            lastProject = project
+    override fun load(project: Project): Result<Unit> {
+        bridgeEditorPreviewReady = false
+        bridgePreviewFramePort.invalidate()
+        return delegate.load(project).also { result ->
+            if (result.isSuccess) {
+                lastProject = project
+                bridgeEditorPreviewReady = true
+            }
+            scheduleBoundSurfaceRefreshAfterContentLoad(result.isSuccess)
         }
-        scheduleBoundSurfaceRefreshAfterContentLoad(result.isSuccess)
     }
 
+    // Main-thread runtime only. A rendered-file preview has no revision provenance.
+    fun isEditorPreviewFor(project: Project): Boolean = bridgeEditorPreviewReady && lastProject == project
+
     fun loadRenderedFile(file: File, durationUs: Long, fps: Int): Result<Unit> {
+        bridgeEditorPreviewReady = false
+        bridgePreviewFramePort.invalidate()
         val editorProject = lastProject
         val editorPositionUs = state.value.positionUs
         val result = delegate.loadResult(engine.loadRenderedFile(file, durationUs, fps))
@@ -67,16 +78,33 @@ class Media3PreviewController(
 
     override fun play() = delegate.play()
     override fun pause() = delegate.pause()
+
+    /** Enables Media3 rapid-seek optimization only during a playhead drag. */
+    fun setScrubbingModeEnabled(enabled: Boolean) {
+        engine.setScrubbingModeEnabled(enabled)
+    }
+
     override fun seekToUs(positionUs: Long) {
+        bridgePreviewFramePort.invalidate()
+        if (backgroundSession.isSuspended) {
+            val targetUs = delegate.seekToUsWhileSuspended(positionUs)
+            backgroundSession.updateSuspendedPositionUs(targetUs)
+            return
+        }
         delegate.seekToUs(positionUs)
         bridgePreviewFramePort.requestRefresh()
     }
     override fun stepFrames(deltaFrames: Int, fps: Int) {
+        bridgePreviewFramePort.invalidate()
         delegate.stepFrames(deltaFrames, fps)
         bridgePreviewFramePort.requestRefresh()
     }
     override fun setLoopRange(startUs: Long, endUs: Long?) = delegate.setLoopRange(startUs, endUs)
-    override fun release() = delegate.release()
+    override fun release() {
+        bridgeEditorPreviewReady = false
+        bridgePreviewFramePort.invalidate()
+        delegate.release()
+    }
 
     /**
      * Releases the Activity-owned Media3 player while the UI is backgrounded. The project model,
@@ -86,6 +114,8 @@ class Media3PreviewController(
         if (!PreviewBackgroundMemoryPolicy.shouldSuspend(state.value.durationUs, changingConfigurations)) return
         if (!backgroundSession.beginSuspend(state.value.positionUs)) return
 
+        bridgeEditorPreviewReady = false
+        bridgePreviewFramePort.invalidate()
         delegate.suspendForBackground()
         boundViewRef?.get()?.let { view ->
             bridgePreviewFramePort.detach(view)
@@ -145,6 +175,7 @@ class Media3PreviewController(
             }
         }
 
+        bridgePreviewFramePort.invalidate()
         delegate.seekToUs(positionUs)
         bridgePreviewFramePort.requestRefresh()
     }
@@ -197,6 +228,8 @@ private class Media3PreviewEngine(
     private val appContext = context.applicationContext
     private var activePlayer: CompositionPlayer? = null
     private var activeUsesCustomProcessor: Boolean = false
+    private var activeUsesMultipleInputGraph: Boolean = false
+    private var scrubbingModeEnabled: Boolean = false
     private var errorCallback: (String) -> Unit = {}
 
     val player: CompositionPlayer
@@ -208,7 +241,14 @@ private class Media3PreviewEngine(
 
     fun currentPlayerOrNull(): CompositionPlayer? = activePlayer
 
+    fun setScrubbingModeEnabled(enabled: Boolean) {
+        if (scrubbingModeEnabled == enabled) return
+        scrubbingModeEnabled = enabled
+        activePlayer?.setScrubbingModeEnabled(enabled)
+    }
+
     fun releaseForBackground() {
+        scrubbingModeEnabled = false
         activePlayer?.release()
         activePlayer = null
     }
@@ -273,27 +313,35 @@ private class Media3PreviewEngine(
 
     private fun ensurePlayer(project: Project? = null): CompositionPlayer {
         val requestedCustomProcessor = project?.let(LocalCutFrameProcessorIntegration::shouldUseCustomProcessor)
+        val requestedMultipleInputGraph = project?.let {
+            requestedCustomProcessor != true &&
+                LocalCutFrameProcessorRoutePolicy.requiresMultipleInputVideoGraph(it)
+        }
         activePlayer?.let { current ->
-            if (requestedCustomProcessor == null || requestedCustomProcessor == activeUsesCustomProcessor) {
+            if (requestedCustomProcessor == null ||
+                (requestedCustomProcessor == activeUsesCustomProcessor &&
+                    requestedMultipleInputGraph == activeUsesMultipleInputGraph)
+            ) {
                 return current
             }
+            // A graph factory cannot be switched on an existing CompositionPlayer.
             current.release()
             activePlayer = null
         }
 
         val builder = CompositionPlayer.Builder(appContext)
-        if (project == null) {
-            builder.setVideoGraphFactory(androidx.media3.effect.MultipleInputVideoGraph.Factory())
-            activeUsesCustomProcessor = false
-        } else {
+        if (project != null) {
             LocalCutFrameProcessorIntegration.configurePreviewBuilder(builder, appContext, project)
-            activeUsesCustomProcessor = requestedCustomProcessor == true
         }
+        // The builder's default is SingleInputVideoGraph, including before load.
+        activeUsesCustomProcessor = requestedCustomProcessor == true
+        activeUsesMultipleInputGraph = requestedMultipleInputGraph == true
 
         return builder.build().also { created ->
+            if (scrubbingModeEnabled) created.setScrubbingModeEnabled(true)
             created.addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
-                    errorCallback(error.message ?: "Media3 playback error")
+                    errorCallback(PreviewPlaybackErrorDiagnostics.describe(error.errorCode, error))
                 }
             })
             activePlayer = created

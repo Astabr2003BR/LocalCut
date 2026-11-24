@@ -103,7 +103,16 @@ jobs:
 
       - name: Run Android unit tests and assemble debug APK
         shell: bash
-        run: gradle --no-daemon -p work testDebugUnitTest assembleDebug
+        run: |
+          set +e
+          set -o pipefail
+          gradle --no-daemon -p work testDebugUnitTest assembleDebug 2>&1 | tee "$RUNNER_TEMP/localcut-build.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            python3 scripts/annotate_safe_build_failure.py "$RUNNER_TEMP/localcut-build.log"
+          fi
+          exit "$status"
 
       - name: Verify overlap-safe JUnit tests actually ran
         shell: bash

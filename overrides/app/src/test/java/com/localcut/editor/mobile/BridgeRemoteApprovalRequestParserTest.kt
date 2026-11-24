@@ -13,6 +13,19 @@ class BridgeRemoteApprovalRequestParserTest {
         ).getOrThrow()
 
         assertEquals(requestId, parsed.requestId)
+        assertEquals(MobileHandoffReturnTarget.CHATGPT, parsed.returnTarget)
+    }
+
+    @Test
+    fun explicitEditorAndChatGptReturnTargetsAreSupported() {
+        val base = "localcut://remote/approve?requestId=remote_request_1234567890"
+        assertEquals(MobileHandoffReturnTarget.EDITOR,
+            BridgeRemoteApprovalRequestParser.parse("$base&returnTo=editor").getOrThrow().returnTarget)
+        assertEquals(MobileHandoffReturnTarget.CHATGPT,
+            BridgeRemoteApprovalRequestParser.parse("$base&returnTo=chatgpt").getOrThrow().returnTarget)
+        listOf("toqi", "", "https%3A%2F%2Fevil.example", "editor&returnTo=chatgpt").forEach { value ->
+            assertTrue(value, BridgeRemoteApprovalRequestParser.parse("$base&returnTo=$value").isFailure)
+        }
     }
 
     @Test

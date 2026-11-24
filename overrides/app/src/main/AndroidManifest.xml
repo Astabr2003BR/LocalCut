@@ -54,11 +54,11 @@
 
         <!-- Android Files uses */* for mixed image + audio selection. The Kotlin
              importer individually validates each URI and rejects non-media content. -->
-        <!-- Experimental build: explicit component only, so it cannot claim
-             the approved app's localcut:// or HTTPS links. -->
+        <!-- Experimental build: no external handoff until a safe, isolated
+             authorization channel is available. It does not claim existing links. -->
         <activity
             android:name=".mobile.MobileHandoffActivity"
-            android:exported="true" />
+            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

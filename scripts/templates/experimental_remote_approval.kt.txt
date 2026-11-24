@@ -1,0 +1,44 @@
+    private fun handleRemoteApproval(rawUri: String) {
+        val request = BridgeRemoteApprovalRequestParser.parse(rawUri).getOrElse { error ->
+            Toast.makeText(
+                this,
+                error.message ?: "Solicitação de controle remoto inválida",
+                Toast.LENGTH_LONG,
+            ).show()
+            openEditorAndFinish()
+            return
+        }
+
+        // The request does not prove the identity of the requesting browser. Never
+        // authorize it merely because an exported activity received an intent.
+        val consent = RemoteApprovalConsent(
+            onReject = { openEditorAndFinish() },
+            onAccept = {
+                val runtime = LocalCutProcessRuntime.get(this)
+                runtime.bridgeControl.approveRemoteControlRequest(request.requestId) { approvalResult ->
+                    runOnUiThread {
+                        val text = if (approvalResult.isSuccess) {
+                            "Controle remoto autorizado"
+                        } else {
+                            "Falha ao autorizar controle remoto"
+                        }
+                        Toast.makeText(this, text, Toast.LENGTH_LONG).show()
+                        openEditorAndFinish()
+                    }
+                }
+            },
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Autorizar controle remoto?")
+            .setMessage(
+                "Um navegador solicitou acesso ao LocalCut Experimental. " +
+                    "A identidade do navegador não pode ser confirmada aqui. " +
+                    "Esse acesso pode permitir leitura e alteração do projeto. " +
+                    "Autorize somente se você iniciou a conexão e confia nela.",
+            )
+            .setNegativeButton("Cancelar") { _, _ -> consent.reject() }
+            .setOnCancelListener { consent.reject() }
+            .setPositiveButton("Autorizar") { _, _ -> consent.accept() }
+            .show()
+    }
+

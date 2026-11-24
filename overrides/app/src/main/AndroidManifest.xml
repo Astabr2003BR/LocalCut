@@ -19,7 +19,7 @@
         android:fullBackupContent="@xml/localcut_full_backup_content"
         android:icon="@drawable/localcut_app_icon"
         android:roundIcon="@drawable/localcut_app_icon"
-        android:label="LocalCut"
+        android:label="LocalCut Experimental"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity
@@ -54,45 +54,11 @@
 
         <!-- Android Files uses */* for mixed image + audio selection. The Kotlin
              importer individually validates each URI and rejects non-media content. -->
+        <!-- Experimental build: explicit component only, so it cannot claim
+             the approved app's localcut:// or HTTPS links. -->
         <activity
             android:name=".mobile.MobileHandoffActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="localcut"
-                    android:host="command" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="localcut"
-                    android:host="oauth"
-                    android:pathPrefix="/approve" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="localcut"
-                    android:host="remote"
-                    android:pathPrefix="/approve" />
-            </intent-filter>
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="https"
-                    android:host="localcut-bridge-v1.onrender.com"
-                    android:pathPrefix="/open" />
-            </intent-filter>
-        </activity>
+            android:exported="true" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -2,7 +2,7 @@ name: Android Debug APK
 
 on:
   push:
-    branches: [main]
+    branches: [experiment/toqi-localcut-isolated-build]
     paths-ignore:
       - 'docs/**'
       - '**/*.md'
@@ -70,6 +70,10 @@ jobs:
           grep -F 'TimelineEditBounds.clampRight' work/app/src/main/java/com/localcut/editor/ui/editor/components/TimelinePane.kt
           grep -F 'TimelineEditBounds.clampMove' work/app/src/main/java/com/localcut/editor/ui/editor/components/TimelinePane.kt
           grep -F 'fun leftTrimCannotCrossPreviousSplitClip()' work/app/src/test/java/com/localcut/editor/ui/editor/TimelineDragPlannerTestMain.kt
+
+      - name: Prepare and validate isolated experimental app
+        shell: bash
+        run: python3 scripts/prepare_toqi_experimental.py
 
       - name: Stage sanitized assembled source audit
         shell: bash
@@ -191,6 +195,23 @@ jobs:
       - name: Verify debug APK exists
         shell: bash
         run: test -s work/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Verify isolated experimental APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=work/app/build/outputs/apk/debug/app-debug.apk
+          AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
+          test -x "$AAPT"
+          "$AAPT" dump badging "$APK" > /tmp/localcut-badging.txt
+          grep -F "package: name='com.localcut.editor.toqiexperiment'" /tmp/localcut-badging.txt
+          grep -F "application-label:'LocalCut Experimental'" /tmp/localcut-badging.txt
+          "$AAPT" dump xmltree "$APK" AndroidManifest.xml > /tmp/localcut-manifest.txt
+          if grep -F 'android.intent.category.BROWSABLE' /tmp/localcut-manifest.txt; then
+            echo 'Experimental APK must not claim browser links' >&2
+            exit 1
+          fi
+          sha256sum "$APK"
 
       - name: Read APK version metadata
         id: apk_meta

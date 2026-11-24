@@ -18,6 +18,15 @@ internal data class TermuxEngineEndpoint(
 internal object TermuxEngineEndpointResolver {
     private const val PRIVATE_MEDIA_PORT = 43227
     private const val PRIVATE_AGENT_PORT = 43228
+    private const val ALTERNATIVE_LOCAL_AGENT_PORT = 43129
+
+    // Only the agent clients use this extra loopback endpoint. Media pairing and
+    // jobs retain their original endpoint order and are never retried twice here.
+    fun agentCandidates(): List<TermuxEngineEndpoint> {
+        val endpoints = candidates()
+        val loopback = endpoints.first()
+        return listOf(loopback, loopback.copy(agentPort = ALTERNATIVE_LOCAL_AGENT_PORT)) + endpoints.drop(1)
+    }
 
     fun candidates(): List<TermuxEngineEndpoint> {
         val result = mutableListOf(
@@ -42,10 +51,11 @@ internal object TermuxEngineEndpointResolver {
     }
 }
 
-private fun Throwable.isEndpointUnavailable(): Boolean {
+private fun Throwable.isEndpointUnavailable(retryTimeout: Boolean): Boolean {
     var current: Throwable? = this
     while (current != null) {
-        if (current is ConnectException || current is SocketTimeoutException || current is NoRouteToHostException) return true
+        if (current is ConnectException || current is NoRouteToHostException) return true
+        if (retryTimeout && current is SocketTimeoutException) return true
         current = current.cause
     }
     return message in setOf("TERMUX_ENGINE_UNAVAILABLE", "TERMUX_AGENT_UNAVAILABLE")
@@ -53,6 +63,7 @@ private fun Throwable.isEndpointUnavailable(): Boolean {
 
 private suspend fun <T> tryEndpoints(
     endpoints: List<TermuxEngineEndpoint>,
+    retryTimeout: Boolean = true,
     action: suspend (TermuxEngineEndpoint) -> Result<T>,
 ): Result<T> {
     var lastFailure: Throwable? = null
@@ -61,7 +72,7 @@ private suspend fun <T> tryEndpoints(
         if (result.isSuccess) return result
         val error = result.exceptionOrNull() ?: continue
         lastFailure = error
-        if (!error.isEndpointUnavailable()) return result
+        if (!error.isEndpointUnavailable(retryTimeout)) return result
     }
     return Result.failure(lastFailure ?: IllegalStateException("TERMUX_ENGINE_UNAVAILABLE"))
 }
@@ -92,14 +103,14 @@ internal class AdaptiveTermuxEngineJobClient(
 
 internal class AdaptiveTermuxApprovalClient(
     private val tokenProvider: () -> String?,
-    private val endpointProvider: () -> List<TermuxEngineEndpoint> = TermuxEngineEndpointResolver::candidates,
+    private val endpointProvider: () -> List<TermuxEngineEndpoint> = TermuxEngineEndpointResolver::agentCandidates,
 ) : TermuxAgentApprovalClient {
-    override suspend fun getPendingApprovals() = tryEndpoints(endpointProvider()) { endpoint ->
+    override suspend fun getPendingApprovals() = tryEndpoints(endpointProvider(), retryTimeout = false) { endpoint ->
         SocketTermuxAgentApprovalClient(endpoint.host, endpoint.agentPort, tokenProvider).getPendingApprovals()
     }
 
     override suspend fun resolveApproval(approvalId: String, decision: TermuxApprovalDecision) =
-        tryEndpoints(endpointProvider()) { endpoint ->
+        tryEndpoints(endpointProvider(), retryTimeout = false) { endpoint ->
             SocketTermuxAgentApprovalClient(endpoint.host, endpoint.agentPort, tokenProvider)
                 .resolveApproval(approvalId, decision)
         }
@@ -107,10 +118,10 @@ internal class AdaptiveTermuxApprovalClient(
 
 internal class AdaptiveTermuxDeveloperAgentClient(
     private val tokenProvider: () -> String?,
-    private val endpointProvider: () -> List<TermuxEngineEndpoint> = TermuxEngineEndpointResolver::candidates,
+    private val endpointProvider: () -> List<TermuxEngineEndpoint> = TermuxEngineEndpointResolver::agentCandidates,
 ) : BridgeTermuxDeveloperClient {
     override suspend fun execute(request: BridgeTermuxAgentRequest, taskId: String) =
-        tryEndpoints(endpointProvider()) { endpoint ->
+        tryEndpoints(endpointProvider(), retryTimeout = false) { endpoint ->
             SocketTermuxDeveloperAgentClient(endpoint.host, endpoint.agentPort, tokenProvider)
                 .execute(request, taskId)
         }

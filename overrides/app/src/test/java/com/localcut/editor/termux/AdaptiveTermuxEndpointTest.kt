@@ -6,6 +6,18 @@ import org.junit.Test
 
 class AdaptiveTermuxEndpointTest {
     @Test
+    fun agentFallsBackToAlternativeLoopbackWithoutChangingMediaEndpoints() {
+        val media = TermuxEngineEndpointResolver.candidates()
+        val agent = TermuxEngineEndpointResolver.agentCandidates()
+        assertEquals(media.first(), agent.first())
+        assertEquals(TermuxEngineProtocol.DEFAULT_HOST, agent[1].host)
+        assertEquals(TermuxEngineProtocol.DEFAULT_PORT, agent[1].mediaPort)
+        assertEquals(43129, agent[1].agentPort)
+        assertEquals(media.drop(1), agent.drop(2))
+        assertTrue(media.none { it.agentPort == 43129 })
+    }
+
+    @Test
     fun resolverAlwaysStartsWithLoopbackAndNeverReturnsPublicHosts() {
         val endpoints = TermuxEngineEndpointResolver.candidates()
         assertTrue(endpoints.isNotEmpty())

@@ -170,6 +170,7 @@ jobs:
               'com.localcut.editor.bridge.agent.BridgeUiStateTest',
               'com.localcut.editor.bridge.agent.Media3BridgeExportPortTest',
               'com.localcut.editor.bridge.agent.MediaStoreExportNamingPolicyTest',
+              'com.localcut.editor.mobile.RemoteApprovalConsentTest',
           ]
           total = failures = errors = skipped = 0
           for class_name in required:

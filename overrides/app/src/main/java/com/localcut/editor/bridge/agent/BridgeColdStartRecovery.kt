@@ -10,7 +10,20 @@ internal object BridgeColdStartRecoveryPolicy {
     fun shouldReconnect(
         paired: Boolean,
         alwaysConnected: Boolean,
-    ): Boolean = paired && alwaysConnected
+        sessionEnabled: Boolean,
+    ): Boolean = paired && alwaysConnected && sessionEnabled
+
+    fun attemptRecovery(
+        paired: Boolean,
+        settingsStore: BridgeSettingsStore,
+        startReconnect: () -> Boolean,
+    ): Boolean {
+        if (!shouldReconnect(paired, settingsStore.alwaysConnected, settingsStore.sessionEnabled)) {
+            return false
+        }
+        // Recovery must never enable a session: only an explicit connect may do that.
+        return startReconnect()
+    }
 }
 
 class BridgeColdStartRecovery(
@@ -20,18 +33,14 @@ class BridgeColdStartRecovery(
 ) {
     private val appContext = context.applicationContext
 
-    fun reconnectIfNeeded(): Boolean {
-        val shouldReconnect = BridgeColdStartRecoveryPolicy.shouldReconnect(
-            paired = credentialStore.load() != null,
-            alwaysConnected = settingsStore.alwaysConnected,
-        )
-        if (!shouldReconnect) return false
-
-        settingsStore.sessionEnabled = true
+    fun reconnectIfNeeded(): Boolean = BridgeColdStartRecoveryPolicy.attemptRecovery(
+        paired = credentialStore.load() != null,
+        settingsStore = settingsStore,
+    ) {
         val intent = Intent(appContext, BridgeConnectionService::class.java)
             .setAction(BridgeConnectionService.ACTION_RECONNECT)
 
-        return runCatching {
+        runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 appContext.startForegroundService(intent)
             } else {

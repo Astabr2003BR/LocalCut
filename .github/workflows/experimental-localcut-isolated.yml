@@ -1,0 +1,38 @@
+name: Experimental LocalCut Isolated CI
+
+on:
+  push:
+    branches: [experiment/toqi-localcut-isolated-build]
+  pull_request:
+    branches: [experiment/toqi-localcut-isolated-build]
+
+permissions:
+  contents: read
+
+jobs:
+  experimental-checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: bridge/controller
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24.12.0'
+
+      - name: Run experimental Node tests
+        run: node --test test/experimentalBlockedRelay.test.mjs test/experimentalReadOnlyGuard.test.mjs
+
+      - name: Install locked controller dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # The existing strict tsconfig checks TypeScript only, not experimental .mjs files.
+      - name: Run existing strict TypeScript check
+        run: npm run typecheck

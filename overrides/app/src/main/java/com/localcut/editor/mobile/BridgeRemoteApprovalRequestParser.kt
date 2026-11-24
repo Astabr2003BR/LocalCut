@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets
 
 data class BridgeRemoteApprovalRequest(
     val requestId: String,
+    val returnTarget: MobileHandoffReturnTarget,
 )
 
 object BridgeRemoteApprovalRequestParser {
@@ -17,10 +18,17 @@ object BridgeRemoteApprovalRequestParser {
         require(uri.path == "/approve") { "REMOTE_APPROVAL_URI_INVALID" }
         require(uri.userInfo == null && uri.fragment == null) { "REMOTE_APPROVAL_URI_INVALID" }
         val params = strictRemoteQuery(uri.rawQuery)
-        require(params.keys == setOf("requestId")) { "REMOTE_APPROVAL_URI_INVALID" }
+        require(params.keys == setOf("requestId") || params.keys == setOf("requestId", "returnTo")) {
+            "REMOTE_APPROVAL_URI_INVALID"
+        }
         val requestId = params.getValue("requestId")
         require(REMOTE_REQUEST_ID.matches(requestId)) { "REMOTE_APPROVAL_REQUEST_INVALID" }
-        BridgeRemoteApprovalRequest(requestId)
+        val returnTarget = when (params["returnTo"]) {
+            null, "chatgpt" -> MobileHandoffReturnTarget.CHATGPT
+            "editor" -> MobileHandoffReturnTarget.EDITOR
+            else -> error("REMOTE_APPROVAL_RETURN_TARGET_INVALID")
+        }
+        BridgeRemoteApprovalRequest(requestId, returnTarget)
     }
 }
 

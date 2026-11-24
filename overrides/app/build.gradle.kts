@@ -8,7 +8,7 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.localcut.editor"
+        applicationId = "com.localcut.editor.toqiexperiment"
         minSdk = 26
         targetSdk = 36
         val ciBuildNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "9").toIntOrNull() ?: 9

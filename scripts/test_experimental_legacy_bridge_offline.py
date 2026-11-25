@@ -72,6 +72,8 @@ class PrepareTest(unittest.TestCase):
         self.assertIn('assertEquals(0, playback.seeks)', inbound_test.read_text())
         self.assertIn('assertEquals(1, playback.seeks)', inbound_test.read_text())
         control = (main / 'bridge/agent/LocalCutBridgeControl.kt').read_text()
+        self.assertIn('Troca de servidor indisponível: a revogação no servidor está bloqueada no Experimental; credenciais preservadas.', control)
+        self.assertNotIn('Revogue o pareamento atual antes de trocar o servidor Relay.', control)
         for name in ('private fun connect(forceRefreshCredential', 'fun claimPendingPairingFromMobile', 'fun approveOAuthRequest', 'fun approveRemoteControlRequest', 'fun revokePairing'):
             self.assertIn('EXPERIMENTAL_LEGACY_BRIDGE_BLOCKED', control[control.index(name):control.index(name) + 450])
         service = (main / 'bridge/agent/BridgeConnectionService.kt').read_text()

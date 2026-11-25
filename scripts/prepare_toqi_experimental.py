@@ -1,6 +1,8 @@
 from pathlib import Path
 import hashlib
 import xml.etree.ElementTree as ET
+from experimental_legacy_bridge import prepare as prepare_legacy_bridge
+from experimental_cold_start_recovery import prepare as prepare_cold_start_recovery
 
 root = Path('work/app')
 gradle = (root / 'build.gradle.kts').read_text()
@@ -31,4 +33,8 @@ assert '.setPositiveButton("Autorizar") { _, _ -> consent.accept() }' in remote
 assert '.setNegativeButton("Cancelar") { _, _ -> consent.reject() }' in remote
 assert '.setOnCancelListener { consent.reject() }' in remote
 assert 'openChatGptAndFinish()' not in remote
+# The legacy hard block consumes the experimental recovery implementation.
+# Prepare it first, never in the shared overrides or the smoke workflow.
+prepare_cold_start_recovery(root)
+prepare_legacy_bridge(root)
 print('Experimental package, internal handoff and remote approval consent verified')

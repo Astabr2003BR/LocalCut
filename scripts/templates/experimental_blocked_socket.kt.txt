@@ -1,0 +1,15 @@
+package com.localcut.editor.bridge.transport
+
+import okhttp3.OkHttpClient
+import okhttp3.WebSocket
+
+/** Experimental only: factory is accepted for API compatibility but never called. */
+class OkHttpBridgeSocketClient(
+    private val webSocketFactory: WebSocket.Factory = OkHttpClient(),
+) : BridgeSocketClient {
+    override fun connect(session: BridgeSession, listener: BridgeSocketListener): Result<Unit> =
+        Result.failure(IllegalStateException("EXPERIMENTAL_LEGACY_BRIDGE_BLOCKED"))
+    override fun send(text: String): Result<Unit> =
+        Result.failure(IllegalStateException("EXPERIMENTAL_LEGACY_BRIDGE_BLOCKED"))
+    override fun disconnect(): Result<Unit> = Result.success(Unit)
+}

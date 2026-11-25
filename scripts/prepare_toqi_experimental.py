@@ -3,6 +3,7 @@ import hashlib
 import xml.etree.ElementTree as ET
 from experimental_legacy_bridge import prepare as prepare_legacy_bridge
 from experimental_cold_start_recovery import prepare as prepare_cold_start_recovery
+from experimental_credential_guard import prepare as prepare_credential_guard
 
 root = Path('work/app')
 gradle = (root / 'build.gradle.kts').read_text()
@@ -37,4 +38,6 @@ assert 'openChatGptAndFinish()' not in remote
 # Prepare it first, never in the shared overrides or the smoke workflow.
 prepare_cold_start_recovery(root)
 prepare_legacy_bridge(root)
+prepare_credential_guard(root)
+__import__('experimental_bridge_panel').prepare(root)
 print('Experimental package, internal handoff and remote approval consent verified')

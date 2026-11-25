@@ -117,6 +117,11 @@ def prepare(root: Path):
         writes[root / TEST / name] = text
 
     control = source['bridge/agent/LocalCutBridgeControl.kt']
+    # Do not suggest an unavailable revoke as an actionable prerequisite. A
+    # paired endpoint remains locked; no local erase or remote revoke is implied.
+    control = replace_once(control,
+        '"Revogue o pareamento atual antes de trocar o servidor Relay."',
+        '"Troca de servidor indisponível: a revogação no servidor está bloqueada no Experimental; credenciais preservadas."')
     block = 'if ("EXPERIMENTAL_LEGACY_BRIDGE_BLOCKED".isNotEmpty())'
     control = replace_once(control, '    private fun connect(forceRefreshCredential: Boolean) {\n',
         '    private fun connect(forceRefreshCredential: Boolean) {\n        ' + block + ' { update(BridgeUiEvent.Error("Bridge legado indisponível no Experimental.")); return }\n')

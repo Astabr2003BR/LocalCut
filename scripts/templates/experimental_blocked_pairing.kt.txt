@@ -1,0 +1,22 @@
+package com.localcut.editor.bridge.transport
+
+import com.localcut.editor.bridge.security.BridgeMobilePairingProof
+import com.localcut.editor.bridge.security.BridgeStoredCredential
+import com.localcut.editor.bridge.security.DevicePublicIdentity
+import okhttp3.OkHttpClient
+
+/** Experimental only: no request, DNS lookup, or credential transmission is possible here. */
+class OkHttpBridgePairingClient(
+    baseUrl: String,
+    private val client: OkHttpClient = BridgePairingHttpClientPolicy.newClient(),
+) : BridgePairingClient {
+    private fun <T> blocked(): Result<T> = Result.failure(IllegalStateException("EXPERIMENTAL_LEGACY_BRIDGE_BLOCKED"))
+    override fun start(identity: DevicePublicIdentity): Result<BridgePairingStart> = blocked()
+    override fun status(code: String, signatureBase64: String?): Result<BridgePairingStatus> = blocked()
+    override fun refresh(refreshToken: String): Result<BridgeStoredCredential> = blocked()
+    override fun recover(proof: BridgeSessionRecoveryProof): Result<BridgeStoredCredential> = blocked()
+    override fun mobileClaim(proof: BridgeMobilePairingProof): Result<BridgeMobilePairingClaim> = blocked()
+    override fun approveOAuth(requestId: String, accessToken: String): Result<String> = blocked()
+    override fun approveRemoteControl(requestId: String, accessToken: String): Result<Unit> = blocked()
+    override fun unpair(accessToken: String): Result<Unit> = blocked()
+}

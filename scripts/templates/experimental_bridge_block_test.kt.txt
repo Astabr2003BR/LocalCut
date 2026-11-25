@@ -1,0 +1,91 @@
+package com.localcut.editor.bridge.transport
+
+import com.localcut.editor.bridge.agent.BridgeBackgroundCredentialManager
+import com.localcut.editor.bridge.agent.BridgeEndpointPreference
+import com.localcut.editor.bridge.agent.BridgeUnpairCoordinator
+import com.localcut.editor.bridge.agent.InMemoryBridgeSettingsStore
+import com.localcut.editor.bridge.security.BridgeMobilePairingProof
+import com.localcut.editor.bridge.security.BridgeStoredCredential
+import com.localcut.editor.bridge.security.DeviceIdentityStore
+import com.localcut.editor.bridge.security.DevicePublicIdentity
+import com.localcut.editor.bridge.security.InMemoryBridgeCredentialStore
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class ExperimentalBridgeBlockTest {
+    @Test fun allPairingOperationsFailBeforeHttpAndPreserveCredential() {
+        var calls = 0
+        val http = OkHttpClient.Builder().addInterceptor { calls++; error("HTTP must not be called") }.build()
+        val client = OkHttpBridgePairingClient("https://example.invalid", http)
+        val identity = DevicePublicIdentity("test", "EC_P256", "public")
+        val credential = BridgeStoredCredential("access", "refresh", 0, "recovery")
+        val results = listOf(
+            client.start(identity), client.status("123456", null), client.refresh("refresh"),
+            client.recover(BridgeSessionRecoveryProof("test", "public", "recovery", 0, "nonce", "signature")),
+            client.mobileClaim(BridgeMobilePairingProof("123456", 0, "nonce", "signature")),
+            client.approveOAuth("request", "access"), client.approveRemoteControl("request", "access"), client.unpair("access"),
+        )
+        results.forEach { assertEquals("EXPERIMENTAL_LEGACY_BRIDGE_BLOCKED", it.exceptionOrNull()?.message) }
+        val store = InMemoryBridgeCredentialStore().apply { save(credential) }
+        val identityStore = object : DeviceIdentityStore {
+            override fun getOrCreatePublicIdentity(): DevicePublicIdentity = identity
+            override fun signChallenge(challenge: ByteArray): ByteArray = error("must not sign")
+        }
+        assertTrue(BridgeBackgroundCredentialManager(store, client, identityStore, { 1 }).ensureFresh().isFailure)
+        assertEquals(credential, store.load())
+        assertEquals(0, calls)
+    }
+
+    @Test fun expiredCredentialWithoutRecoveryIsNeverClearedAndRevocationDoesNotSucceed() {
+        var calls = 0
+        val http = OkHttpClient.Builder().addInterceptor { calls++; error("HTTP must not run") }.build()
+        val client = OkHttpBridgePairingClient("https://example.invalid", http)
+        val identityStore = object : DeviceIdentityStore {
+            override fun getOrCreatePublicIdentity(): DevicePublicIdentity = error("must not create identity")
+            override fun signChallenge(challenge: ByteArray): ByteArray = error("must not sign")
+        }
+        for (credential in listOf(
+            BridgeStoredCredential("a", null, 0, null),
+            BridgeStoredCredential("a", "r", 0, null),
+            BridgeStoredCredential("a", "r", 1000, null),
+        )) {
+            val store = InMemoryBridgeCredentialStore().apply { save(credential) }
+            val settings = InMemoryBridgeSettingsStore(relayBaseUrl = "https://example.invalid")
+            val manager = BridgeBackgroundCredentialManager(store, client, identityStore, { 1 })
+            assertTrue(manager.ensureFresh().isFailure)
+            assertEquals(credential, store.load())
+            assertTrue(BridgeUnpairCoordinator(client, store, settings, { 1 }).unpair().isFailure)
+            assertEquals(credential, store.load())
+            assertTrue(BridgeEndpointPreference(settings, store).save("https://other.invalid").isFailure)
+            assertEquals("https://example.invalid", settings.relayBaseUrl)
+        }
+        assertEquals(0, calls)
+    }
+
+    @Test fun socketFactoryIsNeverCalled() {
+        var calls = 0
+        val factory = object : WebSocket.Factory {
+            override fun newWebSocket(request: Request, listener: WebSocketListener): WebSocket {
+                calls++
+                error("WebSocket must not be called")
+            }
+        }
+        val socket = OkHttpBridgeSocketClient(factory)
+        val listener = object : BridgeSocketListener {
+            override fun onConnected() = error("unexpected callback")
+            override fun onTextMessage(text: String) = error("unexpected callback")
+            override fun onDisconnected(code: Int?, reason: String?) = error("unexpected callback")
+            override fun onFailure(message: String) = error("unexpected callback")
+        }
+        val result = socket.connect(BridgeSession("wss://example.invalid/ws", "device", "access"), listener)
+        assertEquals("EXPERIMENTAL_LEGACY_BRIDGE_BLOCKED", result.exceptionOrNull()?.message)
+        assertTrue(socket.send("payload").isFailure)
+        assertTrue(socket.disconnect().isSuccess)
+        assertEquals(0, calls)
+    }
+}

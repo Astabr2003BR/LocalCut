@@ -76,6 +76,8 @@ jobs:
         run: |
           python3 -B scripts/test_experimental_cold_start_recovery_offline.py -v
           python3 -B scripts/test_experimental_legacy_bridge_offline.py -v
+          python3 -B scripts/test_experimental_credential_guard_offline.py -v
+          python3 -B scripts/test_experimental_bridge_panel_offline.py -v
 
       - name: Prepare and validate isolated experimental app
         shell: bash
@@ -165,6 +167,7 @@ jobs:
               'com.localcut.editor.bridge.agent.BridgeJobRegistryTest',
               'com.localcut.editor.bridge.agent.BridgeMessageProcessorTest',
               'com.localcut.editor.bridge.agent.ExperimentalInboundBlockTest',
+              'com.localcut.editor.bridge.agent.ExperimentalCredentialGuardTest',
               'com.localcut.editor.bridge.agent.BridgePairingCoordinatorTest',
               'com.localcut.editor.bridge.agent.BridgeSettingsStoreTest',
               'com.localcut.editor.bridge.agent.BridgeUiStateTest',

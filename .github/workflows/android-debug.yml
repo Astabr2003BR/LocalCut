@@ -1,4 +1,4 @@
-name: Android Debug APK
+name: Android Experimental CI (no APK publication)
 
 on:
   push:
@@ -71,43 +71,32 @@ jobs:
           grep -F 'TimelineEditBounds.clampMove' work/app/src/main/java/com/localcut/editor/ui/editor/components/TimelinePane.kt
           grep -F 'fun leftTrimCannotCrossPreviousSplitClip()' work/app/src/test/java/com/localcut/editor/ui/editor/TimelineDragPlannerTestMain.kt
 
+      - name: Test experimental source preparation offline
+        shell: bash
+        run: |
+          python3 -B scripts/test_experimental_cold_start_recovery_offline.py -v
+          python3 -B scripts/test_experimental_legacy_bridge_offline.py -v
+
       - name: Prepare and validate isolated experimental app
         shell: bash
         run: python3 scripts/prepare_toqi_experimental.py
-
-      - name: Stage sanitized assembled source audit
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf source-audit
-          mkdir -p source-audit/app
-          cp -R work/app/src source-audit/app/src
-          unzip -p localcut-source-full-build9.zip app/build.gradle.kts > source-audit/baseline-build.gradle.kts
-          unzip -p localcut-source-full-build9.zip app/src/main/AndroidManifest.xml > source-audit/baseline-AndroidManifest.xml
-          test -s source-audit/baseline-build.gradle.kts
-          test -s source-audit/baseline-AndroidManifest.xml
-          {
-            echo '# LocalCut build configuration summary'
-            grep -nE 'compileSdk|minSdk|targetSdk|applicationId|versionCode|versionName|testImplementation|androidTestImplementation' work/app/build.gradle.kts || true
-          } > source-audit/build-config-summary.txt
-          if find source-audit -type f \( -name '*.jks' -o -name '*.keystore' -o -name 'local.properties' \) | grep -q .; then
-            echo 'Sensitive signing/config file found in source audit' >&2
-            exit 1
-          fi
 
       - name: Set up Gradle 9.5.0
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '9.5.0'
           cache-provider: basic
+          cache-disabled: true
 
       - name: Run Android unit tests and assemble debug APK
         shell: bash
         run: |
+          # Require fresh execution and reports; do not cache build outputs.
+          set -euo pipefail
+          rm -rf work/app/build/test-results/testDebugUnitTest
           set +e
-          set -o pipefail
-          gradle --no-daemon -p work testDebugUnitTest assembleDebug 2>&1 | tee "$RUNNER_TEMP/localcut-build.log"
-          status=${PIPESTATUS[0]}
+          gradle --no-daemon --no-build-cache --rerun-tasks -p work testDebugUnitTest assembleDebug > "$RUNNER_TEMP/localcut-build.log" 2>&1
+          status=$?
           set -e
           if [ "$status" -ne 0 ]; then
             python3 scripts/annotate_safe_build_failure.py "$RUNNER_TEMP/localcut-build.log"
@@ -168,12 +157,14 @@ jobs:
               'com.localcut.editor.bridge.transport.BridgeConnectionCoordinatorTest',
               'com.localcut.editor.bridge.transport.BridgeReconnectPolicyTest',
               'com.localcut.editor.bridge.transport.BridgeSessionProviderTest',
+              'com.localcut.editor.bridge.transport.ExperimentalBridgeBlockTest',
               'com.localcut.editor.bridge.agent.BridgeEndpointPreferenceTest',
               'com.localcut.editor.bridge.agent.BridgeCommandExecutorTest',
               'com.localcut.editor.bridge.agent.BridgeAdvancedEditCommandsTest',
               'com.localcut.editor.bridge.agent.BridgeExportCommandTest',
               'com.localcut.editor.bridge.agent.BridgeJobRegistryTest',
               'com.localcut.editor.bridge.agent.BridgeMessageProcessorTest',
+              'com.localcut.editor.bridge.agent.ExperimentalInboundBlockTest',
               'com.localcut.editor.bridge.agent.BridgePairingCoordinatorTest',
               'com.localcut.editor.bridge.agent.BridgeSettingsStoreTest',
               'com.localcut.editor.bridge.agent.BridgeUiStateTest',
@@ -193,6 +184,26 @@ jobs:
               suite_skipped = int(suite.attrib.get('skipped', '0'))
               if tests <= 0:
                   sys.exit(f'Bridge suite executed zero tests: {class_name}')
+              if class_name in {
+                  'com.localcut.editor.bridge.transport.ExperimentalBridgeBlockTest',
+                  'com.localcut.editor.bridge.agent.ExperimentalInboundBlockTest',
+              }:
+                  cases = suite.findall('testcase')
+                  required_cases = ({
+                      'allPairingOperationsFailBeforeHttpAndPreserveCredential',
+                      'expiredCredentialWithoutRecoveryIsNeverClearedAndRevocationDoesNotSucceed',
+                      'socketFactoryIsNeverCalled',
+                  } if class_name.endswith('.ExperimentalBridgeBlockTest') else {
+                      'queuedLegacyCallbackIsDroppedBeforeExecutionButDirectLocalExecutorStillWorks',
+                  })
+                  names = [case.attrib.get('name') for case in cases]
+                  if (suite.tag != 'testsuite' or suite.attrib.get('name') != class_name
+                          or tests != len(cases) or len(names) != len(set(names))
+                          or not required_cases.issubset(names)
+                          or any(case.attrib.get('classname') != class_name
+                                 or any(case.find(tag) is not None for tag in ('failure', 'error', 'skipped'))
+                                 for case in cases)):
+                      sys.exit(f'Experimental tests missing, skipped or failed: {class_name}')
               total += tests
               failures += suite_failures
               errors += suite_errors
@@ -223,33 +234,7 @@ jobs:
           fi
           sha256sum "$APK"
 
-      - name: Read APK version metadata
-        id: apk_meta
+      - name: Remove transient APK outputs
+        if: ${{ always() }}
         shell: bash
-        run: |
-          set -euo pipefail
-          META='work/app/build/outputs/apk/debug/output-metadata.json'
-          test -s "$META"
-          VERSION_CODE="$(python3 -c 'import json; d=json.load(open("work/app/build/outputs/apk/debug/output-metadata.json")); print(d["elements"][0]["versionCode"])')"
-          VERSION_NAME="$(python3 -c 'import json; d=json.load(open("work/app/build/outputs/apk/debug/output-metadata.json")); print(d["elements"][0]["versionName"])')"
-          test -n "$VERSION_CODE"
-          test -n "$VERSION_NAME"
-          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
-          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
-          echo "APK versionName=$VERSION_NAME versionCode=$VERSION_CODE"
-
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: localcut-debug-apk-v${{ steps.apk_meta.outputs.version_name }}-code${{ steps.apk_meta.outputs.version_code }}
-          path: work/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload sanitized source audit
-        uses: actions/upload-artifact@v7
-        with:
-          name: localcut-source-audit-run-${{ github.run_number }}
-          path: source-audit
-          if-no-files-found: error
-          retention-days: 2
+        run: rm -rf work/app/build/outputs/apk
